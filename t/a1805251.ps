@@ -1,0 +1,775 @@
+./* ========================================================================
+. *          Name : a1805251.ps
+. *   Description : Adhoc fix of LAGOV member salary record caused by
+. *         Inbound and 834 issues
+. * ...........................CHANGE LOG...................................
+. *  apjwh - 05/25/2018 - DEV - Initial Version
+. * ===================================================================== */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC UTIL_MEMMEM.CB  ... d_memmem update variables
+    INC ASORT.CB            ... MCSI' array sorting custom verb
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+... Command line parameter
+PARAM_LIST          LIST WITH NAMES
+PARAM_MODE          CHAR    3   ... "TST" - test // "PRD" - production
+                    LISTEND
+
+INPUT_ORIGINAL      INIT    "/w/incorrect_salary_records.csv"
+... Files
+INPUT_FILE          FILE    VAR=500,TEXT
+INPUT_NAME          CHAR    100
+INPUT_LIST          LIST
+INPUT_REC           CHAR    500
+                    LISTEND
+
+UPDATE_FILE         FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_NAME         INIT    "a1805251.inm"  ...updated with INM_REC
+
+ERROR_FILE          FILE    VAR=300,TEXT
+ERROR_NAME          INIT    "/w/fixmems_a1805251.error.csv"
+ERROR_WRITE_LIST    LIST
+ERROR_REC           CHAR    300
+                    LISTEND
+
+ERROR_LIST          LIST
+ERROR_INDEX         CHAR    5
+ERROR_SSN           CHAR    9
+ERROR_SAL_EFF       CHAR    8
+ERROR_SAL_TRM       CHAR    8
+ERROR_SAL_AMOUNT    CHAR    10
+ERROR_MESSAGE       CHAR    200
+                    LISTEND
+
+ERROR_HEADER        LIST
+ERROR_HEADER_REC    INIT    "Count,":
+                            "SSN,":
+                            "salary-effective,":
+                            "salary-term,":
+                            "salary-amount,":
+                            "error-message"
+                    LISTEND
+
+... Work fields
+PROCESS_NAME        INIT    "FIXMEMS"
+MAIL_TO             INIT    "jakob.hendrix@la.gov"
+...MAIL_TO             INIT    "${ITAPPS}"
+
+CURRENT_SSN         CHAR    9
+SRC_LAGOV           EQU     1
+SRC_MEMS            EQU     2
+
+EARLIEST_LAGOV_EFF  CHAR    8
+
+SALARY_COUNT        NUM     3[2]
+SALARIES            CHAR    300[2,999]
+
+ACTION              CHAR    15
+UPDATE_COUNT        NUM     3
+UPDATE_RECS         CHAR    400[999]
+
+ISERROR             NUM     1
+ERROR_COUNT         NUM     5
+
+./* =============
+. * Begin Program
+. * ============= */
+
+...Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+...Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.###########################################################################
+RUN_NOW LROUTINE
+./* Set runtime variables
+. */
+
+...Store return stack at program start
+    RETCOUNT ORIG_RETURN
+
+... Initialize module ID variables
+    MOVE "A1805251" TO C_PROG
+    MOVE "ADHOC: Fix LAGOV MEMS" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+... Signal start of program if run from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get scheduler information
+    CALL SCHED_PICK
+
+... Run core logic
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+... Signal successful completion of job
+    CALL CUSTOM_EOJ
+
+    RETURN
+    ENDROUTINE
+
+.###########################################################################
+MAIN_PROCESS LROUTINE
+...
+    CALL INITIALIZE
+    CALL PROCESS_LAGOV_SALARIES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+INITIALIZE LROUTINE
+./* Set up for run
+. */
+...
+    CLOCK TIMESTAMP INTO X_START_TIME
+
+...Draw screen, if necessary
+    CALL X_ZERO_COUNTS
+
+    MOVE "Members Sent    : " TO X_CNTDESC1
+    MOVE "Salary Recs Sent: " TO X_CNTDESC2
+    MOVE "Members Rejected: " TO X_CNTDESC3
+    MOVE "Salaries Deleted: " TO X_CNTDESC4
+    MOVE "Salaries Changed: " TO X_CNTDESC5
+    MOVE "Salaries Added  : " TO X_CNTDESC6
+
+    IF (NOT C_CMDPAR)
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+... Prep files
+    EXIST INPUT_ORIGINAL
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING ("LAGOV Salary Input file not found: "+INPUT_ORIGINAL):
+                                 "INITIALIZE"
+    ENDIF
+
+
+./* Sort input file by person (is. SSN) and then effective date into the
+. * input work file
+. */
+    PACK INPUT_NAME WITH INPUT_ORIGINAL,".wrk"
+    PACK SCRATCH WITH "sort -k1,1d -k4,4d -t , -o #"",INPUT_NAME,"#" #"",INPUT_ORIGINAL,"#""
+    ROLLOUT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort by SSN failed","INITIALIZE"
+    ENDIF
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL OPEN_OGBFILE USING INPUT_FILE,INPUT_NAME
+    CALL PREP_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+    CALL PREP_OGBFILE USING ERROR_FILE,ERROR_NAME
+    CALL WRITE_OGBREC USING ERROR_FILE,ERROR_NAME,ERROR_HEADER
+
+    LOADMOD "ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+CLEAN_UP LROUTINE
+...
+    UNLOAD "ASORT"
+    CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME
+    ERASE INPUT_NAME
+    CALL CLOSE_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+    CALL CLOSE_OGBFILE USING ERROR_FILE,ERROR_NAME
+    CALL REPORT_STATUS
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+REPORT_STATUS LROUTINE
+./* Send email notifying APPs of process status. Attach error file, if
+. * any.
+. */
+BIG_SCRIPT          CHAR    2000
+EXTRA_SCRIPT        CHAR    100
+EMAIL_BODY          CHAR    1000
+QUOTE               INIT    " #""
+ENDQUOTE            INIT    "#" "
+NEWLINE             INIT    "\n"
+TAB                 INIT    "\t"
+...
+    FILL " " IN BIG_SCRIPT,EXTRA_SCRIPT,EMAIL_BODY
+    IF (ERROR_COUNT)
+        PACK EXTRA_SCRIPT WITH QUOTE,"--attach",ENDQUOTE:
+                               QUOTE,(CHOP ERROR_NAME),ENDQUOTE:
+                               BLANKS
+    ENDIF
+
+    PACK EMAIL_BODY WITH C_PROG,"[",PROCESS_NAME,"] completed with "
+    IF (ERROR_COUNT > 0)
+        PACK EMAIL_BODY WITH EMAIL_BODY,"errors..."
+    ELSE
+        PACK EMAIL_BODY WITH EMAIL_BODY,"no issues!"
+    ENDIF
+    PACK EMAIL_BODY WITH EMAIL_BODY,NEWLINE,NEWLINE:
+                         TAB,X_CNTDESC1,(SQUEEZE (CHAR X_CNT1)),NEWLINE:
+                         TAB,X_CNTDESC2,(SQUEEZE (CHAR X_CNT2)),NEWLINE:
+                         TAB,X_CNTDESC3,(SQUEEZE (CHAR X_CNT3)),NEWLINE:
+                         TAB,X_CNTDESC4,(SQUEEZE (CHAR X_CNT4)),NEWLINE:
+                         TAB,X_CNTDESC5,(SQUEEZE (CHAR X_CNT5)),NEWLINE:
+                         TAB,X_CNTDESC6,(SQUEEZE (CHAR X_CNT6))
+
+... Send Email
+    PACK BIG_SCRIPT WITH "notify.mail ":
+                      QUOTE,C_PROG,ENDQUOTE:
+                      QUOTE,(CHOP MAIL_TO),ENDQUOTE:
+                      QUOTE,"FIXMEMS (",C_PROG,") Report",ENDQUOTE:
+                      QUOTE,"--param",ENDQUOTE:
+                      QUOTE,(CHOP EMAIL_BODY),ENDQUOTE:
+                      (CHOP EXTRA_SCRIPT):
+                      BLANKS
+
+    ROLLOUT BIG_SCRIPT
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Notification email failed","REPORT_STATUS"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+PROCESS_LAGOV_SALARIES LROUTINE
+./* Process the input file, person-by-person. Once all record from a single
+. * person have been gathered, process that person, then come back for more
+. */
+REC         NUM     4
+...
+    debug
+... Read through the file
+    LOOP
+        CALL GET_NEXT_EMPLOYEE
+        BREAK IF (SALARY_COUNT[SRC_LAGOV] = 0)
+        CALL UTIL_XCOUNTER USING X_CNT1,100
+        
+        CLEAR ISERROR
+        CALL VALIDATE_INPUT_FIELDS
+        IF (ISERROR)
+            CALL UTIL_XCOUNTER USING X_CNT3,10
+            CONTINUE
+        ENDIF
+
+        CALL FIND_IMPACT_MEMBER
+
+        IF (ISERROR)
+            CALL UTIL_XCOUNTER USING X_CNT3,10
+            CONTINUE
+        ENDIF
+
+        CALL GATHER_MEMS_RECS
+        CALL FIX_SALARIES
+
+        FOR REC FROM 1 TO UPDATE_COUNT
+            UNPACK UPDATE_RECS[REC] INTO ACTION,MEMS_LIST
+            CALL WRITE_MEMS USING (CHOP ACTION)
+        REPEAT
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+GET_NEXT_EMPLOYEE LROUTINE
+./* Read through input rec for all recs for the next person
+. */
+LAST_SSN            CHAR    9
+SAVE_NEXT_SALARY    CHAR    1000
+REC                 NUM     5
+WORK_SSN            CHAR    9
+...
+    FILL " " IN SALARIES,LAST_SSN,EARLIEST_LAGOV_EFF,UPDATE_RECS
+    CLEAR SALARY_COUNT,SALARIES,UPDATE_COUNT
+
+    IF (SQUEEZE SAVE_NEXT_SALARY)
+        FILL " " IN MEMS_LIST
+        UNPACK SAVE_NEXT_SALARY INTO CURRENT_SSN,MEMS_LIST
+        MOVE CURRENT_SSN TO LAST_SSN
+        CALL PACK_SALARIES USING SRC_LAGOV
+        FILL " " IN SAVE_NEXT_SALARY
+    ENDIF
+
+    LOOP
+        FILL " " IN WORK_SSN
+        CALL READ_OGBFILE USING INPUT_FILE,INPUT_NAME,INPUT_LIST
+        BREAK IF (RESULT != 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT2,100
+        FILL " " IN MEMS_LIST
+        CALL SPLIT_CSV USING 00,WORK_SSN
+        CALL SPLIT_CSV USING 03,MEMS_EFF
+        CALL SPLIT_CSV USING 04,MEMS_TRM
+        CALL SPLIT_CSV USING 05,MEMS_SALR
+
+        IF (NOT SQUEEZE LAST_SSN | SQUEEZE WORK_SSN = SQUEEZE LAST_SSN)
+            PACK CURRENT_SSN WITH WORK_SSN,BLANKS
+            PACK LAST_SSN WITH CURRENT_SSN,BLANKS
+
+            CALL PACK_SALARIES USING SRC_LAGOV
+        ELSE
+
+... Read a new person. Store them for later and get out of here
+            PACK SAVE_NEXT_SALARY WITH WORK_SSN,MEMS_LIST
+            BREAK ...go process this family
+        ENDIF
+    REPEAT
+
+... Grab the earliest eff date (should be first)
+    FOR REC FROM 1 TO SALARY_COUNT[SRC_LAGOV]
+        UNPACK SALARIES[SRC_LAGOV,REC] INTO MEMS_LIST
+        IF (NOT SQUEEZE EARLIEST_LAGOV_EFF | MEMS_EFF < EARLIEST_LAGOV_EFF)
+            PACK EARLIEST_LAGOV_EFF WITH MEMS_EFF,BLANKS
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+SPLIT_CSV LROUTINE POS@,FIELD@
+./*
+. */
+POS@        NUM     @
+FIELD@      CHAR    @
+...
+    CALL DELIMIT_STRING USING INPUT_REC,POS@,FIELD@,COMMA
+    PACK FIELD@ WITH FIELD@,BLANKS
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+VALIDATE_INPUT_FIELDS LROUTINE
+./* Check each field in the salary array. They should already be sorted by
+. * effective date. Also, are dates continuous. Expect to break for gaps
+. * in employment. Those can be fixed manually.
+. */
+LAST_TRM        CHAR    8
+EXPECTED_EFF    CHAR    8
+REC             NUM     4
+NUM7.2          NUM     7.2
+TEMP_SSN        CHAR    9
+...
+    IF (SIZE (SQUEEZE CURRENT_SSN) != 9)
+        debug
+        PACK TEMP_SSN WITH (SQUEEZE CURRENT_SSN),BLANKS
+        LOOP
+            WHILE (SIZE (CHOP TEMP_SSN) < 9)
+            debug
+            PACK TEMP_SSN WITH "0",(CHOP TEMP_SSN),BLANKS
+        REPEAT
+        MOVE TEMP_SSN TO CURRENT_SSN
+        FILL " " IN TEMP_SSN
+    ENDIF
+
+    TYPE CURRENT_SSN
+    IF NOT (EQUAL)
+        debug
+        CALL SET_ISERROR USING "Invalid SSN"
+        RETURN
+    ENDIF
+
+    FILL " " IN LAST_TRM
+    FOR REC FROM 1 TO SALARY_COUNT[SRC_LAGOV]
+        UNPACK SALARIES[SRC_LAGOV,REC] INTO MEMS_LIST
+        IF NOT (SQUEEZE MEMS_SALR)
+            CALL SET_ISERROR USING "Empty Salary Amount"
+            BREAK
+        ENDIF
+        MOVE (SQUEEZE MEMS_SALR) TO NUM7.2
+        IF (EOS)
+            CALL SET_ISERROR USING "Invalid Salary Amount"
+            BREAK
+        ELSE IF (OVER)
+            CALL SET_ISERROR USING "Salary Too Large: Truncated"
+            BREAK
+        ENDIF
+        MOVE NUM7.2 TO MEMS_SALR
+
+        CALL UTIL_VALID_DATE USING MEMS_EFF
+        IF (NOT EQUAL)
+            CALL SET_ISERROR USING "Blank Salary Effective Date"
+            BREAK
+        ELSE IF (OVER)
+            CALL SET_ISERROR USING "Invalid Salary Effective Date"
+            BREAK
+        ENDIF
+        CALL UTIL_VALID_DATE USING MEMS_TRM
+        IF (OVER)
+            CALL SET_ISERROR USING "Invalid Salary Term Date"
+            BREAK
+        ELSE IF (NOT EQUAL)
+            MOVE LAST_DATE TO MEMS_TRM ...used for contiguous date checking
+        ENDIF
+
+        IF (SQUEEZE LAST_TRM)
+            IF (SQUEEZE LAST_TRM = SQUEEZE MEMS_TRM)
+                CALL SET_ISERROR USING "Duplicate term dates"
+                BREAK
+            ELSE
+                FILL " " IN EXPECTED_EFF
+                CALL DATE_CALC USING LAST_TRM,"ADD","DAYS",1,EXPECTED_EFF
+                IF (EXPECTED_EFF != MEMS_EFF)
+                    CALL SET_ISERROR USING "Gap in salary coverage"
+                    BREAK
+                ENDIF
+            ENDIF
+        ENDIF
+
+        MOVE MEMS_TRM TO LAST_TRM
+        PACK SALARIES[SRC_LAGOV,REC] WITH MEMS_LIST,BLANKS
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+PACK_SALARIES LROUTINE SOURCE@
+./* Increment the array from the given source
+. */
+SOURCE@     NUM     @
+...
+    ADD 1 TO SALARY_COUNT[SOURCE@]
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Array Out-of-Index Error: Too Many Salaries":
+                                 "PACK_SALARIES"
+    ENDIF
+
+    PACK SALARIES[SOURCE@,SALARY_COUNT[SOURCE@]] WITH MEMS_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+FIND_IMPACT_MEMBER LROUTINE
+./* Find the Impact record for the CURRENT_SSN, considered to be correct
+. * if REL = "01", and if there are multiple, which of the two has the later
+. * MEME records
+. */
+MEM_COUNT       NUM     4
+MEM_RECS        CHAR    X_MEM_SIZE[3]
+BEST_MEM_REC    NUM     3
+...
+    FILL " " IN MEM_LIST,MEM_AIM,MEM_RECS
+    CLEAR MEM_LIST,MEM_AIM,MEM_COUNT,MEM_RECS,BEST_MEM_REC
+
+    PACK MEM_AIM1 WITH "01X",CURRENT_SSN,BLANKS
+    PACK MEM_AIM3 WITH "03X","01",BLANKS
+    LOOP
+        IF NOT (SQUEEZE MEM_ID1)
+            CALL UTIL_MEM_AIMFIND
+        ELSE
+            CALL UTIL_MEM_AIMNEXT
+        ENDIF
+        BREAK IF NOT (EQUAL)
+        ADD 1 TO MEM_COUNT
+        IF (MEM_COUNT > 999)
+            CALL UTIL_ERRORMSG USING "Array Out-of-Index Error: Too Many MEMs Found":
+                                     "FIND_IMPACT_MEMBER"
+        ENDIF
+        PACK MEM_RECS[MEM_COUNT] WITH MEM_LIST,BLANKS
+    REPEAT
+
+    IF (MEM_COUNT = 0)
+        FILL " " IN MEMS_LIST
+        CALL SET_ISERROR USING "Member Not Found"
+        RETURN
+    ELSE IF (MEM_COUNT > 1)
+        debug
+        CALL FIND_BEST_MEM USING MEM_RECS,MEM_COUNT,BEST_MEM_REC
+        IF (NOT BEST_MEM_REC)
+            debug
+            FILL " " IN MEMS_LIST
+            CALL SET_ISERROR USING "Unable to identify correct Impact record"
+        ENDIF
+    ELSE
+        MOVE 1 TO BEST_MEM_REC
+    ENDIF
+
+    UNPACK MEM_RECS[BEST_MEM_REC] INTO MEM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+FIND_BEST_MEM LROUTINE MEM_RECS@,MEM_COUNT@,BEST_MEM@
+./* If multiple MEM records are returned, we will treat the one with the
+. * most recent enrollment records as our primary person
+. */
+MEM_RECS@           CHAR    @[]
+MEM_COUNT@          NUM     @
+BEST_MEM@           NUM     @
+PERSON              NUM     5
+MOST_RECENT_EFF     CHAR    8
+CURRENT_MOST_RECENT CHAR    8
+...
+    FILL " " IN MOST_RECENT_EFF,CURRENT_MOST_RECENT
+
+    FOR PERSON FROM 1 TO MEM_COUNT@
+        UNPACK MEM_RECS@[PERSON] INTO MEM_LIST
+        FILL " " IN MOST_RECENT_EFF
+        CALL FIND_MOST_RECENT_MEME USING MEM_ID1,MOST_RECENT_EFF
+        CONTINUE IF NOT (SQUEEZE MOST_RECENT_EFF) ...none found
+
+        IF (NOT BEST_MEM@ | MOST_RECENT_EFF > CURRENT_MOST_RECENT)
+            MOVE PERSON TO BEST_MEM@
+            MOVE MOST_RECENT_EFF TO CURRENT_MOST_RECENT
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+FIND_MOST_RECENT_MEME LROUTINE ID1@,MOST_RECENT_EFF@
+./* Return the most recent MEME effective date for this member
+. */
+ID1@            CHAR    @
+MOST_RECENT_EFF@    CHAR    @
+...
+    FILL " " IN MEME_LIST
+    LOOP
+        IF (NOT SQUEEZE MEME_ID2)
+            CALL UTIL_MEME_FIND USING ID1@
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        BREAK IF (NOT EQUAL)
+
+        IF (NOT SQUEEZE MOST_RECENT_EFF@ | MEME_EFF > MOST_RECENT_EFF@)
+            MOVE MEME_EFF TO MOST_RECENT_EFF@
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+GATHER_MEMS_RECS LROUTINE
+./* Load all MEMS recs for the current MEM record. Sort by MEMS_EFF,
+. * ascending
+. */
+UNSORTED_MEMS       CHAR    300[100]
+REC                 NUM     5
+...
+    FILL " " IN MEMS_LIST
+    LOOP
+        IF (NOT SQUEEZE MEMS_ID2)
+            CALL UTIL_MEMS_FIND USING MEM_ID1
+        ELSE
+            CALL UTIL_MEMS_NEXT
+        ENDIF
+        BREAK IF (NOT EQUAL)
+
+        CONTINUE IF (SQUEEZE MEMS_TRM & MEMS_TRM < MEMS_EFF)    ...ignore voided records
+
+        ADD 1 TO SALARY_COUNT[SRC_MEMS]
+        IF (SALARY_COUNT[SRC_MEMS] > 100)
+            CALL UTIL_ERRORMSG USING "Too Many MEMS Records Found","GATHER_MEMS_RECS"
+        ENDIF
+        PACK UNSORTED_MEMS[SALARY_COUNT[SRC_MEMS]] WITH MEMS_LIST,BLANKS
+    REPEAT
+
+... Sort Impact MEMS records by effective date, ascending
+    ASORT  ATYPE="REC":
+           ARRAY=UNSORTED_MEMS:
+           AMAX=SALARY_COUNT[SRC_MEMS]:
+           SRTFLD1="0076-0083":
+           SRTORD1="A"
+
+... Load sorted recs into the work array
+    FOR REC FROM 1 TO SALARY_COUNT[SRC_MEMS]
+        PACK SALARIES[SRC_MEMS,REC] WITH UNSORTED_MEMS[REC],BLANKS
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+FIX_SALARIES LROUTINE
+./* Void all Impact salary records more recent than the earliest sent by
+. * LAGOV, then write the LAGOV rec to the update file
+. */
+REC             NUM     5
+FIX_ME          NUM     5
+EXPECTED_TRM    CHAR    8
+...
+    CLEAR FIX_ME
+    FILL " " IN EXPECTED_TRM
+
+... Delete all Impact recs newer than the earliest sent by LAGOV
+
+    FOR REC FROM 1 TO SALARY_COUNT[SRC_MEMS]
+        UNPACK SALARIES[SRC_MEMS,REC] INTO MEMS_LIST
+        IF (MEMS_EFF < EARLIEST_LAGOV_EFF)
+            MOVE REC TO FIX_ME
+            CONTINUE
+        ENDIF
+.// Uncomment to void // CALL DATE_CALC USING MEMS_EFF,"SUB","DAYS",1,MEMS_TRM
+        CALL STAGE_UPDATE USING "DELETE"
+    REPEAT
+
+... Properly term the immediately preceding Impact salary rec
+    IF (FIX_ME)
+        CALL DATE_CALC USING EARLIEST_LAGOV_EFF,"SUB","DAYS",1,EXPECTED_TRM
+        UNPACK SALARIES[SRC_MEMS,FIX_ME] INTO MEMS_LIST
+        IF (MEMS_TRM != EXPECTED_TRM)
+            PACK MEMS_TRM WITH EXPECTED_TRM,BLANKS
+            CALL STAGE_UPDATE USING "UPDATE"
+        ENDIF
+    ENDIF
+
+... Write new LAGOV salaries
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    FOR REC FROM 1 TO SALARY_COUNT[SRC_LAGOV]
+        UNPACK SALARIES[SRC_LAGOV,REC] INTO MEMS_LIST
+        CALL STAGE_UPDATE USING "NEW"
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+STAGE_UPDATE LROUTINE OPT@
+./* Build the INM rec to update Impact
+. */
+OPT@        CHAR    @
+SAVE_MEMS   CHAR    300
+...
+    FILL " " IN ACTION
+    PACK ACTION WITH OPT@,BLANKS
+    ADD 1 TO UPDATE_COUNT
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Too Many Update Recs","STAGE_UPDATE"
+    ENDIF
+    PACK UPDATE_RECS[UPDATE_COUNT] WITH ACTION,MEMS_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+WRITE_MEMS LROUTINE OPT@
+./* Build the INM rec to update Impact
+. */
+OPT@        CHAR    @
+SAVE_MEMS   CHAR    300
+...
+    PACK SAVE_MEMS WITH MEMS_LIST
+    CALL INIT_INM_NOMEM
+    UNPACK SAVE_MEMS INTO MEMS_LIST
+
+    PACK MEMS_CHGBY WITH PROCESS_NAME
+    FILL " " IN MEMS_CHGDT
+
+    IF (MEMS_TRM = LAST_DATE)
+        FILL "~" IN MEMS_TRM
+    ENDIF
+
+    SWITCH OPT@
+        CASE "NEW"
+            CALL UTIL_XCOUNTER USING X_CNT6,100
+            MOVE "         0" TO MEMS_IVOL
+            PACK MEMS_ID1 WITH MEMS_ID1,BLANKS
+            PACK MEMS_NET WITH "LIFE",BLANKS
+            PACK MEMS_PRD WITH "LIFE",BLANKS
+            PACK MEMS_NEWBY WITH PROCESS_NAME,BLANKS
+            FILL " " IN MEMS_NEWDT
+        CASE "UPDATE"
+            CALL UTIL_XCOUNTER USING X_CNT5,100
+        CASE "DELETE"
+            IF (NOT SQUEEZE MEMS_ID2)
+                CALL UTIL_ERRORMSG USING "Programmer Error: Invalid Delete","WRITE_MEMS"
+            ENDIF
+            PACK MEMS_NEWBY WITH "DELETE",BLANKS
+            CALL UTIL_XCOUNTER USING X_CNT4,100
+        DEFAULT
+            debug
+            CALL UTIL_ERRORMSG USING "Programmer Err: Bad Update Opt","WRITE_MEMS"
+    ENDSWITCH
+
+    CALL PACK_INM
+    CALL WRITE_OGBREC USING UPDATE_FILE,UPDATE_NAME,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+SET_ISERROR LROUTINE ERROR@
+./* Output current SALARY_LIST as an error
+. */
+ERROR@      CHAR    @
+...
+    SET ISERROR
+    ADD 1 TO ERROR_COUNT
+    PACK ERROR_REC WITH (CHAR ERROR_COUNT),COMMA:
+                        CURRENT_SSN,COMMA:
+                        MEMS_EFF,COMMA:
+                        MEMS_TRM,COMMA:
+                        MEMS_SALR,COMMA:
+                        ERROR@,COMMA,BLANKS
+
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING ERROR_FILE,ERROR_NAME,ERROR_WRITE_LIST
+    debug
+
+    RETURN
+    ENDROUTINE
+
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+    INC UTIL_COMMON.SR      ... OGB Compilation of Standard UTIL routines
+    INC UTIL_MEMMEM.SR      ... d_memmem update routines
+    INC UTIL_CLEAN.SR       ... data cleaning routines
+    INC UTIL_VALIDATE.SR    ... common data type validations
+    INC DELIMIT.SR          ... parse delimited field files
+
+./* ==============
+. * End of program
+. * ============== */
