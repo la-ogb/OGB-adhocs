@@ -1,0 +1,409 @@
+./* ========================================================================
+. *          Name : a1805251.ps
+. *   Description : Adhoc fix of TLETs and term letter dates from LAGOV
+. *                 834 issue #1
+. * ...........................CHANGE LOG...................................
+. *  apjwh - 05/25/2018 - DEV - Initial Version
+. * ===================================================================== */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC UTIL_MEMMEM.CB  ... d_memmem update variables
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+... Command line parameter
+PARAM_LIST          LIST WITH NAMES
+PARAM_MODE          CHAR    3   ... "TST" - test // "PRD" - production
+                    LISTEND
+
+INPUT_FILE          FILE    VAR=500,TEXT
+INPUT_NAME          INIT    "/w/a1806141_input.csv"
+INPUT_LIST          LIST
+INPUT_REC           CHAR    500
+                    LISTEND
+
+UPDATE_FILE         FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_NAME         INIT    "a1806141.inm"  ...updated with INM_REC
+
+LOG_FILE            FILE    VAR=300,TEXT
+LOG_NAME            INIT    "/w/a1806141.log.csv"
+LOG_LIST            LIST
+LOG_REC             CHAR    300
+                    LISTEND
+
+... Work fields
+READ_LIST           LIST
+READ_ID1            CHAR    20
+READ_ID2            CHAR    20
+READ_TLET           CHAR    20
+                    LISTEND
+
+PROCESS_NAME        INIT    "FIXTRM"
+MAIL_TO             INIT    "jakob.hendrix@la.gov"
+...MAIL_TO             INIT    "${ITAPPS}"
+
+ERROR_COUNT         NUM     5
+
+./* =============
+. * Begin Program
+. * ============= */
+
+...Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+...Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.###########################################################################
+RUN_NOW LROUTINE
+./* Set runtime variables
+. */
+
+...Store return stack at program start
+    RETCOUNT ORIG_RETURN
+
+... Initialize module ID variables
+    MOVE "A1806141" TO C_PROG
+    MOVE "ADHOC: Fix LAGOV TLET" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+... Signal start of program if run from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get scheduler information
+    CALL SCHED_PICK
+
+... Run core logic
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+... Signal successful completion of job
+    CALL CUSTOM_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+MAIN_PROCESS LROUTINE
+...
+    debug ...start module-specific logic
+    CALL INITIALIZE
+    CALL PROCESS_TERM_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+INITIALIZE LROUTINE
+./* Set up for run
+. */
+...
+    CLOCK TIMESTAMP INTO X_START_TIME
+
+...Draw screen, if necessary
+    CALL X_ZERO_COUNTS
+
+    MOVE "Records Read    : " TO X_CNTDESC1
+    MOVE "Records Updated : " TO X_CNTDESC2
+    MOVE "Errors          : " TO X_CNTDESC3
+    MOVE "" TO X_CNTDESC4
+    MOVE "" TO X_CNTDESC5
+    MOVE "" TO X_CNTDESC6
+
+    IF (NOT C_CMDPAR)
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+... Prep files
+    EXIST INPUT_NAME
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING ("LAGOV TLET fix file not found: "+INPUT_NAME),"INITIALIZE"
+    ENDIF
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL OPEN_OGBFILE USING INPUT_FILE,INPUT_NAME
+    CALL PREP_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+    CALL PREP_OGBFILE USING LOG_FILE,LOG_NAME
+
+... Write error report header rec
+    PACK LOG_REC WITH "Action_Count",COMMA:
+                      "Action_Status",COMMA:
+                      "Impact_ID1",COMMA:
+                      "MEME_ID2",COMMA:
+                      "Expected_TLET",COMMA:
+                      "Error_Description",COMMA,BLANKS
+    CALL WRITE_OGBREC USING LOG_FILE,LOG_NAME,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+CLEAN_UP LROUTINE
+...
+    CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME
+    CALL CLOSE_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+    CALL CLOSE_OGBFILE USING LOG_FILE,LOG_NAME
+    CALL REPORT_STATUS
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+REPORT_STATUS LROUTINE
+./* Send email notifying APPs of process status. Attach error file, if
+. * any.
+. */
+BIG_SCRIPT          CHAR    2000
+EMAIL_BODY          CHAR    1000
+QUOTE               INIT    " #""
+ENDQUOTE            INIT    "#" "
+NEWLINE             INIT    "\n"
+TAB                 INIT    "\t"
+...
+    FILL " " IN BIG_SCRIPT,EMAIL_BODY
+    PACK EMAIL_BODY WITH C_PROG,"[",PROCESS_NAME,"] completed with "
+    IF (ERROR_COUNT > 0)
+        PACK EMAIL_BODY WITH EMAIL_BODY,"errors..."
+    ELSE
+        PACK EMAIL_BODY WITH EMAIL_BODY,"no issues!"
+    ENDIF
+    PACK EMAIL_BODY WITH EMAIL_BODY,NEWLINE,NEWLINE:
+                         TAB,X_CNTDESC1,(SQUEEZE (CHAR X_CNT1)),NEWLINE:
+                         TAB,X_CNTDESC2,(SQUEEZE (CHAR X_CNT2)),NEWLINE:
+                         TAB,X_CNTDESC3,(SQUEEZE (CHAR X_CNT3)),NEWLINE:
+                         TAB,X_CNTDESC4,(SQUEEZE (CHAR X_CNT4)),NEWLINE:
+                         TAB,X_CNTDESC5,(SQUEEZE (CHAR X_CNT5)),NEWLINE:
+                         TAB,X_CNTDESC6,(SQUEEZE (CHAR X_CNT6))
+
+... Send Email
+    debug
+    PACK BIG_SCRIPT WITH "notify.mail ":
+                      QUOTE,C_PROG,ENDQUOTE:
+                      QUOTE,(CHOP MAIL_TO),ENDQUOTE:
+                      QUOTE,"FIXMEMS (",C_PROG,") Report",ENDQUOTE:
+                      QUOTE,"--param",ENDQUOTE:
+                      QUOTE,(CHOP EMAIL_BODY),ENDQUOTE:
+                      QUOTE,"--attach",ENDQUOTE:
+                      QUOTE,(CHOP LOG_NAME),ENDQUOTE:
+                      BLANKS
+    ROLLOUT BIG_SCRIPT
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Notification email failed","REPORT_STATUS"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+PROCESS_TERM_FILE LROUTINE
+./* Update each record in the file provided with the tlet provide
+. */
+NEW_LET_DATE        CHAR    8
+...
+    debug
+    CLOCK TIMESTAMP INTO DATE_CCYYMMDD
+    CALL DATE_CALC USING DATE_CCYYMMDD,"ADD","DAYS",2,NEW_LET_DATE
+
+    LOOP
+        FILL " " IN READ_LIST
+        CALL READ_OGBFILE USING INPUT_FILE,INPUT_NAME,INPUT_LIST
+        BREAK IF (RESULT != 1)
+        CALL UTIL_XCOUNTER USING X_CNT1,100
+
+        debug
+        FILL " " IN READ_LIST
+        CALL SPLIT_CSV USING 00,READ_ID1
+        CALL SPLIT_CSV USING 01,READ_ID2
+        CALL SPLIT_CSV USING 02,READ_TLET
+
+        CALL FORMAT_ID USING READ_ID1,8
+        CONTINUE IF (OVER)
+        CALL FORMAT_ID USING READ_ID2,4
+        CONTINUE IF (OVER)
+
+        CALL TEST_SIZE USING READ_ID1,8
+        CONTINUE IF (OVER)
+        CALL TEST_SIZE USING READ_ID2,4
+        CONTINUE IF (OVER)
+        CALL TEST_SIZE USING READ_TLET,1
+        CONTINUE IF (OVER)
+
+        CALL UTIL_MEM_FIND USING READ_ID1
+        IF (NOT EQUAL)
+            debug ...TODO: Error
+            CALL WRITE_ERROR USING "MEM Rec Not Found"
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_MEME_FIND USING READ_ID1,READ_ID2
+        IF (NOT EQUAL)
+            debug ...TODO: Error
+            CALL WRITE_ERROR USING "MEME Rec Not Found"
+            CONTINUE
+        ENDIF
+
+        PACK MEME_TLET WITH READ_TLET,BLANKS
+        PACK MEME_TRUN WITH NEW_LET_DATE,BLANKS
+
+        CALL WRITE_UPDATE_REC
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+SPLIT_CSV LROUTINE POS@,FIELD@
+./*
+. */
+POS@        NUM     @
+FIELD@      CHAR    @
+...
+    CALL DELIMIT_STRING USING INPUT_REC,POS@,FIELD@,COMMA
+    PACK FIELD@ WITH FIELD@
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+TEST_SIZE LROUTINE FIELD@,SIZE@
+./* Make sure the passed field is the size given
+. */
+FIELD@      CHAR    @
+SIZE@       NUM     @
+...
+    IF (SIZE CHOP FIELD@ != SIZE@)
+        CALL WRITE_ERROR USING ("Field is wrong size [" + FIELD@ + "]")
+        SETFLAG OVER
+    ELSE
+        SETFLAG NOT OVER
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+FORMAT_ID LROUTINE FIELD@,SIZE@
+./* Make sure the field is leading packed with zeros and is all numbers
+. */
+FIELD@      CHAR    @
+SIZE@       NUM     @
+SOMENUM     NUM     5
+THISCHAR    NUM     2
+...
+    MOVE (CHOP FIELD@) INTO FIELD@
+    TYPE FIELD@
+    IF (NOT EQUAL)
+        CALL WRITE_ERROR USING ("Field is not a number [" + FIELD@ + "]")
+        SETFLAG OVER
+        RETURN
+    ENDIF
+
+... Add leading zeros
+    MOVE FIELD@ TO SCRATCH
+    LOOP
+        WHILE (SIZE (CHOP SCRATCH) < SIZE@)
+        PACK SCRATCH WITH "0",(CHOP SCRATCH),BLANKS
+    REPEAT
+    MOVE (CHOP SCRATCH) TO FIELD@
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+WRITE_UPDATE_REC LROUTINE
+./* Build the INM rec to update Impact
+. */
+SAVE_MEME       CHAR    600
+...
+    CALL UTIL_XCOUNTER USING X_CNT2,10
+    PACK SAVE_MEME WITH MEME_LIST
+    CALL INIT_INM_NOMEM
+    UNPACK SAVE_MEME INTO MEME_LIST
+
+    PACK MEME_CHGBY WITH PROCESS_NAME
+    FILL " " IN MEME_CHGDT
+
+    CALL PACK_INM
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING UPDATE_FILE,UPDATE_NAME,INM_LIST
+    CALL WRITE_LOG USING "GOOD","No Issues"
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+WRITE_ERROR LROUTINE ERROR@
+./* Output error
+. */
+ERROR@      CHAR    @
+...
+    ADD 1 TO ERROR_COUNT
+    CALL UTIL_XCOUNTER USING X_CNT3,1
+    CALL WRITE_LOG USING "ERROR",ERROR@
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+WRITE_LOG LROUTINE STATUS@,DESCRIPTION@
+./* Output error
+. */
+STATUS@         CHAR    @
+DESCRIPTION@    CHAR    @
+...
+    PACK LOG_REC WITH (SQUEEZE (CHAR X_CNT1)),COMMA:
+                      STATUS@,COMMA:
+                      READ_ID1,COMMA:
+                      READ_ID2,COMMA:
+                      READ_TLET,COMMA:
+                      DESCRIPTION@,COMMA,BLANKS
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LOG_FILE,LOG_NAME,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+    INC UTIL_COMMON.SR      ... OGB Compilation of Standard UTIL routines
+    INC UTIL_MEMMEM.SR      ... d_memmem update routines
+    INC DELIMIT.SR          ... parse delimited field files
+
+./* ==============
+. * End of program
+. * ============== */
