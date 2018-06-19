@@ -1,5 +1,5 @@
 # adhocs
-A loose collection of adhoc programs designed to fix all manner of one-time issues
+A loose collection of adhoc programs designed to fix all manner of one-time issues. These are typically run from the Impact scheduler with a high priority (a lower number) - 25 is a good default. This will have these jobs run prior to reports, which will hopefully have their fixes be reflected in later programs.
 
 Included DBC programs:
 
