@@ -42,7 +42,8 @@ FSA_RPT_WRITE_LIST  LIST
 FSA_RPT_REC         CHAR    RPT_REC_SIZE
                     LISTEND
 
-FSA_RPT_HEADER      INIT    "MEMF_ID1,":
+FSA_RPT_HEADER      INIT    "MEMBER_ID,":
+                            "MEMF_RECORD_ID"
                             "SSN,":
                             "FSA_TYPE,":
                             "MEMF_EFFECTIVE,":
@@ -50,7 +51,8 @@ FSA_RPT_HEADER      INIT    "MEMF_ID1,":
                             "FSA_AMOUNT,"
 
 FSA_RPT_LIST        LIST WITH NAMES
-FSA_ID1             CHAR    8   ...ID1
+FSA_ID1             CHAR    8   ...Member's ID1
+FSA_ID2             CHAR    4   ...MEMF ID2
 FSA_ESSN            CHAR    9   ...SSN
 FSA_TYPE            CHAR    5   ...general, limited, dependent
 FSA_EFF             CHAR    8   ...date
@@ -131,9 +133,9 @@ INITIALIZE LROUTINE
     MOVE "GPFSA Recs      : " TO X_CNTDESC1
     MOVE "LPFSA Recs      : " TO X_CNTDESC2
     MOVE "DCFSA Recs      : " TO X_CNTDESC3
-    MOVE "Ignored Recs    : " TO X_CNTDESC4
-    MOVE "" TO X_CNTDESC5
-    MOVE "" TO X_CNTDESC6
+    MOVE "Voided Recs     : " TO X_CNTDESC4
+    MOVE "Termed Recs     : " TO X_CNTDESC5
+    MOVE "Other Bad Recs  : " TO X_CNTDESC6
 
     IF (NOT C_CMDPAR)
         CALL X_BLANK_SCREEN
@@ -192,11 +194,7 @@ EXTRACT_FSA LROUTINE
 GENERATE_REPORT LROUTINE
 ./* Parse extract and generate the report
 . */
-FIELD_VALUE     CHAR    100
-FIELD_NAME      CHAR    50
-LAST_FIELD      CHAR    50
-FIELD_COUNT     NUM     3
-FIELD_POINTER   CHAR    @
+MONEY_FIELD     NUM     7.2
 ...
 
     debug ...TODO
@@ -213,16 +211,16 @@ FIELD_POINTER   CHAR    @
             CONTINUE
         ENDIF
 
-...Ignore "termed" records
+...Ignore termed records
         IF (SQUEEZE MEMF_TRM & MEMF_TRM < DATE_CCYYMMDD)
-            CALL UTIL_XCOUNTER USING X_CNT4,100
+            CALL UTIL_XCOUNTER USING X_CNT5,100
             CONTINUE
         ENDIF
 
         IF (MEM_ID1 != MEMF_ID1)
             CALL UTIL_MEM_FIND USING MEMF_ID1
             IF (NOT EQUAL)
-                CALL UTIL_XCOUNTER USING X_CNT4,100
+                CALL UTIL_XCOUNTER USING X_CNT6,100
                 CONTINUE
             ENDIF
         ENDIF
@@ -245,39 +243,28 @@ FIELD_POINTER   CHAR    @
 
             DEFAULT
                 debug
-                CALL UTIL_XCOUNTER USING X_CNT4,100
+                CALL UTIL_XCOUNTER USING X_CNT6,100
                 CONTINUE
         ENDSWITCH
 
-        CALL UTIL_CLEAN_MONEY USING SCRATCH,FSA_AMOUNT
+        MOVE SCRATCH TO MONEY_FIELD
+        MOVE MONEY_FIELD TO FSA_AMOUNT
         PACK FSA_ID1 WITH MEMF_ID1
+        PACK FSA_ID2 WITH MEMF_ID2
         PACK FSA_ESSN WITH MEM_ESSN
         PACK FSA_EFF WITH MEMF_EFF
         PACK FSA_TERM WITH MEMF_TRM
 
-        FILL " " IN FSA_RPT_REC:
-                    FIELD_NAME:
-                    LAST_FIELD
+        FILL " " IN FSA_RPT_REC
+        CLEAR FSA_RPT_REC
 
-        CLEAR FSA_RPT_REC:
-              FIELD_NAME:
-              LAST_FIELD
-
-        debug
-./* Just for fun, I've tried to implement the loadadr-getname pattern of
-. * iterating across a list.  Not actually useful unless the list
-. * has a variable number of fields (command line parameters, for example),
-. * but YOLO, amirite
-. */
-        FOR FIELD_COUNT FROM 1 TO 100
-            LOADADR FIELD_POINTER FROM FIELD_COUNT OF FSA_RPT_LIST
-            GETNAME FIELD_POINTER TO FIELD_NAME
-            BREAK IF (LAST_FIELD = FIELD_NAME | SQUEEZE FIELD_NAME = "")
-            MOVE FIELD_NAME TO LAST_FIELD
-
-            MOVE FIELD_POINTER TO FIELD_VALUE
-            PACK FSA_RPT_REC WITH FSA_RPT_REC,"#"",(CHOP FIELD_VALUE),"#","
-        REPEAT
+        PACK FSA_RPT_REC WITH FSA_ID1,",":
+                              FSA_ID2,",":
+                              FSA_ESSN,",":
+                              FSA_TYPE,",":
+                              FSA_EFF,",":
+                              FSA_TERM,",":
+                              FSA_AMOUNT,","
 
         CALL WRITE_OGBREC USING FSA_RPT_FILE,FSA_RPT_NAME,FSA_RPT_WRITE_LIST
     REPEAT
@@ -294,6 +281,7 @@ CLEANUP LROUTINE
 
     RETURN
     ENDROUTINE
+
 
 ./* ==============================
 . * Subroutines and Other Includes
