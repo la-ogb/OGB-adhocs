@@ -1,5 +1,5 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-+    Program name   :  a1809271 - faster run of NEWMDA runbool
++    Program name   :  a1810011 - faster run of TRMLO2 runbool
 +    Description    :  CLI   - CLI/CLIP edits based off sys talk. Added UI
 +                      changes for better bulk processing
 +    Author         :  apjwh
@@ -21,7 +21,7 @@
 .----------------------------------------------------------------------------
 
 MYCLIP_FILE     FILE    VAR=20,TEXT
-MYCLIP_NAME     INIT    "/w/a1809271_clips.txt"
+MYCLIP_NAME     INIT    "/w/a1810011_clips.txt"
 MYCLIP_LIST     LIST
 MYCLIP_ID1      CHAR    8
 MYCLIP_ID2      CHAR    4
@@ -182,7 +182,6 @@ FORM8         FORM      8
 FORM6.3A      FORM      6.3
 FORM6.3B      FORM      6.3
 FORM6.3C      FORM      6.3
-
               LISTEND
 
 DD1           INT       2
@@ -198,7 +197,6 @@ SEC2          INT       2
 YY1           INT       4
 YY2           INT       4
 
-.
 POP_REC       LIST      @
 POP_KEY       DIM       @
 POP_OLD       DIM       @
@@ -217,16 +215,19 @@ FILES_DIR     DIM     30
 SAVEID2       DIM     4
 
 + ------------------------------------------------------------------------
-+  Begin Program
++  Externals
 + ------------------------------------------------------------------------
 
 RUN_HELP         EXTERNAL
 RUN_CLI_BOOL     EXTERNAL
 RUN_VALID        EXTERNAL
-
 FIND_CLI         EXTERNAL
-C_ADMBIL_VNS_ID1 GDIM      8
 
++ ------------------------------------------------------------------------
++  Begin Program
++ ------------------------------------------------------------------------
+
+C_ADMBIL_VNS_ID1 GDIM      8
 
 START
     CALL RUN_NOW
@@ -234,11 +235,9 @@ START
     INC       SCHED_NP.SR     (w/o printer)
 
 RUN_NOW
-
     MOVE      " " TO PROG_MODE
-    MOVE      "A1809271" TO C_PROG
-    MOVE      "Make Med Adv AE19" TO C_OPER
-
+    MOVE      "A1810011" TO C_PROG
+    MOVE      "End LSU OPT2 for 19" TO C_OPER
 
 ...Set applicable traps
     TRAPSAVE TRAP_DATA
@@ -256,9 +255,9 @@ RUN_NOW
     ENDIF
 
     IF (C_RMODE = "I")
-        CALL      SCHED_PICK
+        CALL SCHED_PICK
     ELSE
-        MOVE      "N" TO RUN_MODE
+        MOVE "N" TO RUN_MODE
     ENDIF
 
 ... If the scheduler says to run it now, do it.
@@ -335,11 +334,12 @@ BUILD_LIST_OF_CLIPS LROUTINE
 ...Build a list of all CLIPs matching our criteria.  This will be faster
 ...than reading each CLIP
     FILL " " IN DATE_CCYYMMDD
+
     PACK SCRATCH WITH "clip.dbf ",MYCLIP_NAME," ":
-                      " -p13-17eqVANTA ":       ...net
-                      " -p18-22eqHMO65 ":       ...prd
-                      " -p27-30eqSTAN ":        ...plan
-                      " -p41-48eq#"",DATE_CCYYMMDD,"#" ":    ...no term
+                      " -p13-17eq'LSUSH' ":       ...net
+                      " -p18-22eq'ASO  ' ":       ...prd
+                      " -p27-30eq'OPT2'  ":        ...plan
+                      " -p41-48eq'",DATE_CCYYMMDD,"' ":    ...no term
                       " 1-8 9-12 -t"    ...ID1 + ID2
     REFORMAT SCRATCH
     IF (OVER)
@@ -353,7 +353,7 @@ BUILD_LIST_OF_CLIPS LROUTINE
 .###########################################################################
 PROCESS_CLIPS ROUTINE
 
-    MOVE "NEWMDA" TO PARAM_TALK
+    MOVE "TRMLO2" TO PARAM_TALK
 
     MOVE OGB_SEQ1 TO OGB_SEQ
     CALL OPEN_OGBFILE USING MYCLIP_FILE,MYCLIP_NAME
