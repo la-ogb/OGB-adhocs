@@ -1,0 +1,297 @@
+./* ========================================================================
+. *          Name : a1809171.ps
+. *   Description : Extract all active FSA records for 2018
+. * ...........................CHANGE LOG...................................
+. *  apjwh - 09/17/2018 - DEV - Initial Version
+. * ===================================================================== */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC MEM.RL          ... Impact demographics layout
+    INC MEMF.RL         ... Impact flexible accounts layout
+
+./* ===================================
+. * Configuration
+. * =================================== */
+
+PROGRAM_NAME        INIT    "a1809171"
+PROGRAM_DESC        INIT    "Extract 18 FSA"
+PROGRAM_NEXT        INIT    "MENU"
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_YEAR          CHAR    4
+                    LISTEND
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+RPT_REC_SIZE        EQU     150
+FSA_RPT_FILE        FILE    VAR=RPT_REC_SIZE,TEXT
+FSA_RPT_NAME        CHAR    100     ...prefix_year_rundate.ext
+FSA_RPT_DIR         INIT    "/w/"
+FSA_RPT_PREFIX      INIT    "memf_fsa_extract"
+FSA_RPT_EXT         INIT    ".csv"
+
+FSA_EXTRACT_FILE    FILE    FIXED=300,TEXT  ...use MEMF.OGB layout
+FSA_EXTRACT_NAME    INIT    "/w/a1809171.memf.rft"
+
+FSA_RPT_WRITE_LIST  LIST
+FSA_RPT_REC         CHAR    RPT_REC_SIZE
+                    LISTEND
+
+FSA_RPT_HEADER      INIT    "MEMBER_ID,":
+                            "MEMF_RECORD_ID"
+                            "SSN,":
+                            "FSA_TYPE,":
+                            "MEMF_EFFECTIVE,":
+                            "MEMF_TERM,":
+                            "FSA_AMOUNT,"
+
+FSA_RPT_LIST        LIST WITH NAMES
+FSA_ID1             CHAR    8   ...Member's ID1
+FSA_ID2             CHAR    4   ...MEMF ID2
+FSA_ESSN            CHAR    9   ...SSN
+FSA_TYPE            CHAR    5   ...general, limited, dependent
+FSA_EFF             CHAR    8   ...date
+FSA_TERM            CHAR    8   ...date
+FSA_AMOUNT          CHAR    10  ...num 7.2 = 10 - monetary
+                    LISTEND
+
+./* =============
+. * Begin Program
+. * ============= */
+
+...Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+...Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.###########################################################################
+RUN_NOW LROUTINE
+./* Set runtime variables
+. */
+
+...Store return stack at program start
+    RETCOUNT ORIG_RETURN
+
+... Initialize module ID variables
+    MOVE PROGRAM_NAME TO C_PROG
+    MOVE PROGRAM_DESC TO C_OPER
+    MOVE PROGRAM_NEXT TO C_NEXT
+    FILL " " IN C_LABEL:
+                C_FILE:
+                C_KEYS
+
+... Signal start of program if run from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get scheduler information
+    CALL SCHED_PICK
+
+... Run core logic
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.###########################################################################
+MAIN_PROCESS LROUTINE
+...
+    debug
+    CALL INITIALIZE
+    CALL GENERATE_REPORT
+    CALL CLEANUP
+    CALL CUSTOM_EOJ  ... Signal successful completion of job
+
+    RETURN
+    ENDROUTINE
+
+.###########################################################################
+INITIALIZE LROUTINE
+./* Create files, setup runtime variables, and draw the initial screen
+. */
+    CLOCK TIMESTAMP INTO X_START_TIME
+    UNPACK X_START_TIME INTO DATE_CCYYMMDD
+
+...Draw screen, if necessary
+    CALL X_ZERO_COUNTS
+
+    MOVE "GPFSA Recs      : " TO X_CNTDESC1
+    MOVE "LPFSA Recs      : " TO X_CNTDESC2
+    MOVE "DCFSA Recs      : " TO X_CNTDESC3
+    MOVE "Voided Recs     : " TO X_CNTDESC4
+    MOVE "Termed Recs     : " TO X_CNTDESC5
+    MOVE "Other Bad Recs  : " TO X_CNTDESC6
+
+    IF (NOT C_CMDPAR)
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    IF NOT (SQUEEZE PARAM_YEAR)
+        UNPACK DATE_CCYYMMDD INTO C_CCYY
+        MOVE C_CCYY TO PARAM_YEAR
+    ENDIF
+
+    CALL EXTRACT_FSA
+
+    CALL OPEN_OGBFILE USING FSA_EXTRACT_FILE,FSA_EXTRACT_NAME
+    PACK FSA_RPT_NAME WITH FSA_RPT_DIR,FSA_RPT_PREFIX:
+                           "_",(SQUEEZE PARAM_YEAR),"_",(SQUEEZE DATE_CCYYMMDD):
+                           FSA_RPT_EXT
+    CALL PREP_OGBFILE USING FSA_RPT_FILE,FSA_RPT_NAME
+
+... Write the CSV header
+    MOVE OGB_SEQ1 TO OGB_SEQ  ...sequential read
+    PACK FSA_RPT_REC WITH FSA_RPT_HEADER
+    CALL WRITE_OGBREC USING FSA_RPT_FILE,FSA_RPT_NAME,FSA_RPT_WRITE_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+EXTRACT_FSA LROUTINE
+./* Gather only FSA records
+. */
+    CALL UTIL_XMESSAGE USING ("Build MEMF Extract for " + PARAM_YEAR),32
+
+    PACK SCRATCH WITH "memf.dbf ",FSA_EXTRACT_NAME:
+                      " -p15-18eq","'",PARAM_YEAR,"' ": ...effective for report year
+                      " -p13-14neFX":   ...ignore FX/flex records
+                      " -t"
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "MEMF extract via reformat failed","EXTRACT_FSA"
+    ENDIF
+
+    PACK SCRATCH WITH FSA_EXTRACT_NAME," ",FSA_EXTRACT_NAME:
+                      " 1-8 -t"  ...by ID1
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort by ID1 failed","EXTRACT_FSA"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+GENERATE_REPORT LROUTINE
+./* Parse extract and generate the report
+. */
+MONEY_FIELD     NUM     7.2
+...
+
+    debug ...TODO
+    CALL UTIL_XMESSAGE USING ("Generating FSA Enrollment Report For " + PARAM_YEAR),32
+
+    MOVE OGB_SEQ1 TO OGB_SEQ  ...sequential read
+    LOOP
+        CALL READ_OGBFILE USING FSA_EXTRACT_FILE,FSA_EXTRACT_NAME,MEMF_LIST
+        BREAK IF (RESULT != 1)
+
+...Ignore "voided" records
+        IF (SQUEEZE MEMF_TRM & MEMF_TRM < MEMF_EFF)
+            CALL UTIL_XCOUNTER USING X_CNT4,100
+            CONTINUE
+        ENDIF
+
+...Ignore termed records
+        IF (SQUEEZE MEMF_TRM & MEMF_TRM < DATE_CCYYMMDD)
+            CALL UTIL_XCOUNTER USING X_CNT5,100
+            CONTINUE
+        ENDIF
+
+        IF (MEM_ID1 != MEMF_ID1)
+            CALL UTIL_MEM_FIND USING MEMF_ID1
+            IF (NOT EQUAL)
+                CALL UTIL_XCOUNTER USING X_CNT6,100
+                CONTINUE
+            ENDIF
+        ENDIF
+
+        SWITCH MEMF_PAYT
+            CASE "FS"   ...general purpose
+                PACK SCRATCH WITH MEMF_MED
+                PACK FSA_TYPE WITH "GPFSA"
+                CALL UTIL_XCOUNTER USING X_CNT1,100
+
+            CASE "FL"   ...limited purpose
+                PACK SCRATCH WITH MEMF_MED
+                PACK FSA_TYPE WITH "LPFSA"
+                CALL UTIL_XCOUNTER USING X_CNT2,100
+
+            CASE "FD"   ...dependent care
+                PACK SCRATCH WITH MEMF_DEP
+                PACK FSA_TYPE WITH "DPFSA"
+                CALL UTIL_XCOUNTER USING X_CNT3,100
+
+            DEFAULT
+                debug
+                CALL UTIL_XCOUNTER USING X_CNT6,100
+                CONTINUE
+        ENDSWITCH
+
+        MOVE SCRATCH TO MONEY_FIELD
+        MOVE MONEY_FIELD TO FSA_AMOUNT
+        PACK FSA_ID1 WITH MEMF_ID1
+        PACK FSA_ID2 WITH MEMF_ID2
+        PACK FSA_ESSN WITH MEM_ESSN
+        PACK FSA_EFF WITH MEMF_EFF
+        PACK FSA_TERM WITH MEMF_TRM
+
+        FILL " " IN FSA_RPT_REC
+        CLEAR FSA_RPT_REC
+
+        PACK FSA_RPT_REC WITH FSA_ID1,",":
+                              FSA_ID2,",":
+                              FSA_ESSN,",":
+                              FSA_TYPE,",":
+                              FSA_EFF,",":
+                              FSA_TERM,",":
+                              FSA_AMOUNT,","
+
+        CALL WRITE_OGBREC USING FSA_RPT_FILE,FSA_RPT_NAME,FSA_RPT_WRITE_LIST
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+CLEANUP LROUTINE
+./* Delete work files and export the report
+. */
+    debug ...TODO
+
+    RETURN
+    ENDROUTINE
+
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+    INC UTIL_COMMON.SR  ...OGB Compilation of Standard UTIL routines
+    INC UTIL_CLEAN.SR   ...Common data cleaning routines
+    INC UTIL_MEM.SR     ...Common MEM read routines
+
+./* ==============
+. * End of program
+. * ============== */

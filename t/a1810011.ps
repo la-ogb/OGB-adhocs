@@ -1,0 +1,470 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1810011 - faster run of TRMLO2 runbool
++    Description    :  CLI   - CLI/CLIP edits based off sys talk. Added UI
++                      changes for better bulk processing
++    Author         :  apjwh
++    Date created   :  09/27/2018
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+              INC       UTIL_COMMON.CB  ...OGB common includes
+              INC       CLI.RL
+              INC       CLIP.RL
+              INC       VALID.RL
+              INC       XML.CB
+              INC       WEB_SERV.CB        ...Common work area
+              INC       GDO_STOR.CB
+              INC       WEB_UTIL.CB
+              INC       VNS.CB
+.
+.----------------------------------------------------------------------------
+.          Constants and data definition work areas
+.          Add any data areas/constants unique to this program here.
+.----------------------------------------------------------------------------
+
+MYCLIP_FILE     FILE    VAR=20,TEXT
+MYCLIP_NAME     INIT    "/w/a1810011_clips.txt"
+MYCLIP_LIST     LIST
+MYCLIP_ID1      CHAR    8
+MYCLIP_ID2      CHAR    4
+                LISTEND
+
+CAL_CLOCK     DIM       21
+CURRDATE      DIM       8
+DIM20         DIM       20
+DIM2          DIM       2
+DIM2A         DIM       2
+DIM2B         DIM       2
+DIM3          DIM       3
+DIM4          DIM       4
+DIM5          DIM       5
+DIM7          DIM       7
+DIM8          DIM       8
+DIM8B         DIM       8
+DIM10         DIM      10
+DIM6          DIM       6
+DIM6A         DIM       6
+DIM6B         DIM       6
+DIM46         DIM       46
+FIND_ACT      DIM       10
+
+
+TST_MEM       DIM       8
+TST_CLI       DIM       8
+TST_INVDT     DIM       8
+
+DO_AIM          NUM     1
+
+HOW_SEARCH    DIM       10
+TIME          DIM       16
+TYPE          DIM       1
+MSG1@         DIM       @
+MSG2@         DIM       @
+UPDATE_SW     DIM       1
+GET_ADJUST    DIM       1
+CURRENT_CLI   DIM       8
+CURRENT_LEV1  DIM       5
+CURRENT_LEV2  DIM       5
+CURRENT_LEV3  DIM       5
+CURRENT_LEV4  DIM       5
+CURRENT_LEV5  DIM       5
+
+CURRENT_MEM   DIM       8
+SAVE_MEMID1   DIM       8
+WORKAIM       DIM       300
+ADDCHGTRM     DIM       1
+CREDIT_DT     DIM       8
+FOUND_CLIP    DIM       1
+CLILEV        FORM      1
+CLILEV_WHICH  DIM       1
+CLILEV_COUNT  FORM      1
+FIRST_AFT     DIM       1
+FIRST_BUCKS   FORM      7.2
+FIRST_EMPOR   FORM      7.2
+SAVE_PSTPMT   FORM      7.2
+SAVE_EEPOR    FORM      7.2
+SAVE_EMPOR    FORM      7.2
+SAVE_STAT     DIM       4
+
+PARAM_LIST    LIST
+PARAM_TYPE    DIM       1
+PARAM_CLI     DIM       8
+PARAM_CC1     DIM       5
+PARAM_CC2     DIM       5
+PARAM_CC3     DIM       5
+PARAM_CC4     DIM       5
+PARAM_CC5     DIM       5
+PARAM_TALK    DIM       6
+PARAM_MODE    DIM       8
+              LISTEND
+
+
+SAV_NET       DIM    5
+SAV_PRD       DIM    5
+SAV_CARR      DIM    4
+SAV_PLAN      DIM    4
+SAV_WHO       DIM    4
+
+WK_ID1        DIM       8
+WK_ID2        DIM       4
+TESTDATE      DIM       8
+COVGFRST      DIM       8
+COVGFROM      DIM       8
+COVGTHRU      DIM       8
+DELETED_ID    DIM       8
+CALCFROM      DIM       8
+CALCTHRU      DIM       8
+AFTREN_DT     DIM       8
+FIRST_READ    DIM       1
+AIM_SW        DIM       1
+
+
+COUNTER_LIST  LIST
+CNT_CLI       FORM      7
+CNT_READ_CLIP FORM      7
+CNT_DONECLIP  FORM      7
+              LISTEND
+
+ENDL          FORM      2
+HOURS         FORM      7
+MINUTES       FORM      7
+NO_AR         FORM      1
+POPE_SW       FORM      1
+REMAIN        FORM      7
+SECONDS       FORM      7
+SEQ           FORM      "-1"
+SEQ4          FORM      "-4"
+SEQ3          FORM      "-3"
+TEST          FORM      1
+RETAIN_BIL    FORM      1
+VNDCHK        FORM      1
+OGB_OPTL      FORM      1
+
+BOOL_RESO     FORM      1
+FROM_MENU      FORM     "0"
+
+
+
+FORM_LIST     LIST
+FORM3.2       FORM      3.2
+FORM7.2       FORM      7.2
+FORM7.2A      FORM      7.2
+FORM7.2B      FORM      7.2
+FORM7.2C      FORM      7.2
+FORM7.2D      FORM      7.2
+FORM7.2E      FORM      7.2
+FORM7.2F      FORM      7.2
+FORM7.5A      FORM      7.5
+FORM7.5B      FORM      7.5
+FORM7.5C      FORM      7.5
+FORM8.2A      FORM      8.2
+FORM8.2B      FORM      8.2
+FORM8.2C      FORM      8.2
+FORM7.4A      FORM      7.4
+FORM7.4B      FORM      7.4
+FORM7.4C      FORM      7.4
+FORM7.4D      FORM      7.4
+FORM7.4E      FORM      7.4
+FORM9.2       FORM      9.2
+FORM10        FORM     10
+FORM10A       FORM     10
+FORM10B       FORM     10
+FORM4         FORM      4
+FORM3         FORM      3
+FORM3A        FORM      3
+FORM3B        FORM      3
+FORM2         FORM      2
+FORM2A        FORM      2
+FORM2B        FORM      2
+FORM11.2A     FORM      11.2
+FORM11.2B     FORM      11.2
+FORM11.2C     FORM      11.2
+FORM7         FORM      7
+FORM8         FORM      8
+FORM6.3A      FORM      6.3
+FORM6.3B      FORM      6.3
+FORM6.3C      FORM      6.3
+              LISTEND
+
+DD1           INT       2
+DD2           INT       2
+HR1           INT       2
+HR2           INT       2
+MIN1          INT       2
+MIN2          INT       2
+MM1           INT       2
+MM2           INT       2
+SEC1          INT       2
+SEC2          INT       2
+YY1           INT       4
+YY2           INT       4
+
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+SHOW_VERR     FORM     1
+
+PROG_MODE     INIT     " "
+VALID_DONE    FORM    "0"
+COPYNAME      DIM     20
+FILES_DIR     DIM     30
+SAVEID2       DIM     4
+
++ ------------------------------------------------------------------------
++  Externals
++ ------------------------------------------------------------------------
+
+RUN_HELP         EXTERNAL
+RUN_CLI_BOOL     EXTERNAL
+RUN_VALID        EXTERNAL
+FIND_CLI         EXTERNAL
+
++ ------------------------------------------------------------------------
++  Begin Program
++ ------------------------------------------------------------------------
+
+C_ADMBIL_VNS_ID1 GDIM      8
+
+START
+    CALL RUN_NOW
+    CHAIN C_NEXT
+    INC       SCHED_NP.SR     (w/o printer)
+
+RUN_NOW
+    MOVE      " " TO PROG_MODE
+    MOVE      "A1810011" TO C_PROG
+    MOVE      "End LSU OPT2 for 19" TO C_OPER
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+    CLOCK     CALENDAR    TO  CAL_CLOCK
+    CLOCK     TIMESTAMP   TO  CURRDATE
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+    IF (C_RMODE = "I")
+        CALL SCHED_PICK
+    ELSE
+        MOVE "N" TO RUN_MODE
+    ENDIF
+
+... If the scheduler says to run it now, do it.
+    IF (RUN_MODE = "N" | RUN_MODE = "B")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    CALL NORMAL_EOJ
+
+    RETURN
+
+.###########################################################################
+MAIN_PROCESS
+    CALL INITIALIZE
+    CALL BUILD_LIST_OF_CLIPS
+    CALL PROCESS_CLIPS
+    RETURN
+
+
+.###########################################################################
+INITIALIZE LROUTINE
+    CLOCK TIMESTAMP INTO X_START_TIME
+
+...Draw screen, if necessary
+    CALL X_ZERO_COUNTS
+
+    MOVE "CLIPs processed : " TO X_CNTDESC1
+    MOVE "Bool Success    : " TO X_CNTDESC2
+    MOVE "" TO X_CNTDESC3
+    MOVE "" TO X_CNTDESC4
+    MOVE "" TO X_CNTDESC5
+    MOVE "" TO X_CNTDESC6
+
+    IF (NOT C_CMDPAR)
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL SET_OPTIONS     ...READ VALID 101
+
+    RETURN
+    ENDROUTINE
+
+.###########################################################################
+GET_CLI LROUTINE ID@
+...
+ID@     CHAR       @
+
+    PACK CLI_FK11 WITH ID@
+    CALL FILE_READ USING CLI_FD:    ...File declaration list
+                            CLI_FN:          ...File name list
+                            CLI_FC:          ...(I)ndex or (A)imdex
+                            CLI_FV:          ...File key varlists
+                            CLI_FK:          ...File key sizes
+                            CLI_LIST:        ...File record (field list)
+                            CLI_REC:         ...File record (packed)
+                            CLI_OLD:         ...File saved when read
+                            CLI_QTY:         ...Number of files
+                            1                ...File number for this read
+    IF (RESULT <> 1)
+        SETFLAG OVER
+    ELSE
+        SETFLAG NOT OVER
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+BUILD_LIST_OF_CLIPS LROUTINE
+    debug ...how to loop through all recs
+
+...Build a list of all CLIPs matching our criteria.  This will be faster
+...than reading each CLIP
+    FILL " " IN DATE_CCYYMMDD
+
+    PACK SCRATCH WITH "clip.dbf ",MYCLIP_NAME," ":
+                      " -p13-17eq'LSUSH' ":       ...net
+                      " -p18-22eq'ASO  ' ":       ...prd
+                      " -p27-30eq'OPT2'  ":        ...plan
+                      " -p41-48eq'",DATE_CCYYMMDD,"' ":    ...no term
+                      " 1-8 9-12 -t"    ...ID1 + ID2
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Reformat failed", "BUILD_LIST_OF_CLIPS"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+PROCESS_CLIPS ROUTINE
+
+    MOVE "TRMLO2" TO PARAM_TALK
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL OPEN_OGBFILE USING MYCLIP_FILE,MYCLIP_NAME
+
+    LOOP
+        CALL READ_OGBFILE USING MYCLIP_FILE,MYCLIP_NAME,MYCLIP_LIST
+        BREAK IF (RESULT != 1)
+
+        debug ...next CLIP
+
+        CALL UTIL_XCOUNTER USING X_CNT1,10  ...count CLIPs process
+
+...Get CLIP record
+        LOADMOD "runbool"
+        PACK CLIP_FK11 WITH MYCLIP_ID1,MYCLIP_ID2,BLANKS
+        CALL FILE_READ USING CLIP_FD:    ...File declaration list
+                             CLIP_FN:    ...File name list
+                             CLIP_FC:    ...(I)ndex or (A)imdex
+                             CLIP_FV:    ...File key varlists
+                             CLIP_FK:    ...File key sizes
+                             CLIP_LIST:  ...File record (field list)
+                             CLIP_REC:   ...File record (packed)
+                             CLIP_OLD:   ...File saved when read
+                             CLIP_QTY:   ...Number of files
+                             1          ...File number for this read
+
+... Get Client record
+        CALL GET_CLI USING CLIP_ID1
+        CONTINUE IF OVER ...CLIENT not found...shouldn't happen
+        MOVE CLIP_ID2 TO SAVEID2
+
+... Do our SYS-TALK for just this guy
+        CALL RUN_CLI_BOOL USING CLI_REC,CLIP_REC,PARAM_TALK,BOOL_RESO
+
+... Clear bool variables
+        UNLOAD "runbool"
+        LOADMOD "runbool"
+
+        UNPACK CLI_REC TO CLI_LIST
+        UNPACK CLIP_REC TO CLIP_LIST
+
+./* Results
+. *     1 -
+. *     3 - invalid
+. *     6 - NO WRITE hit
+. */
+        SWITCH BOOL_RESO
+            CASE 3
+                CALL UTIL_ERRORMSG USING ("Invalid BOOL command in CLIB-" + PARAM_TALK),"PROCESS_CLIPS"
+            CASE 1
+               debug
+               CALL UTIL_XCOUNTER USING X_CNT2,1 ...successful run
+            DEFAULT
+        ENDSWITCH
+    REPEAT
+    UNLOAD "runbool"
+
+    RETURN
+    ENDROUTINE
+
+... // =====================================================================
+
+.Read all 101 valid codes that control the billing system
+SET_OPTIONS LROUTINE
+         RETURN IF (VALID_DONE)
+         SET VALID_DONE
+
+.Get directory paths from 101
+         PACK VAL_KEY1 WITH "101FILES",BLANKS
+         CALL VAL_READ1
+         IF (RESULT = 1)
+             PACK FILES_DIR WITH (SQUEEZE VAL_DESC),C_SLASH
+         ENDIF
+
+. add more val 101 tests here
+         RETURN
+         ENDROUTINE
+
+
+
+.-------------------------------------------------------------------------------------
+WEB_INIT ROUTINE WEB@REC
+WEB@REC  DIM      @
+
+         CALL WEB_INIT_ALL
+
+         MOVE      "admbil"         TO  APPCODE
+
+         SETFLAG NOT OVER
+         RETURN
+         ENDROUTINE
+
+.-------------------------------------------------------------------------------------
+WEB_RUN_START     ROUTINE
+         SET IS_WEB_CALL
+         CALL START
+         RETURN
+         ENDROUTINE
+.-------------------------------------------------------------------------------------
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+         INC       UTIL_COMMON.SR  ...OGB common routines
+         INC       POP.IO
+         INC       VALID.IO
+         INC       FILETOOL.SR
+         INC       XML.IO
+         INC       WRITEXML.IO
+         INC       WEB_SERV.SR
+         INC       GDO_STOR.SR
+         INC       WEB_UTIL.SR
+         INC       VNS.SR
+.
