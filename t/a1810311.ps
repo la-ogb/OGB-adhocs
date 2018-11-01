@@ -39,7 +39,7 @@ BAR             INIT    "|"
 .# Debugging Configuration
 .# =================================================================== #
 
-ENABLE_TEST     NUM     "1"
+ENABLE_TEST     NUM     "0"
 TEST_OPT_LIST   LIST
 TEST_NOWRITE    NUM     "1"
                 LISTEND
@@ -55,7 +55,7 @@ WORK_ID1        CHAR    8
                 LISTEND
 
 TEST_FILE       FILE    VAR=80,TEXT
-TEST_NAME       INIT    "/w/a.test.txt"
+TEST_NAME       INIT    "/w/a1810311.log"
 TEST_LIST       VARLIST MEMU_ID1,BAR,MEMU_ID2,BAR,MEMU_EFF,BAR,MEMU_TRM,BAR,MEMU_NEWDT,BAR
 
 TEMP_NAME       INIT    "/w/a1810311.temp"
@@ -169,6 +169,7 @@ SETUP_IO LROUTINE
 
     MOVE OGB_SEQ1 TO OGB_SEQ
     CALL OPEN_OGBFILE USING WORK_FILE,WORK_NAME
+    CALL PREP_OGBFILE USING TEST_FILE,TEST_NAME ...log of work
 
     RETURN
     ENDROUTINE
@@ -377,8 +378,7 @@ UPDATE_MEMUS LROUTINE
 THIS_MEMU       NUM     4
 THIS_REC        NUM     4
 ...
-    CALL PREP_OGBFILE USING TEST_FILE,TEST_NAME
-
+    MOVE OGB_SEQ1 TO OGB_SEQ
     FOR THIS_REC FROM 1 TO MEMU_COUNT
         IF (DO_UPDATE[THIS_REC])
             CALL UTIL_XCOUNTER USING X_CNT4,1
@@ -395,20 +395,19 @@ THIS_REC        NUM     4
         PACK MEMU_CHGBY WITH PROG_ID
         PACK MEMU_CHGDT WITH CURRDATE
 
-        IF (TEST_NOWRITE)
-            CALL WRITE_OGBREC USING TEST_FILE,TEST_NAME,TEST_LIST
-        ELSE
-            CALL FILE_WRITE USING MEMU_FD:      ...File declaration list
-                                  MEMU_FN:      ...File name list
-                                  MEMU_FC:      ...(I)ndex or (A)imdex
-                                  MEMU_FV:      ...File key varlists
-                                  MEMU_FK:      ...File key sizes
-                                  MEMU_LIST:    ...File record (field list)
-                                  MEMU_REC:     ...File record (packed)
-                                  MEMU_OLD:     ...File saved when read
-                                  MEMU_QTY:     ...Number of files
-                                  1             ...File number for this read
-        ENDIF
+        CALL WRITE_OGBREC USING TEST_FILE,TEST_NAME,TEST_LIST
+
+        CONTINUE IF (TEST_NOWRITE)
+        CALL FILE_WRITE USING MEMU_FD:      ...File declaration list
+                              MEMU_FN:      ...File name list
+                              MEMU_FC:      ...(I)ndex or (A)imdex
+                              MEMU_FV:      ...File key varlists
+                              MEMU_FK:      ...File key sizes
+                              MEMU_LIST:    ...File record (field list)
+                              MEMU_REC:     ...File record (packed)
+                              MEMU_OLD:     ...File saved when read
+                              MEMU_QTY:     ...Number of files
+                              1             ...File number for this read
     REPEAT
 
     RETURN
