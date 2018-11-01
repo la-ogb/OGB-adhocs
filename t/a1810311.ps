@@ -1,0 +1,441 @@
+./* ====================================================================
+. *   Program Name : a1810311.ps
+. *   Description : Update MEMU records with a default effective date
+. *     making sure members with multiple MEMU records are not left
+. *     overlapping
+. *
+. *   Git Repo: https://git.la.gov/OGB/OGB-adhocs
+. * ...........................Revisions................................
+. * apjwh - 10/31/2018 - DEV - Initial Version
+. * ....................................................................
+. */
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC VALID.RL        ... Valid codes
+    INC MEMU.RL         ... Alternative Address File
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST      LIST WITH NAMES
+PARAM_ISTEST    CHAR    1   ...Enable test mode
+                LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+FLAG            EQU     1
+DATE            EQU     8
+MSG_HEIGHT      EQU     25
+BAR             INIT    "|"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST     NUM     "1"
+TEST_OPT_LIST   LIST
+TEST_NOWRITE    NUM     "1"
+                LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FILE       FILE    VAR=8,TEXT
+WORK_NAME       INIT    "/w/a1810311_fixmemu.temp.txt"
+WORK_LIST       LIST
+WORK_ID1        CHAR    8
+                LISTEND
+
+TEST_FILE       FILE    VAR=80,TEXT
+TEST_NAME       INIT    "/w/a.test.txt"
+TEST_LIST       VARLIST MEMU_ID1,BAR,MEMU_ID2,BAR,MEMU_EFF,BAR,MEMU_TRM,BAR,MEMU_NEWDT,BAR
+
+TEMP_NAME       INIT    "/w/a1810311.temp"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE        CHAR    DATE
+PROG_ID         INIT    "FIXMEMU"
+
+MEMU_BACKUP     CHAR    X_MEMU_SIZE
+MEMU_MAX        EQU     999
+MEMU_RECS       CHAR    X_MEMU_SIZE[MEMU_MAX]
+MEMU_COUNT      NUM     4
+INFINITY        INIT    "99999999"
+
+DO_UPDATE       NUM     1[MEMU_MAX]
+
+.// --------------------------------------------------------------------
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+
+...Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+...Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.//    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
+./* Set program specific variables and establish the next chain link
+.   if applicable. Then run the program's main logic. */
+...
+    IF NOT (ENABLE_TEST)
+        CLEAR TEST_OPT_LIST
+    ENDIF
+
+... Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A1810311" TO C_PROG        ...Program name
+    MOVE "Fix MEMU Dates" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+...Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+...Init the counters
+    CALL X_ZERO_COUNTS
+    IF NOT (C_CMDPAR)
+        MOVE "MEMs with MEMUs  " TO X_CNTDESC1
+        MOVE "MEMUs Read       " TO X_CNTDESC2
+        MOVE "Good MEMUs       " TO X_CNTDESC3
+        MOVE "Fixed MEMUs      " TO X_CNTDESC4
+        MOVE "Voided MEMUs     " TO X_CNTDESC5
+        MOVE "Not Used         " TO X_CNTDESC6
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+./* Do all of the work
+. */
+    debug ...start of process
+    CALL SETUP_IO
+    CALL PROCESS_MEMU_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SETUP_IO LROUTINE
+./* Open and prep all files
+. */
+    CALL BUILD_MEMU_FILE
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL OPEN_OGBFILE USING WORK_FILE,WORK_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_MEMU_FILE LROUTINE
+./* Gather all MEMU records, and sort by ID1
+. */
+    CALL UTIL_MESSAGE USING "Building MEMU Work File...",MSG_HEIGHT
+
+...Get a reformat of the MEMU with just ID1
+    PACK SCRATCH WITH "memu.dbf ",TEMP_NAME:
+                      " 1-8":   ...return only the ID1
+                      " -t"
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Reformat of memu file failed", "BUILD_MEMU_FILE"
+    ENDIF
+
+...Do a sort of unique ID1
+    PACK SCRATCH WITH TEMP_NAME," ",WORK_NAME:
+                      " 1-8 ":
+                      " -u -t"
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort of memu work file failed", "BUILD_MEMU_FILE"
+    ENDIF
+
+    ERASE TEMP_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_MEMU_FILE LROUTINE
+./* For each member, write EFF and TRM dates to the MEMU
+. */
+    CALL UTIL_MESSAGE USING "Updating MEMU dates...",MSG_HEIGHT
+    IF NOT (C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    debug ...TODO
+    LOADMOD "ASORT"
+
+    LOOP
+        CALL READ_OGBFILE USING WORK_FILE,WORK_NAME,WORK_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,1   ...MEMs processed
+
+        CLEAR MEMU_RECS:
+              MEMU_COUNT:
+              DO_UPDATE
+
+        CALL GATHER_MEMUS
+        SWITCH MEMU_COUNT
+            CASE 0
+                debug   ...shouldn't be possible
+                CONTINUE
+            CASE 1      ...got a person with just 1
+            DEFAULT
+                ASORT ATYPE="REC":
+                      ARRAY=MEMU_RECS:
+                      AMAX=MEMU_COUNT:
+                      SRTFLD1="1156-1163",SRTORD1="D":  ...MEMU_EFF, descending
+                      SRTFLD2="1645-1652",SRTORD2="D"   ...MEMU_NEWDT, descending
+                debug   ...got a person with more than 1
+        ENDSWITCH
+
+        CALL ARRANGE_MEMU_DATES
+        CALL UPDATE_MEMUS
+    REPEAT
+
+    UNLOAD "ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GATHER_MEMUS LROUTINE
+./* Build the array of MEMU records
+. */
+FIRST_MEMU      NUM     FLAG
+...
+    SET FIRST_MEMU
+    LOOP
+        IF (FIRST_MEMU)
+            CLEAR FIRST_MEMU
+            CALL UTIL_FIND_MEMU USING "FIRST",WORK_ID1
+        ELSE
+            CALL UTIL_NEXT_MEMU
+        ENDIF
+        WHILE (EQUAL)
+
+        ADD 1 TO MEMU_COUNT
+        IF (SQUEEZE MEMU_EFF = "")
+            PACK MEMU_EFF WITH MEMU_NEWDT,BLANKS
+            SET DO_UPDATE[MEMU_COUNT]
+        ENDIF
+
+        IF (SQUEEZE MEMU_TRM = "")
+            PACK MEMU_TRM WITH INFINITY
+        ELSE IF (MEMU_TRM < MEMU_EFF)   ...skip voided MEMUs
+            SUB 1 FROM MEMU_COUNT
+            CONTINUE
+        ENDIF
+
+        PACK MEMU_RECS[MEMU_COUNT] WITH MEMU_LIST
+
+        CALL UTIL_XCOUNTER USING X_CNT2,1
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ARRANGE_MEMU_DATES LROUTINE
+./* Get the eff and term dates sorted out
+. */
+NEXT_REC        NUM     4
+THIS_REC        NUM     4
+NEXT_EFF        CHAR    DATE
+NEXT_TRM        CHAR    DATE
+LAST_EFF        CHAR    DATE
+LAST_TRM        CHAR    DATE
+...
+    RETURN IF (MEMU_COUNT < 2)
+
+    debug ...TODO
+
+    FOR THIS_REC FROM 1 TO MEMU_COUNT
+        CLEAR NEXT_EFF:
+              NEXT_TRM
+        UNPACK MEMU_RECS[THIS_REC] INTO MEMU_LIST
+        PACK LAST_EFF WITH MEMU_EFF,BLANKS
+        PACK LAST_TRM WITH MEMU_TRM,BLANKS
+
+        MOVE (THIS_REC + 1) TO NEXT_REC
+        IF (NEXT_REC > MEMU_MAX)
+            debug ...hard error
+        ENDIF
+        BREAK IF (SQUEEZE MEMU_RECS[NEXT_REC] = "")
+
+        UNPACK MEMU_RECS[NEXT_REC] INTO MEMU_LIST
+        PACK NEXT_EFF WITH MEMU_EFF,BLANKS
+        PACK NEXT_TRM WITH MEMU_TRM,BLANKS
+
+...All good
+        IF (NEXT_TRM < LAST_EFF)
+            PACK LAST_EFF WITH NEXT_EFF,BLANKS
+            PACK LAST_TRM WITH NEXT_TRM,BLANKS
+
+...Totally overlapping recs.  Void the older one.
+        ELSE IF (NEXT_EFF = LAST_EFF)
+            CALL EDIT_MEMU USING "VOID",NEXT_REC
+        ELSE
+            CALL EDIT_MEMU USING "TERM",NEXT_REC,LAST_EFF
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EDIT_MEMU LROUTINE OPT@,REC@,DATE@
+./* Fix the dates of the given MEMU
+. */
+OPT@            CHAR    @
+REC@            NUM     @
+DATE@           CHAR    @
+...
+    SET DO_UPDATE[REC@]
+    PACK MEMU_BACKUP WITH MEMU_LIST
+    UNPACK MEMU_RECS[REC@] INTO MEMU_LIST
+
+    SWITCH OPT@
+        CASE "VOID"
+            CALL UTIL_XCOUNTER USING X_CNT5,1
+            CALL DATE_CALC USING MEMU_EFF,"SUB","DAYS",1,DATE_CCYYMMDD
+            PACK MEMU_TRM WITH DATE_CCYYMMDD,BLANKS
+        CASE "TERM"
+            debug
+            CALL DATE_CALC USING DATE@,"SUB","DAYS",1,DATE_CCYYMMDD
+            PACK MEMU_TRM WITH DATE_CCYYMMDD,BLANKS
+        DEFAULT
+            debug
+            CALL UTIL_ERRORMSG USING "Invalid Edit Option","EDIT_MEMU"
+    ENDSWITCH
+
+    PACK MEMU_RECS[REC@] WITH MEMU_LIST
+    UNPACK MEMU_BACKUP INTO MEMU_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_MEMUS LROUTINE
+./* If a MEMU needs to be updated, go do it
+. */
+THIS_MEMU       NUM     4
+THIS_REC        NUM     4
+...
+    CALL PREP_OGBFILE USING TEST_FILE,TEST_NAME
+
+    FOR THIS_REC FROM 1 TO MEMU_COUNT
+        IF (DO_UPDATE[THIS_REC])
+            CALL UTIL_XCOUNTER USING X_CNT4,1
+        ELSE
+            CALL UTIL_XCOUNTER USING X_CNT3,1
+            CONTINUE
+        ENDIF
+
+        UNPACK MEMU_RECS[THIS_REC] INTO MEMU_LIST
+        IF (MEMU_TRM = INFINITY)
+            FILL " " IN MEMU_TRM
+        ENDIF
+
+        PACK MEMU_CHGBY WITH PROG_ID
+        PACK MEMU_CHGDT WITH CURRDATE
+
+        IF (TEST_NOWRITE)
+            CALL WRITE_OGBREC USING TEST_FILE,TEST_NAME,TEST_LIST
+        ELSE
+            CALL FILE_WRITE USING MEMU_FD:      ...File declaration list
+                                  MEMU_FN:      ...File name list
+                                  MEMU_FC:      ...(I)ndex or (A)imdex
+                                  MEMU_FV:      ...File key varlists
+                                  MEMU_FK:      ...File key sizes
+                                  MEMU_LIST:    ...File record (field list)
+                                  MEMU_REC:     ...File record (packed)
+                                  MEMU_OLD:     ...File saved when read
+                                  MEMU_QTY:     ...Number of files
+                                  1             ...File number for this read
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
+./* Close and cleanup work files
+. */
+    CALL CLOSE_OGBFILE USING WORK_FILE,WORK_NAME
+    ERASE WORK_NAME
+
+    CALL CLOSE_OGBFILE USING TEST_FILE,TEST_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Routine Includes
+.# =================================================================== #
+
+    INC VALID.IO         ... MCSI's valid code table IO routines
+    INC UTIL_COMMON.SR   ... OGB Compilation of Standard UTIL routines
+    INC UTIL_MEMU.SR     ... MEMU access routines
+
+.# =================================================================== #
+.# End Program
+.# =================================================================== #
