@@ -1,0 +1,258 @@
+./* ====================================================================
+. *   Program Name : a1812051.ps
+. *   Description : Fix 1/1/19 LBLA recs voided by the 834LAG process
+. *
+. *   Git Repo: https://git.la.gov/OGB/OGB-adhocs
+. * ...........................Revisions................................
+. * apjwh - 12/05/2018 - DEV - Initial Version
+. * ....................................................................
+. */
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+
+    INC UTIL_COMMON.CB  ...OGB Common variables for UTIL routine
+    INC VALID.RL  ...Valid codes
+    INC MEM.RL  ...Demographics fields
+    INC MEME.RL  ...Enrollment fields
+    INC D_MEMMEM.CB  ...MEM Update Layout
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_ISTEST        CHAR    1   ...Enable test mode
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+FLAG                EQU     1
+DATE                EQU     8
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FILE           FILE    VAR=X_MEME_SIZE,TEXT
+WORK_NAME           INIT    "/w/a1812051.tmp"
+
+UPDATE_FILE         FILE    VAR=X_INM_SIZE,TEXT
+UPDATE_NAME         INIT    "a1812051.inm"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_REFORMAT  NUM     FLAG
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+PROG_ID             INIT    "FIXLBL"
+
+CURRDATE            CHAR    DATE
+FIRST_OF_YEAR       CHAR    DATE
+END_OF_YEAR         CHAR    DATE
+
+.// --------------------------------------------------------------------
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+
+...Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+...Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.//    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
+./* Set program specific variables and establish the next chain link
+.   if applicable. Then run the program's main logic. */
+
+... Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A1812051" TO C_PROG        ...Program name
+    MOVE "FIX VOIDED LBLA AE19" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+...Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+...Init the counters
+    CALL X_ZERO_COUNTS
+    IF NOT (C_CMDPAR)
+        MOVE "Voided LBLA Found" TO X_CNTDESC1
+        MOVE "LBLAs Fixed      " TO X_CNTDESC2
+        MOVE "Not Used         " TO X_CNTDESC3
+        MOVE "Not Used         " TO X_CNTDESC4
+        MOVE "Not Used         " TO X_CNTDESC5
+        MOVE "Not Used         " TO X_CNTDESC6
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS ROUTINE
+./* Do all of the work
+. */
+    debug ...start of process
+    CALL INIT_RUN
+    CALL PROCESS_MEMES
+    CALL FINISH_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INIT_RUN LROUTINE
+./* Set up files and runtime variables
+. */
+
+    IF NOT (ENABLE_TEST)
+        CLEAR TEST_CONFIG
+    ENDIF
+
+    CALL PREP_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+
+    PACK MEME_PRD WITH "LBLA",BLANKS
+    PACK MEME_PLAN WITH "CRED",BLANKS
+    PACK MEME_CHGBY WITH "834LAG",BLANKS
+    PACK MEME_EFF WITH "20190101",BLANKS
+    PACK MEME_TRM WITH "20181231",BLANKS
+    PACK MEME_TLET WITH "V",BLANKS
+
+    PACK SCRATCH WITH "meme.dbf ",WORK_NAME," ":
+                      "-p117-121eq#"",MEME_PRD,"#" ":
+                      "-p126-129eq#"",MEME_PLAN,"#" ":
+                      "-p234-239eq#"",MEME_CHGBY,"#" ":
+                      "-p96-103eq#"",MEME_EFF,"#" ":
+                      "-p104-111eq#"",MEME_TRM,"#" ":
+                      "-p404-404eq#"",MEME_TLET,"#" ":
+                      "-t"
+
+    IF NOT (TEST_SKIP_REFORMAT)
+        CALL UTIL_XMESSAGE USING "Reformatting MEME for Voided AE19 LBLA Credits",28
+        REFORMAT SCRATCH
+        IF (OVER)
+            CALL UTIL_ERRORMSG USING "Work file reformat failed","INIT_RUN"
+        ENDIF
+        MESSAGEERASE
+    ENDIF
+
+    CALL OPEN_OGBFILE USING WORK_FILE,WORK_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_MEMES LROUTINE
+./* For each OPT2, filter bad ones, and split into OPT2/OPT1 for 1/1/19
+. */
+SAVE_MEME       CHAR    X_MEME_SIZE
+...
+    debug
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL UTIL_XMESSAGE USING "Fixing Voided LBLA recs",28
+    LOOP
+        debug
+        CLEAR SAVE_MEME:
+              MEM_LIST:
+              MEME_LIST
+
+        CALL READ_OGBFILE USING WORK_FILE,WORK_NAME,MEME_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,1
+
+        CALL UTIL_MEM_FIND USING MEME_ID1
+        CONTINUE IF NOT (EQUAL)
+
+        CALL UTIL_XCOUNTER USING X_CNT2,1
+
+        PACK MEME_CHGBY WITH PROG_ID,BLANKS
+        PACK MEME_CHGDT WITH CURRDATE,BLANKS
+        PACK MEME_TRM WITH "20191231"
+        FILL "~" IN MEME_TLET
+
+        PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+        UNPACK INM_REC INTO INM_LIST
+        CALL WRITE_OGBREC USING UPDATE_FILE,UPDATE_NAME,INM_LIST
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FINISH_UP LROUTINE
+./* Close files and cleanup work data
+. */
+    IF NOT (C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL CLOSE_OGBFILE USING WORK_FILE,WORK_NAME
+
+    IF NOT (TEST_SKIP_REFORMAT)
+        ERASE WORK_NAME
+    ENDIF
+
+    CALL CLOSE_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Routine Includes
+.# =================================================================== #
+
+    INC VALID.IO  ...MCSI's valid code table IO routines
+    INC UTIL_COMMON.SR  ...OGB Compilation of Standard UTIL routines
+    INC UTIL_MEM.SR  ...MEM read routines
+
+.# =================================================================== #
+.# End Program
+.# =================================================================== #
