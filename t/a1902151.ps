@@ -1,0 +1,243 @@
+./* +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++  Program Name:
++       A1902151
++
++  Description:
++       Reopen EGWP record termed during the Medimpact transition
++       in Dec 2018.  This will find spouses with active EGWP where
++       their 01 has their most recent EGWP record termed for 12/31/18
++       and the rate was previously "RS", indicating that the EGWP record
++       was only for billing for the spouse.
++
++  Created By:
++       apjwh - 02/15/2019
++
++  Last Modified By:
++       ap??? - mm/dd/yyyy
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST                 NUM     V_FLAG
+TEST_CONFIG                 LIST
+.TODO - add test settings
+                            LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+.TODO - add files
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+.TODO - add file lists
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.// --------------------------------------------------------------------
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+...Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+...Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.//    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
+./* Set program specific variables and establish the next chain link
+.   if applicable. Then run the program's main logic. */
+
+... Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a1902151" TO C_PROG        ...Program name
+    MOVE "Repair Termed RS EGWP" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+...Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+...Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.TODO - make sure any parameter that can be called from the CMD line are
+.       filled with spaces or value and space before the SCHED_PICK for them
+.       to be populated in an automatically generated Impact Scheduler
+.       record
+
+...Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+./* Core process logic
+. */
+    debug
+    CALL INITIALIZE
+    CALL REPAIR_EGWPS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
+./* Setup runtime variables
+. */
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "Spouse with EGWP Read " TO X_CNTDESC1
+    MOVE "Termed 01's Fixed     " TO X_CNTDESC2
+    MOVE "                      " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REPAIR_EGWPS LROUTINE
+./* Build new EGWP records for 01's with prior RS EGWPs that were
+. * erroneously termed for 12/31/2018
+. */
+
+    CALL BUILD_EGWP_SPOUSE_FILE
+    CALL REPAIR_TERMED_EGWPS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_EGWP_SPOUSE_FILE LROUTINE
+./* Find members with EGWP who are spouses and where it was continuous
+. * across 12/31/2018 (there may be a split in the records)
+. */
+    
+.TODO: Find all spouses with EGWP that is active from 2018 - 2019
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REPAIR_TERMED_EGWPS LROUTINE
+./* For each spouse, see if the 01 should be fixed.  If so, build the
+. * update record.
+. */
+    
+.TODO: foreach Spouse, find their 01
+.TODO: Filter unfixable ones
+.           emp has active EGWP in 2019
+.           emp doesn't have a proper EGWP record termed for 20181231
+.           emp's EGWP is no "RS" rate
+
+.TODO: Build update records       foreach 01 found:
+.           build a new EGWP record from the prior one
+.               eff 20190101
+.               trm equals the trm of the spouse
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
+./* Cleanup work files and handle output files
+. */
+    CLOCK CALENDAR INTO END_DATETIME
+
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_MEMMEM.SR
+
+.# =================================================================== #
+.# End Program
+.# =================================================================== #
