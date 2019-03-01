@@ -13,7 +13,7 @@
 +       apjwh - 02/15/2019
 +
 +  Last Modified By:
-+       ap??? - mm/dd/yyyy
++       apjwh - 03/01/2019
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 
 .# =================================================================== #
@@ -45,25 +45,66 @@ MSG_HEIGHT          EQU     24
 
 ENABLE_TEST                 NUM     V_FLAG
 TEST_CONFIG                 LIST
-.TODO - add test settings
+TEST_THESE_IDS              INIT    "|00104953|"
+TEST_EMAIL_WHOM             INIT    "jakob.hendrix@la.gov"
                             LISTEND
+
+.# =================================================================== #
+.# Config
+.# =================================================================== #
+
+EMAIL_WHOM          INIT    "${ITAPPS}"
 
 .# =================================================================== #
 .# File Declarations
 .# =================================================================== #
 
-.TODO - add files
+.This is pulled from the new full Medimpact appintake file exceptions
+.file
+EGWP_EXC_FD         FILE    VAR=1000,TEXT
+EGWP_EXC_FILE       INIT    "/w/a1902151.input.csv"
+
+.D_MEMMEM formatted update file
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a1902151.inm"
+
+.Log of actions taken
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/a1902151.log.csv"
 
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
-.TODO - add file lists
+EGWP_EXC_LIST       LIST
+EGWP_EXC_REC        CHAR    1000
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    200
+                    LISTEND
 
 .# =================================================================== #
 .# Program Variables
 .# =================================================================== #
 
+ERROR_LIST          LIST
+ERROR_ID1           CHAR    8
+ERROR_FILE_ID       CHAR    1
+ERROR_MSG           CHAR    200
+                    LISTEND
+
+MEME_MAX            EQU     999
+MEME_RECS           CHAR    X_MEME_SIZE[MEME_MAX]
+MEME_COUNT          NUM     5
+
+SPOUSE_EGWP         CHAR    X_MEME_SIZE
+EMPL_EGWP           CHAR    X_MEME_SIZE
+SPOUSE_HAS_HEALTH   NUM     1
+EMPL_HAS_HEALTH     NUM     1
+EMPL_MEM            CHAR    X_MEM_SIZE
+
+PROG_NAME           INIT    "FXEGWP"
 CURRDATE            CHAR    8
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
@@ -79,7 +120,6 @@ END_DATETIME        CHAR    24
 
 ...Impact Scheduler Hook
     INC SCHED_NP.SR     ...for jobs that don't use the print system
-.//    INC SCHED_WP.SR  ...for jobs requiring the print system
 
 
 .#######################################################################
@@ -156,10 +196,10 @@ INITIALIZE LROUTINE
     CLOCK TIMESTAMP TO CURRDATE
     CLOCK CALENDAR TO START_DATETIME
 
-    MOVE "Spouse with EGWP Read " TO X_CNTDESC1
-    MOVE "Termed 01's Fixed     " TO X_CNTDESC2
-    MOVE "                      " TO X_CNTDESC3
-    MOVE "                      " TO X_CNTDESC4
+    MOVE "Records Processed     " TO X_CNTDESC1
+    MOVE "Spouse Recs Processed " TO X_CNTDESC2
+    MOVE "Employee EGWPs Created" TO X_CNTDESC3
+    MOVE "Errors Found          " TO X_CNTDESC4
     MOVE "                      " TO X_CNTDESC5
     MOVE "                      " TO X_CNTDESC6
 
@@ -167,6 +207,14 @@ INITIALIZE LROUTINE
     IF (NOT C_CMDPAR)
         CALL X_DISPLAY_COUNTS
     ENDIF
+
+    EXIST EGWP_EXC_FILE
+    IF (OVER)
+        debug
+        CALL UTIL_ERRORMSG USING ("Input File Not Found: " + EGWP_EXC_FILE),"INITIALIZE"
+    ENDIF
+
+    LOADMOD "ASORT"
 
     RETURN
     ENDROUTINE
@@ -178,41 +226,271 @@ REPAIR_EGWPS LROUTINE
 . * erroneously termed for 12/31/2018
 . */
 
-    CALL BUILD_EGWP_SPOUSE_FILE
-    CALL REPAIR_TERMED_EGWPS
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL OPEN_OGBFILE USING EGWP_EXC_FD,EGWP_EXC_FILE
+    MOVE OGB_SEQ1 TO OGB_SEQ
+
+    debug  ...start work
+
+    LOOP
+        CLEAR ERROR_LIST:
+              EGWP_EXC_LIST:
+              MEM_LIST:
+              MEME_LIST:
+              SPOUSE_EGWP:
+              SPOUSE_HAS_HEALTH:
+              EMPL_MEM:
+              EMPL_EGWP:
+              EMPL_HAS_HEALTH
+
+        CALL GET_NEXT_EXC_RECORD
+        WHILE (RESULT = 1)
+
+        CONTINUE IF ((CHOP ERROR_FILE_ID != "2"):
+                    |(CHOP ERROR_MSG != "EGWP member with no linked 01"))
+
+        CALL UTIL_XCOUNTER USING X_CNT2,10
+
+        CALL FIX_FAMILY_EGWP
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING EGWP_EXC_FD,EGWP_EXC_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-BUILD_EGWP_SPOUSE_FILE LROUTINE
-./* Find members with EGWP who are spouses and where it was continuous
-. * across 12/31/2018 (there may be a split in the records)
+GET_NEXT_EXC_RECORD LROUTINE
+./* Unpack the next CSV record into the error work list
 . */
-    
-.TODO: Find all spouses with EGWP that is active from 2018 - 2019
+    CALL READ_OGBFILE USING EGWP_EXC_FD,EGWP_EXC_FILE,EGWP_EXC_LIST
+    RETURN IF (RESULT != 1)
+
+    CALL UTIL_XCOUNTER USING X_CNT1,10
+
+    CALL DELIMIT_STRING USING EGWP_EXC_REC,0,ERROR_ID1,COMMA
+    CALL DELIMIT_STRING USING EGWP_EXC_REC,1,ERROR_FILE_ID,COMMA
+    CALL DELIMIT_STRING USING EGWP_EXC_REC,2,ERROR_MSG,COMMA
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-REPAIR_TERMED_EGWPS LROUTINE
-./* For each spouse, see if the 01 should be fixed.  If so, build the
-. * update record.
+FIX_FAMILY_EGWP LROUTINE
+./* If this spouse has an active open-ended EGWP record from 1/1/19, and
+. * the 01's last EGWP record was termed 12/31/18, and the rate was RS,
+. * indicating the EGWP record was only for billing the spouse, then
+. * make a new 1/1/19 EGWP record for the 01.
 . */
-    
-.TODO: foreach Spouse, find their 01
-.TODO: Filter unfixable ones
-.           emp has active EGWP in 2019
-.           emp doesn't have a proper EGWP record termed for 20181231
-.           emp's EGWP is no "RS" rate
+REC             NUM     5
+IS_OKAY         NUM     1
+...
+.Make sure our spouse is valid to be billed for EGWP
+    CLEAR IS_OKAY:
+          SPOUSE_EGWP:
+          SPOUSE_HAS_HEALTH:
+          EMPL_MEM:
+          EMPL_EGWP:
+          EMPL_HAS_HEALTH
 
-.TODO: Build update records       foreach 01 found:
-.           build a new EGWP record from the prior one
-.               eff 20190101
-.               trm equals the trm of the spouse
+
+    CALL GET_SORTED_MEMES USING ERROR_ID1
+    FOR REC FROM 1 TO MEME_COUNT
+        UNPACK MEME_RECS[REC] INTO MEME_LIST
+
+        IF (CHOP MEME_NET = "EGWP")
+            CONTINUE IF (MEME_EFF != "20190101" | MEME_TRM != LAST_DATE)
+            PACK SPOUSE_EGWP WITH MEME_LIST
+        ELSE
+            CONTINUE IF (MEME_TRM < "20190101")
+            SET SPOUSE_HAS_HEALTH
+        ENDIF
+
+        IF (CHOP SPOUSE_EGWP > "" & SPOUSE_HAS_HEALTH)
+            SET IS_OKAY
+            BREAK
+        ENDIF
+    REPEAT
+
+    IF NOT (IS_OKAY)
+        IF (CHOP SPOUSE_EGWP = "")
+            CALL WRITE_ERROR USING ERROR_ID1,"Unable to find an open-ended EGWP from 1/1/19 on spouse"
+        ELSE IF NOT (SPOUSE_HAS_HEALTH)
+            CALL WRITE_ERROR USING ERROR_ID1,"No valid BCBSLA health plan found on spouse"
+        ENDIF
+        RETURN
+    ENDIF
+
+.Now, make sure the 01 on this plan is valid to update.
+    CALL FIND_EMPL
+    IF (CHOP EMPL_MEM = "")
+        CALL WRITE_ERROR USING ERROR_ID1,"Unable to find employee record"
+        RETURN
+    ENDIF
+
+    UNPACK EMPL_MEM INTO MEM_LIST
+    CALL DEBUG_ON_ID USING MEM_ID1
+
+    CLEAR IS_OKAY
+    CALL GET_SORTED_MEMES USING MEM_ID1
+    FOR REC FROM 1 TO MEME_COUNT
+        UNPACK MEME_RECS[REC] INTO MEME_LIST
+
+        IF (CHOP MEME_NET = "EGWP")
+            IF (MEME_TRM > "20181231")
+                CLEAR IS_OKAY
+                CALL WRITE_ERROR USING MEM_ID1,"Employee has an EGWP in 2019"
+                BREAK
+            ENDIF
+
+            IF (MEME_TRM = "20181231" & CHOP MEME_RT = "RS")
+                PACK EMPL_EGWP WITH MEME_LIST
+            ENDIF
+        ELSE
+            CONTINUE IF (MEME_TRM < "20190101")
+            SET EMPL_HAS_HEALTH
+        ENDIF
+
+        IF (CHOP EMPL_EGWP > "" & EMPL_HAS_HEALTH)
+            SET IS_OKAY
+            BREAK
+        ENDIF
+    REPEAT
+
+    IF NOT (IS_OKAY)
+        IF (CHOP EMPL_EGWP = "")
+            CALL WRITE_ERROR USING MEM_ID1,"No valid EGWP found on employee"
+        ELSE IF NOT (EMPL_HAS_HEALTH)
+            CALL WRITE_ERROR USING MEM_ID1,"No valid BCBSLA health plan found on employee"
+        ENDIF
+        RETURN
+    ENDIF
+
+    CALL BUILD_NEW_EGWP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_SORTED_MEMES LROUTINE ID1@
+./* Return a MEME list of EGWP records, sorted by most recent effective
+. * dates
+. */
+ID1@            CHAR    @
+TEMP_RECS       CHAR    X_MEME_SIZE[MEME_MAX]
+TEMP_COUNT      NUM     5
+REC             NUM     5
+...
+    CLEAR TEMP_RECS:
+          TEMP_COUNT:
+          MEME_RECS:
+          MEME_COUNT
+
+.Get all the MEMEs
+    CALL UTIL_GET_ALL_MEMES USING ID1@,TEMP_RECS,1,TEMP_COUNT,MEME_MAX
+    RETURN IF NOT EQUAL
+
+.Keep only the useful ones
+    FOR REC FROM 1 TO TEMP_COUNT
+        UNPACK TEMP_RECS[REC] INTO MEME_LIST
+
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE
+        ENDIF
+
+        CONTINUE IF (MEME_TRM < MEME_EFF)
+        CONTINUE IF NOT (CHOP MEME_NET = "BLUE" | CHOP MEME_NET = "EGWP")
+
+        PACK MEME_REC WITH MEME_LIST
+        CALL UTIL_SAFE_PACK_ARRAY USING MEME_REC,MEME_RECS,MEME_COUNT,MEME_MAX
+        IF (OVER)
+            debug
+            CALL UTIL_ERRORMSG USING "Too many EGWP records found","GET_SORTED_MEMES"
+        ENDIF
+    REPEAT
+
+.Sort by effective date and network
+    IF (MEME_COUNT > 1)
+        ASORT ATYPE="REC":
+              ARRAY=MEME_RECS:
+              AMAX=MEME_COUNT:
+              SRTFLD1="112-116",SRTORD1="D":
+              SRTFLD2="96-103",SRTORD2="D"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_EMPL LROUTINE
+./* Go find the current 01 for this spouse
+. */
+FIRST_MEM       NUM     1
+...
+    CLEAR EMPL_MEM:
+          MEM_AIM:
+          MEM_LIST
+
+    SET FIRST_MEM
+
+    CALL UTIL_MEM_FIND USING ERROR_ID1
+    IF NOT EQUAL
+        CALL WRITE_ERROR USING ERROR_ID1,"Unable to find the spouse's MEM record"
+        RETURN
+    ENDIF
+    PACK MEM_AIM1 WITH "01","X",MEM_ESSN,BLANKS
+    PACK MEM_AIM3 WITH "03","X","01",BLANKS
+    LOOP
+        IF (FIRST_MEM)
+            CLEAR FIRST_MEM
+            CALL UTIL_MEM_AIMFIND_REAL
+        ELSE
+            CALL UTIL_MEM_AIMNEXT_REAL
+        ENDIF
+        WHILE EQUAL
+        PACK EMPL_MEM WITH MEM_LIST
+        BREAK
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_NEW_EGWP LROUTINE
+./* Build a D_MEMMEM formatted EGWP record for the employee for 2019
+. */
+    CALL UTIL_XCOUNTER USING X_CNT3,10
+
+    CLEAR INM_LIST
+    UNPACK EMPL_MEM INTO MEM_LIST
+    UNPACK EMPL_EGWP INTO MEME_LIST
+
+.Fix the dates and term fields
+    FILL " " IN MEME_ID2
+    PACK MEME_EFF WITH "20190101",BLANKS
+    FILL "~" IN MEME_TRM:
+                MEME_TLET:
+                MEME_TRUN
+
+.Add the new change metadata
+    PACK MEME_NEWBY WITH PROG_NAME,BLANKS
+    PACK MEME_NEWDT WITH CURRDATE,BLANKS
+    PACK MEME_CHGBY WITH PROG_NAME,BLANKS
+    PACK MEME_CHGDT WITH CURRDATE,BLANKS
+
+    PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+    UNPACK INM_REC INTO INM_LIST
+
+    CALL WRITE_OGBREC USING UPDATE_FD,UPDATE_FILE,INM_LIST
+    CALL LOG_UPDATE USING MEM_ID1
 
     RETURN
     ENDROUTINE
@@ -222,8 +500,117 @@ REPAIR_TERMED_EGWPS LROUTINE
 CLEAN_UP LROUTINE
 ./* Cleanup work files and handle output files
 . */
+FILES_DIR       CHAR    100
+RECIPIENTS      CHAR    100
+SUBJECT         CHAR    500
+BODY            CHAR    5000
+...
     CLOCK CALENDAR INTO END_DATETIME
+    UNLOAD "ASORT"
 
+    debug  ...work is done
+
+    CALL UTIL_GET_VALID_DESC USING "101","FILES",FILES_DIR
+
+    IF (X_CNT3 = 0)
+        CALL SAFE_ERASE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    ELSE
+        CALL UTIL_PENDING_BACKUP USING FILES_DIR,UPDATE_FILE,CURRDATE
+    ENDIF
+
+.Sort by error, then ID
+    PACK SCRATCH WITH "20-40 1-8 -t"
+    CALL SORT_OGBFILE USING LOG_FILE,LOG_FILE,SCRATCH
+    IF (OVER)
+        debug
+        CALL UTIL_ERRORMSG USING "Sort of log file failed","CLEAN_UP"
+    ENDIF
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,CURRDATE
+
+.Send email
+    PACK SUBJECT WITH "Log for A19021501 - Missing 01 EGWP Cleanup"
+    PACK BODY WITH "This process built a new 1/1/19-forever EGWP ":
+                   "record with 'RS' coverage for employees whose ":
+                   "EGWP record was termed for 12/31/18 by the TRR ":
+                   "during the Medimpact-Vibrant Conversion. The ":
+                   "record was only fixed if the member had ongoing ":
+                   "BCBSLA health coverage and their spouse had an ":
+                   "ongoing EGWP record from 1/1/19 through forever. ":
+                   "The attached log indicates which members were ":
+                   "updated or were reject due to some unusual data.\n":
+                   "\tStart Time: ",START_DATETIME,"\n":
+                   "\tEnd Time: ",END_DATETIME,"\n":
+                   "\tSpouses with EGWP reviewed: ":
+                   (TRIM  (CHAR X_CNT2)),"\n":
+                   "\tEGWP Records Created: ":
+                   (TRIM  (CHAR X_CNT3)),"\n":
+                   "\tMembers Skipped Due to Errors: ":
+                   (TRIM  (CHAR X_CNT4))
+
+    IF (ENABLE_TEST)
+        PACK RECIPIENTS WITH TEST_EMAIL_WHOM
+        PACK SUBJECT WITH SUBJECT," [TEST]"
+    ELSE
+        PACK RECIPIENTS WITH EMAIL_WHOM
+    ENDIF
+    CALL UTIL_SEND_EMAIL_WITH_FILE USING RECIPIENTS,SUBJECT,BODY,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_UPDATE LROUTINE ID@
+./* Write to the action log
+. */
+ID@         CHAR    @
+...
+    CALL WRITE_LOG USING ID@,"UPDATE","New 1/1/19 EGWP created"
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+WRITE_ERROR LROUTINE ID@,MSG@
+./* Write to the action log
+. */
+ID@         CHAR    @
+MSG@        CHAR    @
+...
+    CALL UTIL_XCOUNTER USING X_CNT4,10
+    CALL WRITE_LOG USING ID@,"ERROR",MSG@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE ID@,TYPE@,MSG@
+./* Write to the action log
+. */
+ID@         CHAR    @
+TYPE@       CHAR    @
+MSG@        CHAR    @
+...
+    PACK LOG_REC WITH ID@,COMMA:
+                      TYPE@,COMMA:
+                      MSG@
+
+    CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DEBUG_ON_ID LROUTINE ID@
+./* Stop on members in the debug ID list
+. */
+ID@         CHAR    @
+...
+    CALL UTIL_DBG_ON_VALUE USING ID@,TEST_THESE_IDS
 
     RETURN
     ENDROUTINE
@@ -237,6 +624,9 @@ CLEAN_UP LROUTINE
     INC UTIL_TEST.SR
     INC UTIL_SYSTEM.SR
     INC UTIL_MEMMEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_VALID.SR
 
 .# =================================================================== #
 .# End Program
