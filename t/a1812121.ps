@@ -1,0 +1,254 @@
+./* ====================================================================
+. *   Program Name : a1812121.ps
+. *   Description : Fix a mistake in the a1812052 program. The NOVOIDs
+. *         should have been placed in a "H" pending status rather
+. *         than making them active.
+. *
+. *   Git Repo: https://git.la.gov/OGB/OGB-adhocs
+. * ...........................Revisions................................
+. * apjwh - 12/12/2018 - DEV - Initial Version
+. * ....................................................................
+. */
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+
+    INC UTIL_COMMON.CB  ...OGB Common variables for UTIL routine
+    INC VALID.RL  ...Valid codes
+    INC MEM.RL  ...Demographics fields
+    INC MEME.RL  ...Enrollment fields
+    INC D_MEMMEM.CB  ...MEM Update Layout
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_ISTEST        CHAR    1   ...Enable test mode
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+FLAG                EQU     1
+DATE                EQU     8
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FILE           FILE    VAR=X_MEME_SIZE,TEXT
+WORK_NAME           INIT    "/w/a1812052.txt"
+
+UPDATE_FILE         FILE    VAR=X_INM_SIZE,TEXT
+UPDATE_NAME         INIT    "a1812121.inm"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     FLAG
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+WORK_FIELDS         LIST
+WORK_OPT            CHAR    6
+WORK_ID1            CHAR    8
+WORK_ID2            CHAR    4
+                    LISTEND
+
+PROG_ID             INIT    "A12121"
+CURRDATE            CHAR    DATE
+
+.// --------------------------------------------------------------------
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+
+...Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+...Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.//    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
+./* Set program specific variables and establish the next chain link
+.   if applicable. Then run the program's main logic. */
+
+... Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A1812121" TO C_PROG        ...Program name
+    MOVE "FIX BAD HSA STATS-2" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+...Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+...Init the counters
+    CALL X_ZERO_COUNTS
+    IF NOT (C_CMDPAR)
+        MOVE "Records Worked   " TO X_CNTDESC1
+        MOVE "Opt 1 - Unvoid   " TO X_CNTDESC2
+        MOVE "Opt 2 - No TLET  " TO X_CNTDESC3
+        MOVE "Not Used         " TO X_CNTDESC4
+        MOVE "Not Used         " TO X_CNTDESC5
+        MOVE "Not Used         " TO X_CNTDESC6
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS ROUTINE
+./* Do all of the work
+. */
+    debug ...start of process
+    CALL INIT_RUN
+    CALL PROCESS_FILE
+    CALL FINISH_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INIT_RUN LROUTINE
+./* Set up files and runtime variables
+. */
+    EXIST WORK_NAME
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Work file not found","INIT_RUN"
+    ENDIF
+
+    CALL OPEN_OGBFILE USING WORK_FILE,WORK_NAME
+    CALL PREP_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_FILE LROUTINE
+./* For each OPT2, filter bad ones, and split into OPT2/OPT1 for 1/1/19
+. */
+SAVE_MEME       CHAR    X_MEME_SIZE
+...
+    debug
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL UTIL_XMESSAGE USING "Fixing Bad STATs recs",28
+    LOOP
+        debug
+        CLEAR SAVE_MEME:
+              MEM_LIST:
+              MEME_LIST
+
+        CALL READ_OGBFILE USING WORK_FILE,WORK_NAME,WORK_FIELDS
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,1
+
+        CALL UTIL_MEM_FIND USING WORK_ID1
+        IF NOT (EQUAL)
+            CALL UTIL_ERRORMSG USING ("Bad ID1 in work file [" + WORK_ID1 + "]"),"PROCESS_FILE"
+        ENDIF
+
+        CALL UTIL_MEME_FIND USING WORK_ID1,WORK_ID2
+        IF NOT (EQUAL)
+            CALL UTIL_ERRORMSG USING ("Bad ID2 in work file [" + WORK_ID1 + "-" + WORK_ID2 + "]"),"PROCESS_FILE"
+        ENDIF
+
+...Fix record with no new date
+        IF (SQUEEZE MEME_NEWDT = "" & SQUEEZE MEME_NEWBY = "HSA_19")
+            PACK MEME_NEWDT WITH MEME_CHGDT,BLANKS
+        ENDIF
+
+        PACK MEME_CHGBY WITH PROG_ID,BLANKS
+        PACK MEME_CHGDT WITH CURRDATE,BLANKS
+
+        SQUEEZE WORK_OPT INTO SCRATCH
+        REPLACE MAKEUPPER IN SCRATCH
+        SWITCH SCRATCH
+            CASE "NOVOID"
+                CALL UTIL_XCOUNTER USING X_CNT1,2
+                CALL DATE_CALC USING MEME_EFF,"SUB","DAYS",1,MEME_TRM
+                PACK MEME_TLET WITH "H",BLANKS
+            CASE "NOTLET"
+                CALL UTIL_XCOUNTER USING X_CNT1,3
+                CONTINUE
+            DEFAULT
+                IF NOT (EQUAL)
+                    CALL UTIL_ERRORMSG USING ("Bad Opt [" + WORK_ID1 + "-" + WORK_OPT + "]"),"PROCESS_FILE"
+                ENDIF
+        ENDSWITCH
+
+        PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+        UNPACK INM_REC INTO INM_LIST
+        CALL WRITE_OGBREC USING UPDATE_FILE,UPDATE_NAME,INM_LIST
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FINISH_UP LROUTINE
+./* Close files and cleanup work data
+. */
+    IF NOT (C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL CLOSE_OGBFILE USING WORK_FILE,WORK_NAME
+    CALL CLOSE_OGBFILE USING UPDATE_FILE,UPDATE_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Routine Includes
+.# =================================================================== #
+
+    INC VALID.IO  ...MCSI's valid code table IO routines
+    INC UTIL_COMMON.SR  ...OGB Compilation of Standard UTIL routines
+    INC UTIL_MEM.SR  ...MEM read routines
+    INC UTIL_MEME.SR  ...MEME read routines
+
+.# =================================================================== #
+.# End Program
+.# =================================================================== #
