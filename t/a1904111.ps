@@ -6,7 +6,7 @@
 +   Wrapper for "runbool" to run the "TRMOLD" SYS-TALK module. This
 +   will term active CLIPs that should be termed. This process will
 +   speed that up by only processing CLIs that have open CLIPs that
-+   we are tyring to clean up.
++   we are trying to clean up.
 +
 + NOTE:
 +   If this is run later on, any new plans added to the TRMOLD SYS-TALK
@@ -14,7 +14,7 @@
 +   reformats.
 +
 + Version:
-+   0.1.0
++   1.0.0
 +
 + Created By:
 +   apjwh - 04/11/2019
@@ -52,9 +52,13 @@ REFRESH_RATE        EQU     1
 .# Debugging Configuration
 .# =================================================================== #
 
-ENABLE_TEST         NUM     V_FLAG
-TEST_CONFIG         LIST
-                    LISTEND
+ENABLE_TEST             NUM     V_FLAG
+TEST_CONFIG             LIST
+TEST_KEEP_WORK          NUM     "1"
+TEST_SKIP_WORK_BUILD    NUM     "0"
+TEST_EMAIL_GROUP        INIT    "jakob.hendrix@la.gov"
+TEST_TERM_MAX           NUM     "100"
+                        LISTEND
 
 .# =================================================================== #
 .# File Declarations
@@ -64,6 +68,8 @@ WORK_FD             FILE    VAR=8,TEXT
 WORK_FILE           INIT    "/w/a1904111.wrk.txt"
 
 TEMP_FILE           INIT    "/w/a1904111.tmp.txt"
+
+LOG_FILE            INIT    "/w/a1904111.log.csv"
 
 .# =================================================================== #
 .# File List
@@ -78,6 +84,7 @@ WORK_ID             CHAR    8
 .# =================================================================== #
 
 SYS_MOD             INIT    "TRMOLD"
+EMAIL_GROUP         INIT    "${ITAPPS},melissa.meyers@la.gov"
 
 CURRDATE            CHAR    8
 START_DATETIME      CHAR    24
@@ -176,8 +183,8 @@ INITIALIZE LROUTINE
     CLOCK TIMESTAMP TO CURRDATE
     CLOCK CALENDAR TO START_DATETIME
 
-    MOVE "CLIs Found            " TO X_CNTDESC1
-    MOVE "CLIPs Read            " TO X_CNTDESC2
+    MOVE "Qualifying CLIs Found " TO X_CNTDESC1
+    MOVE "CLIPs Considered      " TO X_CNTDESC2
     MOVE "CLIPs Termed          " TO X_CNTDESC3
     MOVE "                      " TO X_CNTDESC4
     MOVE "                      " TO X_CNTDESC5
@@ -188,6 +195,10 @@ INITIALIZE LROUTINE
         CALL X_DISPLAY_COUNTS
     ENDIF
 
+    CALL SAFE_ERASE_OGBFILE USING LOG_FILE
+    PACK SCRATCH WITH "echo #"cli_id1,clip_id2,net,prd,plan,eff,trm#" > ",LOG_FILE
+    ROLLOUT SCRATCH
+
     RETURN
     ENDROUTINE
 
@@ -196,8 +207,13 @@ INITIALIZE LROUTINE
 BUILD_CLI_LIST LROUTINE
 ./* Build a list of client Ids that have one of the old plans as active
 . */
-    debug
-    CALL UTIL_XMESSAGE USING "Build CLI work list",MSG_HEIGHT
+    CALL UTIL_XMESSAGE USING "Building CLI work list",MSG_HEIGHT
+
+    IF (TEST_SKIP_WORK_BUILD)
+        CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+        RETURN IF (EQUAL)
+        CLEAR TEST_SKIP_WORK_BUILD
+    ENDIF
 
 .Build a temp file of active CLIPs
     FILL " " IN CLIP_TRM
@@ -256,16 +272,21 @@ NET@        CHAR    @
 PRD@        CHAR    @
 PLAN@       CHAR    @
 ...
-    debug
     CALL UTIL_XMESSAGE USING ("Finding open CLIPs for Net: "+CHOP NET@+" Prd: "+CHOP PRD@+" Plan: "+CHOP PLAN@),MSG_HEIGHT
+
     PACK CLIP_NET WITH NET@,BLANKS
     PACK CLIP_PRD WITH PRD@,BLANKS
     PACK CLIP_PLAN WITH PLAN@,BLANKS
 
-    PACK SCRATCH WITH TEMP_FILE," ",WORK_FILE," 1-8 -t -a ":
-                      " -p13-17#"",CLIP_NET,"#" ":
-                      " -p18-22#"",CLIP_PRD,"#" ":
-                      " -p27-30#"",CLIP_PLAN,"#" "
+    PACK SCRATCH WITH TEMP_FILE," ",WORK_FILE," 1-8 -t ":
+                      " -p13-17eq#"",CLIP_NET,"#" ":
+                      " -p18-22eq#"",CLIP_PRD,"#" ":
+                      " -p27-30eq#"",CLIP_PLAN,"#" "
+
+    CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+    IF (EQUAL)
+        PACK SCRATCH WITH SCRATCH," -a "
+    ENDIF
     REFORMAT SCRATCH
     IF (OVER)
         debug
@@ -288,6 +309,9 @@ PROCESS_WORK_FILE LROUTINE
         CALL READ_OGBFILE USING WORK_FD,WORK_FILE,WORK_LIST
         WHILE (RESULT = 1)
 
+        CLEAR CLI_LIST,CLI_REC:
+              CLIP_LIST,CLIP_REC
+
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
 
         CALL UTIL_CLI_FIND USING WORK_ID
@@ -297,12 +321,15 @@ PROCESS_WORK_FILE LROUTINE
         ENDIF
         PACK CLI_REC WITH CLI_LIST,BLANKS
 
-        CALL UTIL_XMESSAGE USING ("Running TRMOLD against [ Id: " + CLI_ID1 + " Lev1: " + CLI_LEV1 + " Lev2: " + CLI_LEV2 + " ]"),MSG_HEIGHT
+        CALL UTIL_XMESSAGE USING ("Running TRMOLD against [ Id: " + CHOP CLI_ID1 + " Lev1: " + CHOP CLI_LEV1 + " Lev2: " + CHOP CLI_LEV2 + " ]"),MSG_HEIGHT
 
         CALL PROCESS_CLI
+
+        IF (TEST_TERM_MAX > 0)
+            BREAK IF (X_CNT3 > TEST_TERM_MAX)
+        ENDIF
     REPEAT
     CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
-    CALL SAFE_ERASE_OGBFILE USING WORK_FILE
 
     RETURN
     ENDROUTINE
@@ -314,7 +341,6 @@ PROCESS_CLI LROUTINE
 . */
 FIRST_CLIP      NUM     V_FLAG
 ...
-    debug
     SET FIRST_CLIP
     LOOP
         IF (FIRST_CLIP)
@@ -340,8 +366,9 @@ RUN_BOOL LROUTINE
 ./* Run TRMOLD against the current CLIP
 . */
 BOOL_RESULT     NUM     2
+ID1             CHAR    8
+ID2             CHAR    4
 ...
-    debug
     CLEAR BOOL_RESULT
 
     LOADMOD "runbool"
@@ -360,15 +387,38 @@ BOOL_RESULT     NUM     2
         CASE 3
             CALL UTIL_ERRORMSG USING ("Invalid BOOL command in CLIB-" + SYS_MOD),"RUN_BOOL"
         CASE 1
-            debug
             CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-            CALL UTIL_FIND_THIS_CLIP USING CLIP_ID1,CLIP_ID2
+
+            PACK ID1 WITH CLIP_ID1
+            PACK ID2 WITH CLIP_ID2
+            CALL UTIL_FIND_THIS_CLIP USING ID1,ID2
             IF (NOT EQUAL)
-                debug ...how?
+                debug
+                CALL UTIL_ERRORMSG USING ("Unable to find CLIP: " + ID2),"RUN_BOOL"
             ENDIF
+            CALL LOG_TERM
+        CASE 6
+.No write done
         DEFAULT
             debug  ?
     ENDSWITCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_TERM LROUTINE
+./* Log that the current CLIP was termed
+. */
+    PACK SCRATCH WITH "echo #"",CLI_ID1,",":
+                                CLIP_ID2,",":
+                                CLIP_NET,",":
+                                CLIP_PRD,",":
+                                CLIP_PLAN,",":
+                                CLIP_EFF,",":
+                                CLIP_TRM,"#" >> ",LOG_FILE
+    ROLLOUT SCRATCH
 
     RETURN
     ENDROUTINE
@@ -380,8 +430,42 @@ CLEAN_UP LROUTINE
 . */
     CLOCK CALENDAR INTO END_DATETIME
 
-.TODO: final clean up
+    CALL UTIL_PENDING_BACKUP USING "/w/",WORK_FILE,CURRDATE
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,CURRDATE
 
+    IF NOT (TEST_KEEP_WORK)
+        CALL SAFE_ERASE_OGBFILE USING WORK_FILE
+    ENDIF
+
+    CALL SEND_EMAIL
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
+./* Send notice with attached log
+. */
+RECIPIENTS  CHAR    100
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+...
+    PACK SUBJECT WITH "CLIP Clean Up Complete"
+    PACK BODY WITH "Process to term old CLIPs (using the TRMOLD SYS-TALK module) has finished."
+    CALL ADD_COUNTERS_TO_BODY USING BODY
+
+    PACK RECIPIENTS WITH EMAIL_GROUP
+    IF (CHOP TEST_EMAIL_GROUP > "")
+        PACK RECIPIENTS WITH TEST_EMAIL_GROUP
+    ENDIF
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG_FILE
     RETURN
     ENDROUTINE
 
@@ -395,6 +479,7 @@ CLEAN_UP LROUTINE
     INC UTIL_SYSTEM.SR
     INC UTIL_CLI.SR
     INC UTIL_CLIP.SR
+    INC UTIL_EMAIL.SR
 
 .# =================================================================== #
 .# End of Program
