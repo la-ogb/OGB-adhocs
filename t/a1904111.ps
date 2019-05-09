@@ -1,0 +1,486 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Name:
++   a1904111.PS
++
++ Description:
++   Wrapper for "runbool" to run the "TRMOLD" SYS-TALK module. This
++   will term active CLIPs that should be termed. This process will
++   speed that up by only processing CLIs that have open CLIPs that
++   we are trying to clean up.
++
++ NOTE:
++   If this is run later on, any new plans added to the TRMOLD SYS-TALK
++   module will also need to be added to the list of plans in the
++   reformats.
++
++ Version:
++   1.0.1
++
++ Created By:
++   apjwh - 04/11/2019
++
++ Last Modified By:
++   apjwh - 04/11/2019
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC CLI.RL
+    INC CLIP.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST             NUM     V_FLAG
+TEST_CONFIG             LIST
+TEST_KEEP_WORK          NUM     "1"
+TEST_SKIP_WORK_BUILD    NUM     "0"
+TEST_EMAIL_GROUP        INIT    "jakob.hendrix@la.gov"
+TEST_TERM_MAX           NUM     "100"
+                        LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    VAR=8,TEXT
+WORK_FILE           INIT    "/w/a1904111.wrk.txt"
+
+TEMP_FILE           INIT    "/w/a1904111.tmp.txt"
+
+LOG_FILE            INIT    "/w/a1904111.log.csv"
+
+.# =================================================================== #
+.# File List
+.# =================================================================== #
+
+WORK_LIST           LIST
+WORK_ID             CHAR    8
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+SYS_MOD             INIT    "TRMOLD"
+EMAIL_GROUP         INIT    "${ITAPPS},melissa.meyers@la.gov"
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# External Routines
+.# =================================================================== #
+
+RUN_CLI_BOOL     EXTERNAL
+
+.// --------------------------------------------------------------------
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
+./* Set program specific variables and establish the next chain link
+.   if applicable. Then run the program's main logic. */
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a1904111" TO C_PROG    ...Program name
+    MOVE "Run TRMOLD" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.TODO: make sure any parameter that can be called from the CMD line are
+. filled with spaces or value and space before the SCHED_PICK for them
+. to be populated in an automatically generated Impact Scheduler record
+
+...Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+./* Core process logic
+. */
+    debug
+    CALL INITIALIZE
+    CALL BUILD_CLI_LIST
+    CALL PROCESS_WORK_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
+./* Setup runtime variables
+. */
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "Qualifying CLIs Found " TO X_CNTDESC1
+    MOVE "CLIPs Considered      " TO X_CNTDESC2
+    MOVE "CLIPs Termed          " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL SAFE_ERASE_OGBFILE USING LOG_FILE
+    PACK SCRATCH WITH "echo #"cli_id1,clip_id2,net,prd,plan,eff,trm#" > ",LOG_FILE
+    ROLLOUT SCRATCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_CLI_LIST LROUTINE
+./* Build a list of client Ids that have one of the old plans as active
+. */
+    CALL UTIL_XMESSAGE USING "Building CLI work list",MSG_HEIGHT
+
+    IF (TEST_SKIP_WORK_BUILD)
+        CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+        RETURN IF (EQUAL)
+        CLEAR TEST_SKIP_WORK_BUILD
+    ENDIF
+
+.Build a temp file of active CLIPs
+    FILL " " IN CLIP_TRM
+    PACK SCRATCH WITH CLIP_FNS," ",TEMP_FILE," -t ":
+                      " -p41-48eq#"",CLIP_TRM,"#""
+    REFORMAT SCRATCH
+    IF (OVER)
+        debug
+        CALL UTIL_ERRORMSG USING "Reformat failed (active CLIPs)","BUILD_CLI_LIST"
+    ENDIF
+
+    CALL SAFE_ERASE_OGBFILE USING WORK_FILE
+    IF (OVER)
+        debug
+    ENDIF
+
+.Make our work list of CLIs with an active CLIP of the type provided
+    CALL ADD_CLIP_TO_WORK USING "ASO","SUPP","STAT"
+    CALL ADD_CLIP_TO_WORK USING "BLUE","ASO","BATO"
+    CALL ADD_CLIP_TO_WORK USING "HUMAN","ASO","STAT"
+    CALL ADD_CLIP_TO_WORK USING "HUMAN","FFS65","STAT"
+    CALL ADD_CLIP_TO_WORK USING "HUMAN","HMO65","PRSH"
+    CALL ADD_CLIP_TO_WORK USING "HUMAN","PPO65","STAT"
+    CALL ADD_CLIP_TO_WORK USING "OGB","PPO","PPO"
+    CALL ADD_CLIP_TO_WORK USING "UNIT","CDHP","BATO"
+    CALL ADD_CLIP_TO_WORK USING "UNIT","CDHP","STAT"
+    CALL ADD_CLIP_TO_WORK USING "UNIT","EPO","STAT"
+    CALL ADD_CLIP_TO_WORK USING "UNIT","PPO65","STAT"
+    CALL ADD_CLIP_TO_WORK USING "VANTA","HMO","REGN"
+    CALL ADD_CLIP_TO_WORK USING "VANTA","HMO65","PRSH"
+    CALL ADD_CLIP_TO_WORK USING "VANTA","MHHP","MONR"
+    CALL ADD_CLIP_TO_WORK USING "VANTA","ZRO65","STAT"
+
+    CALL SAFE_ERASE_OGBFILE USING TEMP_FILE
+    IF (OVER)
+        debug
+    ENDIF
+
+.Build a unique list of Ids
+    PACK SCRATCH WITH WORK_FILE," ",WORK_FILE," 1-8 -t -u"
+    SORT SCRATCH
+    IF (OVER)
+        debug
+        CALL UTIL_ERRORMSG USING "Sort failed (for unique CLI ids)","BUILD_CLI_LIST"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_CLIP_TO_WORK LROUTINE NET@,PRD@,PLAN@
+./* Pull the CLIP passed from the active file to the work file
+. */
+NET@        CHAR    @
+PRD@        CHAR    @
+PLAN@       CHAR    @
+...
+    CALL UTIL_XMESSAGE USING ("Finding open CLIPs for Net: "+CHOP NET@+" Prd: "+CHOP PRD@+" Plan: "+CHOP PLAN@),MSG_HEIGHT
+
+    PACK CLIP_NET WITH NET@,BLANKS
+    PACK CLIP_PRD WITH PRD@,BLANKS
+    PACK CLIP_PLAN WITH PLAN@,BLANKS
+
+    PACK SCRATCH WITH TEMP_FILE," ",WORK_FILE," 1-8 -t ":
+                      " -p13-17eq#"",CLIP_NET,"#" ":
+                      " -p18-22eq#"",CLIP_PRD,"#" ":
+                      " -p27-30eq#"",CLIP_PLAN,"#" "
+
+    CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+    IF (EQUAL)
+        PACK SCRATCH WITH SCRATCH," -a "
+    ENDIF
+    REFORMAT SCRATCH
+    IF (OVER)
+        debug
+        CALL UTIL_ERRORMSG USING "Reformat failed (active CLIPs)","BUILD_CLI_LIST"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_WORK_FILE LROUTINE
+./* Run the bool mod TRMOLD against each CLIP in each CLI in the work
+. * file
+. */
+    debug
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    LOOP
+        CALL READ_OGBFILE USING WORK_FD,WORK_FILE,WORK_LIST
+        WHILE (RESULT = 1)
+
+        CLEAR CLI_LIST,CLI_REC:
+              CLIP_LIST,CLIP_REC
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_CLI_FIND USING WORK_ID
+        IF (NOT EQUAL)
+            debug
+            CONTINUE
+        ENDIF
+        PACK CLI_REC WITH CLI_LIST,BLANKS
+
+        CALL UTIL_XMESSAGE USING ("Running TRMOLD against [ CLI Id: " + CHOP CLI_ID1 + " Lev1: " + CHOP CLI_LEV1 + " Lev2: " + CHOP CLI_LEV2 + " ]"),MSG_HEIGHT
+
+        CALL PROCESS_CLI
+
+        IF (TEST_TERM_MAX > 0)
+            BREAK IF (X_CNT3 > TEST_TERM_MAX)
+        ENDIF
+    REPEAT
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_CLI LROUTINE
+./* Run the bool each each CLIP for this CLI
+. */
+FIRST_CLIP      NUM     V_FLAG
+...
+    SET FIRST_CLIP
+    LOOP
+        IF (FIRST_CLIP)
+            CLEAR FIRST_CLIP
+            CALL UTIL_FIND_FIRST_CLIP USING CLI_ID1
+        ELSE
+            CALL UTIL_CLIP_NEXT
+        ENDIF
+        WHILE (EQUAL)
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+        PACK CLIP_REC WITH CLIP_LIST,BLANKS
+        CALL RUN_BOOL
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+RUN_BOOL LROUTINE
+./* Run TRMOLD against the current CLIP
+. */
+BOOL_RESULT     NUM     2
+ID1             CHAR    8
+ID2             CHAR    4
+...
+    CLEAR BOOL_RESULT
+
+    LOADMOD "runbool"
+    CALL RUN_CLI_BOOL USING CLI_REC,CLIP_REC,SYS_MOD,BOOL_RESULT
+    UNLOAD "runbool"
+
+.Restore current records
+    UNPACK CLI_REC INTO CLI_LIST
+    UNPACK CLIP_REC INTO CLIP_LIST
+
+.Results
+.   1 - success?
+.   3 - invalid
+.   6 - no WRITE hit
+    SWITCH BOOL_RESULT
+        CASE 3
+            CALL UTIL_ERRORMSG USING ("Invalid BOOL command in CLIB-" + SYS_MOD),"RUN_BOOL"
+        CASE 1
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+            PACK ID1 WITH CLIP_ID1
+            PACK ID2 WITH CLIP_ID2
+            CALL UTIL_FIND_THIS_CLIP USING ID1,ID2
+            IF (NOT EQUAL)
+                debug
+                CALL UTIL_ERRORMSG USING ("Unable to find CLIP: " + ID2),"RUN_BOOL"
+            ENDIF
+            CALL LOG_TERM
+        CASE 6
+.No write done
+        DEFAULT
+            debug  ?
+    ENDSWITCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_TERM LROUTINE
+./* Log that the current CLIP was termed
+. */
+    PACK SCRATCH WITH "echo #"",CLI_ID1,",":
+                                CLIP_ID2,",":
+                                CLIP_NET,",":
+                                CLIP_PRD,",":
+                                CLIP_PLAN,",":
+                                CLIP_EFF,",":
+                                CLIP_TRM,"#" >> ",LOG_FILE
+    ROLLOUT SCRATCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
+./* Cleanup work files and handle output files
+. */
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_PENDING_BACKUP USING "/w/",WORK_FILE,CURRDATE
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,CURRDATE
+
+    IF NOT (TEST_KEEP_WORK)
+        CALL SAFE_ERASE_OGBFILE USING WORK_FILE
+    ENDIF
+
+    CALL SEND_EMAIL
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
+./* Send notice with attached log
+. */
+RECIPIENTS  CHAR    100
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+...
+    PACK SUBJECT WITH "CLIP Clean Up Complete"
+    PACK BODY WITH "Process to term old CLIPs (using the TRMOLD SYS-TALK module) has finished."
+    CALL ADD_COUNTERS_TO_BODY USING BODY
+
+    PACK RECIPIENTS WITH EMAIL_GROUP
+    IF (CHOP TEST_EMAIL_GROUP > "")
+        PACK RECIPIENTS WITH TEST_EMAIL_GROUP
+    ENDIF
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_CLI.SR
+    INC UTIL_CLIP.SR
+    INC UTIL_EMAIL.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
