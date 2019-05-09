@@ -14,7 +14,7 @@
 +   reformats.
 +
 + Version:
-+   1.0.0
++   1.0.1
 +
 + Created By:
 +   apjwh - 04/11/2019
@@ -321,7 +321,7 @@ PROCESS_WORK_FILE LROUTINE
         ENDIF
         PACK CLI_REC WITH CLI_LIST,BLANKS
 
-        CALL UTIL_XMESSAGE USING ("Running TRMOLD against [ Id: " + CHOP CLI_ID1 + " Lev1: " + CHOP CLI_LEV1 + " Lev2: " + CHOP CLI_LEV2 + " ]"),MSG_HEIGHT
+        CALL UTIL_XMESSAGE USING ("Running TRMOLD against [ CLI Id: " + CHOP CLI_ID1 + " Lev1: " + CHOP CLI_LEV1 + " Lev2: " + CHOP CLI_LEV2 + " ]"),MSG_HEIGHT
 
         CALL PROCESS_CLI
 
