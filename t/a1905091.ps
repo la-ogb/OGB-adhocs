@@ -1,26 +1,16 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + Name:
-+   a1904111.PS
++   a1905091.PS
 +
 + Description:
-+   Wrapper for "runbool" to run the "TRMOLD" SYS-TALK module. This
-+   will term active CLIPs that should be termed. This process will
-+   speed that up by only processing CLIs that have open CLIPs that
-+   we are trying to clean up.
-+
-+ NOTE:
-+   If this is run later on, any new plans added to the TRMOLD SYS-TALK
-+   module will also need to be added to the list of plans in the
-+   reformats.
++   Fix the CLIP records with "<TODO>" in their term field. This was
++   caused by a1904111.
 +
 + Version:
-+   1.0.2
++   1.0.0
 +
 + Created By:
-+   apjwh - 04/11/2019
-+
-+ Last Modified By:
-+   apjwh - 04/11/2019
++   apjwh - 2019-05-09
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 .# =================================================================== #
@@ -65,11 +55,11 @@ TEST_TERM_MAX           NUM     "100"
 .# =================================================================== #
 
 WORK_FD             FILE    VAR=8,TEXT
-WORK_FILE           INIT    "/w/a1904111.wrk.txt"
+WORK_FILE           INIT    "/w/a1905091.wrk.txt"
 
-TEMP_FILE           INIT    "/w/a1904111.tmp.txt"
+TEMP_FILE           INIT    "/w/a1905091.tmp.txt"
 
-LOG_FILE            INIT    "/w/a1904111.log.csv"
+LOG_FILE            INIT    "/w/a1905091.log.csv"
 
 .# =================================================================== #
 .# File List
@@ -83,7 +73,7 @@ WORK_ID             CHAR    8
 .# Program Variables
 .# =================================================================== #
 
-SYS_MOD             INIT    "TRMOLD"
+SYS_MOD             INIT    "TRMTDO"
 EMAIL_GROUP         INIT    "${ITAPPS},melissa.meyers@la.gov"
 
 CURRDATE            CHAR    8
@@ -125,8 +115,8 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "a1904111" TO C_PROG    ...Program name
-    MOVE "Run TRMOLD" TO C_OPER  ...Program description
+    MOVE "a1905091" TO C_PROG    ...Program name
+    MOVE "Run TRMTDO" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -216,8 +206,9 @@ BUILD_CLI_LIST LROUTINE
     ENDIF
 
 .Build a temp file of active CLIPs
-    FILL " " IN CLIP_TRM
-    PACK SCRATCH WITH CLIP_FNS," ",TEMP_FILE," -t ":
+    PACK CLIP_TRM WITH "<TODO>",BLANKS
+    PACK SCRATCH WITH CLIP_FNS," ",WORK_FILE," -t ":
+                      " 1-8 ":
                       " -p41-48eq#"",CLIP_TRM,"#""
     REFORMAT SCRATCH
     IF (OVER)
@@ -225,34 +216,7 @@ BUILD_CLI_LIST LROUTINE
         CALL UTIL_ERRORMSG USING "Reformat failed (active CLIPs)","BUILD_CLI_LIST"
     ENDIF
 
-    CALL SAFE_ERASE_OGBFILE USING WORK_FILE
-    IF (OVER)
-        debug
-    ENDIF
-
-.Make our work list of CLIs with an active CLIP of the type provided
-    CALL ADD_CLIP_TO_WORK USING "ASI","SUPP","STAT"
-    CALL ADD_CLIP_TO_WORK USING "BLUE","ASO","BATO"
-    CALL ADD_CLIP_TO_WORK USING "HUMAN","ASO","STAT"
-    CALL ADD_CLIP_TO_WORK USING "HUMAN","FFS65","STAT"
-    CALL ADD_CLIP_TO_WORK USING "HUMAN","HMO65","PRSH"
-    CALL ADD_CLIP_TO_WORK USING "HUMAN","PPO65","STAT"
-    CALL ADD_CLIP_TO_WORK USING "OGB","PPO","PPO"
-    CALL ADD_CLIP_TO_WORK USING "UNIT","CDHP","BATO"
-    CALL ADD_CLIP_TO_WORK USING "UNIT","CDHP","STAT"
-    CALL ADD_CLIP_TO_WORK USING "UNIT","EPO","STAT"
-    CALL ADD_CLIP_TO_WORK USING "UNIT","PPO65","STAT"
-    CALL ADD_CLIP_TO_WORK USING "VANTA","HMO","REGN"
-    CALL ADD_CLIP_TO_WORK USING "VANTA","HMO65","PRSH"
-    CALL ADD_CLIP_TO_WORK USING "VANTA","MHHP","MONR"
-    CALL ADD_CLIP_TO_WORK USING "VANTA","ZRO65","STAT"
-
-    CALL SAFE_ERASE_OGBFILE USING TEMP_FILE
-    IF (OVER)
-        debug
-    ENDIF
-
-.Build a unique list of Ids
+.Build a unique list of CLI Ids
     PACK SCRATCH WITH WORK_FILE," ",WORK_FILE," 1-8 -t -u"
     SORT SCRATCH
     IF (OVER)
@@ -265,41 +229,8 @@ BUILD_CLI_LIST LROUTINE
 
 
 .#######################################################################
-ADD_CLIP_TO_WORK LROUTINE NET@,PRD@,PLAN@
-./* Pull the CLIP passed from the active file to the work file
-. */
-NET@        CHAR    @
-PRD@        CHAR    @
-PLAN@       CHAR    @
-...
-    CALL UTIL_XMESSAGE USING ("Finding open CLIPs for Net: "+CHOP NET@+" Prd: "+CHOP PRD@+" Plan: "+CHOP PLAN@),MSG_HEIGHT
-
-    PACK CLIP_NET WITH NET@,BLANKS
-    PACK CLIP_PRD WITH PRD@,BLANKS
-    PACK CLIP_PLAN WITH PLAN@,BLANKS
-
-    PACK SCRATCH WITH TEMP_FILE," ",WORK_FILE," 1-8 -t ":
-                      " -p13-17eq#"",CLIP_NET,"#" ":
-                      " -p18-22eq#"",CLIP_PRD,"#" ":
-                      " -p27-30eq#"",CLIP_PLAN,"#" "
-
-    CALL UTIL_EXISTS USING WORK_FILE,"FILE"
-    IF (EQUAL)
-        PACK SCRATCH WITH SCRATCH," -a "
-    ENDIF
-    REFORMAT SCRATCH
-    IF (OVER)
-        debug
-        CALL UTIL_ERRORMSG USING "Reformat failed (active CLIPs)","BUILD_CLI_LIST"
-    ENDIF
-
-    RETURN
-    ENDROUTINE
-
-
-.#######################################################################
 PROCESS_WORK_FILE LROUTINE
-./* Run the bool mod TRMOLD against each CLIP in each CLI in the work
+./* Run the bool mod TRMTDO against each CLIP in each CLI in the work
 . * file
 . */
     debug
@@ -321,7 +252,7 @@ PROCESS_WORK_FILE LROUTINE
         ENDIF
         PACK CLI_REC WITH CLI_LIST,BLANKS
 
-        CALL UTIL_XMESSAGE USING ("Running TRMOLD against [ CLI Id: " + CHOP CLI_ID1 + " Lev1: " + CHOP CLI_LEV1 + " Lev2: " + CHOP CLI_LEV2 + " ]"),MSG_HEIGHT
+        CALL UTIL_XMESSAGE USING ("Running " + SYS_MOD + " against [ CLI Id: " + CHOP CLI_ID1 + " Lev1: " + CHOP CLI_LEV1 + " Lev2: " + CHOP CLI_LEV2 + " ]"),MSG_HEIGHT
 
         CALL PROCESS_CLI
 
@@ -337,7 +268,7 @@ PROCESS_WORK_FILE LROUTINE
 
 .#######################################################################
 PROCESS_CLI LROUTINE
-./* Run the bool each each CLIP for this CLI
+./* Run the bool against each CLIP for this CLI
 . */
 FIRST_CLIP      NUM     V_FLAG
 ...
@@ -350,8 +281,8 @@ FIRST_CLIP      NUM     V_FLAG
             CALL UTIL_CLIP_NEXT
         ENDIF
         WHILE (EQUAL)
-
         CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+        CONTINUE IF (CHOP CLIP_TRM != "<TODO>")
 
         PACK CLIP_REC WITH CLIP_LIST,BLANKS
         CALL RUN_BOOL
@@ -450,8 +381,8 @@ RECIPIENTS  CHAR    100
 SUBJECT     CHAR    100
 BODY        CHAR    5000
 ...
-    PACK SUBJECT WITH "CLIP Clean Up Complete"
-    PACK BODY WITH "Process to term old CLIPs (using the TRMOLD SYS-TALK module) has finished."
+    PACK SUBJECT WITH "CLIP with '<TODO>' Term Date Clean Up Complete"
+    PACK BODY WITH "Process to term old CLIPs (using the ",SYS_MOD," SYS-TALK module) has finished."
     CALL ADD_COUNTERS_TO_BODY USING BODY
 
     PACK RECIPIENTS WITH EMAIL_GROUP
