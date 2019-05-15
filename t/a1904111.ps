@@ -16,7 +16,13 @@
 + WARNING !!!
 +   If you need to reuse this to term CLIPs, keep in mind this is very
 +   very slow iif there are a lot of CLIs to process. This needs to be
-+   reworked
++   reworked to run the BOOL routine only on the CLIPs it's going to
++   succeed on. Otherwise it could run from 5 min to 24 hours.
++
++   TLDR:
++       Use this algortihm to term CLIPs for specific and limited CLIs.
++       Otherwise it'd be much much faster to use reformat to process
++       only the CLIPs that need to be processed.
 +
 + Created By:
 +   apjwh - 04/11/2019
