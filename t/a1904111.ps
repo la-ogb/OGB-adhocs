@@ -13,13 +13,12 @@
 +   module will also need to be added to the list of plans in the
 +   reformats.
 +
-+ Version:
-+   1.0.2
++ WARNING !!!
++   If you need to reuse this to term CLIPs, keep in mind this is very
++   very slow iif there are a lot of CLIs to process. This needs to be
++   reworked
 +
 + Created By:
-+   apjwh - 04/11/2019
-+
-+ Last Modified By:
 +   apjwh - 04/11/2019
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -84,7 +83,8 @@ WORK_ID             CHAR    8
 .# =================================================================== #
 
 SYS_MOD             INIT    "TRMOLD"
-EMAIL_GROUP         INIT    "${ITAPPS},melissa.meyers@la.gov"
+EMAIL_GROUP         INIT    "${ITAPPS},":
+                            "Melissa.mayers@la.gov"
 
 CURRDATE            CHAR    8
 START_DATETIME      CHAR    24
