@@ -1,0 +1,454 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a1906101.ps
++
++ DESCRIPTION:
++   Extract of addresses for Access Health members
++
++ CREATED BY:
++   apjwh - 2019-06-10
++
++ LAST MODIFIED BY:
++   apjwh - 2019-06-11
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEM.RL
+    INC MEME.RL
+    INC MEMU.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+
+.# =================================================================== #
+.# Config
+.# =================================================================== #
+
+FTP_DIR             INIT    "/i/groups/it/apps/staging"
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST                 NUM     V_FLAG
+TEST_CONFIG                 LIST
+.TODO: add test settings
+                            LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+MEME_WORK_FD        FILE    FIXED=X_MEME_SIZE,TEXT
+MEME_WORK_FILE      INIT    "/w/a1906101.meme.tmp"
+
+ADDRESS_FD          FILE    VAR=300,TEXT
+ADDRESS_FILE        INIT    "/w/a1906101.addresses.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+ADDRESS_LIST        LIST
+ADDRESS_REC         CHAR    300
+                    LISTEND
+
+ADDRESS_HEADER      VARLIST "ImpactId,":
+                            "LastName,":
+                            "FirstName,":
+                            "Address1,":
+                            "Address2,":
+                            "City,":
+                            "State,":
+                            "Zip"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.// --------------------------------------------------------------------
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
+./* Set program specific variables and establish the next chain link
+. * if applicable. Then run the program's main logic.
+. */
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a1906101" TO C_PROG        ...Program name
+    MOVE "Access Hlth Addr" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.TODO: make sure any parameter that can be called from the CMD line are
+. filled with spaces or value and space before the SCHED_PICK for them
+. to be populated in an automatically generated Impact Scheduler record
+
+...Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+./* Core process logic
+. */
+    debug
+    CALL INITIALIZE
+    CALL BUILD_ELIG_FILE
+    CALL EXTRACT_ADDRESSES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
+./* Setup runtime variables
+. */
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.TODO: set counter desc
+    MOVE "MEME recs processed   " TO X_CNTDESC1
+    MOVE "Address Written       " TO X_CNTDESC2
+    MOVE "                      " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_ELIG_FILE LROUTINE
+./* Extract BCBSLA health enrollees, excluding the HSA
+. */
+
+.Get open ended records
+    PACK MEME_NET WITH "BLUE",BLANKS
+    FILL " " IN MEME_TRM
+    PACK SCRATCH WITH MEME_FNS," ",MEME_WORK_FILE," -t ":
+                      "-p112-116eq#"",MEME_NET,"#" ":
+                      "-p104-111eq#"",MEME_TRM,"#""
+
+    CALL UTIL_XMESSAGE USING "Get BCBS records with no term",MSG_HEIGHT
+
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Reformat failed - no term","BUILD_ELIG_FILE"
+    ENDIF
+
+.Get freshly termed records
+    PACK DATE_CCYYMMDD WITH CURRDATE
+    CALL DATE_CALC USING CURRDATE,"ADD","DAYS",15,MEME_TRM
+    PACK MEME_TRM WITH MEME_TRM,BLANKS
+    PACK SCRATCH WITH MEME_FNS," ",MEME_WORK_FILE," -t -a ":
+                      "-p112-116eq#"",MEME_NET,"#" ":
+                      "-p104-111ge#"",MEME_TRM,"#""
+
+    CALL UTIL_XMESSAGE USING ("Get BCBS records with a term > " + MEME_TRM),MSG_HEIGHT
+
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Reformat failed - future term","BUILD_ELIG_FILE"
+    ENDIF
+
+. Sort by person
+    CALL UTIL_XMESSAGE USING "Sorting work file",MSG_HEIGHT
+    PACK SCRATCH WITH MEME_WORK_FILE," ",MEME_WORK_FILE," 1-8 -t"
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort failed","BUILD_ELIG_FILE"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EXTRACT_ADDRESSES LROUTINE
+./* Find all unique 01s and add them to the address file
+. */
+IGNORE_ME       NUM     V_FLAG
+THIS_MEMBER     CHAR    8
+...
+
+    CALL UTIL_XMESSAGE USING "Building Address File",MSG_HEIGHT
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL OPEN_OGBFILE USING MEME_WORK_FD,MEME_WORK_FILE
+    CALL PREP_OGBFILE USING ADDRESS_FD,ADDRESS_FILE
+    CALL WRITE_OGBREC USING ADDRESS_FD,ADDRESS_FILE,ADDRESS_HEADER
+
+    CLEAR IGNORE_ME:
+          THIS_MEMBER
+
+    debug
+
+    LOOP
+        CALL READ_OGBFILE USING MEME_WORK_FD,MEME_WORK_FILE,MEME_LIST
+        WHILE (RESULT = 1)
+        CALL UTIL_XCOUNTER USING X_CNT1,100
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE
+        ENDIF
+
+        IF (CHOP THIS_MEMBER = "")
+            PACK THIS_MEMBER WITH MEME_ID1
+            CLEAR IGNORE_ME
+        ENDIF
+        IF (MEME_ID1 = THIS_MEMBER)
+            CONTINUE IF (IGNORE_ME)
+        ELSE
+            PACK THIS_MEMBER WITH MEME_ID1
+            CLEAR IGNORE_ME
+        ENDIF
+
+.Skip voids
+        CONTINUE IF (MEME_TRM < MEME_EFF)
+
+.Skip non health records
+        CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
+        CONTINUE IF (OVER)
+
+        CALL UTIL_MEM_FIND USING THIS_MEMBER
+        IF (NOT EQUAL)
+            SET IGNORE_ME
+            CONTINUE
+        ENDIF
+
+        IF (MEM_REL != "01")
+            SET IGNORE_ME
+            CONTINUE
+        ENDIF
+
+        CALL WRITE_ADDRESS
+
+        SET IGNORE_ME
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING MEME_WORK_FD,MEME_WORK_FILE
+    CALL CLOSE_OGBFILE USING ADDRESS_FD,ADDRESS_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_ADDRESS LROUTINE
+./* Validate and write the current member's address to the file
+. */
+    FILL " " IN ADDRESS_LIST
+
+    CALL UTIL_PACK_ADDR_LIST USING "MEM"
+
+    IF (CHOP UTIL_ADDR_COUNTRY > "" & CHOP UTIL_ADDR_COUNTRY != "US")
+        RETURN
+    ENDIF
+
+    CALL CLEAN_FIELD USING "STRING",MEM_LNAME
+    CALL CLEAN_FIELD USING "STRING",MEM_FNAME
+
+    CALL CLEAN_FIELD USING "STRING",UTIL_ADDR_STREET_1
+    IF (CHOP UTIL_ADDR_STREET_1 = "")
+        debug
+        RETURN
+    ENDIF
+
+    CALL CLEAN_FIELD USING "STRING",UTIL_ADDR_STREET_2
+
+    CALL CLEAN_FIELD USING "STRING",UTIL_ADDR_CITY
+    IF (CHOP UTIL_ADDR_CITY = "")
+        debug
+        RETURN
+    ENDIF
+
+    CALL CLEAN_FIELD USING "STRING",UTIL_ADDR_STATE
+    IF (CHOP UTIL_ADDR_STATE = "")
+        debug
+        RETURN
+    ENDIF
+
+    CALL CLEAN_FIELD USING "ZIP",UTIL_ADDR_ZIP
+    IF (CHOP UTIL_ADDR_ZIP = "")
+        debug
+        RETURN
+    ENDIF
+
+    PACK ADDRESS_REC WITH (CHOP MEM_ID1),COMMA:
+                          (CHOP MEM_LNAME),COMMA:
+                          (CHOP MEM_FNAME),COMMA:
+                          (CHOP UTIL_ADDR_STREET_1),COMMA:
+                          (CHOP UTIL_ADDR_STREET_2),COMMA:
+                          (CHOP UTIL_ADDR_CITY),COMMA:
+                          (CHOP UTIL_ADDR_STATE),COMMA:
+                          (CHOP UTIL_ADDR_ZIP)
+    REPLACE MAKEUPPER IN ADDRESS_REC
+
+    CALL UTIL_XCOUNTER USING X_CNT2,10
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING ADDRESS_FD,ADDRESS_FILE,ADDRESS_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_FIELD LROUTINE TYPE@,FIELD@
+./* Validate and clean the date in the field@
+. */
+TYPE@       CHAR    @
+FIELD@      CHAR    @
+...
+    SWITCH TYPE@
+        CASE "STRING"
+            REPLACE MAKEUPPER IN FIELD@
+            CALL UTIL_REMOVE_CHAR USING FIELD@,COMMA
+
+        CASE "ZIP"
+            PACK SCRATCH WITH FIELD@
+            SETLPTR SCRATCH TO 5
+            TYPE SCRATCH
+            IF (EQUAL)
+                PACK FIELD@ WITH (SQUEEZE SCRATCH),BLANKS
+            ELSE
+                SWITCH SCRATCH
+                    CASE "ZZZZZ"  ...expected bad variations
+                    DEFAULT
+                ENDSWITCH
+                FILL " " IN FIELD@
+            ENDIF
+
+        DEFAULT
+            CALL UTIL_ERRORMSG USING "Invalid clean type","CLEAN_FIELD"
+    ENDSWITCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
+./* Cleanup work files and handle output files
+. */
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+.Cleanup and export the file
+    CALL UTIL_TRIM_TRAILING_SPACE USING ADDRESS_FILE,ADDRESS_FILE
+    CALL UTIL_FTP_SEND_FILE USING "/w/",FTP_DIR,ADDRESS_FILE,"ascii"
+
+.Send the email notice
+    PACK SCRATCH WITH "\n\tThis file contains the mailing address for all 01's that qualifies for the Access Health program.\n":
+    CALL ADD_COUNTERS_TO_BODY USING SCRATCH
+
+    IF ()
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               "${ITAPPS}":
+                               "Access Health Address File Complete":
+                               SCRATCH:
+                               START_DATETIME:
+                               END_DATETIME:
+                               ADDRESS_FILE
+
+.Archive the extract
+    CALL UTIL_PENDING_BACKUP USING "/w/",ADDRESS_FILE,CURRDATE
+
+.Erase work files
+    CALL ERASE_OGBFILE USING ADDRESS_FILE
+    CALL ERASE_OGBFILE USING MEME_WORK_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC FILTER_NON_HEALTH.SR
+    INC UTIL_MEM.SR
+    INC UTIL_MEMU.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_FTP.SR
+    INC UTIL_STRINGS.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
