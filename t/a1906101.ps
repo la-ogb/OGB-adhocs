@@ -411,9 +411,10 @@ CLEAN_UP LROUTINE
     CALL UTIL_FTP_SEND_FILE USING "/w/",FTP_DIR,ADDRESS_FILE,"ascii"
 
 .Send the email notice
-    PACK SCRATCH WITH "This file contains the mailing address for all 01's that qualifies for the Access Health program.\n":
-                      "COUNTS:\n"
+    PACK SCRATCH WITH "\n\tThis file contains the mailing address for all 01's that qualifies for the Access Health program.\n":
     CALL ADD_COUNTERS_TO_BODY USING SCRATCH
+
+    IF ()
 
     CALL UTIL_EMAIL_NEOJ USING C_PROG:
                                "${ITAPPS}":
