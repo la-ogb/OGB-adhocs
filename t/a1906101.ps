@@ -35,6 +35,7 @@ PARAM_TEST          CHAR    4
 .# =================================================================== #
 
 FTP_DIR             INIT    "/i/groups/it/apps/staging"
+EMAIL_GROUP         INIT    "${ITAPPS}"
 
 .# =================================================================== #
 .# Equates for code clarity
@@ -48,10 +49,10 @@ MSG_HEIGHT          EQU     24
 .# Debugging Configuration
 .# =================================================================== #
 
-ENABLE_TEST                 NUM     V_FLAG
-TEST_CONFIG                 LIST
-.TODO: add test settings
-                            LISTEND
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "jakob.hendrix@la.gov"
+                    LISTEND
 
 .# =================================================================== #
 .# File Declarations
@@ -403,6 +404,8 @@ FIELD@      CHAR    @
 CLEAN_UP LROUTINE
 ./* Cleanup work files and handle output files
 . */
+EMAIL_TO        CHAR    100
+...
     debug
     CLOCK CALENDAR INTO END_DATETIME
 
@@ -411,13 +414,16 @@ CLEAN_UP LROUTINE
     CALL UTIL_FTP_SEND_FILE USING "/w/",FTP_DIR,ADDRESS_FILE,"ascii"
 
 .Send the email notice
-    PACK SCRATCH WITH "\n\tThis file contains the mailing address for all 01's that qualifies for the Access Health program.\n":
+    PACK SCRATCH WITH "\n\tThis file contains the mailing address for all 01's that qualifies for the Access Health program."
     CALL ADD_COUNTERS_TO_BODY USING SCRATCH
 
-    IF ()
+    PACK EMAIL_TO WITH EMAIL_GROUP
+    IF (CHOP TEST_EMAIL_TO > "")
+        PACK EMAIL_TO WITH TEST_EMAIL_TO
+    ENDIF
 
     CALL UTIL_EMAIL_NEOJ USING C_PROG:
-                               "${ITAPPS}":
+                               EMAIL_TO:
                                "Access Health Address File Complete":
                                SCRATCH:
                                START_DATETIME:
