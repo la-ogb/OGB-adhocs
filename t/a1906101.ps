@@ -200,10 +200,12 @@ BUILD_ELIG_FILE LROUTINE
 
 .Get open ended records
     PACK MEME_NET WITH "BLUE",BLANKS
+    PACK MEME_PLAN WITH "HSA",BLANKS
     FILL " " IN MEME_TRM
     PACK SCRATCH WITH MEME_FNS," ",MEME_WORK_FILE," -t ":
                       "-p112-116eq#"",MEME_NET,"#" ":
-                      "-p104-111eq#"",MEME_TRM,"#""
+                      "-p104-111eq#"",MEME_TRM,"#" ":
+                      "-p126-129ne#"",MEME_PLAN,"#""
 
     CALL UTIL_XMESSAGE USING "Get BCBS records with no term",MSG_HEIGHT
 
