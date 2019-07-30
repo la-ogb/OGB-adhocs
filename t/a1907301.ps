@@ -1,0 +1,366 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a1907301.ps
++
++ DESCRIPTION:
++   Identify improperly voided MEME records
++
++ CREATED BY:
++   apjwh - 2019-07-30
++
++ LAST MODIFIED BY:
++   apjwh - 2019-07-30
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEME.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAILGROUP     INIT    "jakob.hendrix@la.gov"
+                    LISTEND
+
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_GROUP         INIT    "${ITAPPS}"
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FILE           INIT    "/w/a1907301.meme.wrk"
+
+REPORT_FD           FILE    VAR=200,TEXT
+REPORT_FILE         CHAR    100
+REPORT_PREFIX       INIT    "/w/a1907301_bad_voids"
+REPORT_EXT          INIT    "csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+REPORT_LIST         LIST
+REPORT_REC          CHAR    200
+                    LISTEND
+
+REPORT_HEADER       VARLIST "Member ID",COMMA:
+                            "MEME ID",COMMA:
+                            "Error"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a1907301" TO C_PROG        ...Program name
+    MOVE "Bad Void Report" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+    CALL UNIT_TESTS
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_VOIDS
+    CALL BUILD_REPORT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.TODO: set counter desc
+    MOVE "Voids Reviewed        " TO X_CNTDESC1
+    MOVE "Bad Ones Found        " TO X_CNTDESC2
+    MOVE "                      " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    PACK REPORT_FILE WITH REPORT_PREFIX,"_",CURRDATE,".",REPORT_EXT
+    REPLACE MAKELOWER IN REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_VOIDS LROUTINE
++ Build a work file of all MEME records with a "V" term code
+
+    CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
+    PACK SCRATCH WITH MEME_FNS," ",WORK_FILE," -t":
+                      " -p404-404eq#"V#""
+    REFORMAT SCRATCH
+    IF OVER
+        CALL UTIL_ERRORMSG USING "MEME reformat failed","FIND_VOIDS"
+    ENDIF
+
+    PACK SCRATCH WITH WORK_FILE," ",WORK_FILE," 1-12 -t"
+    SORT SCRATCH
+    IF OVER
+        CALL UTIL_ERRORMSG USING "Work file sort by member failed","FIND_VOIDS"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_REPORT LROUTINE
++ Build a CSV of bad voids
+
+    CALL UTIL_XMESSAGE USING "Looking for badly voided records...",MSG_HEIGHT
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING REPORT_FD,REPORT_FILE,REPORT_HEADER
+
+    LOOP
+        CALL READ_OGBFILE USING WORK_FD,WORK_FILE,MEME_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,10
+
+        IF (CHOP MEME_TRM = "" | MEME_TRM >= MEME_EFF)
+            CALL REPORT_ERR USING "Term date > effective date with 'V' term code"
+            CONTINUE
+        ENDIF
+
+        CALL IS_DAY_BEFORE USING MEME_EFF,MEME_TRM
+        IF NOT EQUAL
+            CALL REPORT_ERR USING "Term date > 1 day before effective date"
+            CONTINUE
+        ENDIF
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REPORT_ERR LROUTINE ERR@
++ Add the current MEME data to the error report
+ERR@        CHAR    @
+...
+    CALL UTIL_XCOUNTER USING X_CNT2,1
+    PACK REPORT_REC WITH MEME_ID1,COMMA:
+                         MEME_ID2,COMMA:
+                         ERR@
+
+    CALL WRITE_OGBREC USING REPORT_FD,REPORT_FILE,REPORT_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+IS_DAY_BEFORE LROUTINE BASE@,COMPARE@
++ Checks to see if the compare date is the day before the base date
+BASE@       CHAR    @
+COMPARE@    CHAR    @
+DIFF        NUM     7
+...
+    CALL DELTA_DAYS USING BASE@,COMPARE@,DIFF
+    IF (DIFF = 1)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+
+    CALL UTIL_XMESSAGE USING "Cleaning up...",MSG_HEIGHT
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_DELETE_FILE USING WORK_FILE
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/",REPORT_FILE,END_DATETIME
+
+    debug
+    CALL SEND_EMAIL
+    CALL UTIL_DELETE_FILE USING REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
+EMAILTO     CHAR    200
+..
+    PACK EMAILTO WITH EMAIL_GROUP
+    IF (CHOP TEST_EMAILGROUP > "")
+        PACK EMAILTO WITH TEST_EMAILGROUP
+    ENDIF
+
+    IF (X_CNT2 > 1)
+        CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                                   EMAILTO:
+                                   "A1907301 - Bad Void Report - Errors Found":
+                                   ((TRIM (CHAR X_CNT2)) + " errors found."):
+                                   START_DATETIME:
+                                   END_DATETIME:
+                                   REPORT_FILE
+
+    ELSE
+        CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                                   EMAILTO:
+                                   "A1907301 - Bad Void Report - No Errors Found":
+                                   ((TRIM (CHAR X_CNT2)) + " errors found."):
+                                   START_DATETIME:
+                                   END_DATETIME
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UNIT_TESTS LROUTINE
++ Test testable routines
+    CALL IS_DAY_BEFORE USING "20190101","20181231"
+    IF NOT EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING "Day compare failed: day before expected to pass","UNIT_TESTS"
+    ENDIF
+
+    CALL IS_DAY_BEFORE USING "20190101","20190101"
+    IF EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING "Day compare failed: same day expected to fail","UNIT_TESTS"
+    ENDIF
+
+    CALL IS_DAY_BEFORE USING "20190101","20190201"
+    IF EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING "Day compare failed: next month expected to fail","UNIT_TESTS"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_EMAIL.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
