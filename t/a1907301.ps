@@ -17,7 +17,7 @@
 .# =================================================================== #
     INC VALID.RL
     INC UTIL_COMMON.CB
-    INC MEME.RL
+    INC UTIL_MEMMEM.CB
 
 .# =================================================================== #
 .# Scheduler Parameters
@@ -58,6 +58,9 @@ EMAIL_GROUP         INIT    "${ITAPPS}"
 WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
 WORK_FILE           INIT    "/w/a1907301.meme.wrk"
 
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a1907301.inm"
+
 REPORT_FD           FILE    VAR=200,TEXT
 REPORT_FILE         CHAR    100
 REPORT_PREFIX       INIT    "/w/a1907301_bad_voids"
@@ -67,13 +70,23 @@ REPORT_EXT          INIT    "csv"
 .# File lists
 .# =================================================================== #
 
+UPDATE_LIST         LIST
+UPDATE_REC          CHAR    X_INM_SIZE
+                    LISTEND
+
 REPORT_LIST         LIST
 REPORT_REC          CHAR    200
                     LISTEND
 
-REPORT_HEADER       VARLIST "Member ID",COMMA:
+REPORT_HEADER       VARLIST "Action",COMMA:
+                            "Member ID",COMMA:
                             "MEME ID",COMMA:
-                            "Error"
+                            "Error",COMMA:
+                            "Network",COMMA:
+                            "Product",COMMA:
+                            "Plan",COMMA:
+                            "EffDate",COMMA:
+                            "TermDate"
 
 .# =================================================================== #
 .# Program Variables
@@ -168,7 +181,7 @@ INITIALIZE LROUTINE
 .TODO: set counter desc
     MOVE "Voids Reviewed        " TO X_CNTDESC1
     MOVE "Bad Ones Found        " TO X_CNTDESC2
-    MOVE "                      " TO X_CNTDESC3
+    MOVE "Updates               " TO X_CNTDESC3
     MOVE "                      " TO X_CNTDESC4
     MOVE "                      " TO X_CNTDESC5
     MOVE "                      " TO X_CNTDESC6
@@ -214,6 +227,8 @@ BUILD_REPORT LROUTINE
     CALL UTIL_XMESSAGE USING "Looking for badly voided records...",MSG_HEIGHT
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
     CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
     MOVE OGB_SEQ1 TO OGB_SEQ
     CALL WRITE_OGBREC USING REPORT_FD,REPORT_FILE,REPORT_HEADER
 
@@ -223,34 +238,70 @@ BUILD_REPORT LROUTINE
 
         CALL UTIL_XCOUNTER USING X_CNT1,10
 
+.Filter out records we don't care about
+        CONTINUE IF (CHOP MEME_NET = "NOCOV")
+        IF (CHOP MEME_NET = "DHH")
+            CONTINUE IF (CHOP MEME_TRM > "")
+        ENDIF
+
         IF (CHOP MEME_TRM = "" | MEME_TRM >= MEME_EFF)
-            CALL REPORT_ERR USING "Term date > effective date with 'V' term code"
+
+            IF (CHOP MEME_TRM = "")
+
+.TODO: remove the "V" tlet and update
+
+                CALL LOGGER USING "UPDATE","No term date present --> 'V' removed"
+
+            ELSE IF (MEME_EFF = MEME_TRM)
+
+.TODO: change the term date to be eff - 1
+                CALL LOGGER USING "UPDATE","Void with EFF = TRM --> TRM set to EFF - 1"
+
+            ELSE
+                CALL LOGGER USING "ERROR","Term date > effective date with 'V' term code"
+            ENDIF
             CONTINUE
         ENDIF
 
         CALL IS_DAY_BEFORE USING MEME_EFF,MEME_TRM
         IF NOT EQUAL
-            CALL REPORT_ERR USING "Term date > 1 day before effective date"
+            CALL LOGGER USING "ERROR","Term date > 1 day before effective date"
             CONTINUE
         ENDIF
     REPEAT
 
     CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
     CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-REPORT_ERR LROUTINE ERR@
+LOGGER LROUTINE LOGTYPE@,LOGMSG@
 + Add the current MEME data to the error report
-ERR@        CHAR    @
+LOGTYPE@        CHAR    @
+LOGMSG@         CHAR    @
 ...
-    CALL UTIL_XCOUNTER USING X_CNT2,1
-    PACK REPORT_REC WITH MEME_ID1,COMMA:
+    SWITCH LOGTYPE@
+        CASE "ERROR"
+            CALL UTIL_XCOUNTER USING X_CNT2,1
+        CASE "UPDATE"
+            CALL UTIL_XCOUNTER USING X_CNT3,1
+        DEFAULT
+            CALL UTIL_ERRORMSG USING "Invalid log type","LOGGER"
+    ENDSWITCH
+
+    PACK REPORT_REC WITH LOGTYPE@,COMMA:
+                         MEME_ID1,COMMA:
                          MEME_ID2,COMMA:
-                         ERR@
+                         LOGMSG@,COMMA:
+                         MEME_NET,COMMA:
+                         MEME_PRD,COMMA:
+                         MEME_PLAN,COMMA:
+                         MEME_EFF,COMMA:
+                         MEME_TRM
 
     CALL WRITE_OGBREC USING REPORT_FD,REPORT_FILE,REPORT_LIST
 
@@ -357,6 +408,7 @@ UNIT_TESTS LROUTINE
 .# =================================================================== #
     INC VALID.IO
     INC UTIL_COMMON.SR
+    INC UTIL_MEMMEM.SR
     INC UTIL_TEST.SR
     INC UTIL_SYSTEM.SR
     INC UTIL_EMAIL.SR
