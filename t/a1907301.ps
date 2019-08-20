@@ -9,7 +9,7 @@
 +   apjwh - 2019-07-30
 +
 + LAST MODIFIED BY:
-+   apjwh - 2019-07-30
++   apjwh - 2019-08-20
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 .# =================================================================== #
@@ -49,6 +49,7 @@ TEST_EMAILGROUP     INIT    "jakob.hendrix@la.gov"
 .# Configuration
 .# =================================================================== #
 
+PROG_NAME           INIT    "FIXVDS"
 EMAIL_GROUP         INIT    "${ITAPPS}"
 
 .# =================================================================== #
@@ -204,16 +205,18 @@ FIND_VOIDS LROUTINE
 
     CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
     PACK SCRATCH WITH MEME_FNS," ",WORK_FILE," -t":
-                      " -p404-404eq#"V#""
+        " -p404-404eq#"V#""
     REFORMAT SCRATCH
     IF OVER
-        CALL UTIL_ERRORMSG USING "MEME reformat failed","FIND_VOIDS"
+        CALL UTIL_ERRORMSG USING "MEME reformat failed":
+            "FIND_VOIDS"
     ENDIF
 
     PACK SCRATCH WITH WORK_FILE," ",WORK_FILE," 1-12 -t"
     SORT SCRATCH
     IF OVER
-        CALL UTIL_ERRORMSG USING "Work file sort by member failed","FIND_VOIDS"
+        CALL UTIL_ERRORMSG USING "Work file sort by member failed":
+            "FIND_VOIDS"
     ENDIF
 
     RETURN
@@ -236,6 +239,10 @@ BUILD_REPORT LROUTINE
         CALL READ_OGBFILE USING WORK_FD,WORK_FILE,MEME_LIST
         WHILE (RESULT = 1)
 
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE
+        ENDIF
+
         CALL UTIL_XCOUNTER USING X_CNT1,10
 
 .Filter out records we don't care about
@@ -244,35 +251,102 @@ BUILD_REPORT LROUTINE
             CONTINUE IF (CHOP MEME_TRM > "")
         ENDIF
 
-        IF (CHOP MEME_TRM = "" | MEME_TRM >= MEME_EFF)
-
-            IF (CHOP MEME_TRM = "")
-
-.TODO: remove the "V" tlet and update
-
-                CALL LOGGER USING "UPDATE","No term date present --> 'V' removed"
-
-            ELSE IF (MEME_EFF = MEME_TRM)
-
-.TODO: change the term date to be eff - 1
-                CALL LOGGER USING "UPDATE","Void with EFF = TRM --> TRM set to EFF - 1"
-
-            ELSE
-                CALL LOGGER USING "ERROR","Term date > effective date with 'V' term code"
-            ENDIF
-            CONTINUE
-        ENDIF
-
-        CALL IS_DAY_BEFORE USING MEME_EFF,MEME_TRM
-        IF NOT EQUAL
-            CALL LOGGER USING "ERROR","Term date > 1 day before effective date"
-            CONTINUE
-        ENDIF
-    REPEAT
+        CALL FIX_DATA
+      REPEAT
 
     CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
     CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
     CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_DATA LROUTINE
++ Check for issues we can fix
+MMDD        CHAR    4[2]
+...
+    CLEAR MMDD
+
+    IF (MEME_TRM < MEME_EFF)
+
+        CALL IS_DAY_BEFORE USING MEME_EFF,MEME_TRM
+        RETURN IF EQUAL
+
+        CALL UPDATE_VOID_TERM USING "UPDATE","Term date > 1 day before effective date --> TRM set to EFF - 1"
+        RETURN
+
+    ELSE IF (MEME_TRM = MEME_EFF)
+
+        CALL UPDATE_VOID_TERM USING "UPDATE","Void with EFF = TRM --> TRM set to EFF - 1"
+        RETURN
+
+    ELSE IF (CHOP MEME_TRM = LAST_DATE)
+
+        debug
+        FILL "~" IN MEME_TLET
+        CALL WRITE_UPDATE USING "UPDATE","No term date present --> 'V' removed"
+        RETURN
+
+    ENDIF
+
+.Handle the situation where the term date MM and DD are the eff's - 1,
+.but the year is not prior. We will assume this to be a mis-type
+    CALL DATE_CALC USING MEME_EFF,"SUB","DAYS",1,DATE_CCYYMMDD
+    UNPACK MEME_TRM INTO DATE_CCYY,MMDD[1]
+    UNPACK DATE_CCYYMMDD INTO DATE_CCYY,MMDD[2]
+    IF (MMDD[1] = MMDD[2])
+        CALL UPDATE_VOID_TERM USING "UPDATE","Year Typo Detected - MMDD of term = MMDD of eff - 1 --> Term set to EFF - 1"
+        RETURN
+    ENDIF
+
+    CALL LOGGER USING "ERROR","Term date > effective date with 'V' term code"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_VOID_TERM LROUTINE MSG@
++ Update the term to be eff - 1
+MSG@        CHAR    @
+
+    CALL DATE_CALC USING MEME_EFF,"SUB","DAYS",1,MEME_TRM
+    CALL WRITE_UPDATE USING MSG@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_UPDATE LROUTINE MSG@
++ Build an INM record for the current MEME
+MSG@            CHAR    @
+SAVE_MEME       CHAR    X_MEME_SIZE
+...
+    PACK SAVE_MEME WITH MEME_LIST
+    CALL INIT_INM
+    UNPACK SAVE_MEME INTO MEME_LIST
+    CALL UTIL_MEM_FIND USING MEME_ID1
+    IF NOT EQUAL
+        CALL LOGGER USING "ERROR","Unable to find the MEM record"
+        RETURN
+    ENDIF
+
+    CALL PACK_INM
+
+.Clean up data and set metadata
+    IF (INME_TRM = LAST_DATE)
+        FILL "~" IN INME_TRM
+    ENDIF
+
+    PACK INME_CHGBY WITH PROG_NAME,BLANKS
+    PACK INME_CHGDT WITH CURRDATE,BLANKS
+
+    CALL LOGGER USING "UPDATE",MSG@
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING UPDATE_FD,UPDATE_FILE,INM_LIST
 
     RETURN
     ENDROUTINE
@@ -294,14 +368,14 @@ LOGMSG@         CHAR    @
     ENDSWITCH
 
     PACK REPORT_REC WITH LOGTYPE@,COMMA:
-                         MEME_ID1,COMMA:
-                         MEME_ID2,COMMA:
-                         LOGMSG@,COMMA:
-                         MEME_NET,COMMA:
-                         MEME_PRD,COMMA:
-                         MEME_PLAN,COMMA:
-                         MEME_EFF,COMMA:
-                         MEME_TRM
+        MEME_ID1,COMMA:
+        MEME_ID2,COMMA:
+        LOGMSG@,COMMA:
+        MEME_NET,COMMA:
+        MEME_PRD,COMMA:
+        MEME_PLAN,COMMA:
+        MEME_EFF,COMMA:
+        MEME_TRM
 
     CALL WRITE_OGBREC USING REPORT_FD,REPORT_FILE,REPORT_LIST
 
@@ -330,6 +404,8 @@ DIFF        NUM     7
 .#######################################################################
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
+FILES_DIR       CHAR    100
+...
 
     CALL UTIL_XMESSAGE USING "Cleaning up...",MSG_HEIGHT
     CLOCK CALENDAR INTO END_DATETIME
@@ -337,10 +413,14 @@ CLEAN_UP LROUTINE
     CALL UTIL_DELETE_FILE USING WORK_FILE
 
     CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
-    CALL UTIL_PENDING_BACKUP USING "/w/",REPORT_FILE,END_DATETIME
+    CALL UTIL_PENDING_BACKUP USING "/w/",REPORT_FILE,CURRDATE
+
+    CALL UTIL_GET_FILES_DIR USING FILES_DIR
+    CALL UTIL_PENDING_BACKUP USING FILES_DIR,UPDATE_FILE,""
 
     debug
     CALL SEND_EMAIL
+
     CALL UTIL_DELETE_FILE USING REPORT_FILE
 
     RETURN
@@ -350,28 +430,34 @@ CLEAN_UP LROUTINE
 .#######################################################################
 SEND_EMAIL LROUTINE
 EMAILTO     CHAR    200
+BODY        CHAR    5000
 ..
     PACK EMAILTO WITH EMAIL_GROUP
     IF (CHOP TEST_EMAILGROUP > "")
         PACK EMAILTO WITH TEST_EMAILGROUP
     ENDIF
 
+    PACK BODY WITH "This process fixes various issues with voided MEME ":
+        "records.\n":
+        "\t> Record Repaired: ",(TRIM (CHAR X_CNT3)),"\n":
+        "\t> Errors Needing Manual Review: ",(TRIM (CHAR X_CNT2))
+
     IF (X_CNT2 > 1)
         CALL UTIL_EMAIL_NEOJ USING C_PROG:
-                                   EMAILTO:
-                                   "A1907301 - Bad Void Report - Errors Found":
-                                   ((TRIM (CHAR X_CNT2)) + " errors found."):
-                                   START_DATETIME:
-                                   END_DATETIME:
-                                   REPORT_FILE
+            EMAILTO:
+            "A1907301 - Bad Void Report - Errors Found":
+            BODY:
+            START_DATETIME:
+            END_DATETIME:
+            REPORT_FILE
 
     ELSE
         CALL UTIL_EMAIL_NEOJ USING C_PROG:
-                                   EMAILTO:
-                                   "A1907301 - Bad Void Report - No Errors Found":
-                                   ((TRIM (CHAR X_CNT2)) + " errors found."):
-                                   START_DATETIME:
-                                   END_DATETIME
+            EMAILTO:
+            "A1907301 - Bad Void Report - No Errors Found":
+            BODY:
+            START_DATETIME:
+            END_DATETIME
     ENDIF
 
     RETURN
@@ -409,6 +495,7 @@ UNIT_TESTS LROUTINE
     INC VALID.IO
     INC UTIL_COMMON.SR
     INC UTIL_MEMMEM.SR
+    INC UTIL_VALID.SR
     INC UTIL_TEST.SR
     INC UTIL_SYSTEM.SR
     INC UTIL_EMAIL.SR
