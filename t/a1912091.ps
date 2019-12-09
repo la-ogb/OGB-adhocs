@@ -1,0 +1,334 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   A1912091.PS
++
++ DESCRIPTION:
++   Fix the LIFE records errorneously termed by a bug in the AE
++   webportal
++
++ CREATED BY:
++   apjwh - 2019-12-09
++
++ LAST MODIFIED BY:
++   apjwh - 2019-12-09
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+
+
+.# =================================================================== #
+.# Process Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "FXAELF"
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FILE           INIT    "/w/a1912091.wrk"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a1912091.inm"
+
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/a1912091.log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_REC             CHAR    200
+LOG_LIST            VARLIST LOG_REC
+
+LOG_HEADER          VARLIST "ACTION",COMMA:
+                            "MEMBER_ID",COMMA:
+                            "MESSAGE"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a1912091" TO C_PROG        ...Program name
+    MOVE "Fix Bad AE Life Terms" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.TODO: make sure any parameter that can be called from the CMD line are
+. filled with spaces or value and space before the SCHED_PICK for them
+. to be populated in an automatically generated Impact Scheduler record
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL BUILD_WORK_FILE
+    CALL BUILD_UPDATE_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.TODO: set counter desc
+    MOVE "LIFE records reviewed " TO X_CNTDESC1
+    MOVE "Updated               " TO X_CNTDESC2
+    MOVE "                      " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_WORK_FILE LROUTINE
++ Gather the affected MEME LIFE records. All Life records hit by the
++ web portal in 2019 are fair game since Lfie enrollment was not
++ allowed
+
+    CALL UTIL_XMESSAGE USING "Searching for affected LIFE records...",MSG_HEIGHT
+
+    PACK SCRATCH WITH MEME_FNS," ",WORK_FILE," -t ":
+                      " -p112-116eq#"LIFE #" ":
+                      " -p234-237eqAEWP ":  last modifed by the web portal
+                      " -p226-229eq2019"    sometime in 2019
+    REFORMAT SCRATCH
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "Reformat for LIFE failed","BUILD_WORK_FILE"
+    ENDIF
+
+    PACK SCRATCH WITH WORK_FILE," ",WORK_FILE," 1-8 -t"
+    SORT SCRATCH
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "Sort by Id","BUILD_WORK_FILE"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_UPDATE_FILE LROUTINE
++ Unterm each Life record found
+
+    CALL UTIL_XMESSAGE USING "Building update records",MSG_HEIGHT
+
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    LOOP
+        CALL INIT_INM
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,MEME_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,1
+
+        debug
+        IF (CHOP MEME_TRM = "")
+            CALL LOG_ACTION USING "ERROR","Record not termed"
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_MEM_FIND USING MEME_ID1
+        IF NOT EQUAL
+            debug
+            CALL LOG_ACTION USING "ERROR","Unable to find MEM record"
+            CONTINUE
+        ENDIF
+
+        CALL WRITE_UPDATE
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_ACTION LROUTINE TYPE@,MSG@
+TYPE@       CHAR    @
+MSG@        CHAR    @
+...
+
+    SWITCH TYPE@
+        CASE "UPDATE"
+        CASE "ERROR"
+        DEFAULT
+            debug
+            CALL UTIL_ERRORMSG USING "Invalid opt","LOG_ACTION"
+    ENDSWITCH
+
+    PACK LOG_REC WITH (CHOP TYPE@),COMMA:
+                      (CHOP MEME_ID1),COMMA:
+                      (CHOP MSG@)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_UPDATE LROUTINE
++ Build and INM file
+
+    CALL PACK_INM
+    FILL "~" IN INME_TRM:
+                INME_QLET:
+                INME_QLTRM:
+                INME_TLET:
+                INME_TRUN
+
+    PACK INME_CHGBY WITH PROG_NAME,BLANKS
+    FILL " " IN INME_CHGDT
+
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    CALL UTIL_XCOUNTER USING X_CNT2,1
+    CALL LOG_ACTION USING "UPDATE","Term removed from LIFE record"
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+FILESDIR        CHAR    100
+...
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+    CALL UTIL_DELETE_FILE USING WORK_FILE
+
+    CALL UTIL_GET_FILES_DIR USING FILESDIR
+    CALL UTIL_PENDING_BACKUP USING FILESDIR,UPDATE_FILE,""
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_MEMMEM.SR
+    INC UTIL_VALID.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
