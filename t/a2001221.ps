@@ -1,0 +1,764 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2001221.ps
++
++ DESCRIPTION:
++   Load MBI numbers from the report Paul provided
++
++ CREATED BY:
++   apjwh - 2020-01-22
++
++ LAST MODIFIED BY:
++   apjwh - 2020-01-22
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "SYNCMI"
+EMAIL_GROUP         INIT    "EligibilityReport@la.gov"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_RF        NUM     "0"  // skip building work id file
+TEST_KEEP_WORK_FILE NUM     "0"
+TEST_EMAILTO        INIT    "jakob.hendrix@la.gov"
+TEST_READ_LIMIT     NUM     "0"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_ID_FD          FILE    VAR=8,TEXT
+WORK_ID_FILE        INIT    "/w/fix0008.id.wrk"
+
+ID_XREF_FD          IFILE   VAR=8,KEYL=8,DUP,TEXT
+ID_XREF_IDX_FILE    INIT    "/w/fix0008.id.ix1"
+
+LOG_FD              FILE    VAR=500,TEXT
+LOG_FILE            INIT    "/w/fix0008.log.csv"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "fix0008.inm"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+WORK_ID             CHAR    8
+WORK_ID_LIST        VARLIST WORK_ID
+
+ID_XREF_KEY         CHAR    8
+ID_XREF_ID          CHAR    8
+ID_XREF_LIST        VARLIST ID_XREF_ID
+
+LOG_HEADER          VARLIST "MEMBER-ID1",COMMA:
+                            "UPDATED-MEMO-ID2",COMMA:
+                            "RECORD-TYPE",COMMA:
+                            "CARD-EFF",COMMA:
+                            "CARD-TRM",COMMA:
+                            "PRIMARY-EFF",COMMA:
+                            "PRIMARY-TRM",COMMA:
+                            "VERIFIED",COMMA:
+                            "MBI-COPIED-FROM-ID1",COMMA:
+                            "MBI-COPIED-FROM-ID2",COMMA:
+                            "PRIOR-MEDICARE-ID",COMMA:
+                            "NEW-MEDICARE-ID",COMMA:
+                            "MESSAGE"
+
+LOG_REC             CHAR    500
+LOG_LIST            VARLIST LOG_REC
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+MED_LIST            VARLIST MEMO_LIST
+
+MED_MAX             EQU     40
+MED_COUNT           NUM     5
+MED_DATA            CHAR    X_MEMO_SIZE[MED_MAX]
+
+RECENT_MBI          CHAR    30
+RECENT_MBI_ID1      CHAR    8
+RECENT_MBI_ID2      CHAR    4
+PRIOR_MED_ID        CHAR    30
+
+WORK_DATA           VARLIST MED_DATA,MED_COUNT,MED_LIST:
+                            RECENT_MBI,RECENT_MBI_ID1,RECENT_MBI_ID2:
+                            PRIOR_MED_ID
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "fix0008" TO C_PROG        ...Program name
+    MOVE "MEDICARE ID SYNC" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.TODO: make sure any parameter that can be called from the CMD line are
+. filled with spaces or value and space before the SCHED_PICK for them
+. to be populated in an automatically generated Impact Scheduler record
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL GATHER_ACTIVE_MEDICARE_IDS
+    CALL SYNC_MEDICARE_IDS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.TODO: set counter desc
+    MOVE "Members Checked       " TO X_CNTDESC1
+    MOVE "Members Processed     " TO X_CNTDESC2
+    MOVE "Updated Records       " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    LOADMOD "UTIL_ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GATHER_ACTIVE_MEDICARE_IDS LROUTINE
++ Build a list of member Ids where the member has active Medicare
++ records
+TEMP_FILE1      INIT    "/w/fix0008.tmp.1"
+TEMP_FILE2      INIT    "/w/fix0008.tmp.2"
+...
+    IF (TEST_SKIP_RF)
+        CALL UTIL_EXISTS USING WORK_ID_FILE,"FILE"
+        RETURN IF EQUAL
+    ENDIF
+
+    CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
+
+.Get EFF1 records
+    PACK SCRATCH WITH MEMO_FNS," ",TEMP_FILE1," -t ":
+        " -p472-479ne#"",BLANK_DATE,"#""
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Work file creation failed - rf for EFF1":
+            "GATHER_ACTIVE_MEDICARE_IDS"
+    ENDIF
+
+    PACK SCRATCH WITH TEMP_FILE1," ",TEMP_FILE2," -t ":
+        "-p480-487eq#"",BLANK_DATE,"#" or -p480-487ge#"",CURRDATE,"#""
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Work file creation failed - rf for TRM1":
+            "GATHER_ACTIVE_MEDICARE_IDS"
+    ENDIF
+
+.Get EFF records
+    PACK SCRATCH WITH MEMO_FNS," ",TEMP_FILE1," -t ":
+        " -p17-24ne#"",BLANK_DATE,"#""
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Work file creation failed - rf for EFF":
+            "GATHER_ACTIVE_MEDICARE_IDS"
+    ENDIF
+
+    PACK SCRATCH WITH TEMP_FILE1," ",TEMP_FILE2," -t -a":
+        "-p25-32eq#"",BLANK_DATE,"#" or -p25-32ge#"",CURRDATE,"#""
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Work file creation failed - rf for TRM":
+            "GATHER_ACTIVE_MEDICARE_IDS"
+    ENDIF
+
+.Filter non-medicare records
+    PACK SCRATCH WITH TEMP_FILE2," ",WORK_ID_FILE," -t ":
+        "1-8 ":
+        "-p13-16eq#"MEDA#" or -p13-16eq#"MEDB#""
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Work file creation failed - rf for medicare":
+            "GATHER_ACTIVE_MEDICARE_IDS"
+    ENDIF
+
+.Sort by unique Ids
+    PACK SCRATCH WITH WORK_ID_FILE," ",WORK_ID_FILE," 1-8 -t -u"
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Work file creation failed - sort":
+            "GATHER_ACTIVE_MEDICARE_IDS"
+    ENDIF
+
+    CALL UTIL_DELETE_FILE USING TEMP_FILE1
+    CALL UTIL_DELETE_FILE USING TEMP_FILE2
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SYNC_MEDICARE_IDS LROUTINE
++ Sync the most recent MBI for all members with active Medicare
+
+    CALL UTIL_XMESSAGE USING "Looking for Medicare Ids to Sync...",MSG_HEIGHT
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL OPEN_OGBFILE USING WORK_ID_FD,WORK_ID_FILE
+    CALL PREP_OGBFILE_IX USING ID_XREF_FD,ID_XREF_IDX_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC USING LOG_FD,LOG_REC,LOG_HEADER
+
+    debug
+
+    LOOP
+        CLEAR WORK_DATA
+        CALL READ_OGBFILE USING WORK_ID_FD,WORK_ID_FILE,WORK_ID_LIST
+        WHILE (RESULT = 1)
+
+        CALL IS_PROCESSED USING WORK_ID
+        CONTINUE IF EQUAL
+
+        CALL GATHER_MEDICARE_RECS USING WORK_ID
+        CONTINUE IF (MED_COUNT = 0)
+
+        IF (TEST_READ_LIMIT > 0)
+            BREAK IF (X_CNT1 > TEST_READ_LIMIT)
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT2,100
+
+        CALL FIND_MOST_RECENT_MBI
+        CONTINUE IF (CHOP RECENT_MBI = "")
+
+        CALL SYNC_MEDICARE_RECORDS
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_ID_FD,WORK_ID_FILE
+    CALL CLOSE_OGBFILE_IX_DEL USING ID_XREF_FD,ID_XREF_IDX_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GATHER_MEDICARE_RECS LROUTINE BASE_ID@
++ Loop through all linked MEM records and load active Medicare into an
++ array
+BASE_ID@            CHAR    @
+SEARCH_ID           CHAR    8
+NEXT_MEM            CHAR    8
+MEM_RECS_CHECKED    NUM     3
+FIRST_MEM           NUM     V_FLAG
+...
+    CALL UTIL_XCOUNTER USING X_CNT1,100
+
+    PACK SEARCH_ID WITH BASE_ID@,BLANKS
+    CLEAR MEM_RECS_CHECKED
+
+    SET FIRST_MEM
+    LOOP
+        ADD 1 TO MEM_RECS_CHECKED
+
+        IF (MEM_RECS_CHECKED > 10)
+            debug
+            CALL UTIL_ERRORMSG USING ("Infinite loop looking at MEMs. Base Id: "+BASE_ID@):
+                "GATHER_MEDICARE_RECS"
+        ENDIF
+
+        CLEAR NEXT_MEM
+        BREAK IF (CHOP SEARCH_ID = "")
+        IF NOT (FIRST_MEM)
+            BREAK IF (CHOP SEARCH_ID = CHOP BASE_ID@)
+        ENDIF
+
+        CALL UTIL_MEM_FIND_REAL USING SEARCH_ID
+        BREAK IF NOT (EQUAL)
+        CLEAR FIRST_MEM
+
+.Add to the processed MEM list
+        CALL IS_PROCESSED USING MEM_ID1
+        IF NOT EQUAL
+            CALL ADD_TO_MEDICARE_DATA USING SEARCH_ID
+        ENDIF
+
+.Some member have broken MEM Id chains. To capture these people, let's
+.do an AIM search against the PSSN
+        IF (CHOP MEM_ACCU > "")
+            PACK SEARCH_ID WITH MEM_ACCU,BLANKS
+
+            CALL IS_PROCESSED USING SEARCH_ID
+            BREAK IF EQUAL  // the chain is complete
+
+        ELSE IF (CHOP MEM_PSSN > "")
+            CALL FIND_UNLINKED_MEMS USING BASE_ID@,NEXT_MEM
+            PACK SEARCH_ID WITH NEXT_MEM,BLANKS
+
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_UNLINKED_MEMS LROUTINE BASE_ID@,RETURN_MEM@
++ Most people with chains of MEM records are linked by the MEM_ACCU
++ field which eventually loop back around to the first member. For
++ people where this chain is broken, we need to AIM search through
++ their MEM records by SSN.
+BASE_ID@        CHAR    @
+RETURN_MEM@     CHAR    @
+FIRST_MEM       NUM     1
+...
+    CLEAR RETURN_MEM@:
+          MEM_AIM
+
+    SET FIRST_MEM
+    PACK MEM_AIM2 WITH "02","X",MEM_PSSN,BLANKS
+    PACK MEM_AIM10 WITH "10","X",MEM_DOB,BLANKS
+    LOOP
+        IF (FIRST_MEM)
+            CLEAR FIRST_MEM
+            CALL UTIL_MEM_AIMFIND_REAL
+        ELSE
+            CALL UTIL_MEM_AIMNEXT_REAL
+        ENDIF
+        WHILE (EQUAL)
+        CONTINUE IF (CHOP MEM_ID1 = CHOP BASE_ID@)  ...we hit the first person
+
+        CALL IS_PROCESSED USING MEM_ID1
+        CONTINUE IF EQUAL
+
+        PACK RETURN_MEM@ WITH MEM_ID1,BLANKS
+        BREAK
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_TO_MEDICARE_DATA LROUTINE ID@
++ Add all active Medicare data to the working array
+ID@             CHAR    @
+FIRST_MEMO      NUM     V_FLAG
+...
+    PACK ID_XREF_ID WITH ID@,BLANKS
+    CALL WRITE_OGBREC_IX USING ID_XREF_FD:
+        ID_XREF_IDX_FILE:
+        ID@:
+        ID_XREF_LIST
+
+    SET FIRST_MEMO
+    LOOP
+        IF (FIRST_MEMO)
+            CLEAR FIRST_MEMO
+            CALL UTIL_MEMO_FIND USING ID@
+        ELSE
+            CALL UTIL_MEMO_NEXT
+        ENDIF
+        WHILE EQUAL
+
+.Skip non-Medicare records
+        SWITCH MEMO_TYPE
+            CASE "MEDA" | "MEDB"
+            DEFAULT
+                CONTINUE
+        ENDSWITCH
+
+.Skip non-active Medicare records
+        IF (CHOP MEMO_EFF > "")
+            IF (CHOP MEMO_TRM = "")
+                PACK MEMO_TRM WITH LAST_DATE,BLANKS
+            ENDIF
+            CONTINUE IF (CHOP MEMO_TRM < CURRDATE)
+        ENDIF
+        IF (CHOP MEMO_EFF1 > "")
+            IF (CHOP MEMO_TRM1 = "")
+                PACK MEMO_TRM1 WITH LAST_DATE,BLANKS
+            ENDIF
+            CONTINUE IF (CHOP MEMO_TRM1 < CURRDATE)
+        ENDIF
+
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MED_LIST:
+            MED_DATA:
+            MED_COUNT:
+            MED_MAX
+    REPEAT
+
+    IF (MED_COUNT > 1)
+        ASORT ATYPE="REC":
+              ARRAY=MED_DATA:
+              AMAX=MED_COUNT:
+              SRTFLD1="456-463",SRTORD1="D":  // newest change date first
+              SRTFLD2="442-449",SRTORD2="D"   // then most recently created
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+IS_PROCESSED LROUTINE ID@
++ Checks if the given Id is on the processed Id file
+ID@             CHAR    @
+...
+
+    PACK ID_XREF_KEY WITH ID@,BLANKS
+    CALL READ_OGBFILE_IX USING ID_XREF_FD:
+        ID_XREF_IDX_FILE:
+        ID_XREF_KEY:
+        ID_XREF_LIST
+
+    IF (RESULT = 1)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_MOST_RECENT_MBI LROUTINE
+IDX         NUM     5
+...
+    CLEAR RECENT_MBI
+    FOR IDX FROM 1 TO MED_COUNT
+        UNPACK MED_DATA[IDX] INTO MED_LIST
+
+        CONTINUE IF (MEMO_POL = "")
+
+        CALL IS_VALID_MBI USING MEMO_POL
+        IF EQUAL
+            PACK RECENT_MBI WITH MEMO_POL
+            PACK RECENT_MBI_ID1 WITH MEMO_ID1
+            PACK RECENT_MBI_ID2 WITH MEMO_ID2
+            BREAK
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SYNC_MEDICARE_RECORDS LROUTINE
++ Update any Medicare records that don't have the most current MBI as
++ the policy Id
+IDX         NUM     5
+...
+    FOR IDX FROM 1 TO MED_COUNT
+        CLEAR PRIOR_MED_ID
+        UNPACK MED_DATA[IDX] INTO MED_LIST
+        CONTINUE IF (CHOP MEMO_POL = CHOP RECENT_MBI)
+
+.Ignore unverified Medicare records if they don't have a Medicare Id
+.currently
+        IF (CHOP MEMO_VER != "Y" & CHOP MEMO_POL = "")
+            debug
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_MEM_FIND_REAL USING MEMO_ID1
+        CONTINUE IF NOT EQUAL
+
+        CALL IS_VALID_HICN USING MEMO_POL
+        IF (EQUAL)
+            CALL SET_HICN_IN_NOTES
+        ENDIF
+
+        PACK PRIOR_MED_ID WITH MEMO_POL,BLANKS
+        PACK MEMO_POL WITH RECENT_MBI,BLANKS
+
+        CALL UPDATE_RECORD
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_HICN_IN_NOTES LROUTINE
++ Save the current HICN as a quick note
+NEW_MSG     CHAR    40
+...
+    PACK NEW_MSG WITH "PRIOR HICN: ",(CHOP MEMO_POL),BLANKS
+    IF (CHOP MEMO_NOTE1 > "")
+        IF (CHOP MEMO_NOTE2 = "")
+            PACK MEMO_NOTE2 WITH MEMO_NOTE1,BLANKS
+        ELSE
+            PACK MEMO_NOTE3 WITH MEMO_NOTE2,BLANKS
+            PACK MEMO_NOTE2 WITH MEMO_NOTE1,BLANKS
+        ENDIF
+    ENDIF
+
+    PACK MEMO_NOTE1 WITH NEW_MSG,BLANKS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_RECORD LROUTINE
++ Build an update record for the current MEMO record
+SAVE_MEMO       CHAR    X_MEMO_SIZE
+...
+    CALL UTIL_XCOUNTER USING X_CNT3,10
+    CALL WRITE_LOG
+
+    PACK SAVE_MEMO WITH MEMO_LIST
+    CALL INIT_INM_NOMEM
+    UNPACK SAVE_MEMO INTO MEMO_LIST
+
+    CALL PACK_INM
+
+.Clean data for update
+    IF (INMO_TRM = LAST_DATE)
+        FILL "~" IN INMO_TRM
+    ENDIF
+    IF (INMO_TRM1 = LAST_DATE)
+        FILL "~" IN INMO_TRM1
+    ENDIF
+
+    PACK INMO_CHGBY WITH PROG_NAME
+    PACK INMO_CHGDT WITH CURRDATE
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE
+MSG     CHAR    200
+...
+    PACK LOG_REC WITH "":
+        MEMO_ID1,COMMA:
+        MEMO_ID2,COMMA:
+        MEMO_TYPE,COMMA:
+        (CHOP MEMO_EFF1),COMMA:
+        (CHOP MEMO_TRM1),COMMA:
+        (CHOP MEMO_EFF),COMMA:
+        (CHOP MEMO_TRM),COMMA:
+        (CHOP MEMO_VER),COMMA:
+        (CHOP RECENT_MBI_ID1),COMMA:
+        (CHOP RECENT_MBI_ID2),COMMA:
+        (CHOP PRIOR_MED_ID),COMMA:
+        (CHOP RECENT_MBI),COMMA
+
+    IF (CHOP PRIOR_MED_ID = "")
+        PACK MSG WITH "Blank Medicare Id updated => ",(CHOP RECENT_MBI)
+    ELSE
+        PACK MSG WITH "Medicare Id updated from ",(CHOP PRIOR_MED_ID)," => ",(CHOP RECENT_MBI)
+    ENDIF
+
+    PACK LOG_REC WITH LOG_REC,MSG
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+FILES_DIR   CHAR    100
+NEW_LOG     CHAR    200
+...
+
+    debug
+
+    UNLOAD "UTIL_ASORT"
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_GET_FILES_DIR USING FILES_DIR
+
+    IF NOT (TEST_KEEP_WORK_FILE)
+        CALL UTIL_DELETE_FILE USING WORK_ID_FILE
+    ENDIF
+
+.TODO: make sure to delete the checked index files
+
+    CALL UTIL_PENDING_BACKUP USING FILES_DIR,UPDATE_FILE,""
+
+    PACK NEW_LOG WITH "/w/fix0008.log.",CURRDATE,".csv"
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,NEW_LOG
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/",NEW_LOG,""
+
+    CALL EMAIL_LOG USING NEW_LOG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOGFILE@
++ Email the log file to APPS
+LOGFILE@        CHAR    @
+EMAILTO         CHAR    200
+SUBJECT         CHAR    200
+BODY            CHAR    5000
+...
+    IF (CHOP TEST_EMAILTO > "")
+        PACK EMAILTO WITH TEST_EMAILTO
+    ELSE
+        PACK EMAILTO WITH EMAIL_GROUP
+    ENDIF
+
+    PACK SUBJECT WITH "IMPACT Medicare Id Sync Program"
+    PACK BODY WITH "This process copies the most recently updated ":
+        "MBI-format Medicare Id to all active or future active ":
+        "Medicare Part A and Part B records for a member.\n":
+        "\t> Members Processed: ",(TRIM (CHAR X_CNT1)),"\n":
+        "\t> Updates: ",(TRIM (CHAR X_CNT3))
+
+    IF (X_CNT3 > 1)
+        PACK SUBJECT WITH SUBJECT," - Updates"
+        CALL UTIL_EMAIL_NEOJ USING C_PROG:
+            EMAILTO:
+            SUBJECT:
+            BODY:
+            START_DATETIME:
+            END_DATETIME:
+            LOGFILE@
+
+    ELSE
+        PACK SUBJECT WITH SUBJECT," - No Updates"
+        CALL UTIL_EMAIL_NEOJ USING C_PROG:
+            EMAILTO:
+            SUBJECT:
+            BODY:
+            START_DATETIME:
+            END_DATETIME
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_DATA.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_MEMMEM.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_VALID.SR
+    INC VALCMSID.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
