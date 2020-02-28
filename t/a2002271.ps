@@ -1,0 +1,1750 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2002271 (fork of STS0210)
++
++ DESCRIPTION:
++   Version of STS0210 with new fields for participation levels.
++
++ CREATED BY:
++   apjwh - 2020-02-27
++
++ LAST MODIFIED BY:
++   apjwh - 2020-02-27
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEM.RL
+    INC MEME.RL
+    INC MEMO.RL
+    INC CLI.RL
+    INC CLIP.RL
+    INC ART.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+PARAM_REPORT_MODE   CHAR    10
+                    LISTEND
+
+.# =================================================================== #
+.# Program Configuration
+.# =================================================================== #
+
+CREATE_DELIMITED_REPORT     NUM     "0"
+CREATE_PDF_REPORT           NUM     "0"
+CFG_SKIP_TOTAL_LINE         NUM     "1"
+CFG_SUPPRESS_NO_RATES       NUM     "1"
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     100
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST                 NUM     V_FLAG
+TEST_CONFIG                 LIST
+TEST_RETAIN_WORK_FILES      NUM     "1"
+TEST_SKIP_ARCHIVE           NUM     "1"
+TEST_SKIP_DEL_REPORT        NUM     "0"
+TEST_SKIP_EMAIL             NUM     "0"
+TEST_EMAIL_TOWHOM           INIT    "jakob.hendrix@la.gov"
+TEST_SKIP_FTP               NUM     "1"
+TEST_FTP_TOWHERE            INIT    "/I/Groups/it/apps/dev/apjwh"
+TEST_SKIP_CLIP_FULL         NUM     "0"
+TEST_SKIP_CLIP_FILTER       NUM     "0"
+TEST_SKIP_CLIP_HEALTH       NUM     "0"
+TEST_SKIP_ACTIVE_MEME_RF    NUM     "0"
+TEST_SKIP_EMP_RF            NUM     "0"
+TEST_SKIP_DEP_RF            NUM     "0"
+TEST_LIMIT                  NUM     "0"
+TEST_THIS_PLAN              INIT    ""
+TEST_NO_UPDATE_VALID        NUM     "0"
+TEST_THIS_FAM               INIT    ""
+                            LISTEND
+
+.# =================================================================== #
+.# Email Configuration
+.# =================================================================== #
+
+STAFF_EMAILS        INIT    "STS_Reports@la.gov,":
+                            "Bill.Guerra@la.gov"
+
+.# =================================================================== #
+.# FTP Configuration
+.# =================================================================== #
+
+SHARED_DIRECTORY    INIT    "/I/Groups/Shared/stats"
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+...Output Files
+RPT_PREFIX          INIT    "/w/sts0210_enr_counts_with_participation"
+
+EXT_DELIMITED       INIT    "csv"
+RPT_DELIMITED_FD    FILE    VAR=500,TEXT
+RPT_DELIMITED_FILE  CHAR    100
+RPT_DELIMITED_LIST  LIST
+RPT_DELIMITED_REC   CHAR    500
+                    LISTEND
+
+EXT_PDF             INIT    "pdf"
+RPT_PDF_FD          FILE    VAR=500,TEXT
+RPT_PDF_FILE        CHAR    100
+
+
+.Plan files
+CLIP_FULL_FD        FILE    FIXED=X_CLIP_SIZE,TEXT
+CLIP_FULL_FILE      INIT    "/w/a2002271.clip.full.tmp"
+
+CLIP_ACTIVE_FD      FILE    FIXED=X_CLIP_SIZE,TEXT
+CLIP_ACTIVE_FILE    INIT    "/w/a2002271.clip.active.tmp"
+
+HEALTH_PLAN_FD      FILE    VAR=250,TEXT
+HEALTH_PLAN_FILE    INIT    "/w/a2002271.clip.wrk"
+
+.Enrollment Files
+MEME_ACTIVE_FD      FILE    FIXED=X_MEME_SIZE,TEXT
+MEME_ACTIVE_FILE    INIT    "/w/a2002271.meme.active.tmp"
+
+MEME_ACTIVE_TEMP_FD     FILE    FIXED=X_MEME_SIZE,TEXT
+MEME_ACTIVE_TEMP_FILE   INIT    "/w/a2002271.meme.active.work"
+
+EMP_KEYL            EQU     14
+MEME_EMP_FD         IFILE   VAR=200,KEYL=EMP_KEYL,DUP,TEXT
+MEME_EMP_IDX_FILE   INIT    "/w/a2002271.emp.ix1"
+MEME_EMP_FILE       INIT    "/w/a2002271.emp.txt"
+EMP_KEY             CHAR    EMP_KEYL
+
+DEP_KEYL            EQU     8
+DEP_XREF_FD         IFILE   VAR=38,KEYL=DEP_KEYL,DUP,TEXT
+DEP_XREF_IDX_FILE   INIT    "/w/a2002271.dep.ix1"
+DEP_XREF_FILE       INIT    "/w/a2002271.dep.txt"
+DEP_KEY             CHAR    DEP_KEYL
+
+.Stats work file
+STATS_TEMP_FD       FILE    VAR=500,TEXT
+STATS_TEMP_FILE     INIT    "/w/a2002271.stats.tmp"
+
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+HEALTH_PLAN_LIST    VARLIST CLIP_NET:
+                            CLIP_PRD:
+                            CLIP_PLAN
+
+MEME_EMP_LIST       LIST
+EMP_NET             CHAR    5
+EMP_PRD             CHAR    5
+EMP_PLAN            CHAR    4
+EMP_ID1             CHAR    8
+EMP_DEPC            CHAR    2
+EMP_LEV1            CHAR    5
+EMP_LEV2            CHAR    5
+EMP_RT              CHAR    2
+EMP_RIDERS          CHAR    4[10]
+                    LISTEND
+
+MEME_DEP_LIST       LIST
+DEP_ID1             CHAR    8
+DEP_NET             CHAR    5
+DEP_PRD             CHAR    5
+DEP_PLAN            CHAR    4
+DEP_EFF             CHAR    8
+DEP_TRM             CHAR    8
+                    LISTEND
+
+DELIMITER           INIT    ","
+
+STATS_LIST              LIST WITH NAMES
+STATS_DETAIL            CHAR    100
+STATS_NET               CHAR    5
+STATS_PRD               CHAR    5
+STATS_PLAN              CHAR    4
+STATS_DEPC              CHAR    35
+./*     EE - employee only
+. *     ES - employee + spouse
+. *     EC - employee + child(ren)
+. *     FM - family
+. */
+STATS_STATUS            CHAR    35
+STATS_ENR_TOTAL         NUM     7
+STATS_EMP_TOTAL         NUM     7
+STATS_DEP_TOTAL         NUM     7
+STATS_RD_RET100_TOTAL   NUM     7
+STATS_RD_RET100_EMPONLY NUM     7
+STATS_RD_RET100_SPONLY  NUM     7
+STATS_RD_RET100_BOTH    NUM     7
+STATS_PART_TOTAL        NUM     7
+STATS_PART_NULL         NUM     7
+STATS_PART_19           NUM     7
+STATS_PART_38           NUM     7
+STATS_PART_56           NUM     7
+STATS_PART_75           NUM     7
+                        LISTEND
+
+DELIMITED_HEADER    VARLIST  "Plan_Name",DELIMITER:
+                             "Network_Code",DELIMITER:
+                             "Product_Code",DELIMITER:
+                             "Plan_Code",DELIMITER:
+                             "Coverage_Level",DELIMITER:
+                             "Employee_Rate",DELIMITER:
+                             "Total_Enrollment",DELIMITER:
+                             "Employees_Total",DELIMITER:
+                             "Dependents_Total",DELIMITER:
+                             "Rider_RET100_Total",DELIMITER:
+                             "Rider_RET2_Employee_and_Spouse",DELIMITER:
+                             "Rider_RET1_Employee_Only",DELIMITER:
+                             "Rider_RET1_Spouse_Only",DELIMITER:
+                             "Participation_Total",DELIMITER:
+                             "Participation_None",DELIMITER:
+                             "Participation_19%",DELIMITER:
+                             "Participation_38%",DELIMITER:
+                             "Participation_56%",DELIMITER:
+                             "Participation_75%"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+PROG_VALID_CODE     INIT    "ST0210"
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+REPORT_DATE_FANCY   CHAR    10
+CREATE_DATE_FANCY   CHAR    10
+
+REPORT_DATE         CHAR    V_DATE
+
+CURRENT_EMPLOYEE    CHAR    9
+CURRENT_PERSON      NUM     1
+CURRENT_STATUS      NUM     2
+CURRENT_DEPC        NUM     1
+CURRENT_RET100      NUM     1
+CURRENT_PARTICIPATION   NUM 1
+
+...Counter size constants - loop constraints
+TYPE_MAX            EQU     12
+DEPC_MAX            EQU     4
+STATUS_MAX          EQU     12
+RD_RET100_MAX       EQU     3
+
+...Counter sub-type constants
+TYPE_TOTAL_MBR      EQU     1
+TYPE_TOTAL_ENR      EQU     2
+TYPE_TOTAL_DEP      EQU     3
+TYPE_RET100_MBR     EQU     4
+TYPE_RET100_E_ONLY  EQU     5
+TYPE_RET100_BOTH    EQU     6
+TYPE_RET100_S_ONLY  EQU     7
+TYPE_PART_NULL      EQU     8
+TYPE_PART_19        EQU     9
+TYPE_PART_38        EQU     10
+TYPE_PART_56        EQU     11
+TYPE_PART_75        EQU     12
+
+CNT_EMP             EQU     1
+CNT_DEP             EQU     2
+
+DEPC_EE             EQU     1
+DEPC_ES             EQU     2
+DEPC_EC             EQU     3
+DEPC_FM             EQU     4
+
+RT_AC               EQU     1
+RT_RN               EQU     2
+RT_R1               EQU     3
+RT_RS               EQU     4
+RT_R2               EQU     5
+RT_EN               EQU     6
+RT_E1               EQU     7
+RT_E2               EQU     8
+RT_CB               EQU     9
+RT_CD               EQU     10
+RT_DN               EQU     11
+RT_D1               EQU     12
+
+STATUS_ACT          EQU     1
+STATUS_RET1         EQU     2
+STATUS_RET2         EQU     3
+STATUS_RETS         EQU     4
+STATUS_RETN         EQU     5
+
+RD_RET100_EONLY     EQU     1
+RD_RET100_SONLY     EQU     2
+RD_RET100_BOTH      EQU     3
+
+PART_NULL           EQU     1
+PART_19             EQU     2
+PART_38             EQU     3
+PART_56             EQU     4
+PART_75             EQU     5
+
+PLAN_COUNTER        NUM     7[TYPE_MAX,DEPC_MAX,STATUS_MAX]
+PLAN_TOTALS         NUM     7[TYPE_MAX]
+
+STATUS_DESC         CHAR    35[STATUS_MAX]
+
+.// --------------------------------------------------------------------
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+...Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+...Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
+./* Set program specific variables and establish the next chain link
+.   if applicable. Then run the program's main logic. */
+
+... Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2002271" TO C_PROG  ...Program name
+    MOVE "ACT/RET PLAN STATS" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+...Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+...Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+    CALL SET_REPORT_MODE
+
+...Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_REPORT_MODE LROUTINE
+./* Get the run_mode and set the relative run date
+. */
+RUN_DATE        CHAR    8
+...
+    FILL " " IN RUN_DATE
+    IF (SQUEEZE C_RMODE = "I" & NOT C_CMDPAR & CHOP RUN_MODE != "B")
+        CALL REQUEST_REPORT_MODE USING RUN_DATE
+    ENDIF
+
+    MOVE (SQUEEZE PARAM_REPORT_MODE) TO SCRATCH
+    SWITCH SCRATCH
+        CASE "MONTHLY"
+            IF (CHOP RUN_DATE = "")
+                CALL GET_NEXT_RUN_MONTH USING RUN_DATE  ...returns CCYYMM
+                PACK RUN_DATE WITH (SQUEEZE RUN_DATE),"01"
+            ENDIF
+        CASE "DAILY"
+            IF (CHOP RUN_DATE = "")
+                CLOCK TIMESTAMP INTO RUN_DATE
+            ENDIF
+        DEFAULT
+            CALL UTIL_ERRORMSG USING ("Invalid run param ("+SCRATCH+")"),"INITIALIZE"
+    ENDSWITCH
+
+.Save the date this report will be run against
+    MOVE RUN_DATE TO REPORT_DATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REQUEST_REPORT_MODE LROUTINE DATE@
+./* Ask the user if we should run this report based on the first of the
+. * month or the current day
+. */
+DATE@           CHAR    @
+RUNMODE         CHAR    1
+RUNDATE         CHAR    8
+TEST_RESULT     CHAR    2
+...
+    FILL " " IN RUNMODE:
+                RUNDATE:
+                PARAM_REPORT_MODE:
+                DATE@
+    LOOP
+        dialog  horz="15",vert="10":
+                bgcol=C_DLGB,fgcol=C_DLGF:
+                lncol=C_DLGL,shade="N":
+                text="-------------------------------------------------":
+                text=" Please select a run mode                        ":
+                text="-------------------------------------------------":
+                text=" 1.) 1st of Month                                ":
+                text=" 2.) Specific Day                                ":
+                text=" 3.) Abort                                       ":
+                text="-------------------------------------------------":
+                text="  Selection: ",field=RUNMODE
+
+        SWITCH RUNMODE
+            CASE "1"
+                PACK PARAM_REPORT_MODE WITH "MONTHLY"
+            CASE "2"
+                PACK PARAM_REPORT_MODE WITH "DAILY"
+            CASE "3"
+                CALL QUIT
+            DEFAULT
+                FILL " " IN RUNMODE
+        ENDSWITCH
+        UNTIL (CHOP PARAM_REPORT_MODE > "")
+    REPEAT
+
+    IF (CHOP PARAM_REPORT_MODE = "MONTHLY")
+        CALL GET_NEXT_RUN_MONTH USING RUNDATE
+        LOOP
+            dialog  horz="15",vert="10":
+                    bgcol=C_DLGB,fgcol=C_DLGF:
+                    lncol=C_DLGL,shade="N":
+                    text="-------------------------------------------------":
+                    text=" Please enter a month and year (CCYYMM)          ":
+                    text="-------------------------------------------------":
+                    text="  Selection: ",field=RUNDATE
+
+            PACK RUNDATE WITH RUNDATE,"01"
+            CALL VALID_DATE USING RUNDATE,TEST_RESULT
+            BREAK IF (TEST_RESULT = "OK")
+            FILL " " IN RUNDATE
+        REPEAT
+    ELSE
+        CLOCK TIMESTAMP INTO RUNDATE
+        LOOP
+            dialog  horz="15",vert="10":
+                    bgcol=C_DLGB,fgcol=C_DLGF:
+                    lncol=C_DLGL,shade="N":
+                    text="-------------------------------------------------":
+                    text=" Please enter a rundate (CCYYMMDD)               ":
+                    text="-------------------------------------------------":
+                    text="  Selection: ",field=RUNDATE
+
+            CALL VALID_DATE USING RUNDATE,TEST_RESULT
+            BREAK IF (TEST_RESULT = "OK")
+            FILL " " IN RUNDATE
+        REPEAT
+    ENDIF
+
+    MOVE RUNDATE TO DATE@
+    PACK PARAM_REPORT_MODE WITH PARAM_REPORT_MODE,BLANKS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_NEXT_RUN_MONTH LROUTINE CCYYMM@
+./* See what month was last processed and return the next one
+. */
+CCYYMM@         CHAR    @
+TEST_RESULT     CHAR    2
+...
+    FILL " " IN CCYYMM@
+    CALL UTIL_GET_VALID_OPT USING "155",PROG_VALID_CODE,DATE_CCYYMM
+    IF NOT (EQUAL)
+        CALL UTIL_ERRORMSG USING "Valid code entry not found","GET_NEXT_RUN_MONTH"
+    ENDIF
+
+    PACK DATE_CCYYMMDD WITH (SQUEEZE DATE_CCYYMM),"01"
+    CALL VALID_DATE USING DATE_CCYYMMDD,TEST_RESULT
+    IF (CHOP TEST_RESULT != "OK")
+        CLOCK TIMESTAMP INTO DATE_CCYYMMDD
+    ENDIF
+
+    CALL DATE_CALC USING DATE_CCYYMMDD,"ADD","MONTHS",1,DATE_CCYYMM
+    MOVE DATE_CCYYMM TO CCYYMM@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+./* Core process logic
+. */
+    debug
+    CALL INITIALIZE
+    CALL FIND_ACTIVE_PLANS
+    CALL BUILD_MEME_FILES
+    CALL CALC_STATS
+    CALL BUILD_REPORT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
+./* Setup runtime variables
+. */
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    CALL DATE_FORMAT USING REPORT_DATE,REPORT_DATE_FANCY
+    CALL DATE_FORMAT USING CURRDATE,CREATE_DATE_FANCY
+
+    MOVE "CLIPs Processed       " TO X_CNTDESC1
+    MOVE "Active MEMEs found    " TO X_CNTDESC2
+    MOVE "Plans Reported On     " TO X_CNTDESC3
+    MOVE "Employees Found       " TO X_CNTDESC4
+    MOVE "Dependents Found      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+...Prepare our files
+    CALL PREP_OGBFILE USING STATS_TEMP_FD,STATS_TEMP_FILE
+
+    PACK RPT_DELIMITED_FILE WITH RPT_PREFIX,"_",REPORT_DATE,"_",CURRDATE,".",EXT_DELIMITED
+
+.TODO - set this via menu and PARAM_LIST option
+
+    SET CREATE_DELIMITED_REPORT
+
+.Load descriptive labels for the rates/statuses
+    CALL LOAD_STATUS_DESC
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOAD_STATUS_DESC LROUTINE
+./* Build array of detailed rate/status descriptions
+. */
+IDX         NUM     5
+...
+    CLEAR STATUS_DESC
+    FOR IDX FROM 1 TO STATUS_MAX
+        SWITCH IDX
+            CASE RT_AC
+                CALL FIND_STATUS_DESC USING "AC",SCRATCH
+            CASE RT_CB
+                CALL FIND_STATUS_DESC USING "CB",SCRATCH
+            CASE RT_CD
+                CALL FIND_STATUS_DESC USING "CD",SCRATCH
+            CASE RT_D1
+                CALL FIND_STATUS_DESC USING "D1",SCRATCH
+            CASE RT_DN
+                CALL FIND_STATUS_DESC USING "DN",SCRATCH
+            CASE RT_E1
+                CALL FIND_STATUS_DESC USING "E1",SCRATCH
+            CASE RT_E2
+                CALL FIND_STATUS_DESC USING "E2",SCRATCH
+            CASE RT_EN
+                CALL FIND_STATUS_DESC USING "EN",SCRATCH
+            CASE RT_R1
+                CALL FIND_STATUS_DESC USING "R1",SCRATCH
+            CASE RT_R2
+                CALL FIND_STATUS_DESC USING "R2",SCRATCH
+            CASE RT_RN
+                CALL FIND_STATUS_DESC USING "RN",SCRATCH
+            CASE RT_RS
+                CALL FIND_STATUS_DESC USING "RS",SCRATCH
+            DEFAULT
+                debug
+                CALL UTIL_ERRORMSG USING "Rate not implemented","NORMALIZE_STATS"
+        ENDSWITCH
+        PACK STATUS_DESC[IDX] WITH SCRATCH
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_STATUS_DESC LROUTINE RATE@,DESC@
+./* Build the detailed name of this rate
+. */
+RATE@       CHAR    @
+DESC@       CHAR    @
+SYS_DESC    CHAR    100
+...
+    CLEAR SYS_DESC
+    CALL UTIL_GET_VALID_DESC USING "531",RATE@,SYS_DESC
+    PACK DESC@ WITH RATE@
+
+    IF (CHOP SYS_DESC > "")
+        PACK DESC@ WITH DESC@," - ",(CHOP SYS_DESC)
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_ACTIVE_PLANS LROUTINE
+./* Dynamically build a file of all active health CLIPs
+. */
+
+    CALL BUILD_CLIP_FILE
+
+...Filter out termed CLIs
+    CALL UTIL_XMESSAGE USING ("Building work list of active health plans as of " + REPORT_DATE),MSG_HEIGHT
+    PACK SCRATCH WITH CLIP_ACTIVE_FILE," ",HEALTH_PLAN_FILE," -t ":
+                      " 13-17 ":  ...network
+                      " 18-22 ":  ...product
+                      " 27-30 "  ...plan
+
+    IF (TEST_SKIP_CLIP_HEALTH)
+        EXIST HEALTH_PLAN_FILE
+        IF (OVER)
+            CLEAR TEST_SKIP_CLIP_HEALTH
+        ENDIF
+    ENDIF
+
+    IF NOT (TEST_SKIP_CLIP_HEALTH)
+        REFORMAT SCRATCH
+        IF (OVER)
+            CALL UTIL_ERRORMSG USING "Failed to reformat CLIP dbf","BUILD_CLIP_FILE"
+        ENDIF
+    ENDIF
+
+    PACK SCRATCH WITH HEALTH_PLAN_FILE," ",HEALTH_PLAN_FILE," 1-14 -t -u"
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Failed to sort health file","BUILD_CLIP_FILE"
+    ENDIF
+
+    CALL OPEN_OGBFILE USING HEALTH_PLAN_FD,HEALTH_PLAN_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_CLIP_FILE LROUTINE
+./* Build a file of active CLIP records from active agencies.
+. */
+    CALL UTIL_XMESSAGE USING ("Building the CLIP file (effective as of " + REPORT_DATE + ")"),MSG_HEIGHT
+
+...Get basic list of CLIPs
+    PACK SCRATCH WITH "clip.dbf ",CLIP_FULL_FILE," -t ":
+                      " -p41-48eq#"",BLANK_DATE,"#" ":
+                      " or -p41-48ge#"",REPORT_DATE,"#""
+
+    IF (TEST_SKIP_CLIP_FULL)
+        CALL UTIL_EXISTS USING CLIP_FULL_FILE,"FILE"
+        IF (OVER)
+            CLEAR TEST_SKIP_CLIP_FULL
+        ENDIF
+    ENDIF
+
+    IF NOT (TEST_SKIP_CLIP_FULL)
+        REFORMAT SCRATCH
+        IF (OVER)
+            CALL UTIL_ERRORMSG USING "Failed to reformat CLIP to full file","BUILD_CLIP_FILE"
+        ENDIF
+    ENDIF
+
+    IF (TEST_SKIP_CLIP_FILTER)
+        CALL UTIL_EXISTS USING CLIP_ACTIVE_FILE,"FILE"
+        IF (OVER)
+            CLEAR TEST_SKIP_CLIP_FILTER
+        ENDIF
+    ENDIF
+
+    IF NOT (TEST_SKIP_CLIP_FILTER)
+        CALL OPEN_OGBFILE USING CLIP_FULL_FD,CLIP_FULL_FILE
+        CALL PREP_OGBFILE USING CLIP_ACTIVE_FD,CLIP_ACTIVE_FILE
+        CALL FILTER_BAD_CLIPS
+        CALL CLOSE_OGBFILE USING CLIP_ACTIVE_FD,CLIP_ACTIVE_FILE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FILTER_BAD_CLIPS LROUTINE
+./* Filter CLIP records from CLIs that are termed. Essentially the DBC
+. * version of a table join, but slower.
+. */
+LAST_AGY        CHAR    8
+SKIP_AGY        NUM     V_FLAG
+...
+
+    CALL UTIL_XMESSAGE USING ("Filtering termed agencies from the CLIP file"),MSG_HEIGHT
+
+...Sort by agency
+    PACK SCRATCH WITH CLIP_FULL_FILE," ",CLIP_FULL_FILE," 1-12 -t"
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Failed to sort CLIP full file","FILTER_BAD_CLIPS"
+    ENDIF
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CLEAR LAST_AGY
+    LOOP
+        CALL READ_OGBFILE USING CLIP_FULL_FD,CLIP_FULL_FILE,CLIP_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+...Filter termed agencies
+        IF (CHOP LAST_AGY = "" | CHOP LAST_AGY != CLIP_ID1)
+            CLEAR SKIP_AGY
+            PACK LAST_AGY WITH CLIP_ID1,BLANKS
+            CALL UTIL_CLI_FIND USING CLIP_ID1
+            IF NOT (EQUAL)
+                SET SKIP_AGY
+            ELSE IF (SQUEEZE CLI_TRM > "")
+                IF (CHOP CLI_TRM < CHOP REPORT_DATE))
+                    SET SKIP_AGY
+                ENDIF
+            ENDIF
+        ENDIF
+        CONTINUE IF (SKIP_AGY)
+
+./* Filter non-health MEME records.
+. *
+. * Add exceptions to the health-only rule here as CASEs...
+. */
+        MOVE (SQUEEZE (CLIP_NET + CLIP_PRD + CLIP_PLAN)) TO SCRATCH
+        SWITCH SCRATCH
+            DEFAULT
+                CALL IS_HEALTH_CLIP USING CLIP_NET,CLIP_PRD,CLIP_PLAN
+                CONTINUE IF (OVER)
+        ENDSWITCH
+
+        CALL WRITE_OGBREC USING CLIP_ACTIVE_FD,CLIP_ACTIVE_FILE,CLIP_LIST
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_MEME_FILES LROUTINE
+./* Build work files of health active as-of the report date. On file
+. * with rates will give us the 01s.  The other without will give us
+. * deps
+. */
+
+    CALL BUILD_ACTIVE_MEME_FILE
+    CALL UTIL_XMESSAGE USING "Building the EMP and DEP work files",MSG_HEIGHT
+
+...Build the employee file
+    PACK SCRATCH WITH MEME_ACTIVE_FILE," ",MEME_EMP_FILE," -t":
+                      " -p130-131ne#"  #" ":
+                      " 112-116 ":  ...network
+                      " 117-121 ":  ...product
+                      " 126-129 ":  ...plan
+                      " 1-8 ":      ...id1
+                      " 132-133 ":  ...depc
+                      " 21-25 ":    ...lev1
+                      " 26-30 ":    ...lev2
+                      " 130-131":   ...rate
+                      " 444-483"    ...riders 1-10
+
+    IF (TEST_SKIP_EMP_RF)
+        CALL UTIL_EXISTS USING MEME_EMP_FILE,"FILE"
+        IF (OVER)
+            CLEAR TEST_SKIP_EMP_RF
+        ENDIF
+    ENDIF
+    IF NOT (TEST_SKIP_EMP_RF)
+        REFORMAT SCRATCH
+        IF (OVER)
+            CALL UTIL_ERRORMSG USING "Emp MEME file RF failed","BUILD_MEME_FILES"
+        ENDIF
+    ENDIF
+
+...Build the dep cross-reference file
+    PACK SCRATCH WITH MEME_ACTIVE_FILE," ",DEP_XREF_FILE," -t":
+                      " -p130-131eq#"  #" ":
+                      " 1-8 ":  ...ID1
+                      " 112-121 ":  ...NET & PRD
+                      " 126-129 ":  ...PLAN
+                      " 96-111"  ...EFF & TRM
+
+    IF (TEST_SKIP_DEP_RF)
+        CALL UTIL_EXISTS USING DEP_XREF_FILE,"FILE"
+        IF (OVER)
+            CLEAR TEST_SKIP_DEP_RF
+        ENDIF
+    ENDIF
+    IF NOT (TEST_SKIP_DEP_RF)
+        REFORMAT SCRATCH
+        IF (OVER)
+            CALL UTIL_ERRORMSG USING "Dep MEME file RF failed","BUILD_MEME_FILES"
+        ENDIF
+    ENDIF
+
+...Index the EMP file by plan
+    CALL INDEX_OGBFILE USING MEME_EMP_FILE,MEME_EMP_IDX_FILE,"1-14 -d"
+    IF (OVER)
+        debug
+        CALL UTIL_ERRORMSG USING "Index of EMP file failed","BUILD_MEME_FILES"
+    ENDIF
+
+...Index the dep file by ID1 for rapid checking for active coverage
+    CALL INDEX_OGBFILE USING DEP_XREF_FILE,DEP_XREF_IDX_FILE,"1-8 -d"
+    IF (OVER)
+        debug
+        CALL UTIL_ERRORMSG USING "Index of DEP file failed","BUILD_MEME_FILES"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_ACTIVE_MEME_FILE LROUTINE
+./* Build a work file of MEME records that are active
+. */
+    IF (TEST_SKIP_ACTIVE_MEME_RF)
+        CALL UTIL_EXISTS USING MEME_ACTIVE_FILE,"FILE"
+        RETURN IF NOT (OVER)
+        CLEAR TEST_SKIP_ACTIVE_MEME_RF
+    ENDIF
+
+    CALL UTIL_XMESSAGE USING "Build a file of active MEME health plans",MSG_HEIGHT
+
+    PACK SCRATCH WITH "meme.dbf ",MEME_ACTIVE_TEMP_FILE," -t ":
+                      " -p104-111eq#"",BLANK_DATE,"#" ":
+                      " or ":
+                      " -p104-111ge#"",REPORT_DATE,"#""
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Active MEME Reformat failed","BUILD_ACTIVE_MEME_FILE"
+    ENDIF
+
+    CALL OPEN_OGBFILE USING MEME_ACTIVE_TEMP_FD,MEME_ACTIVE_TEMP_FILE
+    CALL PREP_OGBFILE USING MEME_ACTIVE_FD,MEME_ACTIVE_FILE
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        CALL READ_OGBFILE USING MEME_ACTIVE_TEMP_FD,MEME_ACTIVE_TEMP_FILE,MEME_LIST
+        WHILE (RESULT = 1)
+
+        CONTINUE IF (MEME_EFF > REPORT_DATE)
+
+        IF (SQUEEZE MEME_TRM > "")
+            CONTINUE IF (MEME_TRM < MEME_EFF)
+        ENDIF
+
+...Filter non-health plans
+        CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
+        CONTINUE IF (OVER)
+
+.Skip the extra MEME individual billing record for survivors (95s)
+        IF (CHOP MEME_LEV2 = "95" | CHOP MEME_LEV2 = "90")
+            CONTINUE IF (CHOP MEME_MODE > "")
+        ENDIF
+
+...Filter cobra
+        CALL FILTER_BADIES
+        CONTINUE IF (OVER)
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+        CALL WRITE_OGBREC USING MEME_ACTIVE_FD,MEME_ACTIVE_FILE,MEME_LIST
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING MEME_ACTIVE_TEMP_FD,MEME_ACTIVE_TEMP_FILE
+    ERASE MEME_ACTIVE_TEMP_FILE
+    CALL CLOSE_OGBFILE USING MEME_ACTIVE_FD,MEME_ACTIVE_FILE
+
+...Sort by ID1
+    CALL UTIL_XMESSAGE USING "Sorting the active MEME health file",MSG_HEIGHT
+    PACK SCRATCH WITH MEME_ACTIVE_FILE," ",MEME_ACTIVE_FILE," 1-8 -t -u"
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort of MEME Active file failed","BUILD_ACTIVE_MEME_FILE"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FILTER_BADIES LROUTINE
+./* This is where can add any MEME based filters for this member
+. */
+IS_BAD_RATE     NUM     1
+...
+    CLEAR IS_BAD_RATE
+
+.TODO: any filters required?
+
+    IF (IS_BAD_RATE)
+        SETFLAG OVER
+    ELSE
+        SETFLAG NOT OVER
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CALC_STATS LROUTINE
+./* For each plan, count enrollment by status
+. */
+    debug  ...start counts
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        CALL READ_OGBFILE USING HEALTH_PLAN_FD,HEALTH_PLAN_FILE,HEALTH_PLAN_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+        CALL INIT_ARRAY_STRUCT
+
+        CALL UTIL_XMESSAGE USING ("Counting for plan: " + (CHOP STATS_DETAIL)),MSG_HEIGHT
+
+        IF (CHOP TEST_THIS_PLAN > "")
+            PACK SCRATCH WITH (SQUEEZE (CLIP_NET + CLIP_PRD + CLIP_PLAN))
+            CONTINUE IF (SQUEEZE TEST_THIS_PLAN != SQUEEZE SCRATCH)
+            debug
+        ENDIF
+
+        CALL GATHER_DATA
+        CALL NORMALIZE_STATS
+    REPEAT
+    CALL CLOSE_OGBFILE USING STATS_TEMP_FD,STATS_TEMP_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INIT_ARRAY_STRUCT LROUTINE
+./* Set up plan data to output to the temp stats file
+. */
+    CLEAR STATS_LIST:
+          PLAN_TOTALS:
+          PLAN_COUNTER
+
+    CALL BUILD_DETAILED_NAME USING STATS_DETAIL
+    PACK STATS_NET WITH CLIP_NET
+    PACK STATS_PRD WITH CLIP_PRD
+    PACK STATS_PLAN WITH CLIP_PLAN
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_DETAILED_NAME LROUTINE NAME@
+./* Read the VALID to get the descriptive name of each part of the CLIP
+. */
+NAME@       CHAR    @
+FIELDS      CHAR    30[3]
+...
+    CALL UTIL_GET_VALID_DESC USING "522",(CHOP CLIP_NET),FIELDS[1] ...network = 522
+    CALL UTIL_GET_VALID_DESC USING "521",(CHOP CLIP_PRD),FIELDS[2]  ...product = 521
+    CALL UTIL_GET_VALID_DESC USING "529",(CHOP CLIP_PLAN),FIELDS[3]  ...plan = 529
+
+    PACK NAME@ WITH (CHOP FIELDS[1])," ",(CHOP FIELDS[2])," ",(CHOP FIELDS[3])
+    REPLACE (DELIMITER+" ") IN NAME@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GATHER_DATA LROUTINE
++ Read through the EMP file for people enrolled in the current plan.
++ For each person, calc emp status and count the number of dependents
+FIRST_EMP           NUM     1
+COUNT_THIS_PLAN     NUM     7
+...
+    CALL OPEN_OGBFILE_IX USING MEME_EMP_FD,MEME_EMP_IDX_FILE
+    CALL OPEN_OGBFILE_IX USING DEP_XREF_FD,DEP_XREF_IDX_FILE
+
+    SET FIRST_EMP
+    CLEAR COUNT_THIS_PLAN
+
+    PACK EMP_KEY WITH CLIP_NET,CLIP_PRD,CLIP_PLAN,BLANKS
+    LOOP
+        CLEAR MEM_LIST:
+              CURRENT_DEPC:
+              CURRENT_STATUS:
+              CURRENT_PERSON:
+              CURRENT_EMPLOYEE:
+              CURRENT_RET100:
+              CURRENT_PARTICIPATION
+
+        IF (FIRST_EMP)
+            CLEAR FIRST_EMP
+            CALL READ_OGBFILE_IX USING MEME_EMP_FD,MEME_EMP_IDX_FILE,EMP_KEY,MEME_EMP_LIST
+        ELSE
+            CALL READKS_OGBFILE_IX USING MEME_EMP_FD,MEME_EMP_IDX_FILE,MEME_EMP_LIST
+        ENDIF
+        WHILE ( (RESULT = 1):
+              & (CHOP EMP_NET = CHOP CLIP_NET & CHOP EMP_PRD = CHOP CLIP_PRD & CHOP EMP_PLAN = CHOP CLIP_PLAN))
+
+        CALL UTIL_MEM_FIND USING EMP_ID1
+        CONTINUE IF NOT (EQUAL)
+        CONTINUE IF (CHOP MEM_REL != "01")
+
+        MOVE CNT_EMP TO CURRENT_PERSON
+        PACK CURRENT_EMPLOYEE WITH MEM_ESSN,BLANKS
+
+        IF (CHOP TEST_THIS_FAM > "")
+            CONTINUE IF (CHOP CURRENT_EMPLOYEE != CHOP TEST_THIS_FAM)
+            debug
+        ENDIF
+
+        CALL CALC_DEPC
+        CALL CALC_STATUS
+        CALL CALC_RET100
+        CALL CALC_PARTICIPATION
+
+        IF (CURRENT_STATUS = RT_AC)
+            IF (CURRENT_PARTICIPATION != PART_NULL)
+                debug
+            ENDIF
+        ENDIF
+
+        CALL ADD_TO_STATS
+        ADD 1 TO COUNT_THIS_PLAN
+
+        IF (CHOP EMP_DEPC != "EE")
+            CALL COUNT_DEPS
+        ENDIF
+
+        IF (TEST_LIMIT > 0)
+            BREAK IF (COUNT_THIS_PLAN > TEST_LIMIT)
+        ENDIF
+    REPEAT
+
+    CALL CLOSE_OGBFILE_IX USING MEME_EMP_FD,MEME_EMP_IDX_FILE
+    CALL CLOSE_OGBFILE_IX USING DEP_XREF_FD,DEP_XREF_IDX_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CALC_DEPC LROUTINE
+./* Set the coverage level code from the MEME_DEPC fields
+. */
+    PACK SCRATCH WITH (CHOP EMP_DEPC)
+    SWITCH SCRATCH
+        CASE "EE"
+            MOVE DEPC_EE TO CURRENT_DEPC
+        CASE "ES"
+            MOVE DEPC_ES TO CURRENT_DEPC
+        CASE "EC"
+            MOVE DEPC_EC TO CURRENT_DEPC
+        CASE "FM"
+            MOVE DEPC_FM TO CURRENT_DEPC
+        DEFAULT
+            CLEAR CURRENT_DEPC
+    ENDSWITCH
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CALC_STATUS LROUTINE
+./* Determine the family's medicare-as-primary status based on their
+. * rate code
+. */
+
+.TODO: implements rates here
+
+    PACK SCRATCH WITH (CHOP EMP_RT)
+    SWITCH SCRATCH
+        CASE "AC"
+            MOVE RT_AC TO CURRENT_STATUS
+        CASE "CB"
+            MOVE RT_CB TO CURRENT_STATUS
+        CASE "CD"
+            MOVE RT_CD TO CURRENT_STATUS
+        CASE "D1"
+            MOVE RT_D1 TO CURRENT_STATUS
+        CASE "DN"
+            MOVE RT_DN TO CURRENT_STATUS
+        CASE "E1"
+            MOVE RT_E1 TO CURRENT_STATUS
+        CASE "E2"
+            MOVE RT_E2 TO CURRENT_STATUS
+        CASE "EN"
+            MOVE RT_EN TO CURRENT_STATUS
+        CASE "R1"
+            MOVE RT_R1 TO CURRENT_STATUS
+        CASE "R2"
+            MOVE RT_R2 TO CURRENT_STATUS
+        CASE "RN"
+            MOVE RT_RN TO CURRENT_STATUS
+        CASE "RS"
+            MOVE RT_RS TO CURRENT_STATUS
+        DEFAULT
+            debug  ...what're we catching here?
+            CALL UTIL_ERRORMSG USING (SCRATCH + " rate not implemented"),"CALC_STATUS"
+    ENDSWITCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CALC_RET100 LROUTINE
++ Counter ret100 health rider status
+MASTER_RIDER    CHAR    300
+RIDER           NUM     2
+...
+    FOR RIDER FROM 1 TO 10
+        CONTINUE IF (CHOP EMP_RIDERS[RIDER] = "")
+        PACK SCRATCH WITH (CHOP EMP_RIDERS[RIDER])
+        SWITCH SCRATCH
+            CASE "RET1"
+                MOVE RD_RET100_EONLY TO CURRENT_RET100
+            CASE "RET2"
+                MOVE RD_RET100_BOTH TO CURRENT_RET100
+            CASE "RETS"
+                MOVE RD_RET100_SONLY TO CURRENT_RET100
+        ENDSWITCH
+        BREAK IF (CURRENT_RET100 > 0)
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CALC_PARTICIPATION LROUTINE
++ Set the current participation for this family group
+    IF (CHOP MEM_REL != "01")
+        debug
+        RETURN
+    ENDIF
+
+    SWITCH MEM_US01
+        CASE "1"
+            MOVE PART_19 TO CURRENT_PARTICIPATION
+        CASE "2"
+            MOVE PART_38 TO CURRENT_PARTICIPATION
+        CASE "3"
+            MOVE PART_56 TO CURRENT_PARTICIPATION
+        CASE "4"
+            MOVE PART_75 TO CURRENT_PARTICIPATION
+        DEFAULT
+            MOVE PART_NULL TO CURRENT_PARTICIPATION
+    ENDSWITCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+COUNT_DEPS LROUTINE
++ For each depd of the current employee, see if they're on the dep
++ index file.  If so, they have coverage and should be counted
+FIRST_DEP_READ      NUM     1
+...
+
+    MOVE CNT_DEP TO CURRENT_PERSON
+    SET FIRST_DEP_READ
+    CLEAR MEM_AIM
+    PACK MEM_AIM1 WITH "01X",CURRENT_EMPLOYEE,BLANKS
+    LOOP
+        IF (FIRST_DEP_READ)
+            CLEAR FIRST_DEP_READ
+            CALL UTIL_MEM_AIMFIND
+        ELSE
+            CALL UTIL_MEM_AIMNEXT
+        ENDIF
+        WHILE (EQUAL)
+        CONTINUE IF (CHOP MEM_REL = "01")
+
+        PACK DEP_KEY WITH MEM_ID1,BLANKS
+        CALL READ_OGBFILE_IX USING DEP_XREF_FD,DEP_XREF_IDX_FILE,DEP_KEY,MEME_DEP_LIST
+        CONTINUE IF (RESULT != 1)
+
+        LOOP
+            IF ( (CHOP DEP_NET = CHOP CLIP_NET):
+               & (CHOP DEP_PRD = CHOP CLIP_PRD):
+               & (CHOP DEP_PLAN = CHOP CLIP_PLAN))
+                CALL ADD_TO_STATS
+                BREAK
+            ENDIF
+            CALL READKS_OGBFILE_IX USING DEP_XREF_FD,DEP_XREF_IDX_FILE,MEME_DEP_LIST
+            BREAK IF (RESULT != 1 | CHOP DEP_ID1 != CHOP DEP_KEY)
+
+            debug ...hit a depd with multiple active health MEMEs?
+        REPEAT
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_TO_STATS LROUTINE
+./* Increment the relevent stat counter
+. */
+    IF (CURRENT_PERSON = 0)
+        debug
+        CALL UTIL_ERRORMSG USING "Current person is unset","ADD_TO_STATS"
+    ENDIF
+    IF (CURRENT_DEPC = 0)
+        debug
+        CALL UTIL_ERRORMSG USING "Current coverage level is unset","ADD_TO_STATS"
+    ENDIF
+    IF (CURRENT_STATUS = 0)
+        debug
+        CALL UTIL_ERRORMSG USING "Current status is unset","ADD_TO_STATS"
+    ENDIF
+    IF (CURRENT_PARTICIPATION = 0)
+        debug
+        CALL UTIL_ERRORMSG USING "Current participation is unset","ADD_TO_STATS"
+    ENDIF
+
+...Counter riders only on the 01 since that's where they're stored
+    SWITCH CURRENT_PERSON
+        CASE CNT_EMP
+            CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+            ADD 1 TO PLAN_COUNTER[TYPE_TOTAL_ENR,CURRENT_DEPC,CURRENT_STATUS]
+
+            SWITCH CURRENT_RET100
+                CASE RD_RET100_EONLY
+                    ADD 1 TO PLAN_COUNTER[TYPE_RET100_E_ONLY,CURRENT_DEPC,CURRENT_STATUS]
+                CASE RD_RET100_SONLY
+                    ADD 1 TO PLAN_COUNTER[TYPE_RET100_S_ONLY,CURRENT_DEPC,CURRENT_STATUS]
+                CASE RD_RET100_BOTH
+                    ADD 1 TO PLAN_COUNTER[TYPE_RET100_BOTH,CURRENT_DEPC,CURRENT_STATUS]
+                DEFAULT  ...no rider!
+            ENDSWITCH
+
+            SWITCH CURRENT_PARTICIPATION
+                CASE PART_19
+                    ADD 1 TO PLAN_COUNTER[TYPE_PART_19,CURRENT_DEPC,CURRENT_STATUS]
+                CASE PART_38
+                    ADD 1 TO PLAN_COUNTER[TYPE_PART_38,CURRENT_DEPC,CURRENT_STATUS]
+                CASE PART_56
+                    ADD 1 TO PLAN_COUNTER[TYPE_PART_56,CURRENT_DEPC,CURRENT_STATUS]
+                CASE PART_75
+                    ADD 1 TO PLAN_COUNTER[TYPE_PART_75,CURRENT_DEPC,CURRENT_STATUS]
+                CASE PART_NULL
+                    ADD 1 TO PLAN_COUNTER[TYPE_PART_NULL,CURRENT_DEPC,CURRENT_STATUS]
+                DEFAULT
+                    debug
+            ENDSWITCH
+
+        CASE CNT_DEP
+            CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+            ADD 1 TO PLAN_COUNTER[TYPE_TOTAL_DEP,CURRENT_DEPC,CURRENT_STATUS]
+
+        DEFAULT
+            debug  ...never hit!
+    ENDSWITCH
+
+    CALL ADD_TOTALS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_TOTALS LROUTINE
+./* Increment the total plan counter
+. */
+    SWITCH CURRENT_PERSON
+        CASE CNT_EMP
+            ADD 1 TO PLAN_TOTALS[TYPE_TOTAL_ENR]
+            SWITCH CURRENT_RET100
+                CASE RD_RET100_EONLY
+                    ADD 1 TO PLAN_TOTALS[TYPE_RET100_E_ONLY]
+                CASE RD_RET100_SONLY
+                    ADD 1 TO PLAN_TOTALS[TYPE_RET100_S_ONLY]
+                CASE RD_RET100_BOTH
+                    ADD 1 TO PLAN_TOTALS[TYPE_RET100_BOTH]
+                DEFAULT  ...no rider!
+            ENDSWITCH
+
+            SWITCH CURRENT_PARTICIPATION
+                CASE PART_19
+                    ADD 1 TO PLAN_TOTALS[TYPE_PART_19]
+                CASE PART_38
+                    ADD 1 TO PLAN_TOTALS[TYPE_PART_38]
+                CASE PART_56
+                    ADD 1 TO PLAN_TOTALS[TYPE_PART_56]
+                CASE PART_75
+                    ADD 1 TO PLAN_TOTALS[TYPE_PART_75]
+                CASE PART_NULL
+                    ADD 1 TO PLAN_TOTALS[TYPE_PART_NULL]
+                DEFAULT
+                    debug
+            ENDSWITCH
+        DEFAULT
+            ADD 1 TO PLAN_TOTALS[TYPE_TOTAL_DEP]
+    ENDSWITCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+NORMALIZE_STATS LROUTINE
+./* Convert the the stat counters into the STATS write list
+. */
+DEPC_CODE       NUM     2
+STATUS_CODE     NUM     2
+...
+    MOVE OGB_SEQ1 TO OGB_SEQ
+
+...Build plan totals
+    PACK STATS_DEPC WITH "TOTAL",BLANKS
+    PACK STATS_STATUS WITH "TOTAL",BLANKS
+
+    MOVE PLAN_TOTALS[TYPE_TOTAL_ENR] TO STATS_EMP_TOTAL
+    MOVE PLAN_TOTALS[TYPE_TOTAL_DEP] TO STATS_DEP_TOTAL
+    MOVE (STATS_EMP_TOTAL + STATS_DEP_TOTAL) TO STATS_ENR_TOTAL
+
+    MOVE PLAN_TOTALS[TYPE_RET100_E_ONLY] TO STATS_RD_RET100_EMPONLY
+    MOVE PLAN_TOTALS[TYPE_RET100_S_ONLY] TO STATS_RD_RET100_SPONLY
+    MOVE PLAN_TOTALS[TYPE_RET100_BOTH] TO STATS_RD_RET100_BOTH
+    MOVE (STATS_RD_RET100_EMPONLY + STATS_RD_RET100_SPONLY + STATS_RD_RET100_BOTH) TO STATS_RD_RET100_TOTAL
+
+    MOVE PLAN_TOTALS[TYPE_PART_NULL] TO STATS_PART_NULL
+    MOVE PLAN_TOTALS[TYPE_PART_19] TO STATS_PART_19
+    MOVE PLAN_TOTALS[TYPE_PART_38] TO STATS_PART_38
+    MOVE PLAN_TOTALS[TYPE_PART_56] TO STATS_PART_56
+    MOVE PLAN_TOTALS[TYPE_PART_75] TO STATS_PART_75
+    MOVE (STATS_PART_NULL + STATS_PART_19 + STATS_PART_38 + STATS_PART_56 + STATS_PART_75) TO STATS_PART_TOTAL
+
+    CALL WRITE_OGBREC USING STATS_TEMP_FD,STATS_TEMP_FILE,STATS_LIST  ...Write the TOTALS line for this plan
+
+...Output the breakdown of each subgrouping by DEPC+STATUS
+    FOR DEPC_CODE FROM 1 TO DEPC_MAX  ...set the coverage level
+        SWITCH DEPC_CODE
+            CASE DEPC_EE
+                PACK STATS_DEPC WITH "EE - Employee Only"
+            CASE DEPC_ES
+                PACK STATS_DEPC WITH "ES - Employee & Spouse"
+            CASE DEPC_EC
+                PACK STATS_DEPC WITH "EC - Employee & Children"
+            CASE DEPC_FM
+                PACK STATS_DEPC WITH "FM - Family"
+            DEFAULT
+                debug
+        ENDSWITCH
+
+.TODO: replace with descriptions of the rates
+        FOR STATUS_CODE FROM 1 TO STATUS_MAX  ...set the retiree-status
+            PACK STATS_STATUS WITH STATUS_DESC[STATUS_CODE]
+
+            MOVE PLAN_COUNTER[TYPE_TOTAL_ENR,DEPC_CODE,STATUS_CODE] TO STATS_EMP_TOTAL
+            MOVE PLAN_COUNTER[TYPE_TOTAL_DEP,DEPC_CODE,STATUS_CODE] TO STATS_DEP_TOTAL
+            MOVE (STATS_EMP_TOTAL + STATS_DEP_TOTAL) TO STATS_ENR_TOTAL
+
+            MOVE PLAN_COUNTER[TYPE_RET100_E_ONLY,DEPC_CODE,STATUS_CODE] TO STATS_RD_RET100_EMPONLY
+            MOVE PLAN_COUNTER[TYPE_RET100_S_ONLY,DEPC_CODE,STATUS_CODE] TO STATS_RD_RET100_SPONLY
+            MOVE PLAN_COUNTER[TYPE_RET100_BOTH,DEPC_CODE,STATUS_CODE] TO STATS_RD_RET100_BOTH
+            MOVE (STATS_RD_RET100_EMPONLY + STATS_RD_RET100_SPONLY + STATS_RD_RET100_BOTH) TO STATS_RD_RET100_TOTAL
+
+            MOVE PLAN_COUNTER[TYPE_PART_NULL,DEPC_CODE,STATUS_CODE] TO STATS_PART_NULL
+            MOVE PLAN_COUNTER[TYPE_PART_19,DEPC_CODE,STATUS_CODE] TO STATS_PART_19
+            MOVE PLAN_COUNTER[TYPE_PART_38,DEPC_CODE,STATUS_CODE] TO STATS_PART_38
+            MOVE PLAN_COUNTER[TYPE_PART_56,DEPC_CODE,STATUS_CODE] TO STATS_PART_56
+            MOVE PLAN_COUNTER[TYPE_PART_75,DEPC_CODE,STATUS_CODE] TO STATS_PART_75
+            MOVE (STATS_PART_NULL + STATS_PART_19 + STATS_PART_38 + STATS_PART_56 + STATS_PART_75) TO STATS_PART_TOTAL
+
+            CALL WRITE_OGBREC USING STATS_TEMP_FD,STATS_TEMP_FILE,STATS_LIST
+        REPEAT
+
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_REPORT LROUTINE
+./* Extract data from the temp stats file into the report format
+. */
+    IF (CREATE_DELIMITED_REPORT)
+        CALL BUILD_DELIMITED_REPORT
+    ENDIF
+
+    IF (CREATE_PDF_REPORT)
+
+.TODO - needed?
+
+    ENDIF
+
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_DELIMITED_REPORT LROUTINE
+./* Build a report using established delimiter
+. */
+DATE            CHAR    10[2]
+NO_RATE         NUM     V_FLAG
+...
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL PREP_OGBFILE USING RPT_DELIMITED_FD,RPT_DELIMITED_FILE
+    CALL WRITE_OGBREC USING RPT_DELIMITED_FD,RPT_DELIMITED_FILE,DELIMITED_HEADER
+
+    CALL OPEN_OGBFILE USING STATS_TEMP_FD,STATS_TEMP_FILE
+    LOOP
+        CLEAR NO_RATE
+        CALL READ_OGBFILE USING STATS_TEMP_FD,STATS_TEMP_FILE,STATS_LIST
+        WHILE (RESULT = 1)
+
+        IF (CFG_SKIP_TOTAL_LINE)
+            CONTINUE IF (CHOP STATS_STATUS = "TOTAL")
+        ENDIF
+
+        CALL CHECK_IF_RATE_EXISTS USING STATS_NET:
+                                        STATS_PRD:
+                                        STATS_PLAN:
+                                        STATS_DEPC:
+                                        STATS_STATUS:
+                                        REPORT_DATE
+        IF NOT EQUAL
+            SET NO_RATE
+        ENDIF
+
+        IF (CFG_SUPPRESS_NO_RATES)
+            IF (STATS_ENR_TOTAL = 0)
+                CONTINUE IF (NO_RATE)
+            ENDIF
+        ENDIF
+
+        IF (NO_RATE)
+            debug
+            PACK SCRATCH WITH "[NO RATES!] ",STATS_DETAIL
+            PACK STATS_DETAIL WITH SCRATCH
+        ENDIF
+
+        PACK RPT_DELIMITED_REC WITH (CHOP STATS_DETAIL),DELIMITER:
+                                    (CHOP STATS_NET),DELIMITER:
+                                    (CHOP STATS_PRD),DELIMITER:
+                                    (CHOP STATS_PLAN),DELIMITER:
+                                    (CHOP STATS_DEPC),DELIMITER:
+                                    (CHOP STATS_STATUS),DELIMITER:
+                                    (TRIM (CHAR STATS_ENR_TOTAL)),DELIMITER:
+                                    (TRIM (CHAR STATS_EMP_TOTAL)),DELIMITER:
+                                    (TRIM (CHAR STATS_DEP_TOTAL)),DELIMITER:
+                                    (TRIM (CHAR STATS_RD_RET100_TOTAL)),DELIMITER:
+                                    (TRIM (CHAR STATS_RD_RET100_BOTH)),DELIMITER:
+                                    (TRIM (CHAR STATS_RD_RET100_EMPONLY)),DELIMITER:
+                                    (TRIM (CHAR STATS_RD_RET100_SPONLY)),DELIMITER:
+                                    (TRIM (CHAR STATS_PART_TOTAL)),DELIMITER:
+                                    (TRIM (CHAR STATS_PART_NULL)),DELIMITER:
+                                    (TRIM (CHAR STATS_PART_19)),DELIMITER:
+                                    (TRIM (CHAR STATS_PART_38)),DELIMITER:
+                                    (TRIM (CHAR STATS_PART_56)),DELIMITER:
+                                    (TRIM (CHAR STATS_PART_75))
+
+        CALL WRITE_OGBREC USING RPT_DELIMITED_FD:
+                                RPT_DELIMITED_FILE:
+                                RPT_DELIMITED_LIST
+    REPEAT
+
+    PACK RPT_DELIMITED_REC WITH "Reported As Of: ",REPORT_DATE_FANCY," RunDate: ",CREATE_DATE_FANCY
+    CALL WRITE_OGBREC USING RPT_DELIMITED_FD,RPT_DELIMITED_FILE,RPT_DELIMITED_LIST
+    CALL CLOSE_OGBFILE USING RPT_DELIMITED_FD,RPT_DELIMITED_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_IF_RATE_EXISTS LROUTINE NET@,PRD@,PLAN@,DEPC@,RATE@,DATE@
+./* Set EQUAL if the given plan has a matching rate active as of the
+. * given date
+. */
+NET@        CHAR    @
+PRD@        CHAR    @
+PLAN@       CHAR    @
+DEPC@       CHAR    @
+RATE@       CHAR    @
+DATE@       CHAR    @
+RATE        CHAR    2
+DEPC        CHAR    2
+FIRST_ART   NUM     V_FLAG
+HAS_ART     NUM     V_FLAG
+...
+    UNPACK RATE@ INTO RATE
+    UNPACK DEPC@ INTO DEPC
+
+    PACK ART_AIM1 WITH "01","X",NET@,BLANKS
+    PACK ART_AIM2 WITH "02","X",PRD@,BLANKS
+    PACK ART_AIM4 WITH "04","X",PLAN@,BLANKS
+    PACK ART_AIM5 WITH "05","X",RATE,BLANKS
+
+    SET FIRST_ART
+    CLEAR HAS_ART
+    LOOP
+        UNTIL (HAS_ART)
+        IF (FIRST_ART)
+            CLEAR FIRST_ART
+            CALL UTIL_RATE_AIMFIND
+        ELSE
+            CALL UTIL_RATE_AIMNEXT
+        ENDIF
+        WHILE EQUAL
+        IF (CHOP ART_DEPC > "")
+            CONTINUE IF (ART_DEPC != DEPC)
+        ENDIF
+        CONTINUE IF (CHOP ART_TRM > "" & ART_TRM < DATE@)
+        CONTINUE IF (CHOP ART_EFF > "" & ART_EFF > DATE@)
+
+        SET HAS_ART
+    REPEAT
+
+    IF (HAS_ART)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
+./* Cleanup work files and handle the report
+. */
+    debug ...really wanna delete everything?
+    CLOCK CALENDAR INTO END_DATETIME
+
+...Clean up the CLIP work files
+    CALL CLOSE_OGBFILE USING CLIP_FULL_FD,CLIP_FULL_FILE
+    CALL CLOSE_OGBFILE USING HEALTH_PLAN_FD,HEALTH_PLAN_FILE
+    CALL CLOSE_OGBFILE_IX USING MEME_EMP_FD,MEME_EMP_IDX_FILE
+    CALL CLOSE_OGBFILE_IX USING DEP_XREF_FD,DEP_XREF_IDX_FILE
+
+    IF NOT (TEST_RETAIN_WORK_FILES)
+        IF NOT (TEST_SKIP_CLIP_FULL)
+            CALL ERASE_OGBFILE USING CLIP_FULL_FILE
+        ENDIF
+        IF NOT (TEST_SKIP_CLIP_FILTER)
+            CALL ERASE_OGBFILE USING CLIP_ACTIVE_FILE
+        ENDIF
+        IF NOT (TEST_SKIP_CLIP_HEALTH)
+            CALL ERASE_OGBFILE USING HEALTH_PLAN_FILE
+        ENDIF
+
+        IF NOT (TEST_SKIP_ACTIVE_MEME_RF)
+            CALL ERASE_OGBFILE USING MEME_ACTIVE_FILE
+        ENDIF
+
+        CALL ERASE_OGBFILE USING MEME_EMP_IDX_FILE
+        CALL ERASE_OGBFILE USING MEME_EMP_FILE
+        CALL ERASE_OGBFILE USING DEP_XREF_IDX_FILE
+        CALL ERASE_OGBFILE USING DEP_XREF_FILE
+    ENDIF
+
+.Clean up STATS files
+    CALL CLOSE_OGBFILE USING STATS_TEMP_FD,STATS_TEMP_FILE
+    CALL ERASE_OGBFILE USING STATS_TEMP_FILE
+
+.Handle reports
+    debug
+    IF (CREATE_DELIMITED_REPORT)
+        CALL EXPORT_FILES USING RPT_DELIMITED_FILE,"TEXT"
+    ENDIF
+
+    IF (CREATE_PDF_REPORT)
+        debug  ...Not Implemented
+        CALL EXPORT_FILES USING RPT_PDF_FILE,"PDF"
+    ENDIF
+
+.    CALL UPDATE_RUN_DATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EXPORT_FILES LROUTINE REPORT@,TYPE@
+./* Push the files to the shared drive and email them to staff
+. */
+REPORT@     CHAR    @
+TYPE@       CHAR    @
+...
+    IF (CHOP TYPE@ = "TEXT")
+        CALL UTIL_TRIM_TRAILING_SPACE USING REPORT@,REPORT@
+    ENDIF
+    IF NOT (TEST_SKIP_ARCHIVE)
+        CALL UTIL_PENDING_BACKUP USING "/w/",REPORT@,END_DATETIME
+    ENDIF
+    IF NOT (TEST_SKIP_FTP)
+        CALL FTP_REPORT USING REPORT@,TYPE@
+    ENDIF
+    IF NOT (TEST_SKIP_EMAIL)
+        CALL EMAIL_REPORT USING REPORT@,TYPE@
+    ENDIF
+    IF NOT (TEST_SKIP_DEL_REPORT)
+        ERASE REPORT@
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FTP_REPORT LROUTINE REPORT@,TYPE@
+./* Push the file to the shared drive
+. */
+REPORT@     CHAR    @
+TYPE@       CHAR    @
+TOWHERE     CHAR    300
+FTP_MODE    CHAR    10
+...
+    MOVE SHARED_DIRECTORY TO TOWHERE
+    IF (CHOP TEST_FTP_TOWHERE > "")
+        MOVE TEST_FTP_TOWHERE TO TOWHERE
+    ENDIF
+
+    SWITCH TYPE@
+        CASE "PDF"
+            MOVE "BIN" TO FTP_MODE
+        DEFAULT
+            MOVE "ASCII" TO FTP_MODE
+    ENDSWITCH
+
+    CALL UTIL_FTP_SEND_FILE USING "/w/",TOWHERE,REPORT@,FTP_MODE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_REPORT LROUTINE REPORT@,TYPE@
+./* Email via attachment the report to relevent staff
+. */
+REPORT@     CHAR    @
+TYPE@       CHAR    @
+TOWHOM      CHAR    200
+SUBJECT     CHAR    100
+BODY        CHAR    1000
+DATE        CHAR    10[2]
+...
+    CLEAR TOWHOM:
+          SUBJECT:
+          BODY
+
+    PACK TOWHOM WITH STAFF_EMAILS
+    IF (SQUEEZE TEST_EMAIL_TOWHOM > "")
+        PACK TOWHOM WITH TEST_EMAIL_TOWHOM
+    ENDIF
+
+    MOVE TYPE@ TO SCRATCH
+    REPLACE MAKEUPPER IN SCRATCH
+    PACK SUBJECT WITH "a2002271 [",TYPE@,"] Report Available - Plan Counts by Coverage Level & Retirement Status"
+    IF (ENABLE_TEST)
+        PACK SUBJECT WITH SUBJECT," [TEST]"
+    ENDIF
+    REPLACE MAKELOWER IN SCRATCH
+    PACK BODY WITH "Report Created On: ",CREATE_DATE_FANCY,"\n":
+                   "Report Valid As Of: ",REPORT_DATE_FANCY,"\n":
+                   "Start: ",START_DATETIME," -- End: ",END_DATETIME,"\n":
+                   "This ",SCRATCH," report provides a breakdown of counts of enrollment for each available plan by:\n":
+                   "\tCoverage Level\n":
+                   "\tRate Code\n":
+                   "\n":
+                   "Note: This report is a newer version of the old STS0200 report. All plans reported are automatically ":
+                   "pulled from active CLIP records in Impact. If you see any plans that should not be active, this means ":
+                   "that some CLIPs (valid MEME Net-Prd-Plan-Rate) are valid on active CLIs (agencies). If they are termed ":
+                   "in Impact, they will no longer appear on this report.\n":
+                   "Note 2: CLIPs are not displayed if they have no linked rate table entry and 0 enrollment."
+
+    CALL UTIL_SEND_EMAIL_WITH_FILE USING TOWHOM:
+                                         SUBJECT:
+                                         BODY:
+                                         REPORT@
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_RUN_DATE LROUTINE
+./* Stamp the completed process data in the valid code table
+. */
+    RETURN IF (TEST_NO_UPDATE_VALID)
+
+    IF (CHOP PARAM_REPORT_MODE = "MONTHLY")
+        UNPACK REPORT_DATE INTO DATE_CCYYMM
+        CALL UTIL_WRITE_VALID USING "155":
+                                    PROG_VALID_CODE:
+                                    "LAST RUN MONTH OF a2002271":
+                                    DATE_CCYYMM
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_CLI.SR
+    INC UTIL_MEM.SR
+    INC UTIL_MEMO.SR
+    INC UTIL_ART.SR
+    INC UTIL_VALID.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_FTP.SR
+    INC FILTER_NON_HEALTH.SR
+
+.# =================================================================== #
+.# End Program
+.# =================================================================== #
