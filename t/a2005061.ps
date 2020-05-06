@@ -1,0 +1,248 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   BASE.PS
++
++ DESCRIPTION:
++   Close all OA events created on 2020-05-06 - these are erroneous
++   duplicates
++
++ CREATED BY:
++   apjwh - 2020-05-06
++
++ LAST MODIFIED BY:
++   apjwh - 2020-05-06
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC EVE.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_EVE_WRITE NUM     "1"
+                    LISTEND
+
+.# =================================================================== #
+.# Run Configuration
+.# =================================================================== #
+
+DUPE_DATE           INIT    "20200506"
+PROG_NAME           INIT    "A00001"
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/a20050601.log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_LIST            LIST
+LOG_REC             CHAR    200
+                    LISTEND
+
+LOG_HEADER          VARLIST "Eve_Id"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2005061" TO C_PROG        ...Program name
+    MOVE "Fix Dupe OA Letters" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL CLOSE_EVENTS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "Events found          " TO X_CNTDESC1
+    MOVE "Dupe Events Closed    " TO X_CNTDESC2
+    MOVE "                      " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLOSE_EVENTS LROUTINE
++ Close all events in the work file
+FIRST_EVE       NUM     V_FLAG
+...
+    CALL UTIL_XMESSAGE USING "Closing dupe OA letter events...",MSG_HEIGHT
+    SET FIRST_EVE
+
+    CLEAR EVE_AIM
+    PACK EVE_AIM5 WITH "05X","LT",BLANKS        .OA letters
+    PACK EVE_AIM9 WITH "09X","OA",BLANKS
+    PACK EVE_AIM6 WITH "06X","OP",BLANKS        .Open
+
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    debug
+
+    LOOP
+        IF (FIRST_EVE)
+            CLEAR FIRST_EVE
+            CALL UTIL_EVE_AIMFIND
+        ELSE
+            CALL UTIL_EVE_AIMNEXT
+        ENDIF
+        WHILE EQUAL
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CONTINUE IF (CHOP EVE_NEWDT != CHOP DUPE_DATE)
+
+        debug
+        PACK LOG_REC WITH EVE_ID1
+        CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+        PACK EVE_STAT WITH "CL",BLANKS
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+        IF NOT (TEST_SKIP_EVE_WRITE)
+            CALL UTIL_EVE_WRITE USING "UPDATE",PROG_NAME
+        ENDIF
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_EVE.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
