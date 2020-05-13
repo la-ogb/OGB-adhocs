@@ -1,0 +1,447 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0305071.ps
++    Description    :  Get count of each 5 byte zip code for each plan  
++                   :  member with health and list their state.
++    Author         :  Tommy Ratcliff
++    Date created   :  05/07/2003
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+.-----------------------------
+. Required Program Includes
+.-----------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       PRT.RL               ...Printer definition file
+
+
+
+.-----------------------------
+. Program Specific Includes
+.-----------------------------
+    INC       MEME.RL              ...Client Record
+    INC       MEM.RL               ...Member demographic Record
+
+
+
+.-----------------------------
+. File Declarations
+.-----------------------------
+MEME_ZIP_FILE            FILE      VAR=08,TEXT
+MEME_ZIP_NAME            INIT      "meme.zip"
+MEME_ZIP_LIST           LIST
+MEME_ZIP_KEY1            DIM       8
+                        LISTEND
+
+OUT_FD                   FILE     VAR=8,TEXT
+OUT_NAME                 INIT     "/ogb/work/zipcnt.txt"
+OUT_LIST                LIST
+OUT_ZIP5                 DIM      5
+OUT_STATE                DIM      2
+OUT_COUNTER              FORM     1 
+                        LISTEND
+SUM_FD                   FILE     VAR=14,TEXT
+SUM_NAME                 INIT     "/ogb/work/zipcnt.sum"
+SUM_LIST                LIST
+SUM_ZIP5                 DIM      5
+SUM_STATE                DIM      2
+SUM_COUNTER              FORM     7 
+                        LISTEND
+OUT_SRTNAME             INIT     "/ogb/work/zipcnt.srt"
+
+SRT_OPTS      INIT  "001-007 -T"
+OUT_KEY      DIM       7
+SAVE_KEY     DIM       7
+WS_ZIP5      DIM       5
+WS_ZIP8      DIM       8
+VAL_RESULT    FORM      1
+OUT_RESULT    FORM      1
+DATE1         DIM       8
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+LAST_CLM1     DIM       8
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+KEEP_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+MONEY1        FORM      7.2
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+WORK_TEXT     INIT      "JUNK"
+ACTION        DIM       10          
+PARAM_LIST    LIST
+PARAM_XXX     DIM       10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+
+
+.------------------------------
+. Program Specific variables
+.------------------------------
+WS_SSN        DIM       9
+SAVE_DEPC     DIM       2
+BLANK8        INIT     "        "
+JUNK4         DIM      4
+TRAP_DATA     DIM      500
+TODAY         DIM      8
+CAL_CLOCK     DIM      21
+PLAN_FIELD    DIM      4  
+CHG_RET_CODE  FORM     1
+PLAN_LIST     LIST
+PLAN_BYTE1    DIM      1
+PLAN_REST     DIM      3
+ORIG_RETURN   FORM     5
+CURR_RETURN   FORM     5
+DISP_3        DIM      3
+DISP_4        DIM      4
+FORM_08       FORM     08
+DIM49         DIM      49
+WRK_DIM1      DIM      1
+WRK_DIM4      DIM      4
+              LISTEND
+
+.....> START HERE
+    CALL      RUN_NOW
+    CHAIN     C_NEXT 			    chains to back to the menu
+
+
+
+.------------------------------------------
+.   Start here if called by the Scheduler    
+.------------------------------------------
+    INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+    RETCOUNT  ORIG_RETURN
+
+
+
+.-----------------------
+.   Fill top of screen
+.-----------------------
+    MOVE "menu" TO  C_NEXT
+    MOVE "Semi_Annual insurance file for Social Services" TO  C_OPER
+    MOVE "x_elg200" TO  C_PROG
+    MOVE BLANKS TO  C_LABEL
+    MOVE BLANKS TO  C_FILE
+    MOVE BLANKS TO  C_KEYS
+    CLOCK CALENDAR INTO  CAL_CLOCK
+    CALL X_BLANK_SCREEN
+
+
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+	
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+    CALL SCHED_PICK
+    IF (RUN_MODE = "B" OR RUN_MODE = "N")
+       CALL MAIN_PROCESS
+    ENDIF
+    RETURN
+
+
+
+. ==============
+.   Main Process
+. ==============
+MAIN_PROCESS
+    DEBUG
+    CALL      INITIALIZE
+    CALL      REFORMAT_MEME
+    CALL      OPEN_FILES
+    CALL      GET_ZIP_CODES
+    CALL      CLOSE_FILES
+    CALL      SORT_ZIP_FILE
+    CALL      OPEN_OGBFILE USING OUT_FD,OUT_SRTNAME
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL      READ_OGBFILE USING OUT_FD,OUT_SRTNAME,OUT_LIST 
+    MOVE      RESULT TO OUT_RESULT
+    PACK      OUT_KEY WITH OUT_ZIP5,OUT_STATE
+    MOVE      OUT_KEY TO SAVE_KEY
+    CALL      SUM_ZIP_FILE
+    TRAPREST TRAP_DATA
+    MOVE SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN
+
+SUM_ZIP_FILE
+  LOOP
+    IF (OUT_RESULT <> 1)
+      UNPACK SAVE_KEY INTO SUM_ZIP5,SUM_STATE
+      MOVE      OGB_SEQ1 TO OGB_SEQ
+      CALL      WRITE_OGBREC USING SUM_FD,SUM_NAME,SUM_LIST 
+      BREAK          
+    ENDIF
+    IF (SAVE_KEY <> OUT_KEY)
+      UNPACK SAVE_KEY INTO SUM_ZIP5,SUM_STATE
+      MOVE      OGB_SEQ1 TO OGB_SEQ
+      CALL      WRITE_OGBREC USING SUM_FD,SUM_NAME,SUM_LIST 
+      CLEAR     SUM_LIST
+      PACK      SAVE_KEY WITH OUT_ZIP5,OUT_STATE
+    ENDIF
+    ADD       OUT_COUNTER TO SUM_COUNTER
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL      READ_OGBFILE USING OUT_FD,OUT_NAME,OUT_LIST 
+    MOVE      RESULT TO OUT_RESULT
+    PACK      OUT_KEY WITH OUT_ZIP5,OUT_STATE
+  REPEAT 
+  RETURN
+
+
+.-----------------------------
+. Operator pressed F9
+. ----------------------------
+QUIT
+    IF (C_RMODE = "I")
+        error     horz="23",vert="19":
+                  bgcol=C_ERRB,fgcol=C_ERRF:
+                  lncol=C_ERRL,shade="Y":
+                  text=" Process Aborted by Operator ":
+                  text="-----------------------------"
+        messageerase
+    ENDIF
+    CLEAR     C_NOHIST
+    TRAPREST TRAP_DATA
+    IF (RUN_MODE = "B")
+        LOOP
+        RETCOUNT CURR_RETURN
+        WHILE (CURR_RETURN > ORIG_RETURN)
+        NORETURN
+        REPEAT
+        MOVE SCH_RTABRT  TO  SCH@RTCODE
+        RETURN
+    ENDIF
+    CHAIN "MENU"
+
+    
+
+.******************************************************************************
+INITIALIZE
+.******************************************************************************
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK	TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.------------------
+...Display Counters
+.------------------
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Records Found: " TO X_CNTDESC2
+  DISPLAY    *ES
+  CALL X_DISPLAY_COUNTS
+
+  RETURN
+
+
+
+.******************************************************************************
+OPEN_FILES
+.******************************************************************************
+  MOVE MEME_ZIP_NAME TO C_FILE
+  CALL OPEN_OGBFILE USING MEME_ZIP_FILE,MEME_ZIP_NAME
+
+  MOVE OUT_NAME TO C_FILE
+  CALL PREP_OGBFILE USING OUT_FD,OUT_NAME
+
+  CALL PREP_OGBFILE USING SUM_FD,SUM_NAME
+  RETURN
+
+
+
+.******************************************************************************
+REFORMAT_MEME
+.******************************************************************************
+  DEBUG
+
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+  MESSAGE HORZ="22",VERT="20":
+          BGCOL=C_DLGB,FGCOL=C_DLGF:
+          LNCOL=C_DLGL,SHADE="y": 
+          TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+.------------------------------------
+...Get all active records with health
+.------------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf meme.zip1": 
+                      " -p112-116ne#"","LIFE ","#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR     HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(meme.dbf)"
+        CHAIN     "MENU"
+    ENDIF
+ 
+
+
+.---------------------------------------------------------------
+...Get only records from meme.zip1 with term dates > today
+.---------------------------------------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.zip1 x_meme.zip 1-8": 
+                      " -p104-111gt#"",TODAY,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR     HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(meme.zip1)"
+        CHAIN     "MENU"
+    ENDIF
+ 
+.--------------------------------------------------------------------
+...Get only records from meme.zip with term dates = blanks
+.--------------------------------------------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.zip1 meme.zip 1-8":     
+              " -p104-111eq#"",BLANK8,"#" -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR     HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(meme.zip)"
+        CHAIN     "MENU"
+    ENDIF
+ 
+.-------------------------------------------------------
+...Display message to operator that reformat is complete
+.-------------------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="     !!!!! REFORMAT COMPLETE !!!!!     ";
+    RETURN
+
+
+
+.******************************************************************************
+GET_ZIP_CODES
+.******************************************************************************
+ LOOP      
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEME_ZIP_FILE:
+                            MEME_ZIP_NAME:
+                            MEME_ZIP_LIST
+    IF (RESULT <> 1)
+        CALL X_DISPLAY_COUNTS
+        BREAK 
+    ENDIF
+
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO DISP_4,DISP_3
+    IF (DISP_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+      
+.------------------------         
+...Get info from MEM-FILE
+.------------------------
+    PACK MEM_FK11 WITH MEME_ZIP_KEY1     
+    CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                         MEM_FN:              ...FILE NAME LIST
+                         MEM_FC:              ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:              ...FILE KEY VARLISTS
+                         MEM_FK:              ...FILE KEY SIZES
+                         MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                         MEM_REC:             ...FILE RECORD (PACKED)
+		         MEM_OLD:             ...FILE SAVED WHEN READ
+                         MEM_QTY:             ...NUMBER OF FIlES
+                         1                    ...FILE NUMBER FOR THIS READ
+
+    IF (RESULT <> 1)
+        CALL X_DISPLAY_COUNTS 
+        CONTINUE
+    ENDIF
+
+    
+
+.   IF (MEM_STATE = "LA")
+.       CONTINUE
+.   ENDIF
+
+    IF (SQUEEZE MEM_STATE = "")
+    CONTINUE
+    ENDIF
+
+    UNPACK MEM_ZIP INTO WS_ZIP5,WS_ZIP8
+    MOVE WS_ZIP5 TO OUT_ZIP5                ...ZIP CODE
+    MOVE MEM_STATE TO OUT_STATE
+    MOVE "1" TO OUT_COUNTER
+      
+
+.--------------
+...Write record
+.--------------
+    MOVE OUT_NAME TO C_FILE
+    CALL WRITE_OGBREC USING OUT_FD:
+                            OUT_NAME:
+                            OUT_LIST
+    ADD 1 TO X_CNT2
+    REPEAT
+    RETURN
+
+
+
+.******************************************************************************
+SORT_ZIP_FILE
+.******************************************************************************
+. SORT "zipcnt.txt zipcnt.srt 1-5 -t"
+  CALL SORT_OGBFILE USING OUT_NAME,OUT_SRTNAME,SRT_OPTS
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="OUT.TXT SORT FAILED"
+        CHAIN "MENU"
+    ENDIF
+    
+    RETURN
+
+
+.===========
+.Close Files
+.===========
+CLOSE_FILES 
+    MOVE MEME_ZIP_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING MEME_ZIP_FILE,MEME_ZIP_NAME
+
+    MOVE OUT_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING OUT_FD,OUT_NAME
+    RETURN
+
+
+
+.---------------------
+. Required Includes
+.---------------------
+    INC         UTIL.SR
+    INC         VALID.IO
+    INC         PRINT.SR
+    INC         X_STANDARD.SR
+    INC         FILE.IO
+
+.--------------------------------
+. Program Specific Includes
+.--------------------------------
+    INC        X_OGBFILE.IO

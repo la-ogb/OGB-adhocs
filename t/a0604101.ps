@@ -1,0 +1,298 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: A0604101                                            *
+.     *                                                                   *
+.     * DESCRIPTION: FIXES SALARY RECORDS WITHOUT 2 DECIMAL PLACES        * 
+.     *                                                                   *
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APSJM 04/17/2006 A0604101  DEV - INITIAL VERSION.                 *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEMS.RL           ...Member Salaries     
+              INC       D_MEMMEM.CB
+              INC       MEME.RL
+              INC       MEMO.RL
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+SAL_REF_FD  FILE      VAR=12,TEXT
+SAL_REF_NAME INIT      "/w/a0604101.txt"
+SAL_REF_LIST LIST
+SAL_REF_ID1  DIM       8 
+SAL_REF_ID2  DIM       4
+             LISTEND
+.
+U_SALR_FD     FILE     VAR=2300,TEXT
+U_SALR_NAME   INIT     "salr_err.txt"
+.
+. ----------------------------
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+F_SALR        FORM 7.2
+DEC           INIT "."
+FIRST_READ    DIM  1
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "A0604101"        TO  C_OPER
+         MOVE      "FIX SALARIES"        TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL REF_MEMS
+   CALL OPEN_FILES
+   CALL PROCESS_WRK
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   MOVE      "MENU"        TO C_NEXT
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_WRK
+    MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+    CALL READ_OGBFILE USING SAL_REF_FD,SAL_REF_NAME,SAL_REF_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    CALL X_DISPLAY_COUNTS
+    PACK      MEMS_FK11 WITH SAL_REF_ID1,SAL_REF_ID2,BLANKS
+    CALL      FILE_READ USING MEMS_FD:    ...FILE DECLARATION LIST
+                            MEMS_FN:          ...FILE NAME LIST
+                            MEMS_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEMS_FV:          ...FILE KEY VARLISTS
+                            MEMS_FK:          ...FILE KEY SIZES
+                            MEMS_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEMS_REC:         ...FILE RECORD (PACKED)
+                            MEMS_OLD:         ...FILE SAVED WHEN READ
+                            MEMS_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+   CLEAR F_SALR
+   MOVE MEMS_SALR TO F_SALR
+   IF (F_SALR = 0)
+     DEBUG
+   ENDIF
+   MOVE F_SALR TO MEMS_SALR
+   PACK      MEM_FK11 WITH SAL_REF_ID1,BLANKS
+   CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+   IF (RESULT <> 1)
+     CONTINUE                     
+   ENDIF
+   MOVE BLANKS TO MEMS_CHGBY
+   CLEAR MEME_LIST
+   CLEAR MEMO_LIST
+   PACKLEN INM_REC WITH MEM_LIST,MEME_LIST,MEMO_LIST,MEMS_LIST
+   UNPACK INM_REC INTO INM_LIST
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING U_SALR_FD,U_SALR_NAME,INM_LIST
+   CLEAR INM_LIST
+ REPEAT
+ RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+REF_MEMS
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+.-------------------------------------
+...Get only Records without term dates
+.-------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "mems.dbf /w/a0604101.txt":
+              " -p131-131ne#"",DEC,"#" 1-12 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(mems.dbf)"
+               CHAIN     "MENU"
+         ENDIF
+    RETURN
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "Input Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written  :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING SAL_REF_FD,SAL_REF_NAME
+         CALL      PREP_OGBFILE USING U_SALR_FD,U_SALR_NAME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING SAL_REF_FD,SAL_REF_NAME
+         CALL      CLOSE_OGBFILE USING U_SALR_FD,U_SALR_NAME
+         RETURN
+
+
+.
+. ----------------------------
+. Update Valid Table with run date
+. ----------------------------
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End 
+. +++++++++++++++++++++++++++++++++++++

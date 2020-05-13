@@ -1,0 +1,583 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: A0606121                                            *
+.     *                                                                   *
+.     * DESCRIPTION:  RDS File Extract For HUMANA                         *
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APSJM 06/12/2006 A0507082 DEV - INITIAL VERSION.                  *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       DRUG_SUB.RL      ...DRUG SUBSITY
+              INC       RDS.RL           ...RDS                    
+. ----------------------------
+. File Declarations
+. ----------------------------
+DRUG_SUB_W_FD      FILE   VAR=66,TEXT
+DRUG_SUB_W_NME     INIT   "/w/a0606121.txt"
+DRUG_SUB_W_IDX_FD  IFILE  VAR=66,KEYL=24,TEXT
+DRUG_SUB_W_IDX_NME INIT   "/w/a0606121.ix1"
+DRUG_SUB_KEY       DIM    24
+.
+DRUG_SUB_W_PR_FD   FILE   VAR=66,TEXT
+DRUG_SUB_W_PR_NME  INIT   "/w/human_sub_pr.txt"
+.
+RDS_W_FD         FILE   VAR=200,TEXT
+RDS_W_NME        INIT   "/w/human_w_rds.txt"
+.
+RDS_FD         FILE   VAR=200,TEXT
+RDS_NME        INIT   "/w/human_rds.txt"
+.
+HDR_REC          LIST
+HDR_RTYP         INIT   "H"
+HDR_APP_NO       INIT   "0000004566"
+HDR_DATE         DIM    8
+HDR_TIME         DIM    6
+HDR_FILL         DIM    175
+                 LISTEND
+.
+TRL_REC          LIST
+TRL_RTYP         INIT   "T"
+TRL_APP_NO       INIT   "0000004566"
+TRL_DATE         DIM    8
+TRL_TIME         DIM    6
+TRL_RECS         DIM    7
+TRL_FILL         DIM    168
+                 LISTEND
+.
+RDS_CNT_FD             FILE      VAR=100,TEXT 
+RDS_CNT_NME            INIT      "/w/human_rds_cnt.txt"
+RDS_CNT_LIST           LIST
+RDS_CNT_CNT            DIM       60
+                       LISTEND
+.
+RDS_W_SAV      DIM     200
+.                                        LOCATION  DESCRIPTION
+SVE_TRM        DIM     8
+.                                                  
+RDS_W_LIST         LIST
+.
+RDS_W_REC_TYPE     DIM 1                   001-001   D-Detail
+.
+RDS_W_SSN          DIM 9                   002-010   SSN              
+.                                                
+RDS_W_HICN         DIM 12                  011-022   Medicare Hic No.     
+.
+RDS_W_FIRST_NAME   DIM 30                  023-052   First Name
+.
+RDS_W_MI           DIM 1                   053-053   Middle Initial 
+.
+RDS_W_LAST_NAME    DIM 40                  054-093   Last Name 
+.
+RDS_W_DOB          DIM 8                   094-101   Date Of Birth (ccyymmdd)
+.
+RDS_W_SEX          DIM 1                   102-102   1-Male, 2-Female
+.
+RDS_W_SUB_EFF      DIM 8                   103-110   Subsity Effective (ccyymmdd)
+.
+RDS_W_SUB_TRM      DIM 8                   111-118   Subsity Term      (ccyymmdd)
+.
+RDS_W_BOI          DIM 20                  119-138   Sponsor ID=1151
+.
+RDS_W_REL          DIM 2                   139-140   Relation 01-Self, 02-Spouse
+.                                                           03-Other
+RDS_W_TRAN_TYP     DIM 3                   141-143   ADD or DEL
+.
+RDS_W_FILL         DIM 57                  144-200   Filler
+.
+           LISTEND
+.                                                  
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+.
+E_DATE        DIM      8
+L_DATE        DIM      8
+WRK_EFF       DIM      8
+SVE_KEY       DIM      21
+CURR_KEY      DIM      21
+RDS_W_KEY     INIT     "2-10 -T"
+W_CNT1        DIM      1
+W_CNT8        DIM      8
+W_CNT7        DIM      7
+F_CNT7        FORM     7
+HUMAN              INIT "HUMAN"
+FIRST_READ         DIM  1
+DRUG_SUB_W_IDX_KEY INIT "1-8 39-54"
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+TIME          DIM       6
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "HUMANA RDS EXT" TO  C_OPER
+         MOVE      "A0606121"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL REFORMAT_DRUG_SUB
+   CALL OPEN_FILES
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING RDS_FD,RDS_NME,HDR_REC
+   CALL PROCESS_WRK 
+   CALL CLOSE_OGBFILE USING RDS_W_FD,RDS_W_NME
+   CALL SORT_OGBFILE USING RDS_W_NME,RDS_W_NME,RDS_W_KEY
+   IF OVER
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF: 
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="SORT FAILED-RDS_W_NME"
+      CHAIN "MENU"
+   ENDIF
+   CALL OPEN_OGBFILE USING RDS_W_FD,RDS_W_NME
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL READ_OGBFILE USING RDS_W_FD,RDS_W_NME,RDS_W_LIST
+    IF (RESULT <> 1)
+         MOVE "0000000" TO TRL_RECS
+         MOVE HDR_DATE TO TRL_DATE
+         MOVE HDR_TIME TO TRL_TIME
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING RDS_FD,RDS_NME,TRL_REC
+         CALL      CLOSE_FILES 
+         CALL      X_DISPLAY_COUNTS
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                                   
+    ENDIF
+   PACK SVE_KEY WITH RDS_W_SSN,RDS_W_HICN 
+   MOVE RDS_W_SUB_EFF TO E_DATE
+   MOVE RDS_W_SUB_TRM TO L_DATE
+   PACK RDS_W_SAV WITH RDS_W_LIST           
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL READ_OGBFILE USING RDS_W_FD,RDS_W_NME,RDS_W_LIST
+   PACK CURR_KEY WITH RDS_W_SSN,RDS_W_HICN 
+   MOVE RDS_W_SUB_TRM TO SVE_TRM
+   CALL PROCESS_RDS_W    
+   CALL INDEX_OGBFILE USING DRUG_SUB_W_NME,DRUG_SUB_W_IDX_NME,DRUG_SUB_W_IDX_KEY
+   CALL OPEN_OGBFILE_IX USING DRUG_SUB_W_IDX_FD,DRUG_SUB_W_IDX_NME
+   IF OVER
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF: 
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="INDEX FAILED"
+      CHAIN "MENU"
+   ENDIF
+   CALL READ_DRUG_SUB_W_PR
+.Getting the count of records for the trailer record                
+   MOVE      BLANKS TO SCRATCH   
+   PACK      SCRATCH WITH "wc ",RDS_NME," > ",RDS_CNT_NME
+   ROLLOUT   SCRATCH
+         IF OVER                                                               
+             ERROR     HORZ="15",VERT="19":                                     
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:                               
+                       LNCOL=C_ERRL,SHADE="Y":                                  
+                       TEXT="WC of RDS_NME ROLLOUT FAILED"
+             CHAIN     "MENU"                                                   
+         ENDIF
+...Opening the count file
+   MOVE RDS_CNT_NME TO C_FILE
+   CALL OPEN_OGBFILE USING RDS_CNT_FD,RDS_CNT_NME
+...Reading the Record Count file
+   MOVE OGB_SEQ1 TO OGB_SEQ                                          
+   CALL READ_OGBFILE USING RDS_CNT_FD,RDS_CNT_NME,RDS_CNT_LIST
+   UNPACK RDS_CNT_CNT INTO W_CNT8   
+   UNPACK W_CNT8 INTO W_CNT1,W_CNT7
+   MOVE W_CNT7 TO F_CNT7
+   SUB 1 FROM F_CNT7
+   MOVE F_CNT7 TO W_CNT7
+   REPLACE " 0",W_CNT7
+   MOVE W_CNT7 TO TRL_RECS
+   MOVE HDR_DATE TO TRL_DATE
+   MOVE HDR_TIME TO TRL_TIME
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING RDS_FD,RDS_NME,TRL_REC
+....Close Files
+   CALL      CLOSE_FILES 
+   ROLLOUT "a0606121.ftp"   
+   IF OVER
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF:
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="FTP FAILED" 
+      CHAIN "MENU"
+  ENDIF       
+.---------------------------------
+...Copy Current file to prior file
+.---------------------------------
+  CALL COPY_OGBFILE USING DRUG_SUB_W_NME,DRUG_SUB_W_PR_NME
+  IF OVER
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF: 
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="COPY TO PRIOR FAILED"
+      CHAIN "MENU"
+  ENDIF
+  CALL      X_DISPLAY_COUNTS
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN                                                   
+
+PROCESS_RDS_W    
+  LOOP
+     IF (RESULT <> 1)
+       CALL WRITE_RDS         
+       GOTO PROCESS_RDS_W_RET
+     ENDIF
+     IF (SVE_KEY <> CURR_KEY)
+       CALL WRITE_RDS      
+     ELSE
+       CALL DATE_CALC USING SVE_TRM,"ADD","DAYS",1,WRK_EFF  
+       IF (WRK_EFF = RDS_W_SUB_EFF) 
+         MOVE RDS_W_SUB_TRM TO L_DATE  
+         MOVE RDS_W_SUB_TRM TO SVE_TRM
+         PACK RDS_W_SAV WITH RDS_W_LIST
+       ELSE
+         CALL WRITE_RDS     
+       ENDIF
+     ENDIF
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL READ_OGBFILE USING RDS_W_FD,RDS_W_NME,RDS_W_LIST
+     IF (RESULT = 1)
+       PACK CURR_KEY WITH RDS_W_SSN,RDS_W_HICN
+     ENDIF
+  REPEAT 
+
+PROCESS_RDS_W_RET
+  RETURN
+
+WRITE_RDS      
+  UNPACK RDS_W_SAV INTO RDS_LIST          
+  MOVE E_DATE TO RDS_SUB_EFF 
+  MOVE L_DATE TO RDS_SUB_TRM  
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  CALL WRITE_OGBREC USING RDS_FD,RDS_NME,RDS_LIST
+  CLEAR RDS_LIST
+  ADD 1 TO X_CNT2
+  UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+  IF (CNT1_3 = "000")
+     CALL X_DISPLAY_COUNTS
+  ENDIF
+  MOVE CURR_KEY TO SVE_KEY
+  MOVE RDS_W_SUB_EFF TO E_DATE
+  MOVE RDS_W_SUB_TRM TO L_DATE
+  PACK RDS_W_SAV WITH RDS_W_LIST       
+  MOVE RDS_W_SUB_TRM TO SVE_TRM
+  RETURN
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_WRK 
+    MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+    CALL READ_OGBFILE USING DRUG_SUB_W_FD,DRUG_SUB_W_NME,DRUG_SUB_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    MOVE "ADD" TO RDS_TRAN_TYP
+    CALL WRITE_W_RDS
+ REPEAT
+ RETURN 
+
+READ_DRUG_SUB_W_PR
+    MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+    CALL READ_OGBFILE USING DRUG_SUB_W_PR_FD,DRUG_SUB_W_PR_NME,DRUG_SUB_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACK DRUG_SUB_KEY WITH DRUG_SUB_ID1,DRUG_SUB_EFF,DRUG_SUB_TRM
+    CALL READ_OGBFILE_IX USING DRUG_SUB_W_IDX_FD,DRUG_SUB_W_IDX_NME,DRUG_SUB_KEY
+    IF (RESULT <> 1)
+       MOVE "DEL" TO RDS_TRAN_TYP
+       MOVE      "D" TO RDS_REC_TYPE
+       PACK MEM_FK11 WITH DRUG_SUB_ID1,BLANKS
+       CALL FILE_READ USING MEM_FD:            ...FILE DECLARATION LIST
+                       MEM_FN:            ...FILE NAME LIST
+                       MEM_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEM_FV:            ...FILE KEY VARLISTS
+                       MEM_FK:            ...FILE KEY SIZES
+                       MEM_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEM_REC:           ...FILE RECORD (PACKED)
+                       MEM_OLD:           ...FILE SAVED WHEN READ
+                       MEM_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+       IF (MEM_REL = "01")
+          MOVE MEM_ESSN TO RDS_SSN
+       ELSE
+          MOVE MEM_PSSN TO RDS_SSN
+       ENDIF
+       MOVE DRUG_SUB_HIC TO RDS_HICN
+       MOVE MEM_FNAME TO RDS_FIRST_NAME
+       MOVE MEM_MINIT TO RDS_MI
+       MOVE MEM_LNAME TO RDS_LAST_NAME
+       MOVE MEM_DOB TO RDS_DOB
+       SWITCH MEM_SEX
+         CASE "M"
+           MOVE "1" TO RDS_SEX
+         CASE "F"
+           MOVE "2" TO RDS_SEX
+       ENDSWITCH
+       MOVE DRUG_SUB_EFF TO RDS_SUB_EFF
+       MOVE DRUG_SUB_TRM TO RDS_SUB_TRM
+       MOVE "1151" TO RDS_BOI
+       SWITCH MEM_REL
+         CASE "01"
+            MOVE "01" TO RDS_REL
+         CASE "02"
+            MOVE "02" TO RDS_REL
+         DEFAULT
+            MOVE "03" TO RDS_REL
+       ENDSWITCH
+       MOVE BLANKS TO RDS_FILL
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING RDS_FD,RDS_NME,RDS_LIST
+       CLEAR RDS_LIST
+    ENDIF
+ REPEAT
+ RETURN        
+
+WRITE_W_RDS
+    MOVE      "D" TO RDS_REC_TYPE
+    PACK MEM_FK11 WITH DRUG_SUB_ID1,BLANKS
+    CALL FILE_READ USING MEM_FD:            ...FILE DECLARATION LIST
+                       MEM_FN:            ...FILE NAME LIST
+                       MEM_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEM_FV:            ...FILE KEY VARLISTS
+                       MEM_FK:            ...FILE KEY SIZES
+                       MEM_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEM_REC:           ...FILE RECORD (PACKED)
+                       MEM_OLD:           ...FILE SAVED WHEN READ
+                       MEM_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+    IF (MEM_REL = "01")
+       MOVE MEM_ESSN TO RDS_SSN
+    ELSE
+       MOVE MEM_PSSN TO RDS_SSN
+    ENDIF
+    MOVE DRUG_SUB_HIC TO RDS_HICN
+    MOVE MEM_FNAME TO RDS_FIRST_NAME
+    MOVE MEM_MINIT TO RDS_MI
+    MOVE MEM_LNAME TO RDS_LAST_NAME
+    MOVE MEM_DOB TO RDS_DOB
+    SWITCH MEM_SEX
+      CASE "M"
+         MOVE "1" TO RDS_SEX
+      CASE "F"
+         MOVE "2" TO RDS_SEX
+    ENDSWITCH
+    MOVE DRUG_SUB_EFF TO RDS_SUB_EFF
+    MOVE DRUG_SUB_TRM TO RDS_SUB_TRM
+    MOVE "1151" TO RDS_BOI
+    SWITCH MEM_REL
+       CASE "01"
+          MOVE "01" TO RDS_REL
+       CASE "02"
+          MOVE "02" TO RDS_REL
+       DEFAULT
+          MOVE "03" TO RDS_REL
+    ENDSWITCH
+    MOVE "ADD" TO RDS_TRAN_TYP
+    MOVE BLANKS TO RDS_FILL
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING RDS_W_FD,RDS_W_NME,RDS_LIST
+    CLEAR RDS_LIST
+    RETURN
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         UNPACK TIMESTAMP INTO HDR_DATE,HDR_TIME
+. ...Display Counters
+	 MOVE      "Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written  :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING DRUG_SUB_W_FD,DRUG_SUB_W_NME
+         CALL      PREP_OGBFILE USING RDS_W_FD,RDS_W_NME                  
+         CALL      PREP_OGBFILE USING RDS_FD,RDS_NME                  
+         CALL      OPEN_OGBFILE USING DRUG_SUB_W_PR_FD,DRUG_SUB_W_PR_NME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING DRUG_SUB_W_FD,DRUG_SUB_W_NME
+         CALL      CLOSE_OGBFILE USING RDS_W_FD,RDS_W_NME                  
+         CALL      CLOSE_OGBFILE USING RDS_FD,RDS_NME                  
+         CALL      CLOSE_OGBFILE USING DRUG_SUB_W_PR_FD,DRUG_SUB_W_PR_NME
+         RETURN
+
+REFORMAT_DRUG_SUB
+.-------------------------------
+. Reformat file 
+.-------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ..." 
+    
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "/w/drug_sub_2006.txt"," ","/w/a0606121.txt":
+                      " -p9-13eq#"",HUMAN,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(drug_sub.txt)"
+        CHAIN "MENU"
+    ENDIF
+    RETURN
+
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0606121.PS
+. ++++++++++++++++++++++++++++++++

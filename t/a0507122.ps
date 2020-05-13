@@ -1,0 +1,1515 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0507122     
++    Description    :  CUS - Extracts Prmium Tier Experience Data            
++    Author         :  Stephen J. McDonald
++    Date created   :  02/26/2003
++    apsjm 10/12/2004 a0507122 mod - made new mhsa factors                 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       CLI.RL           ...Client Demographics 
+              INC       BIL.RL           ...Billing Demographics
+              INC       BILD.RL          ...Billing Detail
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment   
+              INC       CLMS.RL          ...Claims Detail   
+              INC       MEMX.RL          ...Member External Accumulators
+              INC       CLSSTAT.RL       ...Class/Stat Experience Report File
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+HICL_FD          FILE    VAR=108,TEXT
+HICL_NAME        INIT    "/w/hicl_2052.txt"
+HICL_LIST        LIST
+HICL_PPO_F1_C    FORM    6
+HICL_PPO_F1_P    FORM    6
+HICL_EPO_F1_C    FORM    6
+HICL_EPO_F1_P    FORM    6
+HICL_MCO_F1_C    FORM    6
+HICL_MCO_F1_P    FORM    6
+HICL_PPO_F2_C    FORM    6
+HICL_PPO_F2_P    FORM    6
+HICL_EPO_F2_C    FORM    6
+HICL_EPO_F2_P    FORM    6
+HICL_MCO_F2_C    FORM    6
+HICL_MCO_F2_P    FORM    6
+HICL_PPO_F3_C    FORM    6
+HICL_PPO_F3_P    FORM    6
+HICL_EPO_F3_C    FORM    6
+HICL_EPO_F3_P    FORM    6
+HICL_MCO_F3_C    FORM    6
+HICL_MCO_F3_P    FORM    6
+                 LISTEND
+.
+CLM_WRK2_FD      FILE    VAR=76,TEXT
+CLM_WRK2_NME     INIT    "/ogb/work/clm.sts1000.wrk2"
+CLM_WRK2_LIST    LIST
+CLM_WRK2_ID1     DIM     8
+CLM_WRK2_INC_FROM DIM    8
+CLM_WRK2_INC_THRU DIM    8
+CLM_WRK2_PID     DIM     8
+CLM_WRK2_MID     DIM     8
+CLM_WRK2_REL     DIM     2
+CLM_WRK2_CLIR    DIM     8
+CLM_WRK2_PROD    DIM     5
+CLM_WRK2_FORM    DIM     1
+CLM_WRK2_DOUT    DIM     8
+CLM_WRK2_DEPC    DIM     2
+CLM_WRK2_CC1     DIM     5
+CLM_WRK2_CC2     DIM     5
+                 LISTEND
+.
+MEMX_WRK2_FD     FILE     VAR=46,TEXT
+MEMX_WRK2_NME    INIT    "/ogb/work/memx.wrk2"
+MEMX_WRK2_LIST   LIST
+MEMX_WRK2_MEM_ID DIM     8
+MEMX_WRK2_PRD    DIM     5
+MEMX_WRK2_ACC    DIM     4
+MEMX_WRK2_AMT    FORM    7.2 
+MEMX_WRK2_SRC    DIM     1
+MEMX_WRK2_PD     DIM     8
+MEMX_WRK2_TCHG   DIM     10 
+                 LISTEND 
+.
+CSTMEMX_FD       IFILE   FIX=34,UNCOMP,KEYL=3,TEXT
+CSTMEMX_NME      INIT    "cstmemx.ix1"
+CSTMEMX_LIST     LIST
+CSTMEMX_DEPC     DIM     1
+CSTMEMX_STAT     DIM     1
+CSTMEMX_PRD      DIM     1
+CSTMEMX_BEN_AMT  FORM    9.2 
+CSTMEMX_DRG_AMT  FORM    9.2 
+CSTMEMX_CLM_CNT  FORM    7
+                 LISTEND
+CSTMEMX_KEY      DIM     3  
+.
+CLSSTAT_FD       IFILE    FIX=82,UNCOMP,KEYL=3,TEXT
+CLSSTAT_NAME     INIT     "clsstat.ix1"   
+.
+CLSSTAT_KEY      DIM  3
+.
+MHSA_FAC_FD      FILE    VAR=17,TEXT
+MHSA_FAC_NME     INIT    "/w/mhsafac.txt"
+MHSA_FAC_LIST    LIST
+MHSA_FAC_PRD     DIM     1
+MHSA_FAC_FMM     DIM     2
+MHSA_FAC_FCCYY   DIM     4
+MHSA_FAC_TMM     DIM     2
+MHSA_FAC_TCCYY   DIM     4
+MHSA_FAC_FAC     FORM    1.2
+                 LISTEND
+.
+.
+CSTCONT_FD       IFILE    FIX=10,UNCOMP,KEYL=3,TEXT
+CSTCONT_NAME     INIT     "cstcont.ix1"
+.
+CSTCONT_LIST      LIST
+CSTCONT_DEPC      DIM  1
+CSTCONT_STAT      DIM  1
+CSTCONT_PRD       DIM  1
+CSTCONT_CONT      FORM 7
+                  LISTEND
+CSTCONT_KEY       DIM  3  
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+W_PAID_DT     DIM  8
+W_PRD         DIM  5
+MHSA_E_FAC    FORM 1.2
+MHSA_P_FAC    FORM 1.2
+MHSA_M_FAC    FORM 1.2
+MHSA_DTE_F    DIM  6
+MHSA_DTE_T    DIM  6
+DIFF_MONTHS   FORM 5
+DIM4          DIM  4
+INDEX_OPTS    INIT "9-16 -D -J"
+FORM2         FORM 2
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+FROM_AGENCY   DIM  4
+THRU_AGENCY   DIM  4
+FROM_DATE     DIM  6
+FROM_MM       DIM  2
+FROM_CCYY     DIM  4
+THRU_DATE     DIM  6
+THRU_MM       DIM  2
+THRU_CCYY     DIM  4
+YN_ANS        DIM  1
+WS_AR_SW      DIM  1
+WS_AGENCY     DIM  4
+WS_AGY1       DIM  1
+WS_AGY4       DIM  1
+WS_DIM1       DIM  1
+WS_DIM4       DIM  4
+SSN2          DIM  2          
+SSN3          DIM  3
+SSN4          DIM  4
+DIM7          DIM  7
+DIM2          DIM  2
+DIM19         DIM  19
+DIMMM         DIM  2
+DIMDD         DIM  2
+DIMCCYY       DIM  4
+FPTR          FORM 2  
+BUMP_SW       FORM "0"
+SLASH_SW      FORM "0"
+CNT_4         DIM  4
+CNT_3         DIM  3
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+ACCUM_LIST    LIST
+ACC_CLM_CNT  FORM 9
+ACC_BIL      FORM 10.2
+ACC_PAYP     FORM  10.2
+ACC_PAYE     FORM  10.2
+ACC_PAID     FORM  10.2
+ACC_DRUGS    FORM  10.2
+ACC_CONT     FORM 9
+ACC_MHSA_AMT FORM 8.2
+              LISTEND
+
+FORM_LIST  LIST
+FORM_PAYP  FORM 7.2
+FORM_PAYE  FORM 7.2
+FORM_TCHG  FORM 7.2
+           LISTEND
+
+MHSA_FAC_RESULT FORM      1
+CSTMEMX_RESULT FORM      1
+CLI_RESULT    FORM      1
+CLM_RESULT    FORM      1
+MEMX_RESULT   FORM      1
+MEME_RESULT   FORM      1
+MEM_RESULT    FORM      1
+BIL_RESULT    FORM      1
+BILD_RESULT   FORM      1
+CLSSTAT_RESULT FORM      1
+CSTCONT_RESULT FORM     1
+WS_DOB        DIM       8
+WS_ACCDATE    DIM       8
+WS_SSN        DIM       9
+WS_MEMID      DIM       8
+FIRST_BILL_READ DIM       1  
+FIRST_CLM_READ DIM       1  
+FIRST_DRUG_READ DIM       1  
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+W_PAID        FORM      7.2
+W_CHARGE      FORM      7.2
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "sts1001"           TO  C_NEXT
+         MOVE      "CLASS/STAT EXP EXT" TO  C_OPER
+         MOVE      "STS1000"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL KEYIN_PARAM      
+.  CALL REFORMAT_MEMX
+.  CALL REFORMAT_CLM 
+   CALL OPEN_FILES
+   CALL INITIALIZE
+   CALL WRITE_CSTMEMX
+.  CALL CALC_CONTRACTS
+.  MOVE "Y" TO FIRST_BILL_READ
+.  CALL ACCUM_BILL_AMTS_CONSOL
+.  MOVE "Y" TO FIRST_BILL_READ
+.  CALL ACCUM_BILL_AMTS_IND     
+   CALL ACCUM_CLAIMS_PAID
+   CALL WRITE_OGBREC USING HICL_FD,HICL_NAME: 
+                           HICL_LIST  
+.  CALL CONN_PARTS
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+. ----------------------------
+. Accumulate Billed Amounts
+. ----------------------------
+ACCUM_BILL_AMTS_CONSOL
+    LOOP
+         IF (FIRST_BILL_READ = "Y")
+            CLEAR BIL_AIM
+            PACK BIL_AIM2 WITH "02X","BILL",BLANKS
+            CALL     FILE_READ USING BIL_FD:      ...File Declaration List
+                                  BIL_FN:      ...File Name List
+                                  BIL_FC:      ...(I)ndex Or (A)imdex
+                                  BIL_FV:      ...File Key Varlists
+                                  BIL_AIM:     ...File Key Sizes
+                                  BIL_LIST:    ...File Record (Field List)
+                                  BIL_REC:     ...File Record (Packed)
+                                  BIL_OLD:     ...File Saved When Read
+                                  BIL_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+                BREAK                 
+            ENDIF
+            MOVE "N" TO FIRST_BILL_READ
+         ELSE
+            CALL     FILE_NEXT USING BIL_FD:      ...File Declaration List
+                                     BIL_FN:      ...File Name List
+                                     BIL_FC:      ...(I)ndex Or (A)imdex
+                                     BIL_FV:      ...File Key Varlists
+                                     BIL_AIM:     ...File Key Sizes
+                                     BIL_LIST:    ...File Record (Field List)
+                                     BIL_REC:     ...File Record (Packed)
+                                     BIL_OLD:     ...File Saved When Read
+                                     BIL_QTY:     ...Number Of Files
+                                     2            ...File Number For This Read
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+               BREAK 
+            ENDIF
+         ENDIF
+         ADD 1 TO X_CNT1
+         UNPACK X_CNT1 INTO CNT_4,CNT_3
+         IF (CNT_3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF
+         IF  ((BIL_STAT = "POST") OR (BIL_STAT = "PAID"))
+         ELSE
+             CONTINUE
+         ENDIF
+         IF ((BIL_INVDT < CLSSTAT_PAID_FROM) OR (BIL_INVDT > CLSSTAT_PAID_THRU))
+            CONTINUE
+         ENDIF
+         IF ((SQUEEZE BIL_LEV1 = "2052") OR (SQUEEZE BIL_LEV2 = "2052"))
+         ELSE
+            CONTINUE
+         ENDIF 
+         PACK      BILD_FK11 WITH BIL_ID1,BLANKS
+         CALL      FILE_READ USING BILD_FD:    ...File declaration list
+                             BILD_FN:          ...File name list
+                             BILD_FC:          ...(I)ndex or (A)imdex
+                             BILD_FV:          ...File key varlists
+                             BILD_FK:          ...File key sizes
+                             BILD_LIST:        ...File record (field list)
+                             BILD_REC:         ...File record (packed)
+                             BILD_OLD:         ...File saved when read
+                             BILD_QTY:         ...Number of files
+                             1                 ...File number for this read
+         LOOP
+           CALL      FILE_NEXT USING BILD_FD:    ...File declaration list
+                               BILD_FN:          ...File name list
+                               BILD_FC:          ...(I)ndex or (A)imdex
+                               BILD_FV:          ...File key varlists
+                               BILD_FK:          ...File key sizes
+                               BILD_LIST:        ...File record (field list)
+                               BILD_REC:         ...File record (packed)
+                               BILD_OLD:         ...File saved when read
+                               BILD_QTY:         ...Number of files
+                               1                 ...File number for this read
+           MOVE RESULT TO BILD_RESULT
+           IF ((BILD_RESULT <> 1) OR (BILD_ID1 <> BIL_ID1))
+              BREAK
+           ENDIF                  
+           IF ((SQUEEZE BILD_TRAN = "BILL") OR (SQUEEZE BILD_TRAN = "PAID"))
+           ELSE
+              CONTINUE
+           ENDIF
+           SWITCH BILD_PRD
+              CASE "ASO  " OR "MCO  " OR "EPO  " OR "PPO  " 
+              DEFAULT
+                 CONTINUE
+           ENDSWITCH
+           IF (SQUEEZE BILD_NET = "DEFIN")
+              CONTINUE
+           ENDIF
+           SWITCH BILD_DEPC
+             CASE "EE"
+               MOVE "1" TO CLSSTAT_CLASS
+             CASE "ES"
+               MOVE "2" TO CLSSTAT_CLASS
+             CASE "EC"
+               MOVE "3" TO CLSSTAT_CLASS
+             CASE "FM"
+               MOVE "4" TO CLSSTAT_CLASS
+             DEFAULT
+               CONTINUE
+           ENDSWITCH 
+           SWITCH BILD_RT
+             CASE "AC"
+               MOVE "1" TO CLSSTAT_STATUS
+             CASE "CD" OR "CB" OR "CP"
+               MOVE "5" TO CLSSTAT_STATUS
+             CASE "RN"                   
+               MOVE "2" TO CLSSTAT_STATUS
+             CASE "R1"                   
+               MOVE "3" TO CLSSTAT_STATUS
+             CASE "R2"                   
+               MOVE "4" TO CLSSTAT_STATUS
+             DEFAULT
+               CONTINUE
+           ENDSWITCH    
+           SWITCH BILD_PRD
+              CASE "ASO  " OR "EPO  "
+                 MOVE "E" TO CLSSTAT_PRD
+              CASE "PPO  "
+                 MOVE "P" TO CLSSTAT_PRD
+              CASE "MCO  "
+                 MOVE "M" TO CLSSTAT_PRD
+           ENDSWITCH
+           CLEAR ACCUM_LIST
+           MOVE BILD_AMT TO ACC_BIL
+           CALL WRITE_CLSSTAT
+         REPEAT
+    REPEAT                   
+    RETURN
+
+ACCUM_BILL_AMTS_IND    
+    LOOP
+         IF (FIRST_BILL_READ = "Y")
+            CLEAR BIL_AIM
+            PACK BIL_AIM1 WITH "01X","5000",BLANKS
+            PACK BIL_AIM2 WITH "02X","01",BLANKS
+            CALL     FILE_READ USING BIL_FD:      ...File Declaration List
+                                  BIL_FN:      ...File Name List
+                                  BIL_FC:      ...(I)ndex Or (A)imdex
+                                  BIL_FV:      ...File Key Varlists
+                                  BIL_AIM:     ...File Key Sizes
+                                  BIL_LIST:    ...File Record (Field List)
+                                  BIL_REC:     ...File Record (Packed)
+                                  BIL_OLD:     ...File Saved When Read
+                                  BIL_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+                BREAK                 
+            ENDIF
+            MOVE "N" TO FIRST_BILL_READ
+         ELSE
+            CALL     FILE_NEXT USING BIL_FD:      ...File Declaration List
+                                     BIL_FN:      ...File Name List
+                                     BIL_FC:      ...(I)ndex Or (A)imdex
+                                     BIL_FV:      ...File Key Varlists
+                                     BIL_AIM:     ...File Key Sizes
+                                     BIL_LIST:    ...File Record (Field List)
+                                     BIL_REC:     ...File Record (Packed)
+                                     BIL_OLD:     ...File Saved When Read
+                                     BIL_QTY:     ...Number Of Files
+                                     2            ...File Number For This Read
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+               BREAK 
+            ENDIF
+         ENDIF
+         ADD 1 TO X_CNT1
+         UNPACK X_CNT1 INTO CNT_4,CNT_3
+         IF (CNT_3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF
+         IF  ((BIL_STAT = "POST") OR (BIL_STAT = "PAID"))
+         ELSE
+             CONTINUE
+         ENDIF
+         IF ((BIL_INVDT < CLSSTAT_PAID_FROM) OR (BIL_INVDT > CLSSTAT_PAID_THRU))
+            CONTINUE
+         ENDIF
+         IF ((SQUEEZE BIL_LEV1 = "2052") OR (SQUEEZE BIL_LEV2 = "2052"))
+         ELSE
+            CONTINUE
+         ENDIF 
+         PACK      BILD_FK11 WITH BIL_ID1,BLANKS
+         CALL      FILE_READ USING BILD_FD:    ...File declaration list
+                             BILD_FN:          ...File name list
+                             BILD_FC:          ...(I)ndex or (A)imdex
+                             BILD_FV:          ...File key varlists
+                             BILD_FK:          ...File key sizes
+                             BILD_LIST:        ...File record (field list)
+                             BILD_REC:         ...File record (packed)
+                             BILD_OLD:         ...File saved when read
+                             BILD_QTY:         ...Number of files
+                             1                 ...File number for this read
+         LOOP
+           CALL      FILE_NEXT USING BILD_FD:    ...File declaration list
+                               BILD_FN:          ...File name list
+                               BILD_FC:          ...(I)ndex or (A)imdex
+                               BILD_FV:          ...File key varlists
+                               BILD_FK:          ...File key sizes
+                               BILD_LIST:        ...File record (field list)
+                               BILD_REC:         ...File record (packed)
+                               BILD_OLD:         ...File saved when read
+                               BILD_QTY:         ...Number of files
+                               1                 ...File number for this read
+           MOVE RESULT TO BILD_RESULT
+           IF ((BILD_RESULT <> 1) OR (BILD_ID1 <> BIL_ID1))
+              BREAK
+           ENDIF                  
+           IF ((SQUEEZE BILD_TRAN = "BILL") OR (SQUEEZE BILD_TRAN = "PAID"))
+           ELSE
+              CONTINUE
+           ENDIF
+           SWITCH BILD_PRD
+              CASE "ASO  " OR "MCO  " OR "EPO  " OR "PPO  " 
+              DEFAULT
+                 CONTINUE
+           ENDSWITCH
+           IF (SQUEEZE BILD_NET = "DEFIN")
+              CONTINUE
+           ENDIF
+           SWITCH BILD_DEPC
+             CASE "EE"
+               MOVE "1" TO CLSSTAT_CLASS
+             CASE "ES"
+               MOVE "2" TO CLSSTAT_CLASS
+             CASE "EC"
+               MOVE "3" TO CLSSTAT_CLASS
+             CASE "FM"
+               MOVE "4" TO CLSSTAT_CLASS
+             DEFAULT
+               CONTINUE
+           ENDSWITCH 
+           SWITCH BILD_RT
+             CASE "AC"
+               MOVE "1" TO CLSSTAT_STATUS
+             CASE "CD" OR "CB" OR "CP"
+               MOVE "5" TO CLSSTAT_STATUS
+             CASE "RN"                   
+               MOVE "2" TO CLSSTAT_STATUS
+             CASE "R1"                   
+               MOVE "3" TO CLSSTAT_STATUS
+             CASE "R2"                   
+               MOVE "4" TO CLSSTAT_STATUS
+             DEFAULT
+               CONTINUE
+           ENDSWITCH    
+           SWITCH BILD_PRD
+              CASE "ASO  " OR "EPO  "
+                 MOVE "E" TO CLSSTAT_PRD
+              CASE "PPO  "
+                 MOVE "P" TO CLSSTAT_PRD
+              CASE "MCO  "
+                 MOVE "M" TO CLSSTAT_PRD
+           ENDSWITCH
+           CLEAR ACCUM_LIST
+           MOVE BILD_AMT TO ACC_BIL
+           CALL WRITE_CLSSTAT
+         REPEAT
+    REPEAT                   
+    RETURN
+
+ACCUM_CLAIMS_PAID
+       LOOP
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL READ_OGBFILE USING CLM_WRK2_FD,CLM_WRK2_NME:
+                                   CLM_WRK2_LIST
+           MOVE RESULT TO CLM_RESULT
+           IF (CLM_RESULT <> 1)
+             BREAK
+           ENDIF
+           ADD 1 TO X_CNT2
+           UNPACK X_CNT2 INTO CNT_4,CNT_3
+           IF (CNT_3 = "000")
+              CALL X_DISPLAY_COUNTS
+           ENDIF 
+           IF (CLM_WRK2_FORM = "B")
+              CONTINUE
+           ENDIF
+         IF ((SQUEEZE CLM_WRK2_CC1 = "2052") OR (SQUEEZE CLM_WRK2_CC2 = "2052"))
+         ELSE
+            CONTINUE
+         ENDIF
+
+
+..Read the clms file by key 11 (claim #)   
+               PACK CLMS_BASE WITH CLM_WRK2_ID1,BLANKS
+               PACK CLMS_KEY  WITH CLMS_BASE,"   " 
+               CALL POP_READ
+               CLEAR ACCUM_LIST
+               MOVE 1 TO ACC_CLM_CNT
+               LOOP
+                   CALL POP_NEXT
+ 
+                   IF ((RESULT <> 1) OR (CLMS_ID <> CLM_WRK2_ID1))
+                      IF (W_PAID > 100000)
+                        MOVE W_PAID TO W_AMT
+                        MOVE CLM_WRK2_DOUT TO W_PAID_DT
+                        MOVE CLM_WRK2_PROD TO W_PRD
+                        CALL ADD_HICL_P
+                      ENDIF
+                      IF (W_CHARGE > 100000)
+                        MOVE W_CHARGE TO W_AMT
+                        MOVE CLM_WRK2_DOUT TO W_PAID_DT
+                        MOVE CLM_WRK2_PROD TO W_PRD
+                        CALL ADD_HICL_C
+                      ENDIF
+                      CLEAR W_PAID
+                      CLEAR W_CHARGE
+                      BREAK
+                      CALL GET_AGENCY
+                      UNPACK CLI_LEV1 INTO WS_AGY1,WS_AGY4
+                      IF (((WS_AGY1 = "R") OR (SQUEEZE CLI_LEV2 = "99")):
+                             OR (SQUEEZE CLM_WRK2_DEPC = ""))
+                        CALL GET_MED_DEPC
+                        IF (SQUEEZE MEME_SAV = "")
+                           BREAK    
+                        ELSE
+                           UNPACK MEME_SAV INTO MEME_LIST
+                           SWITCH MEME_DEPC     
+                             CASE "EE"
+                                MOVE "1" TO CLSSTAT_CLASS
+                             CASE "ES"
+                                MOVE "2" TO CLSSTAT_CLASS
+                             CASE "EC"
+                                MOVE "3" TO CLSSTAT_CLASS
+                             CASE "FM"
+                                MOVE "4" TO CLSSTAT_CLASS
+                             DEFAULT
+                                BREAK
+                           ENDSWITCH 
+                           SWITCH MEME_RT
+                             CASE "AC"
+                               MOVE "1" TO CLSSTAT_STATUS
+                             CASE "CD" OR "CB" OR "CP"
+                               MOVE "5" TO CLSSTAT_STATUS
+                             CASE "RN"                   
+                               MOVE "2" TO CLSSTAT_STATUS
+                             CASE "R1"                   
+                               MOVE "3" TO CLSSTAT_STATUS
+                             CASE "R2"                   
+                               MOVE "4" TO CLSSTAT_STATUS
+                             DEFAULT
+                               BREAK     
+                           ENDSWITCH
+                           SWITCH CLM_WRK2_PROD
+                              CASE "ASO  " OR "EPO  "
+                                 MOVE "E" TO CLSSTAT_PRD    
+                              CASE "PPO  "
+                                 MOVE "P" TO CLSSTAT_PRD    
+                              CASE "MCO  "
+                                 MOVE "M" TO CLSSTAT_PRD    
+                           ENDSWITCH
+                           CALL WRITE_CLSSTAT
+                           BREAK
+                        ENDIF
+                      ELSE
+                        SWITCH CLM_WRK2_DEPC
+                           CASE "EE"
+                             MOVE "1" TO CLSSTAT_CLASS
+                           CASE "ES"
+                             MOVE "2" TO CLSSTAT_CLASS
+                           CASE "EC"
+                             MOVE "3" TO CLSSTAT_CLASS
+                           CASE "FM"
+                             MOVE "4" TO CLSSTAT_CLASS
+                           DEFAULT
+                             BREAK
+                        ENDSWITCH 
+                        IF (SQUEEZE CLI_LEV1 = "5000")
+                           MOVE "5" TO CLSSTAT_STATUS
+                        ELSE
+                           MOVE "1" TO CLSSTAT_STATUS
+                        ENDIF
+                      ENDIF
+                      SWITCH CLM_WRK2_PROD
+                         CASE "ASO  " OR "EPO  "
+                            MOVE "E" TO CLSSTAT_PRD   
+                         CASE "PPO  "
+                            MOVE "P" TO CLSSTAT_PRD    
+                         CASE "MCO  "
+                            MOVE "M" TO CLSSTAT_PRD    
+                      ENDSWITCH
+                      CALL WRITE_CLSSTAT
+                      BREAK
+                   ENDIF                  
+                   MOVE CLMS_PAYP TO FORM_PAYP
+                   MOVE CLMS_PAYE TO FORM_PAYE
+                   ADD (FORM_PAYP + FORM_PAYE) TO ACC_PAID   
+                   ADD (FORM_PAYP + FORM_PAYE) TO W_PAID
+                   MOVE CLMS_CHG TO FORM_TCHG
+                   ADD FORM_TCHG TO W_CHARGE
+                   CLEAR FORM_LIST
+               REPEAT
+       REPEAT
+       RETURN
+
+GET_AGENCY
+        PACK      CLI_FK11 WITH CLM_WRK2_CLIR
+        CALL      FILE_READ USING CLI_FD:    ...File declaration list
+           CLI_FN:   ...File name list
+           CLI_FC:   ...(I)ndex or (A)imdex
+           CLI_FV:   ...File key varlists
+           CLI_FK:   ...File key sizes
+           CLI_LIST: ...File record (field list)
+           CLI_REC:  ...File record (packed)
+           CLI_OLD:  ...File saved when read
+           CLI_QTY:  ...Number of files
+           1         ...File number for this read
+         MOVE RESULT TO CLI_RESULT
+         RETURN
+
+GET_MED_DEPC    
+        CLEAR MEME_SAV
+        PACK MEME_FK11 WITH CLM_WRK2_MID,BLANKS
+        CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+  	       	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              MOVE RESULT TO MEME_RESULT
+              IF  ((CLM_WRK2_MID <> MEME_ID1) OR (MEME_RESULT <> 1))
+                  BREAK       
+              ENDIF
+              SWITCH MEME_PRD
+                 CASE "ASO  " OR "MCO  " OR "EPO  " OR "PPO  "
+                 DEFAULT
+                   CONTINUE
+              ENDSWITCH
+              IF (SQUEEZE MEME_TRM = "")
+                 MOVE "99999999" TO MEME_TRM
+              ENDIF
+              IF (((MEME_EFF < CLM_WRK2_INC_FROM):
+                 AND (MEME_TRM > CLM_WRK2_INC_THRU)):
+                 OR ((MEME_EFF >= CLM_WRK2_INC_FROM):
+                 AND (MEME_EFF <= CLM_WRK2_INC_THRU)):
+                 OR ((MEME_TRM >= CLM_WRK2_INC_FROM):
+                 AND (MEME_TRM <= CLM_WRK2_INC_THRU)))
+                PACK MEME_SAV WITH MEME_REC
+              ELSE
+                 CONTINUE
+              ENDIF
+         REPEAT 
+         RETURN
+
+REFORMAT_MEMX
+         DISPLAY   *BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+                   *P30:21, "REFORMATTING MEMX", *BOLDOFF
+
+         PACK     SCRATCH WITH "memx.dbf"," ","/ogb/work/memx.wrk1":
+                  " -p117-124ge",CLSSTAT_PAID_FROM:
+                  " -t -j"
+         REFORMAT SCRATCH
+         IF OVER
+            ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="REFORMAT FAILED(MEMX.DBF)"
+            CHAIN     "MENU"
+         ENDIF
+         PACK     SCRATCH WITH "/ogb/work/memx.wrk1"," ",MEMX_WRK2_NME:
+                  " -p117-124le",CLSSTAT_PAID_THRU:
+                  " 1-8 14-18 33-36 60-69 86-86 117-124 160-169 -t -j"
+         REFORMAT SCRATCH
+         IF OVER
+            ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="REFORMAT FAILED(MEMX.WRK1)"
+            CHAIN     "MENU"
+         ENDIF
+         RETURN
+
+
+REFORMAT_CLM 
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:21, "REFORMATTING CLM", *BOLDOFF
+
+ PACK SCRATCH WITH "clm.dbf"," ","/ogb/work/clm.sts0005.wrk1":
+ " -p2496-2503ge",CLSSTAT_PAID_FROM:
+ " 1-8 318-325 326-333 347-354 553-560 1007-1008 1117-1124 2478-2482 2491-2491 2496-2503 2572-2573 2721-2725 2726-2730 -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(CLM.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ PACK     SCRATCH WITH "/ogb/work/clm.sts0005.wrk1"," ":
+          CLM_WRK2_NME:
+          " -p57-64le",CLSSTAT_PAID_THRU:
+          " -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(CLM.STS0005.WRK1)"
+        CHAIN     "MENU"
+     ENDIF
+ RETURN
+
+WRITE_CSTMEMX
+       LOOP
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL      READ_OGBFILE USING MEMX_WRK2_FD,MEMX_WRK2_NME:
+                                        MEMX_WRK2_LIST
+           MOVE RESULT TO MEMX_RESULT
+           IF (MEMX_RESULT <> 1)
+              BREAK
+           ENDIF
+           ADD 1 TO X_CNT4
+           UNPACK X_CNT4 INTO CNT_4,CNT_3
+           IF (CNT_3 = "000")
+               CALL X_DISPLAY_COUNTS
+           ENDIF 	
+           PACK MEM_FK11 WITH MEMX_WRK2_MEM_ID,BLANKS
+           CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                                MEM_FN:             ...FILE NAME LIST
+                                MEM_FC:             ...TYPE OF INDEX
+.                                                   ...(I)NDEX or (A)IMDEX
+                                MEM_FV:             ...FILE KEY VARLIST
+                                MEM_FK:             ...FILE KEY SIZES
+                              MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                               MEM_REC:            ...FILE RECORD (PACKED)
+                               MEM_OLD:            ...FILE SAVED WHEN READ
+                               MEM_QTY:            ...NUMBER OF FILES
+                               1                    ...FILE NUMBER FOR THIS READ
+           MOVE RESULT TO MEM_RESULT
+           IF (MEM_RESULT <> 1)
+             CONTINUE
+           ENDIF
+           IF (MEM_REL <> "01")
+              CALL GET_MEMID
+              IF (MEM_RESULT <> 1)
+                CONTINUE
+              ELSE
+                MOVE MEM_ID1 TO MEMX_WRK2_MEM_ID
+              ENDIF
+           ENDIF
+           CLEAR MEME_SAV
+           PACK MEME_FK11 WITH MEMX_WRK2_MEM_ID,BLANKS   
+           CALL FILE_READ USING MEME_FD:    ...FILE DECLARATION LIST
+                                MEME_FN:    ...FILE NAME LIST
+                                MEME_FC:    ...(I)NDEX OR (A)IMDEX
+                                MEME_FV:    ...FILE KEY VARLISTS
+                                MEME_FK:    ...FILE KEY SIZES
+                                MEME_LIST:  ...FILE RECORD (FIELD LIST)
+                                MEME_REC:   ...FILE RECORD (PACKED)
+                                MEME_OLD:   ...FILE SAVED WHEN READ
+                                MEME_QTY:   ...NUMBER OF FILES
+                                1           ...FILE NUMBER FOR THIS READ
+           LOOP
+              CALL      FILE_NEXT USING MEME_FD:
+                                    MEME_FN:     ...FILE NAME LIST
+                                    MEME_FC:     ...(I)NDEX OR (A)IMDEX
+                                    MEME_FV:     ...FILE KEY VARLISTS
+                                    MEME_FK:     ...FILE KEY SIZES
+                                    MEME_LIST:   ...FILE RECORD (FIELD LIST)
+                                    MEME_REC:    ...FILE RECORD (PACKED)
+                                    MEME_OLD:    ...FILE SAVED WHEN READ
+                                    MEME_QTY:    ...NUMBER OF FILES
+                                    1            ...FILE NUMBER FOR THIS READ
+              MOVE RESULT TO MEME_RESULT
+              IF ((MEMX_WRK2_MEM_ID <> MEME_ID1) OR (MEME_RESULT <> 1))
+                IF (SQUEEZE MEME_SAV = "")
+                  BREAK    
+                ELSE 
+                  UNPACK MEME_SAV INTO MEME_LIST
+                  SWITCH MEME_DEPC
+                    CASE "EE"
+                      MOVE "1" TO CSTMEMX_DEPC 
+                    CASE "ES"
+                      MOVE "2" TO CSTMEMX_DEPC 
+                    CASE "EC"
+                      MOVE "3" TO CSTMEMX_DEPC 
+                    CASE "FM"
+                      MOVE "4" TO CSTMEMX_DEPC 
+                    DEFAULT
+                      BREAK   
+                  ENDSWITCH 
+                  SWITCH MEME_RT
+                    CASE "AC"
+                      MOVE "1" TO CSTMEMX_STAT  
+                    CASE "CD" OR "CB" OR "CP"
+                      MOVE "5" TO CSTMEMX_STAT
+                    CASE "RN"                   
+                      MOVE "2" TO CSTMEMX_STAT
+                    CASE "R1"                   
+                      MOVE "3" TO CSTMEMX_STAT
+                    CASE "R2"                   
+                      MOVE "4" TO CSTMEMX_STAT
+                    DEFAULT
+                      BREAK   
+                    ENDSWITCH
+                  SWITCH MEME_PRD
+                     CASE "ASO  " OR "EPO  "
+                         MOVE "E" TO CSTMEMX_PRD
+                     CASE "PPO  "
+                         MOVE "P" TO CSTMEMX_PRD
+                     CASE "MCO  "
+                         MOVE "M" TO CSTMEMX_PRD
+                  ENDSWITCH
+                  SWITCH MEMX_WRK2_SRC
+                     CASE "1" OR "2" OR "3" OR "7"
+                      IF (MEMX_WRK2_ACC = "LIFE")
+                         MOVE MEMX_WRK2_AMT TO W_AMT
+                         MOVE MEMX_WRK2_PD TO W_PAID_DT
+                         MOVE MEME_PRD TO W_PRD
+                         CALL ADD_HICL_P
+                         MOVE MEMX_WRK2_TCHG TO W_AMT
+                         MOVE MEMX_WRK2_PD TO W_PAID_DT
+                         MOVE MEME_PRD TO W_PRD
+                         CALL ADD_HICL_C
+                      ENDIF
+                  ENDSWITCH
+                  BREAK
+                  PACK CSTMEMX_KEY WITH CSTMEMX_DEPC,CSTMEMX_STAT,CSTMEMX_PRD
+                  CALL READ_OGBFILE_IX USING CSTMEMX_FD,CSTMEMX_NME:
+                                             CSTMEMX_KEY,CSTMEMX_LIST
+                  IF (RESULT = 1)
+                      SWITCH MEMX_WRK2_SRC
+                        CASE "1" OR "2" OR "3" OR "7"
+                           IF (MEMX_WRK2_ACC = "LIFE")
+                              ADD 1 TO CSTMEMX_CLM_CNT
+                              ADD MEMX_WRK2_AMT TO CSTMEMX_BEN_AMT
+                           ENDIF
+                        CASE "6"
+                           IF (MEMX_WRK2_ACC = "DRUG")
+                              ADD MEMX_WRK2_AMT TO CSTMEMX_DRG_AMT
+                           ENDIF
+                        DEFAULT
+                           BREAK    
+                      ENDSWITCH
+                      CALL UPDATE_OGBREC_IX USING CSTMEMX_FD,CSTMEMX_LIST 
+                      CLEAR CSTMEMX_LIST
+                      BREAK
+                  ELSE
+                     UNPACK CSTMEMX_KEY INTO CSTMEMX_DEPC,CSTMEMX_STAT:
+                            CSTMEMX_PRD
+                     SWITCH MEMX_WRK2_SRC
+                        CASE "1" OR "2" OR "3" OR "7"
+                           IF (MEMX_WRK2_ACC = "LIFE")
+                              MOVE MEMX_WRK2_AMT TO CSTMEMX_BEN_AMT
+                              ADD 1 TO CSTMEMX_CLM_CNT
+                           ENDIF
+                        CASE "6"
+                           IF (MEMX_WRK2_ACC = "DRUG")
+                              MOVE MEMX_WRK2_AMT TO CSTMEMX_DRG_AMT
+                           ENDIF
+                        DEFAULT
+                           BREAK    
+                     ENDSWITCH
+                     CALL WRITE_OGBREC_IX USING CSTMEMX_FD,CSTMEMX_NME: 
+                                                CSTMEMX_KEY,CSTMEMX_LIST  
+                     CLEAR CSTMEMX_LIST
+                     BREAK
+                  ENDIF
+                ENDIF
+              ELSE
+                IF ((MEMX_WRK2_PD >= MEME_EFF):
+                        AND ((MEMX_WRK2_PD <= MEME_TRM):
+                        OR  (SQUEEZE MEME_TRM = "")))
+                    IF ((SQUEEZE MEME_LEV1 = "2052") OR:
+                       (SQUEEZE MEME_LEV2 = "2052")) 
+                      SWITCH MEME_PRD
+                        CASE "ASO  " OR "MCO  " OR "EPO  " OR "PPO  "
+                           PACK MEME_SAV WITH MEME_REC  
+                      ENDSWITCH
+                    ENDIF
+                ENDIF
+              ENDIF
+           REPEAT
+       REPEAT
+       RETURN
+
+ADD_HICL_P
+                           IF (W_AMT >= 100000)
+                              IF ((W_PAID_DT >= "20020701") AND:
+                                  (W_PAID_DT <= "20030630"))
+                                     SWITCH W_PRD
+                                       CASE "ASO  " OR "EPO  "
+                                          ADD 1 TO HICL_EPO_F1_P  
+                                       CASE "PPO  "
+                                          ADD 1 TO HICL_PPO_F1_P  
+                                       CASE "MCO  "
+                                          ADD 1 TO HICL_MCO_F1_P  
+                                     ENDSWITCH
+                              ELSE
+                                IF ((W_PAID_DT >= "20030701") AND:
+                                    (W_PAID_DT <= "20040630"))
+                                       SWITCH W_PRD
+                                         CASE "ASO  " OR "EPO  "
+                                            ADD 1 TO HICL_EPO_F2_P  
+                                         CASE "PPO  "
+                                            ADD 1 TO HICL_PPO_F2_P  
+                                         CASE "MCO  "
+                                            ADD 1 TO HICL_MCO_F2_P  
+                                       ENDSWITCH
+                                ELSE
+                                       SWITCH W_PRD
+                                         CASE "ASO  " OR "EPO  "
+                                            ADD 1 TO HICL_EPO_F3_P  
+                                         CASE "PPO  "
+                                            ADD 1 TO HICL_PPO_F3_P  
+                                         CASE "MCO  "
+                                            ADD 1 TO HICL_MCO_F3_P  
+                                       ENDSWITCH
+                                ENDIF     
+                              ENDIF
+                           ENDIF
+                           RETURN
+
+ADD_HICL_C
+                           IF (W_AMT >= 100000)
+                              IF ((W_PAID_DT >= "20020701") AND:
+                                  (W_PAID_DT <= "20030630"))
+                                     SWITCH W_PRD
+                                       CASE "ASO  " OR "EPO  "
+                                          ADD 1 TO HICL_EPO_F1_C  
+                                       CASE "PPO  "
+                                          ADD 1 TO HICL_PPO_F1_C  
+                                       CASE "MCO  "
+                                          ADD 1 TO HICL_MCO_F1_C  
+                                     ENDSWITCH
+                              ELSE
+                                IF ((W_PAID_DT >= "20030701") AND:
+                                    (W_PAID_DT <= "20040630"))
+                                       SWITCH W_PRD
+                                         CASE "ASO  " OR "EPO  "
+                                            ADD 1 TO HICL_EPO_F2_C  
+                                         CASE "PPO  "
+                                            ADD 1 TO HICL_PPO_F2_C  
+                                         CASE "MCO  "
+                                            ADD 1 TO HICL_MCO_F2_C  
+                                       ENDSWITCH
+                                ELSE
+                                       SWITCH W_PRD
+                                         CASE "ASO  " OR "EPO  "
+                                            ADD 1 TO HICL_EPO_F3_C  
+                                         CASE "PPO  "
+                                            ADD 1 TO HICL_PPO_F3_C  
+                                         CASE "MCO  "
+                                            ADD 1 TO HICL_MCO_F3_C  
+                                       ENDSWITCH
+                                ENDIF     
+                              ENDIF
+                           ENDIF
+                           RETURN
+
+GET_MEMID
+        CLEAR     MEM_AIM
+        PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+        PACK      MEM_AIM3 WITH "03X","01",BLANKS
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+        MOVE RESULT TO MEM_RESULT
+        RETURN
+
+CALC_CONTRACTS
+        PACK      MEM_FK11 WITH BLANKS   
+        CALL      FILE_READ USING MEM_FD:    ...File declaration list
+               MEM_FN:   ...File name list
+               MEM_FC:   ...(I)ndex or (A)imdex
+               MEM_FV:   ...File key varlists
+               MEM_FK:   ...File key sizes
+               MEM_LIST: ...File record (field list)
+               MEM_REC:  ...File record (packed)
+               MEM_OLD:  ...File saved when read
+               MEM_QTY:  ...Number of files
+               1         ...File number for this read
+            LOOP
+              CALL      FILE_NEXT USING MEM_FD:    ...File declaration list
+                     MEM_FN:   ...File name list
+                     MEM_FC:   ...(I)ndex or (A)imdex
+                     MEM_FV:   ...File key varlists
+                     MEM_FK:   ...File key sizes
+                     MEM_LIST: ...File record (field list)
+                     MEM_REC:  ...File record (packed)
+                     MEM_OLD:  ...File saved when read
+                     MEM_QTY:  ...Number of files
+                     1         ...File number for this read
+              BREAK IF (RESULT <> 1)
+              ADD 1 TO X_CNT3
+              UNPACK X_CNT3 INTO CNT1_4,CNT1_3
+              IF (CNT1_3 = "000")
+                  CALL X_DISPLAY_COUNTS
+              ENDIF
+              IF (MEM_REL <> "01")
+                 CONTINUE
+              ENDIF
+              PACK MEME_FK11 WITH MEM_ID1,BLANKS
+              CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                     MEME_FN:   ...File name list
+                     MEME_FC:   ...(I)ndex or (A)imdex
+                     MEME_FV:   ...File key varlists
+                     MEME_FK:   ...File key sizes
+                     MEME_LIST: ...File record (field list)
+                     MEME_REC:  ...File record (packed)
+                     MEME_OLD:  ...File saved when read
+                     MEME_QTY:  ...Number of files
+                     1         ...File number for this read
+              LOOP
+                CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                       MEME_FN:   ...File name list
+                       MEME_FC:   ...(I)ndex or (A)imdex
+                       MEME_FV:   ...File key varlists
+                       MEME_FK:   ...File key sizes
+                       MEME_LIST: ...File record (field list)
+                       MEME_REC:  ...File record (packed)
+                       MEME_OLD:  ...File saved when read
+                       MEME_QTY:  ...Number of files
+                       1         ...File number for this read
+                BREAK IF (RESULT <> 1)
+                BREAK IF (MEM_ID1 <> MEME_ID1)
+                SWITCH MEME_PRD
+                   CASE "ASO  " OR "MCO  " OR "EPO  " OR "PPO  "             
+                   DEFAULT
+                     CONTINUE                           
+                ENDSWITCH
+                IF (SQUEEZE MEME_TRM = "")
+                   MOVE "99999999" TO MEME_TRM
+                ENDIF
+                IF (((MEME_EFF < CLSSTAT_PAID_FROM):
+                   AND (MEME_TRM > CLSSTAT_PAID_THRU)):
+                   OR ((MEME_EFF >= CLSSTAT_PAID_FROM):
+                   AND (MEME_EFF <= CLSSTAT_PAID_THRU)):
+                   OR ((MEME_TRM >= CLSSTAT_PAID_FROM):
+                   AND (MEME_TRM <= CLSSTAT_PAID_THRU)))
+                ELSE
+                   CONTINUE
+                ENDIF
+                IF ((SQUEEZE MEME_LEV1 = "2052") OR:
+                    (SQUEEZE MEME_LEV2 = "2052"))
+                ELSE
+                    CONTINUE
+                ENDIF     
+                CLEAR     CSTCONT_LIST
+                SWITCH MEME_DEPC
+                  CASE "EE"
+                    MOVE "1" TO CSTCONT_DEPC 
+                  CASE "ES"
+                    MOVE "2" TO CSTCONT_DEPC 
+                  CASE "EC"
+                    MOVE "3" TO CSTCONT_DEPC 
+                  CASE "FM"
+                    MOVE "4" TO CSTCONT_DEPC 
+                  DEFAULT
+                    BREAK   
+                ENDSWITCH 
+                SWITCH MEME_RT
+                  CASE "AC"
+                    MOVE "1" TO CSTCONT_STAT  
+                  CASE "CD" OR "CB" OR "CP"
+                    MOVE "5" TO CSTCONT_STAT
+                  CASE "RN"                   
+                    MOVE "2" TO CSTCONT_STAT
+                  CASE "R1"                   
+                    MOVE "3" TO CSTCONT_STAT
+                  CASE "R2"                   
+                    MOVE "4" TO CSTCONT_STAT
+                  DEFAULT
+                    BREAK   
+                ENDSWITCH
+                SWITCH MEME_PRD
+                   CASE "ASO  " OR "EPO  "
+                       MOVE "E" TO CSTCONT_PRD
+                   CASE "PPO  "
+                       MOVE "P" TO CSTCONT_PRD
+                   CASE "MCO  "
+                       MOVE "M" TO CSTCONT_PRD
+                ENDSWITCH
+                PACK      CSTCONT_KEY WITH CSTCONT_DEPC,CSTCONT_STAT:
+                                           CSTCONT_PRD  
+                CALL      READ_OGBFILE_IX USING CSTCONT_FD,CSTCONT_NAME:
+                                       CSTCONT_KEY,CSTCONT_LIST
+                MOVE      RESULT TO CSTCONT_RESULT
+                IF   (CSTCONT_RESULT = 1)
+                   ADD 1 TO CSTCONT_CONT
+                   CALL   UPDATE_OGBREC_IX USING CSTCONT_FD,CSTCONT_LIST 
+                ELSE
+                   MOVE 1 TO CSTCONT_CONT
+                   CALL   WRITE_OGBREC_IX USING CSTCONT_FD,CSTCONT_NAME:
+                                               CSTCONT_KEY,CSTCONT_LIST
+                ENDIF
+              REPEAT
+            REPEAT
+            RETURN
+
+WRITE_CLSSTAT
+         PACK      CLSSTAT_KEY WITH CLSSTAT_CLASS,CLSSTAT_STATUS:
+                                    CLSSTAT_PRD
+         CALL      READ_OGBFILE_IX USING CLSSTAT_FD,CLSSTAT_NAME:
+                                       CLSSTAT_KEY,CLSSTAT_LIST
+         MOVE      RESULT TO CLSSTAT_RESULT
+         IF        (CLSSTAT_RESULT = 1)
+                   ADD ACC_CLM_CNT TO CLSSTAT_OGB_CLM_CNT
+                   ADD ACC_BIL TO CLSSTAT_OGB_BILL
+                   ADD ACC_PAID TO CLSSTAT_BENEFIT
+                   ADD ACC_DRUGS TO CLSSTAT_DRUG_AMT
+                   ADD ACC_CONT TO CLSSTAT_OGB_CONT
+                   ADD ACC_MHSA_AMT TO CLSSTAT_MHSA_AMT
+                   CALL UPDATE_OGBREC_IX USING CLSSTAT_FD,CLSSTAT_LIST 
+         ELSE
+                   MOVE ACC_CLM_CNT TO CLSSTAT_OGB_CLM_CNT
+                   MOVE ACC_BIL TO CLSSTAT_OGB_BILL
+                   MOVE ACC_PAID TO CLSSTAT_BENEFIT
+                   MOVE ACC_DRUGS TO CLSSTAT_DRUG_AMT
+                   MOVE ACC_CONT TO CLSSTAT_OGB_CONT
+                   MOVE ACC_MHSA_AMT TO CLSSTAT_MHSA_AMT
+                   CALL WRITE_OGBREC_IX USING CLSSTAT_FD,CLSSTAT_NAME:
+                                              CLSSTAT_KEY,CLSSTAT_LIST
+         ENDIF
+         ADD 1 TO X_CNT5
+         UNPACK X_CNT5 INTO CNT_4,CNT_3
+         IF (CNT_3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF 	
+         RETURN
+
+CONN_PARTS
+         CALL      CLOSE_OGBFILE_IX USING CLSSTAT_FD,CLSSTAT_NAME
+         PACK      OGB_NAME WITH OGB_PATH,CLSSTAT_NAME
+         CALL      OPEN_OGBFILE_IX USING CLSSTAT_FD,OGB_NAME
+    LOOP
+         CALL      READKS_OGBFILE_IX USING CLSSTAT_FD,CLSSTAT_NAME:           
+                                           CLSSTAT_LIST 
+         MOVE      RESULT TO CLSSTAT_RESULT
+         IF        (CLSSTAT_RESULT <> 1)
+                   BREAK                   
+         ENDIF
+         PACK      CSTMEMX_KEY WITH CLSSTAT_CLASS,CLSSTAT_STATUS,CLSSTAT_PRD
+         CALL      READ_OGBFILE_IX USING CSTMEMX_FD,CSTMEMX_NME:           
+                                         CSTMEMX_KEY,CSTMEMX_LIST 
+         MOVE      RESULT TO CSTMEMX_RESULT
+         IF        (CSTMEMX_RESULT = 1)
+                   ADD CSTMEMX_BEN_AMT TO CLSSTAT_BENEFIT
+                   ADD CSTMEMX_DRG_AMT TO CLSSTAT_DRUG_AMT
+                   ADD CSTMEMX_CLM_CNT TO CLSSTAT_OGB_CLM_CNT
+         ENDIF
+         PACK      CSTCONT_KEY WITH CLSSTAT_CLASS,CLSSTAT_STATUS,CLSSTAT_PRD
+         CALL      READ_OGBFILE_IX USING CSTCONT_FD,CSTCONT_NAME:           
+                                         CSTCONT_KEY,CSTCONT_LIST 
+         MOVE      RESULT TO CSTCONT_RESULT
+         IF (CSTCONT_RESULT = 1)
+            ADD CSTCONT_CONT TO CLSSTAT_OGB_CONT
+            SWITCH CLSSTAT_PRD
+              CASE "E"
+                ADD (CLSSTAT_OGB_CONT * MHSA_E_FAC * DIFF_MONTHS) TO CLSSTAT_MHSA_AMT
+              CASE "P"
+                ADD (CLSSTAT_OGB_CONT * MHSA_P_FAC * DIFF_MONTHS) TO CLSSTAT_MHSA_AMT
+              CASE "M"
+                ADD (CLSSTAT_OGB_CONT * MHSA_M_FAC * DIFF_MONTHS) TO CLSSTAT_MHSA_AMT
+            ENDSWITCH 
+         ENDIF
+         CALL      UPDATE_OGBREC_IX USING CLSSTAT_FD,CLSSTAT_LIST 
+    REPEAT
+    RETURN
+
+KEYIN_PARAM   
+      LOOP
+        LOOP
+          DISPLAY *P25:12,"/"
+          KEYIN   *P=3:12, "FROM DATE(MM/CCYY): ":    
+                  *P=23:12,*DE,*RV,*KCON, FROM_MM   
+          IF      ((FROM_MM > "12") OR (FROM_MM < "01"))
+                  CONTINUE
+          ELSE
+                  BREAK
+          ENDIF
+        REPEAT
+        LOOP
+           KEYIN   *P=26:12,*LL,*DE,*RV,*KCON, FROM_CCYY 
+           MOVELPTR FROM_CCYY TO FORM2
+           IF (FORM2 = 4)
+             BREAK
+           ENDIF
+        REPEAT
+        LOOP
+          DISPLAY *P=55:12,"/"
+          KEYIN   *P=33:12, "THRU DATE(MM/CCYY): ":    
+                  *P=53:12,*DE,*RV,*KCON, THRU_MM   
+          IF      ((THRU_MM > "12") OR (THRU_MM < "01"))
+                  CONTINUE
+          ELSE
+                  BREAK
+          ENDIF
+        REPEAT
+        LOOP
+           KEYIN   *P=56:12,*DE,*RV,*KCON, THRU_CCYY 
+           MOVELPTR THRU_CCYY TO FORM2
+           IF (FORM2 = 4)
+             BREAK
+           ENDIF
+        REPEAT
+        LOOP
+        KEYIN   *P=10:14, "IS THIS CORRECT? ":    
+                *P=31:14,*UC, YN_ANS
+        REPEAT  UNTIL (YN_ANS = "Y" OR YN_ANS = "N")
+      REPEAT  UNTIL (YN_ANS = "Y") 
+      PACK    CLSSTAT_PAID_FROM WITH FROM_CCYY,FROM_MM,"01"
+      SWITCH  THRU_MM
+         CASE "04" OR "06" OR "09" OR "11"
+              PACK CLSSTAT_PAID_THRU WITH THRU_CCYY,THRU_MM,"30"
+         CASE "02" 
+              PACK CLSSTAT_PAID_THRU WITH THRU_CCYY,THRU_MM,"29"
+         DEFAULT
+              PACK CLSSTAT_PAID_THRU WITH THRU_CCYY,THRU_MM,"31"
+      ENDSWITCH
+      RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "BIL  Recs Read:     " TO X_CNTDESC1
+	 MOVE      "CLM  Recs Read:     " TO X_CNTDESC2
+	 MOVE      "MEM  Recs Read:    " TO X_CNTDESC3
+	 MOVE      "MEMX Recs Read:    " TO X_CNTDESC4
+	 MOVE      "Recs Written  :    " TO X_CNTDESC5
+
+	 CALL      X_DISPLAY_COUNTS
+
+         CALL      SETPOP_CLMS
+         CALL DELTA_MONTHS USING CLSSTAT_PAID_THRU,CLSSTAT_PAID_FROM,DIFF_MONTHS
+         MOVE (DIFF_MONTHS + 1) TO DIFF_MONTHS
+         CLEAR MHSA_E_FAC
+         CLEAR MHSA_P_FAC
+         CLEAR MHSA_M_FAC
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         PACK FROM_DATE WITH FROM_CCYY,FROM_MM  
+         LOOP
+           CALL READ_OGBFILE USING MHSA_FAC_FD,MHSA_FAC_NME,MHSA_FAC_LIST
+           IF (RESULT <> 1)
+              BREAK
+           ENDIF
+           PACK MHSA_DTE_F WITH MHSA_FAC_FCCYY,MHSA_FAC_FMM
+           PACK MHSA_DTE_T WITH MHSA_FAC_TCCYY,MHSA_FAC_TMM
+           IF ((FROM_DATE >= MHSA_DTE_F) AND (FROM_DATE <= MHSA_DTE_T))
+              SWITCH MHSA_FAC_PRD
+                CASE "E"
+                   MOVE MHSA_FAC_FAC TO MHSA_E_FAC
+                CASE "P"
+                   MOVE MHSA_FAC_FAC TO MHSA_P_FAC
+                CASE "M"
+                   MOVE MHSA_FAC_FAC TO MHSA_M_FAC
+              ENDSWITCH
+           ENDIF 
+         REPEAT 
+         IF (MHSA_E_FAC = 0)
+           ERROR     HORZ="22",VERT="20":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="EPO MHSA FACTOR NOT FOUND"
+           CHAIN     "MENU"
+         ENDIF
+         IF (MHSA_P_FAC = 0)
+           ERROR     HORZ="22",VERT="20":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="PPO MHSA FACTOR NOT FOUND"
+           CHAIN     "MENU"
+         ENDIF
+         IF (MHSA_M_FAC = 0)
+           ERROR     HORZ="22",VERT="20":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="MCO MHSA FACTOR NOT FOUND"
+           CHAIN     "MENU"
+         ENDIF
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING MHSA_FAC_FD,MHSA_FAC_NME
+         CALL      OPEN_OGBFILE USING CLM_WRK2_FD,CLM_WRK2_NME
+         CALL      OPEN_OGBFILE USING MEMX_WRK2_FD,MEMX_WRK2_NME
+         PACK      OGB_NAME WITH OGB_PATH,CLSSTAT_NAME
+         CALL      PREP_OGBFILE_IX USING CLSSTAT_FD,OGB_NAME
+         PACK      OGB_NAME WITH OGB_PATH,CSTCONT_NAME
+         CALL      PREP_OGBFILE_IX USING CSTCONT_FD,OGB_NAME
+         PACK      OGB_NAME WITH OGB_PATH,CSTMEMX_NME
+         CALL      PREP_OGBFILE_IX USING CSTMEMX_FD,OGB_NAME
+         CALL      PREP_OGBFILE USING HICL_FD,HICL_NAME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING MHSA_FAC_FD,MHSA_FAC_NME
+         CALL      CLOSE_OGBFILE USING CLM_WRK2_FD,CLM_WRK2_NME
+         CALL      CLOSE_OGBFILE USING MEMX_WRK2_FD,MEMX_WRK2_NME
+         CALL      CLOSE_OGBFILE_IX USING CLSSTAT_FD,CLSSTAT_NAME
+         CALL      CLOSE_OGBFILE_IX USING CSTCONT_FD,CSTCONT_NAME
+         CALL      CLOSE_OGBFILE_IX USING CSTMEMX_FD,CSTMEMX_NME
+         CALL      CLOSE_OGBFILE USING HICL_FD,HICL_NAME
+         RETURN
+
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       POP.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of X_STS0005.PS
+. +++++++++++++++++++++++++++++++++++++

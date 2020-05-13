@@ -1,0 +1,697 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  hsa0001.ps
++    Description    :  Build Eligibility File for HSA - Bancorp           
++                      using their standard layout (hsabc.rl)
++    Author         :  appnc
++    Date created   :  04/07/2010
++    Project Number :  A12-----   DEV - INITIAL VERSION
++   apeks  10/24/2012  A12----- - DEV - Only send recs eff after 1/1/13
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++------------------------------------------------------------------------------
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       CMDPARAM.CB          ...Command Line Variables 
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demographics File
+              INC       MEME.RL              ...Member Enrollment File
+              INC       HSABC.RL             ...HSA Eligibility File
+              INC       HSAACT.RL            ...HSA Account File (ERRORS)
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+INP_FILE      FILE     VAR=600,TEXT
+INP_NAME      INIT     "/w/hsa0001.txt"
+. > uses MEME.RL
+
+HSA_SEND_FD   FILE    VAR=9,TEXT
+HSA_SEND_NAME INIT     "/w/bancorp_send.txt"
+HSA_SEND_LIST LIST
+HSA_SEND_ESSN DIM      9
+              LISTEND
+.
+...Zip Code Errors File
+ZIP_ERR_FL    FILE     VAR=32,TEXT
+ZIP_ERR_NM    INIT     "/w/hsa0001zip.err"
+ZIP_LIST      LIST
+ZIP_ERR_ESSN  DIM       9
+ZIP_FL1       DIM       1
+ZIP_ERR_ID1   DIM       8
+ZIP_FL2       DIM       1
+ZIP_ERR_ZIPCD DIM       13
+              LISTEND
+              
+...Needs HSA STAT LINE             
+ENR_ERR_FL    FILE     VAR=12,TEXT
+ENR_ERR_NM    INIT     "/w/needshsa.txt"
+ENR_ERR_LIST  LIST
+ENR_ERR_ID1   DIM       8
+              LISTEND
+              
+...Output File - Will Be Copied to OptumHealth Bank Standard at end of program
+OUT_FILE      FILE     VAR=1150,TEXT
+OUT_NAME      INIT     "/w/hsa0001.out"
+. > uses HSABC.RL
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+TRAP_DATA     DIM       500
+TODAY         DIM       8
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+FIRST_READ    INIT      "Y"
+WK_T_OR_P     INIT      "P"
+YES_NO        DIM       1
+SLASH         INIT      "/"
+GRPID         INIT      "ST222ERC"    . provided by Bancorp
+WK_MODE       DIM       1
+WK_MM         DIM       2
+WK_DD         DIM       2
+WK_DATE_TIME  DIM       12
+WK_CCYY       DIM       4
+WK_PATH       INIT      "/w/"
+WK_DISP       DIM       10
+JUNK2         DIM       2
+JUNK4         DIM       4
+LAST_RUN_DATE DIM       8
+VAL_RESULT    FORM      1
+INP_RESULT    FORM      1
+MEM_RESULT    FORM      1
+WK_HSA        INIT      "HSA"   
+VENDOR_EFF    INIT      "20130101"
+VENDOR_TERM   DIM       8         
+WK_B_CNT      NUM       7
+HOLD_INP_ID   DIM       8
+
+WK_ZIP_LIST   LIST
+WK_ZIP1       DIM       1
+WK_ZIP2       DIM       1
+WK_ZIP3       DIM       1
+WK_ZIP4       DIM       1
+WK_ZIP5       DIM       1
+              LISTEND
+
+WK_ZIP_FIRST5 DIM       5
+WK_ZIP_FINAL4 DIM       4
+WK_ZIP_OK     INIT      " "
+DIFF_DAYS     FORM      3
+CNT1_4        DIM       4
+CNT1_3        DIM       3
+
+FOUR_THIRTY   INIT      "1630"
+ST_HHMM       DIM       4
+ST_SEC        DIM       2
+
+PARAM_LIST    LIST      WITH NAMES
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "<<<HSA ELIG FILE>>>" TO  C_OPER
+         MOVE      "HSA0001"             TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+         IF (C_CMDPAR)
+            CALL CMD_START USING C_PROG
+         ENDIF
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         DEBUG
+         CALL      INITIALIZE
+.        CALL      REFORMAT_MEME
+.        CALL      SORT_INP
+         CALL      OPEN_FILES
+         CALL      GET_ELIG
+         CALL      CLOSE_FILES
+         DEBUG
+         CALL      FTP_OUTPUT
+
+         IF (C_CMDPAR)
+            CALL CMD_END
+            STOP
+         ENDIF
+         
+. ...Normal End-Of-Job
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="25",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="  PROGRAM COMPLETED NORMALLY  ":
+                          TEXT="------------------------------":
+                          TEXT="  Press any key to continue   ":
+                          FIELD=WCHAR 
+         ENDIF
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         UNPACK    TIMESTAMP   INTO  CURRDATE,ST_HHMM,ST_SEC
+         CALL      GET_WRKDATE
+
+. ...Display Counters
+         MOVE "HSA Recs Read    : " TO X_CNTDESC1
+         MOVE "MEM Recs Read    : " TO X_CNTDESC2
+         MOVE "OUTPUT Records   : " TO X_CNTDESC3
+         MOVE "Zip Code Errors  : " TO X_CNTDESC4
+         MOVE "Rel Code Errors  : " TO X_CNTDESC5
+         MOVE "                 : " TO X_CNTDESC6
+         
+         CALL X_DISPLAY_COUNTS
+         
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         
+         RETURN
+         
+. ----------------------------
+. Get Work(Data) Date
+. ----------------------------
+. ...This routine checks the program start time & if its between
+. ...midnight & 16:30, we will subtract 1 day from currdate in order
+. ...to process for the data date.
+
+GET_WRKDATE
+
+         IF (ST_HHMM < FOUR_THIRTY)
+             CALL DATE_CALC USING CURRDATE,"SUB","DAYS",1,TODAY
+             MOVE "1159" TO ST_HHMM
+             MOVE "00"   TO ST_SEC
+             PACK WK_DATE_TIME WITH TODAY,ST_HHMM
+         ELSE
+             MOVE CURRDATE TO TODAY
+             PACK WK_DATE_TIME WITH TODAY,ST_HHMM
+         ENDIF
+
+         RETURN
+
+
+. ----------------------------
+. Reformat MEME for HSA Enrollment Records
+. ----------------------------
+
+REFORMAT_MEME
+         MOVE "20140101" TO LAST_RUN_DATE
+         MESSAGE HORZ="22",VERT="20":
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:
+                 LNCOL=C_DLGL,SHADE="y": 
+                 TEXT="REFORMATTING MEME ... PLEASE WAIT";
+    
+         CLEAR SCRATCH
+         PACK  SCRATCH WITH "meme.dbf ",INP_NAME: 
+                            " -p212-219gt#"",LAST_RUN_DATE,"#"":  
+                            " -p96-103ge#"",VENDOR_EFF,"#"":  
+.                           " -p96-103lt#"",VENDOR_TERM,"#"":  
+                            " -p117-119eq#"",WK_HSA,"#" -t -j"
+                            
+. ----------------------------
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="REFORMAT FAILED(HSA)"
+             CHAIN "MENU"
+         ENDIF  
+         
+         DISPLAY        *P1:20,*BGCOLOR=*CYAN,*EL:
+                        *P1:21,*BGCOLOR=*CYAN,*EL:
+                        *P1:22,*BGCOLOR=*CYAN,*EL:
+                        *P1:23,*BGCOLOR=*CYAN,*EL                
+
+         RETURN
+
+. ----------------------------
+. Sort Input
+. ----------------------------
+
+SORT_INP
+
+         CLEAR   SCRATCH
+         PACK    SCRATCH WITH "dsort ",INP_NAME," ",INP_NAME:
+                              "  1-8 96-103 -t",BLANKS
+         ROLLOUT SCRATCH
+         
+         IF OVER
+            IF (C_CMDPAR)
+               CALL CMD_ERROR USING "SORT FAILED -- HSA0001.TXT"
+               STOP
+            ELSE
+               ERROR HORZ="15",VERT="19":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="SORT FAILED --> HSA0001.TXT"
+               CHAIN "MENU"
+            ENDIF         
+         ENDIF         
+
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         MOVE INP_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME  
+         
+         MOVE ZIP_ERR_NM TO C_FILE
+         CALL PREP_OGBFILE USING ZIP_ERR_FL,ZIP_ERR_NM
+         
+         MOVE ENR_ERR_NM TO C_FILE
+         CALL PREP_OGBFILE USING ENR_ERR_FL,ENR_ERR_NM
+         
+         CALL OPEN_OGBFILE USING HSA_SEND_FD,HSA_SEND_NAME 
+         RETURN
+
+. ----------------------------
+. Read & Write OUTPUT Elig for HSA
+. ----------------------------
+
+GET_ELIG
+
+         CLEAR HOLD_INP_ID
+         LOOP
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             MOVE INP_NAME TO C_FILE
+             CALL READ_OGBFILE USING HSA_SEND_FD,HSA_SEND_NAME,HSA_SEND_LIST
+             MOVE RESULT TO INP_RESULT
+             IF (INP_RESULT != 1)
+                 CALL X_DISPLAY_COUNTS
+                 BREAK
+             ENDIF
+             
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF               
+             CLEAR        MEM_AIM                                        
+             PACKLEN      MEM_AIM1 WITH "01X",HSA_SEND_ESSN,BLANKS
+             PACKLEN      MEM_AIM3 WITH "03X","01",BLANKS
+             CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+        IF (RESULT <> 1)
+            CONTINUE                 
+        ENDIF            
+        CALL GET_MEME
+        IF (SQUEEZE MEME_SAV = "")
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           MOVE MEM_ID1 TO ENR_ERR_ID1
+           CALL WRITE_OGBREC USING ENR_ERR_FL,ENR_ERR_NM,ENR_ERR_LIST
+           CLEAR ENR_ERR_LIST
+        ENDIF
+             UNPACK MEME_SAV INTO MEME_LIST 
+             PACK HSABC_MID     WITH MEM_ID1,BLANKS
+             PACK HSABC_ESSN    WITH MEM_ESSN,BLANKS
+             REP ", "           IN   MEM_FNAME
+             PACK HSABC_FNAME   WITH MEM_FNAME,BLANKS
+             REP ", "           IN   MEM_MINIT
+             PACK HSABC_MINIT   WITH MEM_MINIT,BLANKS
+             REP ", "           IN   MEM_LNAME
+             PACK HSABC_LNAME   WITH MEM_LNAME,BLANKS
+             UNPACK MEM_DOB INTO WK_CCYY,WK_MM,WK_DD
+             PACK HSABC_DOB     WITH WK_MM,SLASH,WK_DD,SLASH,WK_CCYY
+             REP ", "           IN   MEM_ADDR1
+             PACK HSABC_ADD1    WITH MEM_ADDR1,BLANKS
+             REP ", "           IN   MEM_ADDR2
+             PACK HSABC_ADD2    WITH MEM_ADDR2,BLANKS
+             REP ", "           IN   MEM_CITY             
+             PACK HSABC_CITY    WITH MEM_CITY,BLANKS
+             PACK HSABC_STATE   WITH MEM_STATE,BLANKS
+             CLEAR WK_ZIP_OK             
+             CALL HANDLE_ZIPCD   
+             IF (WK_ZIP_OK = "N")
+                 CONTINUE
+             ENDIF
+             REP ", "           IN   MEM_HPHN
+             PACK HSABC_HPHON   WITH MEM_HPHN,BLANKS
+.Home phone is Required -- filee with 9s when missing
+             IF (SQUEEZE HSABC_HPHON = "")
+                PACK HSABC_HPHON WITH "9999999999",BLANKS
+             ENDIF
+             REP ", "           IN   MEM_WPHN             
+             PACK HSABC_BPHON   WITH MEM_WPHN,BLANKS 
+             PACK HSABC_CPHON   WITH BLANKS  
+             PACK HSABC_FAX     WITH BLANKS  
+             REP ", "           IN   MEM_EMAIL
+             PACK HSABC_EMAIL   WITH MEM_EMAIL,BLANKS
+             PACK HSABC_MMN     WITH BLANKS  
+             PACK HSABC_EMPL    WITH BLANKS  
+             PACK HSABC_JNT     WITH "N",BLANKS  
+             PACK HSABC_FILL1   WITH BLANKS  
+             UNPACK MEME_EFF INTO WK_CCYY,WK_MM,WK_DD
+             PACK HSABC_EFF     WITH WK_MM,SLASH,WK_DD,SLASH,WK_CCYY
+             PACK HSABC_DED     WITH BLANKS  
+             PACK HSABC_TRM     WITH BLANKS  
+             PACK HSABC_PLNN    WITH BLANKS  
+             PACK HSABC_CONT    WITH BLANKS  
+             PACK HSABC_GRPID   WITH GRPID,BLANKS
+             PACK HSABC_USRD1   WITH BLANKS
+             PACK HSABC_USRD2   WITH BLANKS
+             
+             ADD 1 TO X_CNT3
+             ADD 1 TO WK_B_CNT             
+             MOVE OUT_NAME TO C_FILE
+             CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,HSABC_LIST
+         
+         REPEAT
+
+         RETURN
+
+GET_MEME
+    CLEAR MEME_SAV
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    LOOP 
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST
+                                   MEME_FC:  ...TYPE OF INDEX
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES
+                                   1         ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                  BREAK
+            ENDIF
+            IF (SQUEEZE MEME_NET = "BLUE")
+               IF (SQUEEZE MEME_PRD = "HSA")
+                 IF (SQUEEZE MEME_PLAN = "STAT")
+                   PACKLEN MEME_SAV WITH MEME_LIST
+                 ENDIF
+               ENDIF
+            ENDIF
+    REPEAT
+    RETURN
+.
+ 
+. ----------------------------
+. Handle Zip Code
+. ----------------------------
+
+HANDLE_ZIPCD
+
+...check first 5 bytes of MEM_ZIP
+         UNPACK MEM_ZIP INTO WK_ZIP1,WK_ZIP2,WK_ZIP3,WK_ZIP4,WK_ZIP5,WK_ZIP_FINAL4
+         
+         IF ((WK_ZIP1 >= "0") AND (WK_ZIP1 <= "9"))
+             ELSE
+               CALL ZIP_ERROR
+               RETURN
+         ENDIF
+         
+         IF ((WK_ZIP2 >= "0") AND (WK_ZIP2 <= "9"))
+             ELSE
+               CALL ZIP_ERROR
+               RETURN
+         ENDIF
+         
+         IF ((WK_ZIP3 >= "0") AND (WK_ZIP3 <= "9"))
+             ELSE
+               CALL ZIP_ERROR
+               RETURN
+         ENDIF
+         
+         IF ((WK_ZIP4 >= "0") AND (WK_ZIP4 <= "9"))
+             ELSE
+               CALL ZIP_ERROR
+               RETURN
+         ENDIF
+         
+         IF ((WK_ZIP5 >= "0") AND (WK_ZIP5 <= "9"))
+             ELSE
+               CALL ZIP_ERROR
+               RETURN
+         ENDIF
+
+         PACK WK_ZIP_FIRST5 WITH WK_ZIP1,WK_ZIP2,WK_ZIP3,WK_ZIP4,WK_ZIP5
+
+...check final four bytes of MEM_ZIP
+        
+         CLEAR WK_ZIP_LIST
+         
+         UNPACK WK_ZIP_FINAL4 INTO WK_ZIP1,WK_ZIP2,WK_ZIP3,WK_ZIP4
+
+         IF ((WK_ZIP1 >= "0") AND (WK_ZIP1 <= "9"))
+               PACK WK_ZIP_FINAL4 WITH "0000"
+               PACK HSABC_ZIP WITH WK_ZIP_FIRST5,WK_ZIP_FINAL4
+               RETURN
+         ENDIF
+
+         IF ((WK_ZIP2 >= "0") AND (WK_ZIP2 <= "9"))
+               PACK WK_ZIP_FINAL4 WITH "0000"
+               PACK HSABC_ZIP WITH WK_ZIP_FIRST5,WK_ZIP_FINAL4
+               RETURN
+         ENDIF
+         
+         IF ((WK_ZIP3 >= "0") AND (WK_ZIP3 <= "9"))
+               PACK WK_ZIP_FINAL4 WITH "0000"
+               PACK HSABC_ZIP WITH WK_ZIP_FIRST5,WK_ZIP_FINAL4
+               RETURN
+         ENDIF
+         
+         IF ((WK_ZIP4 >= "0") AND (WK_ZIP4 <= "9"))
+               PACK WK_ZIP_FINAL4 WITH "0000"
+               PACK HSABC_ZIP WITH WK_ZIP_FIRST5,WK_ZIP_FINAL4
+               RETURN
+         ENDIF      
+         
+...all of the last 4 were numeric, so send that instead of ZEROS.
+
+         PACK HSABC_ZIP WITH WK_ZIP_FIRST5,WK_ZIP_FINAL4          
+
+         RETURN
+
+. ----------------------------
+. Invalid Zip Code - ERROR
+. ----------------------------
+
+ZIP_ERROR
+
+         MOVE MEM_ESSN TO ZIP_ERR_ESSN
+         MOVE MEM_ID1  TO ZIP_ERR_ID1
+         MOVE MEM_ZIP  TO ZIP_ERR_ZIPCD
+         
+         ADD 1 TO X_CNT4
+         MOVE ZIP_ERR_NM TO C_FILE
+         CALL WRITE_OGBREC USING ZIP_ERR_FL,ZIP_ERR_NM,ZIP_LIST
+         MOVE "N" TO WK_ZIP_OK
+
+         RETURN
+
+. ----------------------------
+. Update VALID CODE - 155HSA001 with LAST_RUN_DATE
+. ----------------------------
+
+UPDATE_VALID
+
+         PACK VAL_TYPE WITH "155",BLANKS
+         PACK VAL_CODE WITH "HSA001",BLANKS
+         PACK VAL_DESC WITH "LAST EXTRACT DATE FOR HSA ":
+                            "ELIGIBILITY",BLANKS
+         PACK VAL_OPT  WITH TODAY,BLANKS
+         PACK VAL_FILL WITH BLANKS
+         CALL VAL_WRITE
+
+         RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         MOVE INP_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING INP_FILE,INP_NAME
+
+         MOVE OUT_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+         
+         MOVE ZIP_ERR_NM TO C_FILE
+         CALL CLOSE_OGBFILE USING ZIP_ERR_FL,ZIP_ERR_NM
+         
+         MOVE ENR_ERR_NM TO C_FILE
+         CALL CLOSE_OGBFILE USING ENR_ERR_FL,ENR_ERR_NM     
+         
+         RETURN
+
+. ----------------------------
+. FTP Output
+. ----------------------------
+
+FTP_OUTPUT
+
+         CLEAR SCRATCH
+         PACK SCRATCH WITH "hsa0001.ftp ",WK_MODE," ",WK_MM," ",WK_DD," ",WK_CCYY," ",ST_HHMM
+         ROLLOUT SCRATCH
+         
+         IF OVER
+            IF (C_CMDPAR)
+               CALL CMD_ERROR USING "hsa0001.ftp FAILED"
+               STOP
+            ELSE
+               ERROR HORZ="15",VERT="19":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="hsa0001 FTP FAILED --> HSA ELIG FILE"
+               CHAIN "MENU"
+            ENDIF                  
+         ENDIF                  
+
+         RETURN       
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       CMDPARAM.SR
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of HSA0001.PS
+. +++++++++++++++++++++++++++++++++++++

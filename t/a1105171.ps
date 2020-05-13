@@ -1,0 +1,666 @@
+
++    Program name   :  A1105171.PS
++    Description    :  DHH Outier Claims Paid Over $25,000 
++                    
++ apdlm 06/21/2009 A0906181 - Initial Version.
++ apdlm 06/30/2010 A1006282 - Changed to get claims charged 25K instead of paid
++
++++++++++++++++++++++++++++++REVISIONS+++++++++++++++++++++++++++++++++++++++++
++
++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       VALID.RL             ...Valid Code Table        
+              INC       PRT.RL               ...Printer Definition File
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       CLM.RL
+              INC       CLME.RL
+              INC       CLMS.RL
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+REF_FILE         FILE      FIX=159,TEXT
+REF_NAME         DIM       15
+REF_NAME1        INIT      "/w/a1105171.ref"
+REF_REC          LIST
+..<BEGIN>................................................................
+REF_CLMID1       DIM       8      001-008
+REF_CLM1A        DIM       35     009-043
+REF_CLM1A1       DIM       20     044-063
+REF_CLM1A2       DIM       15     064-078
+REF_CLM12        DIM       8      079-086
+REF_CLM12A       DIM       20     087-106
+REF_CLM12B       DIM       15     107-121
+REF_CLM67        DIM       6      122-127
+REF_CLMPROD      DIM       5      128-132
+REF_CLMDOUT      DIM       8      133-140
+REF_CLM6A        DIM       8      141-148
+REF_CLM6B        DIM       8      149-156
+REF_CLMDRGC      DIM       3      157-159
+
+..<END>..................................................................
+                    LISTEND
+
+OUT_FILE            FILE      FIX=279,TEXT
+OUT_NAME            INIT      "/w/a1105171.csv"
+OUT_REC             LIST
+..<BEGIN>................................................................
+OUT_PLAST           DIM       20       001-020 Patient last name
+OUT_C1              DIM       1        021-021 Comma delimiter
+OUT_PFIRST          DIM       15       022-036 Patient first name
+OUT_C2              DIM       1        037-037 Comma delimiter
+OUT_CLAIM           DIM       8        038-045 Claim number 
+OUT_C3              DIM       1        046-046 Comma delimiter
+OUT_PROV            DIM       36       047-082 Provider name
+OUT_C4              DIM       1        083-083 Comma delimiter
+OUT_DFROM           DIM       8        084-091 Service from date
+OUT_C5              DIM       1        092-092 Comma delimiter
+OUT_DTHRU           DIM       8        093-100 Service thru date
+OUT_C6              DIM       1        101-101 Comma delimiter
+OUT_DPAID           DIM       8        102-109 Paid date
+OUT_C7              DIM       1        110-110 Comma delimiter
+OUT_DRG             DIM       3        111-113 DRG code
+OUT_C8              DIM       1        114-114 Comma delimiter
+OUT_LINE            DIM       3        115-117 Service line number
+OUT_C9              DIM       1        118-118 Comma delimiter
+OUT_REVCD           DIM       3        119-121 Revenue code
+OUT_C10             DIM       1        122-112 Comma delimiter
+OUT_PROC            DIM       5        123-117 Procedure (CPT) code
+OUT_C11             DIM       1        128-118 Comma delimiter
+OUT_PROCDS          DIM       30       129-158 Procedure description
+OUT_C12             DIM       1        159-159 Comma delimiter
+OUT_DIAG1           DIM       6        160-165 Principle diagnosis code
+OUT_C13             DIM       1        166-166 Comma delimiter
+OUT_DIAGDS          DIM       30       167-196 Diagnosis description
+OUT_C14             DIM       1        197-197 Comma delimiter
+OUT_CHARGE          DIM       10       198-207 Line charge
+OUT_C15             DIM       1        208-208 Comma delimiter
+OUT_NONCOV          DIM       10       209-218 Non-covered amount
+OUT_C16             DIM       1        219-219 Comma delimiter
+OUT_COPAY           DIM       10       220-229 Copay amount
+OUT_C17             DIM       1        230-230 Comma delimiter
+OUT_DEDUCT          DIM       10       231-240 Deductible applied
+OUT_C18             DIM       1        241-241 Comma delimiter
+OUT_COINS           DIM       10       242-251 Coinsurance applied
+OUT_C19             DIM       1        252-252 Comma delimiter
+OUT_PAYP            DIM       10       253-262 Amount paid provider
+OUT_C20             DIM       1        263-263 Comma delimiter
+OUT_PAYE            DIM       10       264-273 Amount paid enrollee
+..<END>..................................................................
+                    LISTEND
+
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+SRTKEY        INIT      "79-86 -t"
+
+DIM3          DIM       3
+DIM4          DIM       4
+FIRST_LINE    DIM       1
+FIRST_PAGE    DIM       1
+FORM72        FORM      7.2
+FORM82        FORM      8.2
+FORM10        FORM      10
+MASK_82       INIT      "ZZ,ZZZ,ZZ9.99-"
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+PREV_CLAIM    DIM       8
+PREV_EVENT    DIM       10
+PREV_OUTDT    DIM       8
+TODAY         DIM       8
+
+FOUR_THIRTY      INIT      "1630"
+ST_HHMM          DIM       4
+ST_SEC           DIM       2
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM       10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+PARAM_FROM    INIT      "20110101"
+PARAM_THRU    INIT      "20110331"
+
+DATE_CCYY     DIM       4
+DATE_MM       DIM       2
+DATE_DD       DIM       2
+
+PARAM_FORM    FORM      8
+
+WS_AMOUNT     FORM      8.2
+WS_GAMT       FORM      8.2
+
+FIRST_READ    INIT      "Y"
+HLD_OUTDT     DIM       8
+HLD_CLMID1    DIM       8
+CLM1          FORM      1
+COMMA         INIT      ","
+
+FORM_PAYP     FORM      8.2
+FORM_PAYE     FORM      8.2
+FORM_CHRG     FORM      8.2
+ACC_PAID      FORM      8.2
+ACC_CHRG      FORM      8.2
+
+. --------------------------
+.  Report Fields
+. --------------------------
+PAGE_NO       FORM     5
+LINE_NO       FORM     3
+LINE_MAX      FORM     "50"
+
+R_PAGE_NO     DIM      5
+R_DATE        DIM      10
+R_TIME        DIM      8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+. ...Exit controls
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+HDR1_REC      LIST
+HDR1_TLE      INIT "DHH Claims Over $25000 Paid Since "
+HDR1_FRM      DIM  10
+HDR1_FIL      DIM  1 
+HDR1_THR      DIM  10
+              LISTEND
+
+HDR2_REC             LIST
+HDR2_PLAST           INIT      "Pat Last Name"
+HDR2_C1              INIT      ","
+HDR2_PFIRST          INIT      "Pat First Name"
+HDR2_C2              INIT      ","
+HDR2_CLAIM           INIT      "Claim No"
+HDR2_C3              INIT      ","
+HDR2_PROV            INIT      "Facility"     
+HDR2_C4              INIT      ","
+HDR2_DFROM           INIT      "From"
+HDR2_C5              INIT      ","
+HDR2_DTHRU           INIT      "Thru"
+HDR2_C6              INIT      ","
+HDR2_DPAID           INIT      "Pd Date"
+HDR2_C7              INIT      ","
+HDR2_DRG             INIT      "DRG No"   
+HDR2_C8              INIT      ","
+HDR2_LINE            INIT      "Ln"
+HDR2_C9              INIT      ","
+HDR2_REVCD           INIT      "Rev"
+HDR2_C10             INIT      ","
+HDR2_PROC            INIT      "CPT"
+HDR2_C11             INIT      ","
+HDR2_PROCDS          INIT      "CPT Description"
+HDR2_C12             INIT      ","
+HDR2_DIAG1           INIT      "Prin DX"
+HDR2_C13             INIT      ","
+HDR2_DIAGDS          INIT      "DX Description"
+HDR2_C14             INIT      ","
+HDR2_CHARGE          INIT      "Charges"    
+HDR2_C15             INIT      ","
+HDR2_NONCOV          INIT      "Non-covered"
+HDR2_C16             INIT      ","
+HDR2_COPAY           INIT      "Copay"
+HDR2_C17             INIT      ","
+HDR2_DEDUCT          INIT      "Deductible"
+HDR2_C18             INIT      ","
+HDR2_COINS           INIT      "Coinsurance"
+HDR2_C19             INIT      ","
+HDR2_PAYP            INIT      "Paid Prov"
+HDR2_C20             INIT      ","
+HDR2_PAYE            INIT      "Paid Enr"
+                     LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+	
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "menu"           TO  C_NEXT
+         MOVE      "DHH $25000 CLM" TO  C_OPER
+         MOVE      "A1105171"        TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+
+. ----------------------------
+. Get Printer Information
+. ----------------------------
+         MOVE "00000025" TO C_PRTUSR          ...SENDS FILE TO DISK
+         CALL PRINT_PICK
+         RETURN IF (RESULT = 2)
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+ DEBUG   
+    CALL INITIALIZE
+    CALL GET_PARAM_DATE
+    CALL REFORMAT_CLM
+    CALL OPEN_FILES
+    CALL READ_CLMS  
+  DEBUG
+    CALL ROLLOUT_FILE
+
+    DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ---------------------------------------------------------------------------
+. End of Main Process
+. ---------------------------------------------------------------------------
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ---------------------------------------------------------------------------
+INITIALIZE
+. ---------------------------------------------------------------------------
+        DISPLAY *P1:9,*ES
+        CALL X_BLANK_SCREEN
+        CLOCK     TIMESTAMP   INTO  TIMESTAMP
+        UNPACK    TIMESTAMP   INTO  CURRDATE,ST_HHMM,ST_SEC
+        CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+        MOVE      "Records Read:       " TO X_CNTDESC1
+       	MOVE      "Records Output:     " TO X_CNTDESC2
+        MOVE      "                    " TO X_CNTDESC3
+        MOVE      "                    " TO X_CNTDESC4
+        MOVE      "                    " TO X_CNTDESC5
+        MOVE      "                    " TO X_CNTDESC6
+
+        CALL      X_DISPLAY_COUNTS
+U
+        RETURN
+
+.--------------------
+.Get Paramater Date and file name
+.--------------------
+GET_PARAM_DATE
+
+         UNPACK PARAM_FROM INTO DATE_CCYY,DATE_MM,DATE_DD
+         PACK HDR1_FRM WITH DATE_MM,"/",DATE_DD,"/",DATE_CCYY
+
+         UNPACK PARAM_THRU INTO DATE_CCYY,DATE_MM,DATE_DD
+         PACK HDR1_THR WITH DATE_MM,"/",DATE_DD,"/",DATE_CCYY
+
+    RETURN
+
+. ---------------------------------------------------------------------------
+REFORMAT_CLM
+
+...   1-8    Claim ID
+...  54-123  Provider Name
+... 347-389  Patient ID and Name
+...1407-1412 Principle Diagnosis
+...2478-2482 Product   
+...2496-2503 Paid Date
+...318-333   DOS From/Thur
+...2053-2055 DRG Code
+
+    DISPLAY   *p1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+              *P30:21,  "REFORMATTING CLAIM FILE", *BOLDOFF
+
+. Extract claims paid since last run date 
+    CLEAR SCRATCH
+    PACK SCRATCH WITH "clm.dbf ",REF_NAME1," -p2496-2503ge",PARAM_FROM:
+                      " -p2496-2503ne99999999":
+                      " -p2478-2482eqCHIP5":
+                      " 1-8 54-123 347-389 1407-1412 2478-2482 2496-2503 ":
+                      "318-333 2053-2055 -j -t"
+    REFORMAT SCRATCH
+        IF OVER
+           ERROR     HORZ="22",VERT="20":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="REFORMAT FAILED (a1105171.ref)"
+           CHAIN     "MENU"
+        ENDIF
+
+        CALL       SORT_OGBFILE USING REF_NAME1,REF_NAME1,SRTKEY
+         
+        IF OVER
+            ERROR     HORZ="22",VERT="19":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="SORT FAILED"
+            CHAIN     "menu"
+        ELSE
+            DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL   
+        ENDIF
+
+
+    RETURN
+
+. ----------------------------------------------------------------------------
+. Open Files
+. ----------------------------------------------------------------------------
+OPEN_FILES
+   
+    CALL OPEN_OGBFILE USING REF_FILE,REF_NAME1
+    CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME	
+
+        RETURN
+
+.---------------------------------------------------------------------------
+.Loop through CLMS
+.---------------------------------------------------------------------------
+READ_CLMS   
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+
+    CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,HDR1_REC
+
+    CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,HDR2_REC
+
+    LOOP
+        MOVE REF_NAME TO C_FILE
+        CALL READ_OGBFILE USING REF_FILE, REF_NAME, REF_REC
+        IF (RESULT <> 1)
+            CALL WRITE_CLM 
+            BREAK
+        ENDIF
+
+        MOVE REF_CLMID1 TO HLD_CLMID1
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DIM4, DIM3
+        IF (DIM3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+        
+        CONTINUE IF (SQUEEZE REF_CLMPROD <> "CHIP5")
+
+        CONTINUE IF (REF_CLMDOUT > PARAM_THRU)
+    
+        CLEAR OUT_REC
+        MOVE REF_CLM12A TO OUT_PLAST
+        REPLACE ", " IN OUT_PLAST
+        MOVE REF_CLM12B TO OUT_PFIRST
+        REPLACE ", " IN OUT_PFIRST
+        MOVE REF_CLMID1 TO OUT_CLAIM
+        IF (SQUEEZE REF_CLM1A = "")
+            PACK OUT_PROV WITH REF_CLM1A2," ",REF_CLM1A1
+        ELSE
+            MOVE REF_CLM1A TO OUT_PROV
+        ENDIF
+        REPLACE ", " IN OUT_PROV 
+        MOVE REF_CLM67 TO OUT_DIAG1
+        MOVE REF_CLMDOUT TO OUT_DPAID
+        MOVE REF_CLM6A   TO OUT_DFROM
+        MOVE REF_CLM6B   TO OUT_DTHRU
+        MOVE REF_CLMDRGC TO OUT_DRG
+
+        CALL      SETPOP_CLMS	
+        PACK      CLMS_BASE WITH REF_CLMID1,BLANKS
+        PACK      CLMS_KEY  WITH CLMS_BASE,BLANKS
+        CALL      POP_READ
+   
+        LOOP
+               CALL      POP_NEXT
+               WHILE     (RESULT = 1)
+               IF (REF_CLMID1 <> CLMS_ID)
+                   CALL WRITE_CLM
+                   CLEAR ACC_CHRG
+                   CLEAR ACC_PAID
+                   BREAK
+               ENDIF
+               MOVE CLMS_PAYP TO FORM_PAYP
+               MOVE CLMS_PAYE TO FORM_PAYE 
+               ADD FORM_PAYP TO ACC_PAID
+               ADD FORM_PAYE TO ACC_PAID
+               MOVE CLMS_CHG TO FORM_CHRG
+               ADD FORM_CHRG TO ACC_CHRG
+        REPEAT 
+
+    REPEAT
+
+  RETURN
+
+. ----------------------------------------------------------------------------
+. Writing each line of claims over $25,000
+. ----------------------------------------------------------------------------
+WRITE_CLM
+    
+        IF (ACC_CHRG < 25000)
+            GOTO WRITE_CLM_RETURN
+        ENDIF
+ 
+        CALL      SETPOP_CLMS	
+        PACK      CLMS_BASE WITH HLD_CLMID1,BLANKS
+        PACK      CLMS_KEY  WITH CLMS_BASE,BLANKS
+        CALL      POP_READ
+   
+        LOOP
+               CALL      POP_NEXT
+               WHILE     (RESULT = 1)
+               WHILE     (CLMS_ID = HLD_CLMID1)
+              
+               MOVE CLMS_LINE TO OUT_LINE
+               MOVE CLMS_REV  TO OUT_REVCD
+               MOVE CLMS_PROC TO OUT_PROC
+               MOVE CLMS_CHG  TO OUT_CHARGE
+               MOVE CLMS_NON  TO OUT_NONCOV
+               MOVE CLMS_COPA TO OUT_COPAY
+               MOVE CLMS_DEDU TO OUT_DEDUCT
+               MOVE CLMS_COIN TO OUT_COINS
+               MOVE CLMS_PAYP TO OUT_PAYP
+               MOVE CLMS_PAYE TO OUT_PAYE  
+               MOVE COMMA     TO OUT_C1
+               MOVE COMMA     TO OUT_C2
+               MOVE COMMA     TO OUT_C3
+               MOVE COMMA     TO OUT_C4
+               MOVE COMMA     TO OUT_C5
+               MOVE COMMA     TO OUT_C6
+               MOVE COMMA     TO OUT_C7
+               MOVE COMMA     TO OUT_C8
+               MOVE COMMA     TO OUT_C9
+               MOVE COMMA     TO OUT_C10
+               MOVE COMMA     TO OUT_C11
+               MOVE COMMA     TO OUT_C12
+               MOVE COMMA     TO OUT_C13
+               MOVE COMMA     TO OUT_C14
+               MOVE COMMA     TO OUT_C15
+               MOVE COMMA     TO OUT_C16
+               MOVE COMMA     TO OUT_C17
+               MOVE COMMA     TO OUT_C18
+               MOVE COMMA     TO OUT_C19
+               MOVE COMMA     TO OUT_C20
+
+               IF (SQUEEZE CLMS_PROC <> "")
+                   PACK VAL_KEY1 WITH "501",CLMS_PROC
+                   CALL VAL_READ1
+                   MOVE VAL_DESC TO OUT_PROCDS
+               ENDIF
+               REPLACE ", " IN OUT_PROCDS
+
+               IF (SQUEEZE REF_CLM67 <> "")
+                   PACK VAL_KEY1 WITH "503",REF_CLM67
+                   CALL VAL_READ1
+                   MOVE VAL_DESC TO OUT_DIAGDS
+               ENDIF
+               REPLACE ", " IN OUT_DIAGDS
+
+               CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_REC
+       
+               ADD 1 TO X_CNT2
+               UNPACK X_CNT2 INTO DIM4, DIM3
+               IF (DIM3 = "000")
+                   CALL X_DISPLAY_COUNTS
+               ENDIF
+
+        REPEAT 
+
+WRITE_CLM_RETURN
+    RETURN
+
+. ----------------------------------------------------------------------------
+. Set up POP read for CLMS file
+. ----------------------------------------------------------------------------
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+
+    RETURN
+
+. ----------------------------------------------------------------------------
+. Operator pressed F9
+. ----------------------------------------------------------------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. -------------------------------
+. FTP's Files to NT
+. -------------------------------
+ROLLOUT_FILE
+
+       ROLLOUT "a1105171.ftp"   ---ftp's a1105171.csv to dhh_25k_cumulative.csv
+       IF OVER
+           ERROR    HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="A1105171.FTP FAILED"
+           CHAIN    "MENU"
+       ENDIF
+
+       RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+
+    CALL CLOSE_OGBFILE USING REF_FILE,REF_NAME1
+
+        RETURN
+
+. ----------------------------
+    INC       UTIL.SR      
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       POP.IO
+    INC       CLME.IO
+    INC       PRINT.SR
+    INC       VALID.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. /End of A1105171.ps 
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

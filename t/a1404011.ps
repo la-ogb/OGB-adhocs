@@ -1,0 +1,558 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1404011.PS
++    Description    :  ADH - UPDATES EGWP POVERTY LEVEL FROM TRR                +                      EGWP
++    APSJM A1404011 04/01/2014 - INITIAL VERSION                                
++    apazw 06/12/2017 - mod - incrase file size
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       MEME.RL          ...Member Enrollment  
+              INC       CLI.RL           ...Client Demographics
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+TRR_REF_FD         FILE       VAR=100,TEXT
+TRR_REF_NAME       INIT       "/w/egwp_trr_sub.txt"
+TRR_REF_LIST       LIST
+TRR_REF_HICN       DIM         12
+TRR_REF_LNAME      DIM         12
+TRR_REF_FNAME      DIM         07
+TRR_REF_MINIT      DIM         01
+TRR_REF_POV_LVL        DIM         03
+TRR_REF_EFF        DIM         08
+TRR_REF_F1         DIM         01
+TRR_REF_TRM        DIM         08
+                    LISTEND
+.
+TRR_ERR_FD     FILE    VAR=200,TEXT
+TRR_ERR_NAME   INIT "/w/a1404011_err.txt"
+TRR_ERR_LIST   LIST
+TRR_ERR_HICN   DIM  12
+TRR_ERR_LNAME  DIM  12
+TRR_ERR_FNAME  DIM  07
+TRR_ERR_MINIT  DIM  01
+TRR_ERR_POV_LVL DIM 03
+TRR_ERR_EFF    DIM  08
+TRR_ERR_TRM    DIM  08
+TRR_ERR_ERR   DIM  40
+                   LISTEND 
+.Output Files
+U_MEME_FD     FILE     VAR=X_INM_SIZE,TEXT
+U_MEME_NAME    INIT    "a1404011.txt"      
+.
+TRRU_REF_FD         FILE       VAR=100,TEXT
+TRRU_REF_NAME       INIT       "/w/a1404011_upd.txt"
+TRRU_REF_LIST       LIST
+TRRU_REF_ID1        DIM         08
+TRRU_REF_HICN       DIM         12
+TRRU_REF_LNAME      DIM         12
+TRRU_REF_FNAME      DIM         07
+TRRU_REF_MINIT      DIM         01
+TRRU_REF_POV_LVL        DIM         03
+TRRU_REF_EFF        DIM         08
+                    LISTEND
+MEME_WRK_SRTKEY INIT "1-8 -T"
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+W_MEME_US09   DIM        02
+MEME_SAV3     DIM 600     
+SAVE_TRM      DIM      8
+NUM_OF_DAYS   FORM     5
+BLANK8        INIT "        "
+TILDE         INIT "~"
+W_TRM         DIM  8
+FIRST_READ    DIM  1
+ACT_SW        DIM  1
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "FIX RS EGWP " TO  C_OPER
+         MOVE      "A1403111"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_REF_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_REF_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING TRR_REF_FD,TRR_REF_NAME,TRR_REF_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    IF (TRR_REF_EFF > "20141231")
+       CONTINUE
+    ENDIF
+    CALL GET_MEMID
+    IF (SQUEEZE MEMO_SAV = "")
+      MOVE TRR_REF_HICN TO TRR_ERR_HICN
+      MOVE TRR_REF_LNAME TO TRR_ERR_LNAME
+      MOVE TRR_REF_FNAME TO TRR_ERR_FNAME
+      MOVE TRR_REF_POV_LVL TO TRR_ERR_POV_LVL
+      MOVE TRR_REF_EFF TO TRR_ERR_EFF
+      MOVE TRR_REF_TRM TO TRR_ERR_TRM
+      MOVE TRR_REF_MINIT TO TRR_ERR_MINIT
+      MOVE "HICN NOT FOUND" TO TRR_ERR_ERR
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING TRR_ERR_FD,TRR_ERR_NAME,TRR_ERR_LIST
+      CLEAR TRR_ERR_LIST
+      CONTINUE
+    ENDIF
+    IF ((SQUEEZE TRR_REF_TRM <> "") AND (SQUEEZE TRR_REF_TRM < TODAY))
+      MOVE TRR_REF_HICN TO TRR_ERR_HICN
+      MOVE TRR_REF_LNAME TO TRR_ERR_LNAME
+      MOVE TRR_REF_FNAME TO TRR_ERR_FNAME
+      MOVE TRR_REF_MINIT TO TRR_ERR_MINIT
+      MOVE TRR_REF_POV_LVL TO TRR_ERR_POV_LVL
+      MOVE TRR_REF_EFF TO TRR_ERR_EFF
+      MOVE TRR_REF_TRM TO TRR_ERR_TRM
+      MOVE "MANUAL" TO TRR_ERR_ERR
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING TRR_ERR_FD,TRR_ERR_NAME,TRR_ERR_LIST
+      CLEAR TRR_ERR_LIST
+      CONTINUE
+    ENDIF
+    UNPACK MEMO_SAV INTO MEMO_LIST
+    PACK MEM_FK11 WITH MEMO_ID1,BLANKS
+    CALL  FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+                           MEM_FN:  ...FILE NAME LIST
+                           MEM_FC:  ...TYPE OF INDEX
+.                                    ...(I)NDEX OR (A)IMDEX
+                           MEM_FV:  ...FILE KEY VARLISTS
+                           MEM_FK:  ...FILE KEY SIZES
+                           MEM_LIST:...FILE RECORD (FIELD LIST)
+                           MEM_REC: ...FILE RECORD (PACKED)
+                           MEM_OLD: ...FILE SAVED WHEN READ
+                           MEM_QTY: ...NUMBER OF FILES
+                           1         ...FILE NUMBER FOR THIS READ
+
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    CALL READ_MEME
+    IF ((SQUEEZE MEME_SAV <> "") AND (SQUEEZE MEME_SAV2 <> ""))
+       DEBUG
+    ENDIF
+    IF (SQUEEZE MEME_SAV <> "")
+     SWITCH TRR_REF_POV_LVL
+       CASE "100"
+         MOVE "03" TO INME_US09
+       CASE "075"
+         MOVE "07" TO INME_US09
+       CASE "050"
+         MOVE "08" TO INME_US09
+       CASE "025"
+         MOVE "09" TO INME_US09
+       CASE "000"
+         MOVE "00" TO INME_US09
+     ENDSWITCH
+     UNPACK MEME_SAV INTO MEME_LIST
+     CLEAR W_MEME_US09
+     SWITCH MEME_US09
+       CASE "01" OR "02" OR "04" OR "06"
+         MOVE "03" TO W_MEME_US09
+       DEFAULT
+         MOVE MEME_US09 TO W_MEME_US09
+     ENDSWITCH
+     IF (W_MEME_US09 <> INME_US09) 
+       CLEAR INM_REC
+       MOVE INME_US09 TO MEME_US09
+       PACKLEN MEME_REC WITH MEME_LIST
+       PACKLEN INM_REC WITH MEM_REC,MEME_REC
+       UNPACK INM_REC INTO INM_LIST
+       CLEAR INME_CHGBY
+       CLEAR INME_NEWBY
+       CLEAR INM_CHGBY
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING U_MEME_FD,U_MEME_NAME,INM_LIST
+       CLEAR INM_LIST
+       MOVE MEME_ID1 TO TRRU_REF_ID1
+       MOVE TRR_REF_HICN TO TRRU_REF_HICN
+       MOVE TRR_REF_LNAME TO TRRU_REF_LNAME
+       MOVE TRR_REF_FNAME TO TRRU_REF_FNAME
+       MOVE TRR_REF_MINIT TO TRRU_REF_MINIT
+       MOVE TRR_REF_POV_LVL TO TRRU_REF_POV_LVL
+       MOVE TRR_REF_EFF TO TRRU_REF_EFF
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING TRRU_REF_FD,TRRU_REF_NAME,TRRU_REF_LIST
+       CLEAR TRRU_REF_LIST 
+     ENDIF
+    ELSE
+     IF (SQUEEZE MEME_SAV2 <> "")
+         UNPACK MEME_SAV2 INTO MEME_LIST
+         SWITCH TRR_REF_POV_LVL
+           CASE "100"
+             MOVE "03" TO INME_US09
+           CASE "075"
+             MOVE "07" TO INME_US09
+           CASE "050"
+             MOVE "08" TO INME_US09
+           CASE "025"
+             MOVE "09" TO INME_US09
+           CASE "000"
+             MOVE "00" TO INME_US09
+        ENDSWITCH
+        CLEAR W_MEME_US09
+        SWITCH MEME_US09
+          CASE "01" OR "02" OR "04" OR "06"
+            MOVE "03" TO W_MEME_US09
+          DEFAULT    
+            MOVE MEME_US09 TO W_MEME_US09
+        ENDSWITCH
+        IF (W_MEME_US09 <> INME_US09)
+          UNPACK MEME_SAV2 INTO MEME_LIST
+          CALL DATE_CALC USING TRR_REF_EFF,"SUB","DAYS",1,MEME_TRM    
+          PACKLEN MEME_REC WITH MEME_LIST
+          CLEAR INM_REC
+          PACKLEN INM_REC WITH MEM_REC,MEME_REC
+          UNPACK INM_REC INTO INM_LIST
+          CLEAR INME_CHGBY
+          CLEAR INME_NEWBY
+          CLEAR INM_CHGBY
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING U_MEME_FD,U_MEME_NAME,INM_LIST
+          CLEAR INM_LIST        
+          MOVE TRR_REF_EFF TO MEME_EFF
+          MOVE BLANKS TO MEME_TRM
+          SWITCH TRR_REF_POV_LVL
+           CASE "100"
+             MOVE "03" TO INME_US09
+           CASE "075"
+             MOVE "07" TO INME_US09
+           CASE "050"
+             MOVE "08" TO INME_US09
+           CASE "025"
+             MOVE "09" TO INME_US09
+           CASE "000"
+             MOVE "00" TO INME_US09
+          ENDSWITCH
+          MOVE INME_US09 TO MEME_US09
+          PACKLEN MEME_REC WITH MEME_LIST
+          CLEAR INM_REC
+          PACKLEN INM_REC WITH MEM_REC,MEME_REC
+          UNPACK INM_REC INTO INM_LIST
+          CLEAR INME_CHGBY
+          CLEAR INME_NEWBY
+          CLEAR INME_ID1
+          CLEAR INME_ID2
+          CLEAR INM_CHGBY
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING U_MEME_FD,U_MEME_NAME,INM_LIST
+          CLEAR INM_LIST 
+          MOVE MEME_ID1 TO TRRU_REF_ID1
+          MOVE TRR_REF_HICN TO TRRU_REF_HICN
+          MOVE TRR_REF_LNAME TO TRRU_REF_LNAME
+          MOVE TRR_REF_FNAME TO TRRU_REF_FNAME
+          MOVE TRR_REF_MINIT TO TRRU_REF_MINIT
+          MOVE TRR_REF_POV_LVL TO TRRU_REF_POV_LVL
+          MOVE TRR_REF_EFF TO TRRU_REF_EFF
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING TRRU_REF_FD,TRRU_REF_NAME,TRRU_REF_LIST
+          CLEAR TRRU_REF_LIST
+        ENDIF
+     ENDIF
+    ENDIF
+ REPEAT
+ RETURN
+
+GET_MEMID
+. -------------------------------------------
+. Reading MEMO with HICN to get the member ID
+. -------------------------------------------
+         CLEAR     MEMO_SAV
+         PACK      MEMO_FK13 WITH TRR_REF_HICN,BLANKS
+         CALL      FILE_READ USING MEMO_FD:   ...FILE DECLARATION LIST
+                                 MEMO_FN:         ...FILE NAME LIST
+                                 MEMO_FC:         ...(I)NDEX OR (A)IMDEX
+                                 MEMO_FV:         ...FILE KEY VARLISTS
+                                 MEMO_FK:         ...FILE KEY SIZES
+                                 MEMO_LIST:       ...FILE RECORD (FIELD LIST)
+                                 MEMO_REC:        ...FILE RECORD (PACKED)
+                                 MEMO_OLD:        ...FILE SAVED WHEN READ
+                                 MEMO_QTY:        ...NUMBER OF FILES
+                                 3                ...FILE NUMBER FOR THIS READ
+
+         LOOP
+             CALL FILE_NEXT USING MEMO_FD: ...FILE DECLARATION LIST
+                       MEMO_FN:              ...FILE NAME LIST
+                       MEMO_FC:              ...TYPE OF INDEX
+.                                            ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:              ...FILE KEY VARLISTS
+                       MEMO_FK:              ...FILE KEY SIZES
+                       MEMO_LIST:            ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:             ...FILE RECORD (PACKED)
+                       MEMO_OLD:             ...FILE SAVED WHEN READ
+                       MEMO_QTY:             ...NUMBER OF FIlES
+                       3                     ...FILE NUMBER FOR THIS READ
+             IF ((RESULT <> 1) OR (SQUEEZE MEMO_POL <> SQUEEZE TRR_REF_HICN))
+               BREAK                  
+             ENDIF     
+             
+             IF ((SQUEEZE MEMO_TRM1 <> "") AND (MEMO_TRM1 < TODAY))
+                CONTINUE            
+             ENDIF
+             PACKLEN MEMO_SAV WITH MEMO_LIST
+         REPEAT
+         RETURN
+  
+READ_MEME
+    CLEAR W_TRM
+    CLEAR MEME_SAV
+    CLEAR MEME_SAV2
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    LOOP 
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST
+                                   MEME_FC:  ...TYPE OF INDEX
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES
+                                   1         ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                  BREAK
+            ENDIF
+            IF (SQUEEZE MEME_TRM = "")
+               FILL "9" IN W_TRM
+            ELSE
+               MOVE MEME_TRM TO W_TRM
+            ENDIF
+            IF (SQUEEZE MEME_NET <> "EGWP")
+                  CONTINUE
+            ENDIF
+            IF (TODAY > W_TRM)
+              CONTINUE
+            ENDIF
+            IF (MEME_EFF = TRR_REF_EFF)
+              PACK MEME_SAV WITH MEME_LIST
+            ELSE
+              IF (MEME_EFF < TRR_REF_EFF)
+                  PACK MEME_SAV2 WITH MEME_LIST
+              ELSE
+               IF (TRR_REF_EFF > MEME_EFF)
+                  PACKLEN MEME_SAV3 WITH MEME_LIST
+               ENDIF
+              ENDIF
+            ENDIF
+    REPEAT
+    RETURN
+.
+.
+
+.
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING TRR_ERR_FD,TRR_ERR_NAME
+         CALL      PREP_OGBFILE USING TRRU_REF_FD,TRRU_REF_NAME
+         CALL      OPEN_OGBFILE USING TRR_REF_FD,TRR_REF_NAME
+         CALL      PREP_OGBFILE USING U_MEME_FD,U_MEME_NAME   
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1404011.PS
+. +++++++++++++++++++++++++++++++++++++

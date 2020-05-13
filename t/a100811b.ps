@@ -1,0 +1,376 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a100811b       
++    Description    :  add 06/2010 & 07/2010 ISIS deductions files      
++  apsjm 08/11/2010 a100811b ADH - Ininital Version                
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++
++----------------------------------------------------------------------------
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       PRT.RL               ...Printer definition file
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+   INC           DEDUCT.RL
+.
+   INC           SAV_DEDUCT.RL
+.------------------
+. File Declarations
+.------------------
+.INPUT
+DEDUCT_06_FD          FILE      VAR=175,TEXT
+DEDUCT_06_NAME        INIT      "/w/deot04.txt.201006"
+DEDUCT_06_KEY         DIM       13
+
+.
+DEDUCT_07_FD          FILE      VAR=175,TEXT
+DEDUCT_07_NAME        INIT      "/w/deot04.txt.201007"
+DEDUCT_07_KEY         DIM       13
+.
+.OUTPUT
+DEDUCT_0607_FD        FILE      VAR=175,TEXT
+DEDUCT_0607_NAME      INIT      "/w/deot04_0607.txt"
+.
+DEDUCT_06_RESULT FORM  1
+DEDUCT_07_RESULT FORM  1
+SAV_INV_REC   DIM       333
+VAL_RESULT    FORM      001
+TIMESTAMP     DIM       014
+CURRDATE      DIM       008
+READ_COUNT    FORM      008
+KEEP_COUNT    FORM      008
+ERROR_COUNT   FORM      008
+DED_06_REC    DIM        175
+DED_07_REC    DIM        175
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM       010
+PARAM_YYY     DIM       005
+PARAM_DATE    DIM       008
+              LISTEND
+.---------------------------
+. Program Specific variables
+.---------------------------
+DECIML            DIM     1
+PERIOD            INIT    "."
+DIM2              DIM     2
+DIM2A             DIM     2
+DIM2B             DIM     2
+DIM3              DIM     3
+DIM4              DIM     4
+DIM4A             DIM     4
+DIM5              DIM     5
+DIM6              DIM     6
+DIM8              DIM     8
+DIM10             DIM     10
+DIM11             DIM     11
+DIM_X1            DIM     1
+DIM_X2            DIM     1
+DIM_X3            DIM     1
+DIM_X4            DIM     1
+DIM_X5            DIM     1
+DIM_X6            DIM     1
+WRK_DEDLIST   LIST
+WRK_MED_EME        FORM      8.2
+WRK_MED_EMO        FORM      8.2
+WRK_LFE_EME        FORM      8.2
+WRK_LFE_EMO        FORM      8.2
+WRK_HSA_EME        FORM      8.2
+WRK_HSA_EMO        FORM      8.2
+              LISTEND
+.
+DIM_11                  DIM      11
+DIM_2                   DIM      2
+DIM_4                   DIM      4
+DIM_8                   DIM      8
+DISP_3                  DIM      003
+DISP_4                  DIM      004
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+FORM92                  FORM     8.2
+FORM922                FORM     8.2
+BLANK8        		INIT     "        "
+JUNK4         		DIM      004
+TRAP_DATA     		DIM      500
+TODAY         		DIM      008
+CAL_CLOCK     		DIM      021
+PLAN_FIELD    		DIM      004  
+
+.....> START HERE
+  debug
+  IF (C_RMODE = "B")
+      PACK RUN_MODE WITH "B"
+  ENDIF
+  
+  CALL      RUN_NOW
+  
+  IF (C_RMODE = "B")
+      SHUTDOWN
+  ENDIF
+ 
+  CHAIN     C_NEXT 			    chains to back to the menu
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+  INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+  RETCOUNT  ORIG_RETURN
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "menu"                    TO  C_NEXT
+  MOVE      "ADD DED FILES" TO  C_OPER
+  MOVE      "a100811b"                 TO C_PROG
+  MOVE      BLANKS                    TO  C_LABEL
+  MOVE      BLANKS                    TO  C_FILE
+  MOVE      BLANKS                    TO  C_KEYS
+  CLOCK     CALENDAR                  INTO  CAL_CLOCK
+  CALL X_BLANK_SCREEN
+
+
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+  TRAPSAVE TRAP_DATA
+  TRAPCLR ALL
+  TRAP QUIT NORESET IF F9
+
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+  CALL SCHED_PICK
+  IF (RUN_MODE = "B" OR RUN_MODE = "N")
+     CALL MAIN_PROCESS
+  ENDIF
+
+  RETURN
+
+
+
+.******************************************************************************
+MAIN_PROCESS
+.******************************************************************************
+  DEBUG
+  CALL INITIALIZE
+.
+  DEBUG 
+  CALL OPEN_FILES
+.
+  CALL READ_DED_06
+  CALL READ_DED_07
+  CALL CREATE_COMB_FILE
+.
+  CALL CLOSE_FILES
+.
+.
+  TRAPREST TRAP_DATA
+
+.  IF NOT (C_CMDPAR)           ...UN-comment this IF statement, when common.cb
+      MOVE SCH_RTSUCC  TO  SCH@RTCODE ...is rolled in to gb2.
+.  ENDIF
+
+  RETURN
+
+
+
+.******************************************************************************
+QUIT
+.******************************************************************************
+.--------------------
+. Operator pressed F9
+. -------------------
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR C_NOHIST
+  TRAPREST TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+
+      MOVE SCH_RTABRT  TO  SCH@RTCODE
+
+      RETURN
+  ENDIF
+  CHAIN "MENU"
+
+    
+
+.******************************************************************************
+INITIALIZE
+.******************************************************************************
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.------------------
+...Display Counters
+.------------------
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Records Found: " TO X_CNTDESC2
+  DISPLAY *ES
+  CALL X_DISPLAY_COUNTS
+
+  RETURN
+
+.******************************************************************************
+OPEN_FILES
+.******************************************************************************
+  CALL OPEN_OGBFILE USING DEDUCT_06_FD,DEDUCT_06_NAME 
+.
+  CALL OPEN_OGBFILE USING DEDUCT_07_FD,DEDUCT_07_NAME 
+.
+  CALL PREP_OGBFILE USING DEDUCT_0607_FD,DEDUCT_0607_NAME 
+  RETURN
+
+READ_DED_06
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  CALL READ_OGBFILE USING DEDUCT_06_FD,DEDUCT_06_NAME,DED_LIST
+  MOVE RESULT TO DEDUCT_06_RESULT
+  IF (RESULT = 1)
+   ADD 1 TO X_CNT1
+   UNPACK X_CNT1 INTO DISP_4,DISP_3
+   IF (DISP_3 = "000")
+       CALL X_DISPLAY_COUNTS
+   ENDIF
+   CLEAR DED_06_REC
+   CLEAR DEDUCT_06_KEY
+   UNPACK DED_CLI INTO DIM_4
+   PACKLEN DEDUCT_06_KEY WITH DIM_4, DED_SSN
+   PACKLEN DED_06_REC WITH DED_LIST
+  ENDIF 
+  RETURN
+
+READ_DED_07
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  CALL READ_OGBFILE USING DEDUCT_07_FD,DEDUCT_07_NAME,DED_LIST
+  MOVE RESULT TO DEDUCT_07_RESULT
+  IF (RESULT = 1)
+   ADD 1 TO X_CNT1
+   UNPACK X_CNT1 INTO DISP_4,DISP_3
+   IF (DISP_3 = "000")
+       CALL X_DISPLAY_COUNTS
+   ENDIF
+   CLEAR DED_07_REC
+   CLEAR DEDUCT_07_KEY
+   UNPACK DED_CLI INTO DIM_4
+   PACKLEN DEDUCT_07_KEY WITH DIM_4, DED_SSN
+   PACKLEN DED_07_REC WITH DED_LIST
+  ENDIF
+  RETURN
+.******************************************************************************
+CREATE_COMB_FILE
+.******************************************************************************
+.-------------------------------------
+. Create combined file
+.-------------------------------------
+  DEBUG
+         LOOP
+            IF ((DEDUCT_07_RESULT <> 1) AND (DEDUCT_06_RESULT <> 1))
+               BREAK
+            ELSE
+              IF (DEDUCT_07_RESULT <> 1)
+                 CALL ON_DED_06
+                 CALL READ_DED_06
+              ELSE
+                IF (DEDUCT_06_RESULT <> 1)
+                   CALL ON_DED_07          
+                   CALL READ_DED_07
+                ELSE
+                  IF (DEDUCT_07_KEY < DEDUCT_06_KEY)
+                     DEBUG
+                     CALL ON_DED_07          
+                     CALL READ_DED_07
+                  ELSE
+                     IF (DEDUCT_06_KEY < DEDUCT_07_KEY)
+                        CALL ON_DED_06        
+                        CALL READ_DED_06
+                     ELSE
+                        CALL ON_BOTH
+                        CALL READ_DED_07
+                        CALL READ_DED_06
+                     ENDIF
+                  ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+         REPEAT
+         RETURN
+
+
+ON_BOTH
+        UNPACK DED_06_REC INTO SAV_DED_LIST
+        UNPACK DED_07_REC INTO DED_LIST      
+        MOVE (DED_MED_EMO + SAV_DED_MED_EMO) TO WRK_MED_EMO
+        MOVE (DED_LFE_EMO + SAV_DED_LFE_EMO) TO WRK_LFE_EMO
+        MOVE (DED_MED_EME + SAV_DED_MED_EME) TO WRK_MED_EME
+        MOVE (DED_LFE_EME + SAV_DED_LFE_EME) TO WRK_LFE_EME
+        MOVE (DED_HSA_EME + SAV_DED_HSA_EME) TO WRK_HSA_EME
+        MOVE (DED_HSA_EMO + SAV_DED_HSA_EMO) TO WRK_HSA_EMO
+        MOVE WRK_MED_EMO TO DED_MED_EMO
+        MOVE WRK_MED_EME TO DED_MED_EME
+        MOVE WRK_LFE_EMO TO DED_LFE_EMO
+        MOVE WRK_LFE_EME TO DED_LFE_EME
+        MOVE WRK_HSA_EME TO DED_HSA_EME
+        MOVE WRK_HSA_EMO TO DED_HSA_EMO
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING DEDUCT_0607_FD,DEDUCT_0607_NAME,DED_LIST
+        CLEAR DED_LIST
+
+      RETURN
+
+ON_DED_06
+      UNPACK DED_06_REC INTO DED_LIST    
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING DEDUCT_0607_FD,DEDUCT_0607_NAME,DED_LIST
+      CLEAR DED_LIST
+      RETURN
+ 
+ON_DED_07
+      UNPACK DED_07_REC INTO DED_LIST    
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING DEDUCT_0607_FD,DEDUCT_0607_NAME,DED_LIST
+      CLEAR DED_LIST
+      RETURN
+
+.******************************************************************************
+CLOSE_FILES 
+.******************************************************************************
+
+    RETURN
+. 
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+  INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

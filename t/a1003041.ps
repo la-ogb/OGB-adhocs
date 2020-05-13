@@ -1,0 +1,379 @@
++    Program Name   :  A1003041.ps  
++    Description    :  Reads elg0902wrk.txt and gets flex reason from meme  
++                      record to update file with.                      
++                                       
++    APDLM 03/04/2010 A        dev - initial version                      
++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEME.RL               Member Demographics File 
+              INC       ISIS_DLY.RL
+
+.----------------------------------------------------------------------------
+.Input File Declarations
+.----------------------------------------------------------------------------
+ISISWRK_FFILE      FILE     FIX=76,TEXT
+
+.----------------------------------------------------------------------------
+.Output File Declarations
+.----------------------------------------------------------------------------
+
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+
+...Work file variables
+
+TODAY          DIM       8
+
+TODAY_LIST     LIST
+WS_CCYY        DIM       4
+WS_MM          DIM       2
+WS_DD          DIM       2
+               LISTEND
+
+TRAP_DATA      DIM       500
+
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+
+.Used to display screen counters
+CNT_5          DIM       5
+CNT_2          DIM       2
+
+MEM_RESULT     FORM      1
+
+SWT_WRITE      DIM       1
+
+SAV_LEV1       DIM       4
+SAV_LEV2       DIM       4
+
+HLD_ID1        DIM       8
+INFINITY       INIT      "99991231"
+
+HLD_LEV1       LIST
+HLD_R          DIM       1
+HLD_3          DIM       3
+               LISTEND
+
+SPACE4         DIM       4
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+        MOVE      "menu"         TO C_NEXT
+        MOVE      "A1003041" TO C_PROG
+        MOVE      "Update elg0902wrk      " TO C_OPER
+        MOVE      BLANKS TO C_LABEL
+        MOVE      BLANKS TO C_FILE 
+        MOVE      BLANKS TO C_KEYS
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+
+ASK_OPTION
+
+         MOVE      BLANKS TO WCHAR
+         dialog    horz="20",vert="08":
+                   bgcol=C_DLGB,fgcol=C_DLGF:
+                   lncol=C_DLGL,shade="Y":
+                   text="This program updates elg0902wrk":
+                   text="Ready to go (Y/N): ":
+                   field=WCHAR
+         GOTO      QUIT IF (WCHAR <> "Y")
+
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN     C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+         CALL MAIN_PROCESS
+         
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+    DEBUG
+
+    CALL INITIAL
+    CALL OPEN_OGBFILE USING ISISWRK_FFILE,ISISWRK_FNAME1
+    CALL PROCESS_FILE
+    CALL CLOSE_OGBFILE USING ISISWRK_FFILE,ISISWRK_FNAME1
+
+    RETURN
+
+. -------------------------------
+.Reads isiswrk file              
+. -------------------------------
+PROCESS_FILE
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ISISWRK_FFILE,ISISWRK_FNAME,ISISWRK_LIST
+
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+
+        CALL READ_MEM
+        CALL READ_MEME
+
+      REPEAT
+
+    RETURN
+
+. ------------------------------
+. Reading MEM to get the enrollee's
+. record
+. ------------------------------
+READ_MEM
+
+           CLEAR     MEM_AIM
+           PACK      MEM_AIM1 WITH "01X",ISISWRK_EMP_SSN,BLANKS     
+           CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                               MEM_FN:          ...FILE NAME LIST
+                               MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                               MEM_FV:          ...FILE KEY VARLISTS
+                               MEM_AIM:          ...FILE KEY SIZES
+                               MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                               MEM_REC:         ...FILE RECORD (PACKED)
+                               MEM_OLD:         ...FILE SAVED WHEN READ
+                               MEM_QTY:         ...NUMBER OF FILES
+                               2                 ...FILE NUMBER FOR THIS READ
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            RETURN
+        ENDIF
+
+        IF ((MEM_ESSN = ISISWRK_EMP_SSN) AND (MEM_REL = "01"))
+            MOVE MEM_ID1 TO HLD_ID1
+        ELSE
+            CALL GET_ENROLLEE 
+        ENDIF
+
+    RETURN
+
+. ------------------------------
+. Loops through mem for 01 record
+. ------------------------------
+GET_ENROLLEE
+
+        LOOP
+           CALL      FILE_NEXT USING MEM_FD:    ...FILE DECLARATION LIST
+                               MEM_FN:          ...FILE NAME LIST
+                               MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                               MEM_FV:          ...FILE KEY VARLISTS
+                               MEM_AIM:          ...FILE KEY SIZES
+                               MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                               MEM_REC:         ...FILE RECORD (PACKED)
+                               MEM_OLD:         ...FILE SAVED WHEN READ
+                               MEM_QTY:         ...NUMBER OF FILES
+                               2                 ...FILE NUMBER FOR THIS READ
+            MOVE RESULT TO MEM_RESULT
+
+            WHILE (MEM_RESULT = 1 AND MEM_ESSN = ISISWRK_EMP_SSN)
+    
+            IF ((MEM_ESSN = ISISWRK_EMP_SSN) AND (MEM_REL = "01"))
+                MOVE MEM_ID1 TO HLD_ID1
+            ENDIF
+
+        REPEAT
+
+    RETURN
+
+. ------------------------------
+. Reads MEME file for coverage on wrk file
+. ------------------------------
+READ_MEME
+
+   PACK MEME_FK11 WITH HLD_ID1,BLANKS
+   CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+        LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> HLD_ID1) OR (RESULT <> 1))
+                BREAK       
+            ENDIF
+
+            IF (SQUEEZE MEME_TRM = "")
+                MOVE INFINITY TO MEME_TRM
+            ENDIF
+
+...Ignore nulls 
+            IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+               CONTINUE  
+            ENDIF
+
+...Only want records with same term date
+            IF (MEME_TRM <> ISISWRK_TRMDATE)
+                CONTINUE
+            ENDIF
+
+            REPLACE " *" IN MEME_NET
+            IF (SQUEEZE MEME_NET <> SQUEEZE ISISWRK_NETWORK)
+                CONTINUE
+            ENDIF
+
+            REPLACE " *" IN MEME_PRD        
+            IF (SQUEEZE MEME_PRD <> SQUEEZE ISISWRK_PRODUCT)
+                CONTINUE
+            ENDIF
+    
+            REPLACE " *" IN MEME_PLAN 
+            IF (SQUEEZE MEME_PLAN <> SQUEEZE ISISWRK_PLANCODE)
+                CONTINUE
+            ENDIF
+
+            MOVE MEME_ERSA TO ISISWRK_FLXRSN
+            CALL UPDATE_OGBREC USING ISISWRK_FFILE,ISISWRK_LIST
+            ADD 1 TO X_CNT2
+
+        REPEAT
+      
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       CLOCK     TIMESTAMP INTO CURRDATE
+
+. ...Display Counters
+	 MOVE      "Input records read" TO X_CNTDESC1
+	 MOVE      "Records output    " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+
+         PACK    ISISWRK_NAME1 WITH OGB_PATH,ISISWRK_NAME
+         PACK    ISISWRK_FNAME1 WITH OGB_PATH,ISISWRK_FNAME
+
+         MOVE CURRDATE TO TODAY
+         UNPACK TODAY INTO TODAY_LIST
+
+    RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

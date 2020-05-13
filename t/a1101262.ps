@@ -1,0 +1,1480 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : A1101262.PS
++    Description    : DHH/OGB RECONCILIATION REPORT SORT BY SSN      
++    APLAP  A1101261 ADH - Initial Version 
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC   COMMON.CB          ...Common work area
+              INC   X_COMMON.CB        ...OGB Common Work Area
+              INC   VALID.RL           ...Valid codes
+              INC   X_OGBFILE.CB       ...OGB Custom File Handler
+              INC   PRT.RL             ...Printer definition file
+              INC   XALID.RL           ...Xalid codes
+              INC   CMDPARAM.CB        ...Command Line Routines
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC   DHH_RECP.RL        ...Records layout for Match of DHH/OGB
+
+. ---------------------------
+...Input file
+. ---------------------------
+
+OGB_DHH_FILE    FILE    VAR=511,TEXT
+OGB_DHH_NAME    INIT    "/w/dhh_recp_chip5.txt"
+
+OGB_DHH_SRTKEY  INIT    "1-9 510-511 -t"
+. ---------------------------
+...Output file
+. ---------------------------
+
+ERR_FILE     FILE    VAR=511,TEXT
+ERR_NAME     INIT    "/w/elg6000.txt"
+
+ERR_LIST     LIST
+ERR_ESSN      DIM     9
+ERR_MSSN      DIM     9
+.ERR_ID1       DIM     8
+ERR_REL       DIM     10
+ERR_LNAME     DIM     35
+ERR_FNAME     DIM     35
+ERR_MI        DIM     2
+ERR_EFF       DIM     8 
+ERR_TRM       DIM     8
+ERR_TRES      DIM     1
+ERR_PLAN      DIM     4
+ERR_MAX       DIM     6
+ERR_PROD      DIM     5
+ERR_ADDR1     DIM     35
+ERR_ADDR2     DIM     35
+ERR_CITY      DIM     30
+ERR_STATE     DIM     2
+ERR_ZIP       DIM     10
+ERR_PHONE     DIM     24
+ERR_SEX       DIM     1
+ERR_DOB       DIM     8
+ERR_ERROR     DIM     20
+              LISTEND
+
+
+ERR1_LIST     LIST
+ERR1_ESSN      DIM     9
+ERR1_MSSN      DIM     9
+.ERR1_ID1       DIM     8
+ERR1_REL       DIM     10
+ERR1_LNAME     DIM     35
+ERR1_FNAME     DIM     35
+ERR1_MI        DIM     2 
+ERR1_EFF       DIM     8
+ERR1_TRM       DIM     8
+ERR1_TRES      DIM     1
+ERR1_PLAN      DIM     4
+ERR1_MAX       DIM     6
+ERR1_PROD      DIM     5
+ERR1_ADDR1     DIM     35
+ERR1_ADDR2     DIM     35
+ERR1_CITY      DIM     30
+ERR1_STATE     DIM     2
+ERR1_ZIP       DIM     10
+ERR1_PHONE     DIM     24
+ERR1_SEX       DIM     1
+ERR1_DOB       DIM     10
+ERR1_ERROR     DIM     20
+              LISTEND
+
+
+ERR2_LIST         LIST
+ERR2_ESSN          DIM     9  
+ERR2_MSSN          DIM     9
+ERR2_REL           DIM     10
+ERR2_LNAME         DIM     35
+ERR2_FNAME         DIM     35
+ERR2_MI            DIM     2
+ERR2_ERROR         DIM     20
+.ERR2_OGB_ID        DIM     8
+.ERR2_DHH_ID        DIM     8
+ERR2_OGB_EFF       DIM     8
+ERR2_DHH_EFF       DIM     8
+ERR2_OGB_TRM       DIM     8
+ERR2_DHH_TRM       DIM     8
+ERR2_OGB_TRES      DIM     1
+ERR2_DHH_TRES      DIM     1
+ERR2_OGB_PLAN      DIM     4
+ERR2_DHH_PLAN      DIM     4
+ERR2_OGB_PROD      DIM     5
+ERR2_DHH_PROD      DIM     5
+ERR2_OGB_ADDR1     DIM     35
+ERR2_DHH_ADDR1     DIM     35
+ERR2_OGB_ADDR2     DIM     35
+ERR2_DHH_ADDR2     DIM     35
+ERR2_OGB_CITY      DIM     30
+ERR2_DHH_CITY      DIM     30
+ERR2_OGB_STATE     DIM     2
+ERR2_DHH_STATE     DIM     2
+ERR2_OGB_ZIP       DIM     10
+ERR2_DHH_ZIP       DIM     10
+ERR2_OGB_PHONE     DIM     24
+ERR2_DHH_PHONE     DIM     24
+ERR2_OGB_SEX       DIM     1
+ERR2_DHH_SEX       DIM     1
+ERR2_OGB_DOB       DIM     10
+ERR2_DHH_DOB       DIM     10
+               LISTEND
+
+HDR_REC     LIST
+HDR_1        DIM      73 
+HDR_2        INIT     "OGB/DHH CHIP5 RECONCILIATION"
+            LISTEND
+
+HDR1_REC     LIST
+HDR1_1        DIM     75
+HDR1_2        INIT    "RECON DATE - " 
+             LISTEND
+
+HDR2_REC         LIST
+HDR2_2       DIM      12
+HDR2_3       INIT     "SPONSOR SSN"
+HDR2_4       DIM      16
+HDR2_5       INIT     "MEMBER SSN"
+HDR2_6       DIM      18
+HDR2_7       INIT     "MEMBER NAME" 
+HDR2_8       DIM      26
+HDR2_9       INIT     "RELATIONSHIP"
+HDR2_10      DIM      24 
+HDR2_11      INIT     "ERROR" 
+                 LISTEND
+
+HDR3_REC     LIST
+H3FL_3        DIM 12
+H3FL_4        INIT "___________"
+H3FL_5        DIM 16
+H3FL_6        INIT "__________"
+H3FL_7        DIM 18
+H3FL_8        INIT "___________"
+H3FL_9        DIM 26
+H3FL_10       INIT "____________"
+H3FL_11       DIM 24
+H3FL_12       INIT "_____"
+H3FL_13       DIM 08
+              LISTEND
+
+HDR4_REC     LIST
+HDR4_1        DIM      55
+HDR4_2        INIT     "OGB"
+HDR4_3        DIM      32
+HDR4_4        INIT     "-"
+HDR4_5        DIM      33
+HDR4_6        INIT     "DHH"
+              LISTEND
+
+HDR5_REC     LIST
+H5FL_1        DIM 55
+H5FL_2        INIT "___"
+H5FL_3        DIM 66
+H5FL_4        INIT "___"
+              LISTEND
+
+
+. ---------------------------
+. Detail Lines Definition
+. ---------------------------
+
+DETAIL_REC     LIST
+DET11_FILL2     DIM 12
+DET11_ESSN      DIM 11
+DET11_FILL3     DIM 16
+DET11_MSSN      DIM 11
+DET11_FILL5     DIM 12
+DET11_LNAME     DIM 15
+DET11_FILL6     DIM 03
+DET11_FNAME     DIM 15
+DET11_FILL7     DIM 02
+DET11_MI        DIM 02
+DET11_FILL8     DIM 07 
+DET11_REL       DIM 10
+DET11_FILL9     DIM 22
+DET11_ERROR     DIM 20
+                LISTEND
+
+DET1_REC       LIST
+DET1_FILL1      DIM 05
+.DET1_SPID1      DIM 08
+DET1_FILL10     DIM 05
+DET1_SDATE      DIM 11
+DET1_FIL11      DIM 05
+DET1_EDATE      DIM 11
+DET1_FIL12      DIM 05
+DET1_TRES       DIM 01
+DET1_FIL13      DIM 05
+DET1_PLAN       DIM 04
+DET1_FIL14      DIM 05
+DET1_MAX        DIM 06
+DET1_FIL15      DIM 05
+DET1_PROD       DIM 05
+DET1_FIL16      DIM 05
+DET1_ADDR1      DIM 35
+DET1_FIL17      DIM 05
+DET1_ADDR2      DIM 35
+DET1_FIL18      DIM 05
+DET1_CITY       DIM 30
+DET1_FIL19      DIM 05
+DET1_STATE      DIM 02
+DET1_FIL20      DIM 05
+DET1_ZIP        DIM 13
+DET1_FIL21      DIM 05
+DET1_PHONE      DIM 24
+DET1_FIL22      DIM 05
+DET1_SEX        DIM 01
+DET1_FIL23      DIM 05
+DET1_DOB        DIM 10
+                LISTEND
+
+
+DET12_REC     LIST
+DET12_FILL2     DIM 12
+DET12_ESSN      DIM 11
+DET12_FILL3     DIM 16
+DET12_MSSN      DIM 11
+DET12_FILL5     DIM 12
+DET12_LNAME     DIM 15
+DET12_FILL6     DIM 03
+DET12_FNAME     DIM 15
+DET12_FILL7     DIM 02
+DET12_MI        DIM 02
+DET12_FILL8     DIM 07
+DET12_REL       DIM 10
+DET12_FILL9     DIM 22
+DET12_ERROR     DIM 20
+                LISTEND
+
+DET2_REC       LIST
+DET2_FILL1      DIM 12
+.DET2_SPID1      DIM 08
+DET2_FILL10     DIM 05
+DET2_SDATE      DIM 11
+DET2_FIL11      DIM 05
+DET2_EDATE      DIM 11
+DET2_FIL12      DIM 05 
+DET2_TRES       DIM 01
+DET2_FIL13      DIM 05
+DET2_PLAN       DIM 04
+DET2_FIL14      DIM 05
+DET2_MAX        DIM 06
+DET2_FIL15      DIM 05   
+DET2_PROD       DIM 05
+DET2_FIL16      DIM 05   
+DET2_ADDR1      DIM 35
+DET2_FIL17      DIM 05
+DET2_ADDR2      DIM 35
+DET2_FIL18      DIM 05
+DET2_CITY       DIM 30
+DET2_FIL19      DIM 05
+DET2_STATE      DIM 02
+DET2_FIL20      DIM 05
+DET2_ZIP        DIM 13
+DET2_FIL21      DIM 05
+DET2_PHONE      DIM 24
+DET2_FIL22      DIM 05
+DET2_SEX        DIM 01
+DET2_FIL23      DIM 05
+DET2_DOB        DIM 10
+                LISTEND
+
+
+DET13_REC      LIST
+DET13_FILL33    DIM 12
+DET13_ESSN      DIM 11
+DET13_FILL31    DIM 16
+DET13_MSSN      DIM 11
+DET13_FILL43    DIM 12
+DET13_LNAME     DIM 15
+DET13_FILL36    DIM 03
+DET13_FNAME     DIM 15
+DET13_FILL37    DIM 02
+DET13_MI        DIM 02
+DET13_FILL39    DIM 07
+DET13_REL       DIM 10
+DET13_FILL41    DIM 23
+DET13_ERROR     DIM 20
+                LISTEND
+
+DET3_REC       LIST
+DET3_FILL29     DIM 08
+.DET3_O_ID       DIM 08
+.DET3_FILL30     DIM 08
+.DET3_D_ID       DIM 08
+.DET3_FIL1       DIM 05
+DET3_O_SDATE    DIM 11
+DET3_FIL2       DIM 05
+DET3_D_SDATE    DIM 11
+DET3_FIL3       DIM 05
+DET3_O_EDATE    DIM 11
+DET3_FIL4       DIM 05
+DET3_D_EDATE    DIM 11
+DET3_FIL5       DIM 05
+DET3_O_TRES     DIM 01
+DET3_FIL6       DIM 05
+DET3_D_TRES     DIM 01
+DET3_FIL7       DIM 05
+DET3_O_PLAN     DIM 04
+DET3_FIL8       DIM 05
+DET3_D_PLAN     DIM 04
+DET3_FIL9       DIM 05
+DET3_O_MAX      DIM 06
+DET3_FIL10      DIM 05
+DET3_D_MAX      DIM 06
+DET3_FIL11      DIM 05
+DET3_O_PROD     DIM 05
+DET3_FIL12      DIM 05
+DET3_D_PROD     DIM 05
+DET3_FIL13      DIM 05
+DET3_O_ADDR1    DIM 35
+DET3_FIL14      DIM 05
+DET3_D_ADDR1    DIM 35
+DET3_FIL15      DIM 05
+DET3_O_ADDR2    DIM 35
+DET3_FIL16      DIM 05
+DET3_D_ADDR2    DIM 35
+DET3_FIL17      DIM 05
+DET3_O_CITY     DIM 30
+DET3_FIL18      DIM 05
+DET3_D_CITY     DIM 30
+DET3_FIL19      DIM 05
+DET3_O_STATE    DIM 02
+DET3_FIL20      DIM 05
+DET3_D_STATE    DIM 02
+DET3_FIL21      DIM 05
+DET3_O_ZIP      DIM 13
+DET3_FIL22      DIM 05
+DET3_D_ZIP      DIM 13
+DET3_FIL23      DIM 05
+DET3_O_PHONE    DIM 24
+DET3_FIL24      DIM 05
+DET3_D_PHONE    DIM 24
+DET3_FIL25      DIM 05
+DET3_O_SEX      DIM 01
+DET3_FIL26      DIM 05
+DET3_D_SEX      DIM 01
+DET3_FIL27      DIM 05
+DET3_O_DOB      DIM 10
+DET3_FIL28      DIM 05
+DET3_D_DOB      DIM 10
+DET3_FIL31      DIM 05
+DET3_O_LNAME    DIM 15
+DET3_FIL32      DIM 05
+DET3_D_LNAME    DIM 15
+DET3_FIL33      DIM 05
+DET3_O_FNAME    DIM 15
+DET3_FIL34      DIM 05
+DET3_D_FNAME    DIM 15
+DET3_FIL35      DIM 05
+DET3_O_MI       DIM 02
+DET3_FIL36      DIM 05
+DET3_D_MI       DIM 02
+                LISTEND
+
+
+DET4_REC       LIST
+DET4_FIL1       DIM 5
+DET4_DASH_1     INIT "-"
+DET4_DASH_2     INIT "-"
+DET4_DASH_3     INIT "-"
+DET4_DASH_4     INIT "-"
+DET4_DASH_5     INIT "-"
+DET4_DASH_6     INIT "-"
+DET4_DASH_7     INIT "-"
+DET4_DASH_8     INIT "-"
+DET4_DASH_9     INIT "-"
+DET4_DASH_10    INIT "-" 
+DET4_DASH_11    INIT "_"
+DET4_DASH_12    INIT "_"
+DET4_DASH_13    INIT "_"
+DET4_DASH_14    INIT "_"
+                LISTEND
+
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+FIRST_PAGE       DIM       1
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       8
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+REC_DATE         DIM       10
+PDF_DATE         DIM       8
+AREA             DIM       3
+PHN3             DIM       3
+PHN4             DIM       4
+DASH             INIT      "-"
+SSN3             DIM       3
+SSN2             DIM       2
+SSN4             DIM       4
+YEAR             DIM       4
+MM               DIM       2
+DD               DIM       2
+SLASH            INIT      "/"
+JUNK1            DIM       2
+JUNK2            DIM       2
+JUNK4            DIM       4
+S1               DIM       1
+S2               DIM       1
+                         
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.     Program Specific Varibles
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+FIRST_READ       INIT      "Y"
+PRO_RET_CODE     FORM      1
+DUP_RET_CODE     FORM      1
+WRITE_COUNT      FORM      8
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+
+.-------------------------------------
+... Scheduler Fields for Autosys
+.-------------------------------------
+
+PARAM_LIST        LIST     WITH NAMES
+PARAM_FILE        DIM      12
+PARAM_FROM        DIM      8
+PARAM_THRU        DIM      8
+                  LISTEND
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "57"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+WS_CNT        FORM      4
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+SRH_LEFT1     INIT      "Program name: "
+SRH_LEFT2     INIT      "Date Printed: "
+SRH_TITLE1    INIT      "   STATE OF LOUISIANA   "
+SRH_TITLE2    INIT      "OFFICE OF GROUP BENEFITS"
+SRH_RIGHT1    INIT      "Page Number: "
+SRH_RIGHT2    INIT      "Report Time: "
+SRH_DASH      INIT      "-"
+SRH_RNO       DIM       3
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "OGB/DHH RECONCILATION" TO  C_OPER  ...(20-bytes Max)
+         MOVE      "A1101262"             TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+            CALL X_BLANK_SCREEN
+
+. ---------------------------------
+... Adding CMD_START for autosys
+. ---------------------------------
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+
+        MOVE      "00000004" TO C_PRTUSR
+        MOVE      "PDF" TO PRT_DESC
+        CALL      PRINT_PICK      .this routine gives the user a printer list
+        RETURN    IF (RESULT = 2)
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. ~~~~~~~ Main Process ~~~~~~~
+. ----------------------------
+
+MAIN_PROCESS
+
+  DEBUG
+
+. ...Initialize
+        CALL      INITIALIZE
+        CALL      OPEN_FILES 
+        CALL      SORT_FILE  
+
+        CALL      REPORT_PREP
+        CALL      PRINT_HEADING
+
+        CALL      CREATE_ERR_RPT  
+
+        CALL      PRINT_DONE
+
+. ...Close Files
+        CALL      CLOSE_FILES
+        CALL      FTP_DHH_FIS  
+ 
+. ...Normal End-Of-Job
+        CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         IF (NOT C_CMDPAR)
+             MOVE SCH_RTSUCC TO SCH@RTCODE
+         ENDIF
+
+     RETURN                                   
+
+++++++++++++++++++<< END OF MAIN PROCESS >>++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+    CLOCK     TIMESTAMP   INTO  TIMESTAMP
+    CLOCK     TIMESTAMP   INTO  CURRDATE
+    CLOCK     TIMESTAMP     TO  TODAY
+
+
+. ...Display Counters
+
+     MOVE      "Recs Read  : " TO X_CNTDESC1
+     MOVE      "Recs Found : " TO X_CNTDESC2
+     MOVE      "Not Used   : " TO X_CNTDESC3
+     MOVE      "Not Used   : " TO X_CNTDESC4
+     MOVE      "Not Used   : " TO X_CNTDESC5  
+     MOVE      "Not Used   : " TO X_CNTDESC6
+	 
+     IF (NOT C_CMDPAR)
+        CALL      X_DISPLAY_COUNTS
+     ENDIF
+
+     RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+     CALL OPEN_OGBFILE USING OGB_DHH_FILE,OGB_DHH_NAME
+     CALL PREP_OGBFILE USING ERR_FILE,ERR_NAME
+
+  RETURN
+
+. ----------------------------
+...Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+    UNPACK TIMESTAMP INTO W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+    PACK R_DATE WITH W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+    PACK R_TIME WITH W_HH,":",W_MN,":",W_SS,BLANKS
+    MOVE 0 TO WRITE_COUNT
+    MOVE YES TO FIRST_PAGE
+    CLEAR LINE_NO
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+
+... This set of code is for printing landscape
+    PACK NORM_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s0b4099T"
+    PACK BOLD_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s3b4099T"
+    PACK NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+.   PACK BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+.   PACK NORM_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+.   PACK BOLD_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+
+    PACK C_PRTFILE  WITH "/w/elg6000_txt.pdf"
+    MOVE "L" TO C_ORIENT
+    SET       C_PCL
+    CALL PRINT_PREP
+
+  RETURN
+. ----------------------
+. Print heading
+. ----------------------
+
+PRINT_HEADING
+
+    IF (SQUEEZE PRT_DESC = "PDF")
+       IF (FIRST_PAGE = YES)
+           MOVE "1" TO PAGE_NO
+           UNPACK PAGE_NO INTO R_PAGE_NO
+           PRINT *FONT="COURIER(07,BOLD)"
+           MOVE  NO  TO FIRST_PAGE
+       ELSE
+           ADD 1 TO PAGE_NO
+           MOVE PAGE_NO TO R_PAGE_NO
+           PRINT *FONT="COURIER(07,BOLD)",*F
+       ENDIF
+    ELSE
+           PRINT        BOLD_16,*C
+    ENDIF
+
+           PRINT    *3,SRH_LEFT1,(SQUEEZE C_PROG):
+                    *76,SRH_TITLE1:
+                    *148,SRH_RIGHT1,(SQUEEZE R_PAGE_NO):
+                    *N:
+                    *3,SRH_LEFT2,R_DATE:
+                    *76,SRH_TITLE2:
+                    *148,SRH_RIGHT2,R_TIME
+           MOVE      2             TO LINE_NO
+
+           ADD 7 TO LINE_NO
+
+  RETURN
+
+. -------------------------
+... Print Subheadings
+. -------------------------
+
+PRINT_SUBHDGS
+
+
+    UNPACK DHHP_REC_DT INTO YEAR,MM,DD
+    PACK REC_DATE WITH MM,SLASH,DD,SLASH,YEAR
+
+    PRINT  *1,HDR_REC,*N=2:
+           *1,HDR1_REC,REC_DATE,*N=2
+
+            ADD 4 TO LINE_NO
+
+    RETURN
+
+. --------------------
+....SORT Input file
+. --------------------
+
+SORT_FILE 
+
+    DISPLAY    *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+               *P30:21,"SORTING FILE...",*BOLDOFF
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH OGB_DHH_NAME," ",OGB_DHH_NAME, " ",OGB_DHH_SRTKEY
+
+    SORT SCRATCH
+       IF OVER
+         IF (NOT C_CMDPAR)
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="SORT FAILED"
+             CHAIN     "MENU"
+         ELSE
+            IF (C_CMDPAR)
+                CALL CMD_ERROR USING "Sort Input failed"
+                STOP
+            ENDIF
+         ENDIF
+       ENDIF
+
+           DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+
+    RETURN
+
+. ----------------------------
+. Extract Data
+. ----------------------------
+
+CREATE_ERR_RPT    
+
+ LOOP
+
+    CLEAR DHHP_LIST
+    
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING OGB_DHH_FILE,OGB_DHH_NAME,DHHP_LIST
+    IF (RESULT <> 1) 
+        BREAK
+    ENDIF
+
+    ADD 1 TO X_CNT1                        ...Display Counters
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    IF (FIRST_READ = "Y")
+        CALL PRINT_SUBHDGS
+        MOVE "N" TO FIRST_READ
+    ENDIF 
+
+....Compare OGB & DHH Records
+
+    SWITCH DHHP_RECT
+       CASE "1"
+         CONTINUE
+       CASE "2"
+          IF ((SQUEEZE DHHP_OGB_EFF <> SQUEEZE DHHP_DHH_EFF) OR:
+              (SQUEEZE DHHP_OGB_TRM <> SQUEEZE DHHP_DHH_TRM))
+          ELSE
+              CONTINUE
+          ENDIF
+       CASE "4"  
+           CONTINUE
+    ENDSWITCH 
+    IF (SQUEEZE DHHP_RECT = "2")  
+        CALL MOVE_BOTH_FLDS 
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING ERR_FILE,ERR_NAME,ERR2_LIST
+        ADD 1 TO X_CNT2
+        CALL PRINT_BOTH_FLDS
+        CLEAR ERR2_LIST
+    ENDIF 
+      
+    IF (SQUEEZE DHHP_RECT = "3")
+        CALL MOVE_OGB_FIELDS  
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING ERR_FILE,ERR_NAME,ERR_LIST
+        ADD 1 TO X_CNT2
+        CALL PRINT_REPORT_3
+        CLEAR ERR_LIST
+    ENDIF  
+
+
+  REPEAT
+
+  RETURN 
+
+MOVE_OGB_FIELDS
+
+     MOVE DHHP_ESSN          TO  ERR_ESSN
+     MOVE DHHP_MSSN          TO  ERR_MSSN
+.     MOVE DHHP_OGB_ID        TO  ERR_ID1 
+     MOVE DHHP_OGB_REL       TO  ERR_REL
+     MOVE DHHP_OGB_LNAME     TO  ERR_LNAME
+     MOVE DHHP_OGB_FNAME     TO  ERR_FNAME
+     MOVE DHHP_OGB_MI        TO  ERR_MI
+     MOVE DHHP_ERROR         TO  ERR_ERROR
+     MOVE DHHP_OGB_ADDR1     TO  ERR_ADDR1
+     MOVE DHHP_OGB_ADDR2     TO  ERR_ADDR2
+     MOVE DHHP_OGB_CITY      TO  ERR_CITY
+     MOVE DHHP_OGB_STATE     TO  ERR_STATE
+     MOVE DHHP_OGB_ZIP       TO  ERR_ZIP
+     MOVE DHHP_OGB_E_PHONE   TO  ERR_PHONE
+     MOVE DHHP_OGB_SEX       TO  ERR_SEX  
+     MOVE DHHP_OGB_DOB       TO  ERR_DOB
+     MOVE DHHP_OGB_EFF       TO  ERR_EFF
+     MOVE DHHP_OGB_TRM       TO  ERR_TRM
+     MOVE DHHP_OGB_T_RES     TO  ERR_TRES 
+     MOVE DHHP_OGB_PLAN      TO  ERR_PLAN
+     MOVE DHHP_OGB_PROD      TO  ERR_PROD
+
+  RETURN
+
+MOVE_DHH_FIELDS
+
+     MOVE DHHP_ESSN          TO  ERR1_ESSN
+     MOVE DHHP_MSSN          TO  ERR1_MSSN
+.     MOVE DHHP_DHH_ID        TO  ERR1_ID1
+     MOVE DHHP_DHH_REL       TO  ERR1_REL
+     MOVE DHHP_DHH_LNAME     TO  ERR1_LNAME
+     MOVE DHHP_DHH_FNAME     TO  ERR1_FNAME
+     MOVE DHHP_DHH_MI        TO  ERR1_MI
+     MOVE DHHP_ERROR         TO  ERR1_ERROR
+     MOVE DHHP_DHH_EFF       TO  ERR1_EFF
+     MOVE DHHP_DHH_TRM       TO  ERR1_TRM
+     MOVE DHHP_DHH_PLAN      TO  ERR1_PLAN
+     MOVE DHHP_DHH_PROD      TO  ERR1_PROD
+     MOVE DHHP_DHH_ADDR1     TO  ERR1_ADDR1
+     MOVE DHHP_DHH_ADDR2     TO  ERR1_ADDR2
+     MOVE DHHP_DHH_CITY      TO  ERR1_CITY
+     MOVE DHHP_DHH_STATE     TO  ERR1_STATE
+     MOVE DHHP_DHH_ZIP       TO  ERR1_ZIP
+     MOVE DHHP_DHH_E_PHONE   TO  ERR1_PHONE
+     MOVE DHHP_DHH_SEX       TO  ERR1_SEX
+     MOVE DHHP_DHH_DOB       TO  ERR1_DOB
+     MOVE DHHP_DHH_T_RES     TO  ERR1_TRES
+
+  RETURN
+
+MOVE_BOTH_FLDS
+
+     MOVE DHHP_ESSN          TO  ERR2_ESSN
+     MOVE DHHP_MSSN          TO  ERR2_MSSN
+     MOVE DHHP_OGB_REL       TO  ERR2_REL
+     MOVE DHHP_OGB_LNAME     TO  ERR2_LNAME
+     MOVE DHHP_OGB_FNAME     TO  ERR2_FNAME
+     MOVE DHHP_OGB_MI        TO  ERR2_MI
+     MOVE DHHP_ERROR         TO  ERR2_ERROR
+.     MOVE DHHP_OGB_ID        TO  ERR2_OGB_ID
+.     MOVE DHHP_DHH_ID        TO  ERR2_DHH_ID
+     MOVE DHHP_OGB_EFF       TO  ERR2_OGB_EFF
+     MOVE DHHP_DHH_EFF       TO  ERR2_DHH_EFF
+     MOVE DHHP_OGB_TRM       TO  ERR2_OGB_TRM
+     MOVE DHHP_DHH_TRM       TO  ERR2_DHH_TRM
+     MOVE DHHP_OGB_T_RES     TO  ERR2_OGB_TRES
+     MOVE DHHP_DHH_T_RES     TO  ERR2_DHH_TRES
+     MOVE DHHP_OGB_PLAN      TO  ERR2_OGB_PLAN 
+     MOVE DHHP_DHH_PLAN      TO  ERR2_DHH_PLAN
+     MOVE DHHP_OGB_PROD      TO  ERR2_OGB_PROD
+     MOVE DHHP_DHH_PROD      TO  ERR2_DHH_PROD
+     MOVE DHHP_OGB_ADDR1     TO  ERR2_OGB_ADDR1
+     MOVE DHHP_DHH_ADDR1     TO  ERR2_DHH_ADDR1
+     MOVE DHHP_OGB_ADDR2     TO  ERR2_OGB_ADDR2
+     MOVE DHHP_DHH_ADDR2     TO  ERR2_DHH_ADDR2
+     MOVE DHHP_OGB_CITY      TO  ERR2_OGB_CITY
+     MOVE DHHP_DHH_CITY      TO  ERR2_DHH_CITY
+     MOVE DHHP_OGB_STATE     TO  ERR2_OGB_STATE 
+     MOVE DHHP_DHH_STATE     TO  ERR2_DHH_STATE
+     MOVE DHHP_OGB_ZIP       TO  ERR2_OGB_ZIP
+     MOVE DHHP_DHH_ZIP       TO  ERR2_DHH_ZIP
+     MOVE DHHP_OGB_E_PHONE   TO  ERR2_OGB_PHONE
+     MOVE DHHP_DHH_E_PHONE   TO  ERR2_DHH_PHONE
+     MOVE DHHP_OGB_SEX       TO  ERR2_OGB_SEX
+     MOVE DHHP_DHH_SEX       TO  ERR2_DHH_SEX
+     MOVE DHHP_OGB_DOB       TO  ERR2_OGB_DOB
+     MOVE DHHP_DHH_DOB       TO  ERR2_DHH_DOB
+
+  RETURN
+
+. --------------------------- 
+... Print only OGB     
+. ----------------------------
+
+PRINT_REPORT_3
+
+
+    IF (LINE_NO > 18)
+        CALL PRINT_HEADING
+        CALL PRINT_SUBHDGS
+    ENDIF
+
+
+        MOVE ERR_LNAME    TO DET11_LNAME
+        MOVE ERR_FNAME    TO DET11_FNAME
+        MOVE ERR_MI       TO DET11_MI
+        MOVE ERR_ERROR    TO DET11_ERROR
+
+    IF (SQUEEZE ERR_ESSN = "")
+        MOVE BLANKS TO DET11_ESSN
+    ELSE
+        UNPACK ERR_ESSN INTO SSN3,SSN2,SSN4
+        PACK DET11_ESSN WITH SSN3,DASH,SSN2,DASH,SSN4
+    ENDIF
+
+    IF (SQUEEZE ERR_MSSN = "")
+        MOVE BLANKS TO DET11_MSSN
+    ELSE
+        UNPACK ERR_MSSN INTO SSN3,SSN2,SSN4
+        PACK DET11_MSSN WITH SSN3,DASH,SSN2,DASH,SSN4
+    ENDIF
+
+
+    IF (SQUEEZE ERR_REL = "18")
+        MOVE "18-SPONSOR" TO DET11_REL
+    ELSE
+        MOVE "19-CHILD" TO DET11_REL
+    ENDIF
+
+        PRINT *1,HDR2_REC:
+              *1,HDR3_REC,*N=1
+
+        PRINT *1,DETAIL_REC,*N=1
+
+.        MOVE ERR_ID1        TO DET1_SPID1
+        MOVE ERR_PLAN       TO DET1_PLAN
+        MOVE ERR_MAX        TO DET1_MAX 
+        MOVE ERR_PROD       TO DET1_PROD
+        MOVE ERR_ADDR1      TO DET1_ADDR1
+        MOVE ERR_ADDR2      TO DET1_ADDR2
+        MOVE ERR_CITY       TO DET1_CITY
+        MOVE ERR_STATE      TO DET1_STATE
+        MOVE ERR_ZIP        TO DET1_ZIP
+        MOVE ERR_SEX        TO DET1_SEX
+        MOVE ERR_TRES       TO DET1_TRES
+
+    IF (SQUEEZE ERR_EFF = "")
+        MOVE BLANKS TO DET1_SDATE
+    ELSE
+        UNPACK ERR_EFF INTO YEAR,MM,DD
+        PACK DET1_SDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR_TRM = "")
+        MOVE BLANKS TO DET1_EDATE
+    ELSE
+        UNPACK ERR_TRM INTO YEAR,MM,DD
+        PACK DET1_EDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR_PHONE = "")
+        MOVE BLANKS TO DET1_PHONE
+    ELSE
+        UNPACK ERR_PHONE INTO AREA,PHN3,PHN4
+        PACK DET1_PHONE WITH AREA,DASH,PHN3,DASH,PHN4
+    ENDIF
+
+    IF (SQUEEZE ERR_DOB = "")
+        MOVE BLANKS TO DET1_DOB
+    ELSE
+        UNPACK ERR_DOB INTO YEAR,MM,DD
+        PACK DET1_DOB WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+        PRINT *1,HDR4_REC:
+              *1,HDR5_REC,*N=2:
+
+.              *1,*045,"OGB SPONSOR ID",*65,DET1_SPID1,*91,DET4_DASH_1,*N:
+              *045,"START DATE ",*65,DET1_SDATE,*91,DET4_DASH_1,*N:
+              *045,"END DATE ",*65,DET1_EDATE,*91,DET4_DASH_2,*N:
+              *045,"TERM REASON ",*65,DET1_TRES,*91,DET4_DASH_3,*N:
+              *045,"PLAN ",*65,DET1_PLAN,*91,DET4_DASH_4,*N:
+              *045,"OOP MAX ",*65,DET1_MAX,*91,DET4_DASH_5,*N:
+              *045,"PRODUCT ",*65,DET1_PROD,*91,DET4_DASH_6,*N:
+              *045,"ADDRESS 1 ",*65,DET1_ADDR1,*91,DET4_DASH_7,*N:
+              *045,"ADDRESS 2 ",*65,DET1_ADDR2,*91,DET4_DASH_8,*N:
+              *045,"CITY ",*65,DET1_CITY,*91,DET4_DASH_9,*N:
+              *045,"STATE ",*65,DET1_STATE,*91,DET4_DASH_10,*N:
+              *045,"ZIP ",*65,DET1_ZIP,*91,DET4_DASH_11,*N:
+              *045,"WORK PHONE ",*65,DET1_PHONE,*91,DET4_DASH_12,*N:
+              *045,"SEX ",*65,DET1_SEX,*91,DET4_DASH_13,*N:
+              *045,"DOB ",*65,DET1_DOB,*91,DET4_DASH_14,*N=2   
+
+         ADD 5 TO LINE_NO
+
+    RETURN 
+
+.-------------------
+...Prints only DHH
+.-------------------
+
+PRINT_REPORT_4
+
+    IF (LINE_NO > 18)
+        CALL PRINT_HEADING
+        CALL PRINT_SUBHDGS
+    ENDIF
+
+    IF (SQUEEZE ERR1_ESSN = "")
+        MOVE BLANKS TO DET12_ESSN
+    ELSE
+        UNPACK ERR1_ESSN INTO SSN3,SSN2,SSN4
+        PACK DET12_ESSN WITH SSN3,DASH,SSN2,DASH,SSN4
+    ENDIF
+
+    IF (SQUEEZE ERR1_MSSN = "")
+        MOVE BLANKS TO DET12_MSSN
+    ELSE
+        UNPACK ERR1_MSSN INTO SSN3,SSN2,SSN4
+        PACK DET12_MSSN WITH SSN3,DASH,SSN2,DASH,SSN4
+    ENDIF
+
+
+        MOVE ERR1_LNAME    TO DET12_LNAME
+        MOVE ERR1_FNAME    TO DET12_FNAME
+        MOVE ERR1_MI       TO DET12_MI
+        MOVE ERR1_ERROR    TO DET12_ERROR
+
+
+    IF (SQUEEZE ERR1_REL = "18")
+         MOVE "18-SPONSOR" TO DET12_REL
+    ELSE
+         MOVE "19-CHILD" TO DET12_REL
+    ENDIF
+
+
+        PRINT *1,HDR2_REC:
+              *1,HDR3_REC,*N=1
+
+        PRINT *1,DET12_REC,*N=1
+
+.        MOVE ERR1_ID1      TO DET2_SPID1
+        MOVE ERR1_PLAN     TO DET2_PLAN
+        MOVE ERR1_MAX      TO DET2_MAX
+        MOVE ERR1_PROD     TO DET2_PROD
+        MOVE ERR1_ADDR1    TO DET2_ADDR1
+        MOVE ERR1_ADDR2    TO DET2_ADDR2
+        MOVE ERR1_CITY     TO DET2_CITY
+        MOVE ERR1_STATE    TO DET2_STATE
+        MOVE ERR1_ZIP      TO DET2_ZIP
+        MOVE ERR1_SEX      TO DET2_SEX
+        MOVE ERR1_TRES     TO DET2_TRES
+
+    IF (SQUEEZE ERR1_EFF = "")
+        MOVE BLANKS TO DET2_SDATE
+    ELSE
+        UNPACK ERR1_EFF INTO YEAR,MM,DD
+        PACK DET2_SDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR1_TRM = "")
+        MOVE BLANKS TO DET2_EDATE
+    ELSE
+        UNPACK ERR1_TRM INTO YEAR,MM,DD
+        PACK DET2_EDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR1_PHONE = "")
+        MOVE BLANKS TO DET2_PHONE
+    ELSE
+        UNPACK ERR1_PHONE INTO AREA,PHN3,PHN4
+        PACK DET2_PHONE WITH AREA,DASH,PHN3,DASH,PHN4
+    ENDIF
+
+    IF (SQUEEZE ERR1_DOB = "")
+       MOVE BLANKS TO DET2_DOB
+    ELSE
+       UNPACK ERR1_DOB INTO YEAR,MM,DD
+       PACK DET2_DOB WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+       PRINT *1,HDR4_REC:
+             *1,HDR5_REC,*N=2:
+.             *1,*045,"OGB SPONSOR ID",*91,DET4_DASH_1,*110,DET2_SPID1,*N:
+             *045,"START DATE ",*91,DET4_DASH_1,*110,DET2_SDATE,*N:
+             *045,"END DATE ",*91,DET4_DASH_2,*110,DET2_EDATE,*N:
+             *045,"TERM REASON ",*91,DET4_DASH_3,*110,DET2_TRES,*N:
+             *045,"PLAN ",*91,DET4_DASH_4,*110,DET2_PLAN,*N:
+             *045,"OOP MAX ",*91,DET4_DASH_5,*110,DET2_MAX,*N:
+             *045,"PRODUCT ",*91,DET4_DASH_6,*110,DET2_PROD,*N:
+             *045,"ADDRESS 1 ",*91,DET4_DASH_7,*110,DET2_ADDR1,*N:
+             *045,"ADDRESS 2 ",*91,DET4_DASH_8,*110,DET2_ADDR2,*N:
+             *045,"CITY ",*91,DET4_DASH_9,*110,DET2_CITY,*N:
+             *045,"STATE ",*91,DET4_DASH_10,*110,DET2_STATE,*N:
+             *045,"ZIP ",*91,DET4_DASH_11,*110,DET2_ZIP,*N:
+             *045,"WORK PHONE ",*91,DET4_DASH_12,*110,DET2_PHONE,*N:
+             *045,"SEX ",*91,DET4_DASH_13,*110,DET2_SEX,*N:
+             *045,"DOB ",*91,DET4_DASH_14,*110,DET2_DOB,*N=2   
+
+       ADD 5 TO LINE_NO
+
+   RETURN
+
+. --------------------
+...Prints OGB & DHH   
+. --------------------
+
+PRINT_BOTH_FLDS
+
+
+    IF (LINE_NO > 18)
+        CALL PRINT_HEADING
+        CALL PRINT_SUBHDGS
+    ENDIF
+
+        MOVE ERR2_LNAME        TO DET13_LNAME
+        MOVE ERR2_FNAME        TO DET13_FNAME
+        MOVE ERR2_MI           TO DET13_MI
+        MOVE ERR2_ERROR        TO DET13_ERROR
+
+    IF (SQUEEZE ERR2_REL = "18")
+        MOVE "18-SPONSOR" TO DET13_REL
+    ELSE
+        MOVE "19-CHILD" TO DET13_REL
+    ENDIF
+
+    IF (SQUEEZE ERR2_ESSN = "")
+        MOVE BLANKS TO DET13_ESSN
+    ELSE
+        UNPACK ERR2_ESSN INTO SSN3,SSN2,SSN4
+        PACK DET13_ESSN WITH SSN3,DASH,SSN2,DASH,SSN4
+    ENDIF
+
+    IF (SQUEEZE ERR2_MSSN = "")
+        MOVE BLANKS TO DET13_MSSN
+    ELSE
+        UNPACK ERR2_MSSN INTO SSN3,SSN2,SSN4
+        PACK DET13_MSSN WITH SSN3,DASH,SSN2,DASH,SSN4
+    ENDIF
+
+        PRINT  *1,HDR2_REC:
+               *1,HDR3_REC,*N=1
+
+        PRINT  *1,DET13_REC,*N=1
+
+.        MOVE ERR2_OGB_ID           TO DET3_O_ID
+.        MOVE ERR2_DHH_ID           TO DET3_D_ID
+        MOVE ERR2_OGB_PLAN         TO DET3_O_PLAN
+        MOVE ERR2_DHH_PLAN         TO DET3_D_PLAN
+        MOVE ERR2_OGB_PROD         TO DET3_O_PROD
+        MOVE ERR2_DHH_PROD         TO DET3_D_PROD
+        MOVE ERR2_OGB_ADDR1        TO DET3_O_ADDR1
+        MOVE ERR2_DHH_ADDR1        TO DET3_D_ADDR1
+        MOVE ERR2_OGB_ADDR2        TO DET3_O_ADDR2
+        MOVE ERR2_DHH_ADDR2        TO DET3_D_ADDR2
+        MOVE ERR2_OGB_CITY         TO DET3_O_CITY
+        MOVE ERR2_DHH_CITY         TO DET3_D_CITY
+        MOVE ERR2_OGB_STATE        TO DET3_O_STATE
+        MOVE ERR2_DHH_STATE        TO DET3_D_STATE
+        MOVE ERR2_OGB_ZIP          TO DET3_O_ZIP
+        MOVE ERR2_DHH_ZIP          TO DET3_D_ZIP
+        MOVE ERR2_OGB_SEX          TO DET3_O_SEX
+        MOVE ERR2_DHH_SEX          TO DET3_D_SEX
+        MOVE ERR2_OGB_TRES         TO DET3_O_TRES
+        MOVE ERR2_DHH_TRES         TO DET3_D_TRES
+        MOVE DHHP_OGB_LNAME        TO DET3_O_LNAME
+        MOVE DHHP_DHH_LNAME        TO DET3_D_LNAME
+        MOVE DHHP_OGB_FNAME        TO DET3_O_FNAME
+        MOVE DHHP_DHH_FNAME        TO DET3_D_FNAME
+        MOVE DHHP_OGB_MI           TO DET3_O_MI
+        MOVE DHHP_DHH_MI           TO DET3_D_MI 
+
+
+
+    IF (SQUEEZE ERR2_OGB_DOB = "")
+        MOVE BLANKS TO DET3_O_DOB
+    ELSE
+        UNPACK ERR2_OGB_DOB INTO YEAR,MM,DD
+        PACK DET3_O_DOB WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR2_DHH_DOB = "")
+        MOVE BLANKS TO DET3_D_DOB
+    ELSE
+        UNPACK ERR2_DHH_DOB INTO YEAR,MM,DD
+        PACK DET3_D_DOB WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR2_OGB_EFF = "")
+        MOVE BLANKS TO DET3_O_SDATE
+    ELSE
+        UNPACK ERR2_OGB_EFF INTO YEAR,MM,DD
+        PACK DET3_O_SDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR2_DHH_EFF = "")
+        MOVE BLANKS TO DET3_D_SDATE
+    ELSE
+        UNPACK ERR2_DHH_EFF INTO YEAR,MM,DD
+        PACK DET3_D_SDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR2_OGB_TRM = "")
+        MOVE BLANKS TO DET3_O_EDATE
+    ELSE
+        UNPACK ERR2_OGB_TRM INTO YEAR,MM,DD
+        PACK DET3_O_EDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR2_DHH_TRM = "")
+        MOVE BLANKS TO DET3_D_EDATE
+    ELSE
+        UNPACK ERR2_DHH_TRM INTO YEAR,MM,DD
+        PACK DET3_D_EDATE WITH MM,SLASH,DD,SLASH,YEAR
+    ENDIF
+
+    IF (SQUEEZE ERR2_OGB_PHONE = "")
+        MOVE BLANKS TO DET3_O_PHONE
+    ELSE
+        UNPACK ERR2_OGB_PHONE INTO AREA,PHN3,PHN4
+        PACK DET3_O_PHONE WITH AREA,DASH,PHN3,DASH,PHN4
+    ENDIF
+
+    IF (SQUEEZE ERR2_DHH_PHONE = "")
+        MOVE BLANKS TO DET3_D_PHONE
+    ELSE
+        UNPACK ERR2_DHH_PHONE INTO AREA,PHN3,PHN4
+        PACK DET3_D_PHONE WITH AREA,DASH,PHN3,DASH,PHN4
+    ENDIF
+
+        PRINT *1,HDR4_REC:
+              *1,HDR5_REC,*N
+
+
+.    IF (SQUEEZE DHHP_OGB_ID <> SQUEEZE DHHP_DHH_ID)
+.        PRINT *N,*045,"OGB SPONSOR ID",*65,DET3_O_ID,*91,DET4_DASH_1:
+.              *110,DET3_D_ID
+.    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_LNAME <> SQUEEZE DHHP_DHH_LNAME) 
+        PRINT *N,*045,"LAST NAME",*65,DET3_O_LNAME,*91,DET4_DASH_1:
+              *110,DET3_D_LNAME
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_FNAME <> SQUEEZE DHHP_DHH_FNAME) 
+        PRINT *N,*045,"FIRST NAME",*65,DET3_O_FNAME,*91,DET4_DASH_1:
+              *110,DET3_D_FNAME
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_MI <> SQUEEZE DHHP_DHH_MI)
+        PRINT *N,*045,"MIDDLE INITIAL",*65,DET3_O_MI,*91,DET4_DASH_1:
+              *110,DET3_D_MI
+    ENDIF
+
+
+    IF (SQUEEZE DHHP_OGB_EFF <> SQUEEZE DHHP_DHH_EFF) 
+        PRINT *N,*045,"START DATE ",*65,DET3_O_SDATE,*91,DET4_DASH_1:
+              *110,DET3_D_SDATE
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_TRM <> SQUEEZE DHHP_DHH_TRM)
+        PRINT  *045,"END DATE ",*65,DET3_O_EDATE,*91,DET4_DASH_2:
+               *110,DET3_D_EDATE
+    ENDIF
+  
+    IF (SQUEEZE DHHP_OGB_T_RES <> SQUEEZE DHHP_DHH_T_RES)
+        PRINT *045,"TERM REASON ",*65,DET3_O_TRES,*91,DET4_DASH_3:
+              *110,DET3_D_TRES
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_PLAN <> SQUEEZE DHHP_DHH_PLAN) 
+        PRINT *045,"PLAN ",*65,DET3_O_PLAN,*91,DET4_DASH_4,*110,DET3_D_PLAN
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_PROD <> SQUEEZE DHHP_DHH_PROD) 
+        PRINT *045,"PRODUCT ",*65,DET3_O_PROD,*91,DET4_DASH_6,*110,DET3_D_PROD
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_ADDR1 <> SQUEEZE DHHP_DHH_ADDR1) 
+        PRINT *045,"ADDRESS 1 ",*65,DET3_O_ADDR1,*91,DET4_DASH_7:
+              *110,DET3_D_ADDR1
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_ADDR2 <> SQUEEZE DHHP_DHH_ADDR2)
+        PRINT *045,"ADDRESS 2 ",*65,DET3_O_ADDR2,*91,DET4_DASH_8:
+              *110,DET3_D_ADDR2
+    ENDIF
+ 
+    IF (SQUEEZE DHHP_OGB_CITY <> SQUEEZE DHHP_DHH_CITY)
+        PRINT *045,"CITY ",*65,DET3_O_CITY,*91,DET4_DASH_9,*110,DET3_D_CITY
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_STATE <> SQUEEZE DHHP_DHH_STATE)
+        PRINT *045,"STATE ",*65,DET3_O_STATE,*91,DET4_DASH_10,*110,DET3_D_STATE
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_ZIP <> SQUEEZE DHHP_DHH_ZIP) 
+        PRINT *045,"ZIP ",*65,DET3_O_ZIP,*91,DET4_DASH_11,*110,DET3_D_ZIP
+    ENDIF
+ 
+    IF (SQUEEZE DHHP_OGB_E_PHONE <> SQUEEZE DHHP_DHH_E_PHONE) 
+        PRINT *045,"WORK PHONE ",*65,DET3_O_PHONE,*91,DET4_DASH_12:
+              *110,DET3_D_PHONE
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_SEX <> SQUEEZE DHHP_DHH_SEX)
+        PRINT *045,"SEX ",*65,DET3_O_SEX,*91,DET4_DASH_13,*110,DET3_D_SEX
+    ENDIF
+
+    IF (SQUEEZE DHHP_OGB_DOB <> SQUEEZE DHHP_DHH_DOB) 
+         PRINT *045,"DOB ",*65,DET3_O_DOB,*91,DET4_DASH_14,*110,DET3_D_DOB
+    ENDIF
+
+         PRINT *N=2
+ 
+    ADD 5 TO LINE_NO
+
+  RETURN
+
+. --------------------------------------------------------
+. FTP file to outbound for DHH & to I:groups/shared/fiscal
+. --------------------------------------------------------
+
+FTP_DHH_FIS
+
+    PACK SCRATCH WITH BLANKS
+    PACK SCRATCH WITH "elg6000.ftp"
+    ROLLOUT SCRATCH 
+
+    IF OVER
+       IF (NOT C_CMDPAR)
+           ERROR     HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="elg6000.MAIL FAILED"
+           CHAIN     "MENU"
+        ELSE
+           IF (C_CMDPAR)
+              CALL CMD_ERROR USING "Failed DHH_ftp"
+              STOP
+           ENDIF
+        ENDIF
+    ENDIF
+
+
+....FTP the Output File to NT where it can be reviewed by FISCAL
+
+    UNPACK REC_DATE INTO JUNK1,S1,JUNK2,S2,JUNK4
+    PACK PDF_DATE WITH JUNK4,JUNK1,JUNK2
+
+
+    PACK SCRATCH WITH BLANKS
+    PACK SCRATCH WITH "elg6000_fis_pdf.ftp ",PDF_DATE
+    ROLLOUT SCRATCH
+    IF OVER
+       IF (NOT C_CMDPAR)
+           ERROR     HORZ="22",VERT="20":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="FTP FAILED(elg6000_fis_pdf.ftp)"
+           CHAIN     "MENU"
+       ELSE 
+          IF (C_CMDPAR)
+             CALL CMD_ERROR USING "Failed fiscal_ftp"
+             STOP
+          ENDIF
+       ENDIF
+     ENDIF
+
+    RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+    UNLOAD    "schema"
+         
+    IF (C_RMODE = "I")
+       error     horz="23",vert="19":
+                 bgcol=C_ERRB,fgcol=C_ERRF:
+                 lncol=C_ERRL,shade="Y":
+                 text=" Process Aborted by Operator ":
+                 text="-----------------------------"
+        messageerase
+    ENDIF
+
+    CLEAR     C_NOHIST
+
+    TRAPREST  TRAP_DATA
+
+    IF (RUN_MODE = "B")
+        LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE     (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+          REPEAT
+          MOVE      SCH_RTABRT  TO  SCH@RTCODE
+         RETURN
+    ENDIF
+        CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+   CALL CLOSE_OGBFILE USING OGB_DHH_FILE,OGB_DHH_NAME
+   CALL CLOSE_OGBFILE USING ERR_FILE,ERR_NAME
+   RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+      IF (C_CMDPAR)
+         CALL CMD_END
+         STOP
+      ENDIF
+
+         IF (RUN_MODE = "N")
+             DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL
+             MOVE      "        NEOJ        " TO X_FINISH_STATUS
+.             MOVE      "    ELG6000 Completed   " TO X_PROG_FINISH
+.             CALL      X_END_OF_JOB
+         ENDIF 
+         CALL        X_DISPLAY_COUNTS
+     RETURN
+
+. --------------------------------
+. Subroutines and other includes
+. --------------------------------
+
+              INC       UTIL.SR      
+              INC       PRINT.SR
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       CMDPARAM.SR
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             End of ELG6000.PS
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

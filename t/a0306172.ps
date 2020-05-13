@@ -1,0 +1,407 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0306172.PS
++    Description    :  Bounce list of scantron forms against those MEME records              :  form was received.  If the enrollee have Definity,
++                   :  that have defaulted health plans for the 7/1/2003 year.  
++                   :  It is beleived that a large number of forms were not
++                   :  scanned.
++    Author         :  Amy Poole 
++    Date created   :  06/17/2003
++    Project #      :  a0306172
++..............................REVISIONS.......................................
++ apajp 06/19/2003 a0306172 - COR - Paul's group has already worked a number
++                                   of these.  When they fixed them, however,
++                                   they did not wipe out the Default flag.
++                                   So, ignore any of these Defaulted records 
++                                   where the change date is not = to the
++                                   create date.  
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       D_MEMMEM.CB          ...Member Import Layout
+    INC       CLI.RL                                              
+
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+IN_FILE           FILE      VAR=36,TEXT
+IN_NAME           INIT      "/w/scantron.txt"  
+
+IN_LIST           LIST
+IN_AGCY           DIM       12
+IN_FILL           DIM        3
+IN_SSN            DIM       09
+IN_BATCH          DIM       12
+                  LISTEND
+
+.~~~~~~~~~~OUTPUT FILES
+OUTPUT_FILE       FILE      VAR=35,TEXT
+OUTPUT_NAME       INIT      "/w/a0306172.out"
+
+OUT_LIST     LIST
+OUT_AGCY          DIM       12
+OUT_DEL1          INIT      ","
+OUT_SSN           DIM       09
+OUT_DEL2          INIT       ","
+OUT_BATCH         DIM       12
+             LISTEND
+
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+TODAY           	DIM      8
+TODAY_CCYY           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+PROC_KEY                DIM      08
+OUT_NET                 DIM      05
+OUT_PRD                 DIM      05
+OUT_PLAN                DIM      04
+OUT_RT                  DIM      02
+OUT_DEPC                DIM      02
+OUT_EFF                 DIM      08
+OUT_OPT                 DIM      01
+UPS_SWT                 DIM       1 
+ENR                     INIT     "01"
+BLANK8                  INIT     "        "
+HLD_UPS_SWT             DIM       1 
+HLD_MEME_DEPC           DIM      02  
+HLD_MEME_NET            DIM      05  
+HLD_MEME_TRM            DIM      08  
+HLD_MEME_TRM_YRMO       DIM      06  
+HLD_MEME_TRM_DAY        DIM      02  
+HLD_REC                 DIM      1300
+HLD_MEM_ESSN            DIM      09  
+FIRST_MEME_READ         DIM       1 
+INP_RESULT              FORM      1 
+IDX_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+WS_ZIP3                 DIM      03
+WS_ZIP10                DIM      10
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+EFF_CCYYMMDD            DIM      8
+EFF_MMDD                INIT     "0701"
+TRM_CCYYMMDD            DIM      8
+TRM_MMDD                INIT     "0630"
+TERM_DATE               DIM      8
+SAVE_MEME_ID1           DIM      08
+
+ERRMSG                  INIT    "YOU HAVE ENTERED AN INVALID RESPONSE !"
+
+
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 			    chains to back to the menu
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "menu"                     TO    C_NEXT
+      MOVE      "Identify Defaults w/Scantrons" TO    C_OPER
+      MOVE      "a0306172"                 TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+  CALL      INITIALIZE
+
+  DEBUG
+  CALL      OPEN_FILES
+  DEBUG
+  CALL      EXTRACT_OUTPUT_FILE    
+  CALL      CLOSE_FILES
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "menu"                     TO    C_NEXT
+  MOVE      "Identify Defaults w/Scantrons" TO    C_OPER
+  MOVE      "a0306172"                 TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Recs Found:   " TO X_CNTDESC2
+  MOVE "Not Used: " TO X_CNTDESC3
+  MOVE "Not Used: " TO X_CNTDESC4
+  MOVE "Not Used: " TO X_CNTDESC5
+  DISPLAY *ES
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+  UNPACK TODAY INTO TODAY_CCYY,TODAY_MM,TODAY_DD
+  PACK EFF_CCYYMMDD WITH TODAY_CCYY,EFF_MMDD
+  PACK TRM_CCYYMMDD WITH TODAY_CCYY,TRM_MMDD
+
+ RETURN
+
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+    CALL OPEN_OGBFILE USING IN_FILE,IN_NAME
+    CALL PREP_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  RETURN
+
+
+
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file 
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING IN_FILE,IN_NAME,IN_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the MEM file for Enrollee (Plan Member) Only 
+
+        CLEAR     MEM_AIM
+        PACK      MEM_AIM1 WITH "01X", IN_SSN, BLANKS
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            CONTINUE         
+        ENDIF
+
+        IF (MEM_ESSN <> IN_SSN)
+            CONTINUE
+        ENDIF
+
+... Read the MEME record with the Plan Member's Record ID
+
+        PACK MEME_FK11 WITH MEM_ID1,BLANKS
+ 
+        CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                             MEME_FN:             ...FILE NAME LIST
+                             MEME_FC:             ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                             MEME_FV:             ...FILE KEY VARLIST
+                             MEME_FK:             ...FILE KEY SIZES
+                             MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                             MEME_REC:            ...FILE RECORD (PACKED)
+                             MEME_OLD:            ...FILE SAVED WHEN READ
+                             MEME_QTY:            ...NUMBER OF FILES
+                             1                    ...FILE NUMBER FOR THIS READ
+
+        LOOP
+            CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST
+                                 MEME_FN:         ...FILE NAME LIST
+                                 MEME_FC:         ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                                 MEME_FV:         ...FILE KEY VARLIST
+                                 MEME_FK:         ...FILE KEY SIZES
+                                 MEME_LIST:       ...FILE RECORD (FIELD LIST)
+                                 MEME_REC:        ...FILE RECORD (PACKED)
+                                 MEME_OLD:        ...FILE SAVED WHEN READ
+                                 MEME_QTY:        ...NUMBER OF FILES
+                                 1                ...FILE NUMBER FOR THIS READ
+
+... If NO MEME record is found then writes to the Error file
+
+            IF (RESULT <> 1) 
+                GOTO GET_MEM_REPEAT
+            ENDIF 
+
+            IF (MEM_ID1 <> MEME_ID1)
+                GOTO GET_MEM_REPEAT
+            ENDIF
+
+... We want Defaulted records effective 07/01/2003              
+            IF (MEME_PUFF <> "Y")
+               CONTINUE
+            ENDIF
+
+            IF (MEME_EFF <> "20030701") 
+               CONTINUE
+            ENDIF
+
+. ...Ignore any of these Defaulted Records that have been changed since
+. ...the Initial Default date of 06/01/2003
+            IF (MEME_NEWDT <> MEME_CHGDT)
+                CONTINUE
+            ENDIF
+
+            MOVE IN_AGCY TO OUT_AGCY
+            MOVE IN_SSN TO OUT_SSN 
+            MOVE IN_BATCH TO OUT_BATCH  
+            CALL WRITE_OGBREC USING OUTPUT_FILE:
+                                    OUTPUT_NAME:
+                                    OUT_LIST     
+            ADD 1 TO X_CNT2
+
+            REPEAT
+
+GET_MEM_REPEAT
+        REPEAT
+
+   RETURN
+
+
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+
+  CALL CLOSE_OGBFILE USING IN_FILE,IN_NAME
+  CALL CLOSE_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "    A0306172  Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

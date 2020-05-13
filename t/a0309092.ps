@@ -1,0 +1,376 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0309092.ps
++    Description    :  Creates file of members having services at MD Anderson
++                   :  from July 1, 2002 to present.
++    Author         :  Tommy Ratcliff
++    Date created   :  09/09/2003
++......................REVISIONS...............................................
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++
++----------------------------------------------------------------------------
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       PRT.RL               ...Printer definition file
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       CLI.RL               ...Client Record
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL              ...Mem. Enr/Elig Record
+    INC       MEMO.RL              ...Member Other Coverage Record
+
+.------------------
+. File Declarations
+.------------------
+MDANDERSON_FILE           FILE      VAR=24,TEXT
+MDANDERSON_NAME           INIT      "/ogb/work/mdanderson.txt"
+MDANDERSON_LIST           LIST
+MDANDERSON_CLM_ID          DIM      08
+MDANDERSON_PAT_RECID       DIM      08
+MDANDERSON_MEM_RECID       DIM      08
+                          LISTEND
+
+MEMLB2_FILE             FILE        VAR=204,TEXT
+MEMLB2_NAME             INIT        "/ogb/work/memlb2.txt"
+MEMLB2_LIST             LIST
+MEMLB2_FILL1             DIM        008
+MEMLB2_ESSN              DIM        011
+MEMLB2_MLNAM             DIM        020
+MEMLB2_MFNAM             DIM        015
+MEMLB2_MINIT             DIM        001
+MEMLB2_PLNAM             DIM        020
+MEMLB2_PFNAM             DIM        015
+MEMLB2_ADDR1             DIM        035
+MEMLB2_ADDR2             DIM        035
+MEMLB2_CITY              DIM        030
+MEMLB2_STATE             DIM        002
+MEMLB2_ZIP               DIM        010
+MEMLB2_FILL2             DIM        002
+                        LISTEND
+
+WS_ZIP5       DIM       005
+WS_ZIP1       DIM       001
+WS_ZIP4       DIM       004
+WS_ZIP3       DIM       003
+DATE1         DIM       008
+FIRST_PAGE    DIM       001
+FIRST_TIME    DIM       001
+LAST_CLM1     DIM       008
+WORK_COUNT    DIM       008
+FRONT         DIM       005
+BACK          DIM       003
+TIMESTAMP     DIM       014
+CURRDATE      DIM       008
+READ_COUNT    FORM      008
+KEEP_COUNT    FORM      008
+WRITE_COUNT   FORM      008
+ERROR_COUNT   FORM      008
+MONEY1        FORM      7.2
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+WORK_TEXT     INIT      "JUNK"
+ACTION        DIM       010          
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM       010
+PARAM_YYY     DIM       005
+PARAM_DATE    DIM       008
+              LISTEND
+
+X_SWT_LIST    LIST
+X_SWT_DATE    DIM       008
+              LISTEND
+
+
+
+.---------------------------
+. Program Specific variables
+.---------------------------
+MDANDERSON_SRTKEY       INIT     "9-16 -u -t"
+SAVE_NET      		DIM      005
+SAVE_TRM      		DIM      008
+EARLIEST_EFF_DATE       DIM      008
+WORK_DATE     		DIM      008
+NUM_OF_DAYS             FORM     001
+MEME_RESULT             FORM     001
+WS_SSN        		DIM      009
+SAVE_DEPC     		DIM      002
+BLANK8        		INIT     "        "
+JUNK4         		DIM      004
+TRAP_DATA     		DIM      500
+TODAY         		DIM      008
+CAL_CLOCK     		DIM      021
+PLAN_FIELD    		DIM      004  
+CHG_RET_CODE  		FORM     001
+
+PLAN_LIST    	       LIST
+PLAN_BYTE1    		DIM      001
+PLAN_REST     		DIM      003
+ORIG_RETURN   		FORM     005
+CURR_RETURN   		FORM     005
+DISP_3        		DIM      003
+DISP_4        		DIM      004
+FORM_08       		FORM     008
+DIM49                   DIM      049
+WRK_DIM1                DIM      001
+WRK_DIM4    	        DIM      004
+                       LISTEND
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 			    chains to back to the menu
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "menu"                 TO  C_NEXT
+      MOVE      "MD Anderson"          TO  C_OPER
+      MOVE      "a0309092"             TO  C_PROG
+      MOVE      BLANKS                 TO  C_LABEL
+      MOVE      BLANKS                 TO  C_FILE
+      MOVE      BLANKS                 TO  C_KEYS
+      CLOCK     CALENDAR               INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE TRAP_DATA
+      TRAPCLR ALL
+      TRAP QUIT NORESET IF F9
+
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+
+
+.******************************************************************************
+MAIN_PROCESS
+.******************************************************************************
+  DEBUG
+  CALL INITIALIZE
+.
+  CALL SORT_FILE
+.
+  CALL OPEN_FILES
+.
+  CALL CREATE_OUTPUT_FILE
+.
+  CALL CLOSE_FILES
+  IF OVER
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF:
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="ELG0803.FTP FAILED" 
+      CHAIN "MENU"
+  ENDIF       
+  TRAPREST TRAP_DATA
+  MOVE SCH_RTSUCC  TO  SCH@RTCODE
+
+  RETURN
+
+
+
+.******************************************************************************
+QUIT
+.******************************************************************************
+.--------------------
+. Operator pressed F9
+. -------------------
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR C_NOHIST
+  TRAPREST TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+
+      MOVE SCH_RTABRT  TO  SCH@RTCODE
+
+      RETURN
+  ENDIF
+  CHAIN "MENU"
+
+    
+
+.******************************************************************************
+INITIALIZE
+.******************************************************************************
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.------------------
+...Display Counters
+.------------------
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Records Found: " TO X_CNTDESC2
+  DISPLAY *ES
+  CALL X_DISPLAY_COUNTS
+
+  RETURN
+
+
+
+.******************************************************************************
+SORT_FILE
+.******************************************************************************
+  CALL SORT_OGBFILE USING MDANDERSON_NAME,MDANDERSON_NAME,MDANDERSON_SRTKEY
+
+  RETURN
+
+
+
+.******************************************************************************
+OPEN_FILES
+.******************************************************************************
+  CALL OPEN_OGBFILE USING MDANDERSON_FILE,MDANDERSON_NAME
+
+  CALL PREP_OGBFILE USING MEMLB2_FILE,MEMLB2_NAME
+
+  RETURN
+
+
+
+.******************************************************************************
+CREATE_OUTPUT_FILE
+.******************************************************************************
+  LOOP      
+      CLEAR MEMLB2_LIST
+
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING MDANDERSON_FILE:
+                              MDANDERSON_NAME:
+                              MDANDERSON_LIST
+      IF (RESULT <> 1)
+          CALL X_DISPLAY_COUNTS
+          BREAK 
+      ENDIF
+
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO DISP_4,DISP_3
+      IF (DISP_3 = "000")
+          CALL X_DISPLAY_COUNTS
+      ENDIF
+
+.------------------------         
+...Get info from MEM-FILE
+.------------------------
+      PACK MEM_FK11 WITH MDANDERSON_MEM_RECID
+      CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                           MEM_FN:              ...FILE NAME LIST
+                           MEM_FC:              ...TYPE OF INDEX
+.                                               ...(I)NDEX or (A)IMDEX
+                           MEM_FV:              ...FILE KEY VARLISTS
+                           MEM_FK:              ...FILE KEY SIZES
+                           MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                           MEM_REC:             ...FILE RECORD (PACKED)
+		           MEM_OLD:             ...FILE SAVED WHEN READ
+                           MEM_QTY:             ...NUMBER OF FIlES
+                           1                    ...FILE NUMBER FOR THIS READ
+ 
+      IF (RESULT <> 1)
+          CONTINUE
+      ENDIF
+
+      MOVE MEM_ESSN TO MEMLB2_ESSN               ...ENROLLEE SSN
+      MOVE MEM_LNAME TO MEMLB2_MLNAM             ...MEMBER LAST NAME
+      MOVE MEM_FNAME TO MEMLB2_MFNAM             ...MEMBER FIRST NAME
+      MOVE MEM_MINIT TO MEMLB2_MINIT             ...MEMBER MIDDLE INITIAL
+      MOVE MEM_ADDR1 TO MEMLB2_ADDR1             ...ADDRESS 1
+      MOVE MEM_ADDR2 TO MEMLB2_ADDR2             ...ADDRESS 2
+      MOVE MEM_CITY TO MEMLB2_CITY               ...CITY
+      MOVE MEM_STATE TO MEMLB2_STATE             ...STATE
+    
+      UNPACK MEM_ZIP WITH WS_ZIP5,WS_ZIP1,WS_ZIP4,WS_ZIP3
+      PACK MEMLB2_ZIP WITH WS_ZIP5,WS_ZIP1,WS_ZIP4
+
+      PACK MEM_FK11 WITH MDANDERSON_PAT_RECID
+      CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                           MEM_FN:              ...FILE NAME LIST
+                           MEM_FC:              ...TYPE OF INDEX
+.                                               ...(I)NDEX or (A)IMDEX
+                           MEM_FV:              ...FILE KEY VARLISTS
+                           MEM_FK:              ...FILE KEY SIZES
+                           MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                           MEM_REC:             ...FILE RECORD (PACKED)
+		           MEM_OLD:             ...FILE SAVED WHEN READ
+                           MEM_QTY:             ...NUMBER OF FIlES
+                           1                    ...FILE NUMBER FOR THIS READ
+ 
+      IF (RESULT <> 1)
+          CONTINUE
+      ENDIF
+
+      MOVE MEM_LNAME TO MEMLB2_PLNAM
+      MOVE MEM_FNAME TO MEMLB2_PFNAM
+
+      CALL WRITE_OGBREC USING MEMLB2_FILE:
+                              MEMLB2_NAME:
+                              MEMLB2_LIST
+      ADD 1 TO X_CNT2
+      REPEAT
+
+      RETURN
+
+
+
+.******************************************************************************
+CLOSE_FILES 
+.******************************************************************************
+  CALL CLOSE_OGBFILE USING MDANDERSON_FILE,MDANDERSON_NAME
+
+  CALL CLOSE_OGBFILE USING MEMLB2_FILE,MEMLB2_NAME
+
+  RETURN
+
+
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+  INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

@@ -1,0 +1,312 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++  Program Name : A1610051
++   Description : Finds any members erroneously assigned new EGWP
++                 records for 1/1/17 prior to the Medimpact contract
++                 completion. Create a d_memmem input that voids
++                 these records (a1610051.txt).
++ ......................................................................
++  apjwh - 10/05/2016 - DEV - Initial Version
++ .............................Revisions................................
++  apjwh - 05/17/2017 - MOD - consolidated includes into new UTILs
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++ -------------------------
++ Required Program Includes
++ -------------------------
+  INC  UTIL_COMMON.CB  ... Common variables for UTIL routine
+
++ -------------------------
++ Program Specific Includes
++ -------------------------
+  INC  UTIL_MEMMEM.CB  ... INM variables
+  INC  VALID.RL        ... Valid codes
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ File & Global Variable Declarations
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Input Files
+RF_EFF_FD         FILE   VAR=600, TEXT  ... Reformat file
+RF_EFF_NAME       INIT   "/w/a1610051.rft"
+
+... Output Files
+UPDT_FD           FILE   VAR=4800, TEXT  ... Impact update file
+UPDT_NAME         INIT   "a1610051.txt"
+
+ERROR_FD          FILE   VAR=8, TEXT  ... Error file
+ERROR_NAME        INIT   "/w/a1610051.err"
+ERROR_LIST        LIST
+..............................
+ERROR_ID1         CHAR   8
+..............................
+                  LISTEND
+
+... Variables
+UPDT_PROG         INIT   "OTSFIX"  ... Passed to the CHGBY vars
+
+... Required DBC variables
+CAL_CLOCK         CHAR   21
+CURRDATE          CHAR   8
+
+PARAM_LIST        LIST WITH NAMES
+..............................
+PARAM_FILE        CHAR   12
+PARAM_FROM        CHAR   8
+PARAM_THRU        CHAR   8
+..............................
+                  LISTEND
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Begin Program
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Start here. If completed successfully, continue to the next program
+  CALL  RUN_NOW
+  CHAIN C_NEXT
+
+... Scheduler routines. You cannot include both; use NP unless the
+... program requires Impact's printer functions
+...     WP - with printer
+...     NP - no printer
+
++  INC  SCHED_WP.SR
+  INC  SCHED_NP.SR
+
+.#######################################################################
+RUN_NOW
+.#######################################################################
+... Save return stack
+    RETCOUNT ORIG_RETURN
+
+... Fill top of screen
+
+  MOVE  "A1610051"             TO   C_PROG
+  MOVE  "MENU"                 TO   C_NEXT
+  MOVE  "Void Erroneous EGWPs" TO   C_OPER
+  MOVE  BLANKS                 TO   C_LABEL
+  MOVE  BLANKS                 TO   C_FILE
+  MOVE  BLANKS                 TO   C_KEYS
+  CLOCK CALENDAR               INTO CAL_CLOCK
+
+... Command Line Control for Autosys.
+  IF  (C_CMDPAR)
+      CALL  CMD_START USING C_PROG
+  ELSE
+      CALL  X_BLANK_SCREEN
+  ENDIF
+
+... Set applicable traps
+  TRAPSAVE  TRAP_DATA
+  TRAPCLR   ALL
+  TRAP      QUIT NORESET IF F9
+
+  CLOCK   TIMESTAMP INTO PARAM_FROM
+
+  RETURN  IF (SQUEEZE PARAM_FROM = "")
+
+... Get scheduler information
+  CALL  SCHED_PICK
+
+  IF ((RUN_MODE = "B") OR (RUN_MODE = "N"))
+    CALL  MAIN_PROCESS
+  ENDIF
+
+  RETURN
+
+.#######################################################################
+MAIN_PROCESS
+.#######################################################################
+
+  debug
+  CALL  INITIALIZE
+  CALL  GET_NEW_EGWPS
+  CALL  PREPARE_FILES
+  CALL  READ_EGWPS
+  CALL  CLEANUP
+  CALL  NORMAL_EOJ
+
+  RETURN
+
+.#######################################################################
+INITIALIZE
+.#######################################################################
+. -----------------------------------------------------------------
+... Initialize program time variables and draw the counters, unless
+... the program is invoked from the command line
+. -----------------------------------------------------------------
+
+  CLOCK  TIMESTAMP  INTO  CURRDATE
+
+... Display Counters
+  IF ((C_RMODE = "I") AND (NOT C_CMDPAR))
+      MOVE  "EGWP Matches Found:" INTO X_CNTDESC1
+      MOVE  "EGWP Void Records:"  INTO X_CNTDESC2
+      MOVE  "Errors:"             INTO X_CNTDESC3
+      MOVE  "Not Used"            INTO X_CNTDESC4
+      MOVE  "Not Used"            INTO X_CNTDESC5
+      MOVE  "Not Used"            INTO X_CNTDESC6
+
+      CALL  X_ZERO_COUNTS
+      CALL  X_DISPLAY_COUNTS
+  ENDIF
+
+  RETURN
+
+.#######################################################################
+GET_NEW_EGWPS
+.#######################################################################
+. -------------------------------------------------------------
+... Gather any MEME records where the network si "EGWP" and the
+... effective date is "20170101"
+. -------------------------------------------------------------
+RF_EFF       INIT  "20170101"
+RF_NET       INIT  "EGWP"
+. ---------------------------
+  debug
+  IF (NOT C_CMDPAR)
+      CALL  X_BLANK_SCREEN
+
+      MESSAGE  HORZ="24", VERT="20":
+               BGCOL=C_DLGB, FGCOL=C_DLGF:
+               LNCOL=C_DLGL, SHADE="y":
+               TEXT="Reformatting MEME...Please Wait";
+  ENDIF
+
+  PACK  SCRATCH WITH "meme.dbf ", RF_EFF_NAME, " ":
+                     "-p096-103=#"", RF_EFF, "#" ":
+                     "-p117-121=#"", RF_NET, "#" -t -j"
+  REFORMAT  SCRATCH
+  IF (OVER)
+      PACK  SCRATCH WITH "EGWP Reformat Failed!"
+      CALL  UTIL_ERRORMSG USING SCRATCH
+  ENDIF
+
+  IF (NOT C_CMDPAR)
+      CALL  UTIL_SCREEN_CLEAN USING 20, 22
+  ENDIF
+  RETURN
+
+.#######################################################################
+PREPARE_FILES
+.#######################################################################
+. ---------------------------------------------------------------------
+... Open the EGWP file, and prepare the D_MEMMEM update and error files
+. ---------------------------------------------------------------------
+
+  MOVE  RF_EFF_NAME INTO C_FILE
+  CALL  OPEN_OGBFILE USING RF_EFF_FD:
+                           RF_EFF_NAME
+
+  MOVE  UPDT_NAME INTO C_FILE
+  CALL  PREP_OGBFILE USING UPDT_FD:
+                           UPDT_NAME
+
+  MOVE  ERROR_NAME INTO C_FILE
+  CALL  PREP_OGBFILE USING ERROR_FD:
+                           ERROR_NAME
+  RETURN
+
+.#######################################################################
+READ_EGWPS
+.#######################################################################
+. ---------------------------------------------------------------
+... Read through the reformatted list. For each one, look for the
+... related MEM rec. If it exists, then create a d_memmem record.
+... Otherwise output an error.
+. ---------------------------------------------------------------
+END_OF_YEAR     INIT   "20161231"
+. -------------------------------
+
+
+  MOVE  OGB_SEQ1 INTO OGB_SEQ
+  LOOP
+      CALL  READ_OGBFILE USING RF_EFF_FD:
+                               RF_EFF_NAME:
+                               MEME_LIST
+      WHILE  (RESULT = 1)
+
+... Ignores already fixed records
+      IF ((MEME_TRM = END_OF_YEAR) AND (MEME_TLET = "V"))
+          CONTINUE
+      ELSE
+          CALL  UTIL_XCOUNTER USING X_CNT1, 1  ...Count EGWP recs read
+      ENDIF
+
+... If the term date isn't correct, replace it
+      IF (MEME_TRM != END_OF_YEAR)
+          MOVE  END_OF_YEAR INTO MEME_TRM
+      ENDIF
+
+... Void the record
+      MOVE  "V" INTO MEME_TLET
+
+... Gather the demographic data of the MEME_ID1 member
+      PACK  MEM_FK11 WITH MEME_ID1, BLANKS
+
+      CALL  FILE_READ USING MEM_FD:   ...FILE DECLARATION LIST
+                            MEM_FN:   ...FILE NAME LIST
+                            MEM_FC:   ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:   ...FILE KEY VARLISTS
+                            MEM_FK:   ...FILE KEY SIZES
+                            MEM_LIST: ...FILE RECORD (FIELD LIST)
+                            MEM_REC:  ...FILE RECORD (PACKED)
+                            MEM_OLD:  ...FILE SAVED WHEN READ
+                            MEM_QTY:  ...NUMBER OF FILES
+                            1         ...FILE NUMBER FOR THIS READ
+
+... EOF indicating no MEM rec found for MEME_ID1.
+      IF  (RESULT != 1)
+          CLEAR  MEM_LIST
+          MOVE   MEME_ID1 INTO ERROR_ID1
+          CALL   WRITE_OGBREC USING ERROR_FD:
+                                   ERROR_NAME:
+                                   ERROR_LIST
+          CALL   UTIL_XCOUNTER USING X_CNT3, 1  ... Count error recs
+          RETURN
+      ENDIF
+
+... Create the Impact update record
+      PACKLEN  INM_REC WITH MEM_LIST, MEME_LIST
+      UNPACK   INM_REC INTO INM_LIST
+
+.      MOVE  UPDT_PROG INTO INM_CHGBY
+      MOVE  UPDT_PROG INTO INME_CHGBY
+
+      MOVE  UPDT_NAME INTO C_FILE
+      CALL  WRITE_OGBREC USING UPDT_FD:
+                               UPDT_NAME:
+                               INM_LIST
+
+      CALL  UTIL_XCOUNTER USING X_CNT2, 10
+  REPEAT
+  RETURN
+
+.#######################################################################
+CLEANUP
+.#######################################################################
+. -----------------------------------
+... Close files and delete temp files
+. -----------------------------------
+
+  CALL  CLOSE_OGBFILE USING ERROR_FD:
+                            ERROR_NAME
+  CALL  CLOSE_OGBFILE USING UPDT_FD:
+                            UPDT_NAME
+  CALL  CLOSE_OGBFILE USING RF_EFF_FD:
+                            RF_EFF_NAME
+
+.  DELETE  ERROR_FD
+.  DELETE  UPDT_FD
+.  DELETE  RF_EFF_FD
+
+  RETURN
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Subroutines and Other Includes
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  INC  VALID.IO
+  INC  UTIL_COMMON.SR
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ End of A1610051.PS
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

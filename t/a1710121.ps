@@ -1,0 +1,365 @@
+./* ====================================================================
+. *          Name : a1710121.ps
+. *   Description : Voids duplicate Life (probably old GSUP) on
+. *                 dependents from a csv extract from Discoverer
+. * ....................................................................
+. *  apjwh - 10/12/2017 - DEV - Initial Version
+. * ...........................CHANGE LOG...............................
+. *  apiii - mm/dd/ccyy - TYP -
+. */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC D_MEMMEM.CB     ... Impact update record
+    INC MEM.RL          ... Demographics
+    INC MEME.RL         ... Enrollment
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+.// Input File
+DUPE_CSV_FD         FILE VAR=1000,TEXT
+DUPE_CSV_FILE       INIT "/w/duplicate_dep_life_records.csv"
+DUPE_CSV_LIST       LIST
+DUPE_CSV_REC        CHAR 1000
+                    LISTEND
+
+.// Output Files
+LOG_FD              FILE VAR=200,TEXT
+LOG_FILE            INIT "/w/a1710121_dupelife.log"
+LOG_LIST            LIST
+LOG_REC             CHAR 200
+                    LISTEND
+
+UPDATE_FD           FILE VAR=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT "a1710121.txt"
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_NULL          CHAR 1
+                    LISTEND
+
+TODAY               CHAR 8
+CURRENT_LIFE        CHAR 600
+VOID_RECS           CHAR 600[99]
+VOID_CNT            NUM  2
+DUPE_ID1            CHAR 20
+SAVE_MEM            CHAR 1500
+
+./* =============
+. * Begin Program
+. * ============= */
+
+.// Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+.// Scheduler begins here
+    INC  SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW ROUTINE
+
+... Check return stack
+    RETCOUNT  ORIG_RETURN
+
+.   // Set runtime variables
+    MOVE "a1710121" TO C_PROG
+    MOVE "Dep Dupe Life Void" TO C_OPER
+    MOVE "menu" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG // signal start TO Autosys
+    ELSE
+        CALL X_BLANK_SCREEN // draw the standard screen
+    ENDIF
+
+    CLOCK TIMESTAMP INTO TODAY
+
+.   // Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.   // Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+MAIN_PROCESS ROUTINE
+    debug
+    CALL DRAW_COUNTERS
+    CALL IO_PREP
+    CALL PROCESS_DUPE_CSV
+    CALL IO_CLEAN
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+DRAW_COUNTERS ROUTINE
+./* Draw the screen (IF running manually) */
+    IF (NOT C_CMDPAR)
+        MOVE "Depds With Dupe Life" TO X_CNTDESC1
+        MOVE "Voided Life Records" TO X_CNTDESC2
+        MOVE "Errors" TO X_CNTDESC3
+        MOVE "Not Used" TO X_CNTDESC4
+        MOVE "Not Used" TO X_CNTDESC5
+        MOVE "Not Used" TO X_CNTDESC6
+
+        CALL X_ZERO_COUNTS
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_PREP ROUTINE
+    EXIST DUPE_CSV_FILE
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "No input file","IO_PREP"
+    ENDIF
+
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL OPEN_OGBFILE USING DUPE_CSV_FD,DUPE_CSV_FILE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+PROCESS_DUPE_CSV ROUTINE
+./* Read through the CSV and for each new dependent, find the 01 and
+.   void the life record that doesn't match current enrollment.  */
+LAST_ID1        CHAR 8
+...
+
+    FILL " " IN MEM_LIST
+    LOOP
+        FILL " " IN DUPE_ID1,VOID_RECS,SAVE_MEM
+        CLEAR VOID_CNT
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING DUPE_CSV_FD,DUPE_CSV_FILE,DUPE_CSV_LIST
+        BREAK IF (RESULT != 1) ...all done
+
+.       /* ID1 is field 3 */
+        CALL DELIMIT_STRING USING DUPE_CSV_REC,02,DUPE_ID1,COMMA
+        debug
+        IF (NOT SQUEEZE DUPE_ID1)
+            CALL LOG_OUT USING DUPE_ID1,"Error: Bad ID1 In File"
+            CALL UTIL_XCOUNTER USING X_CNT3,1
+        ENDIF
+
+.       /* Skip the header */
+        CONTINUE IF (SQUEEZE DUPE_ID1 = "InternalId")
+
+.       /* Skip the member's second record */
+        IF (SQUEEZE DUPE_ID1 = SQUEEZE LAST_ID1)
+            CONTINUE
+        ELSE
+            FILL " " IN LAST_ID1
+            MOVE DUPE_ID1 TO LAST_ID1
+        ENDIF
+
+.       /* Get this member's Demographics */
+        CALL UTIL_MEM_FIND USING DUPE_ID1
+        IF (NOT EQUAL)
+            CALL LOG_OUT USING DUPE_ID1,"Error: Dependent Not Found"
+            CALL UTIL_XCOUNTER USING X_CNT3,1
+            CONTINUE
+        ELSE
+            PACK SAVE_MEM WITH MEM_LIST
+            CALL UTIL_XCOUNTER USING X_CNT1,1
+        ENDIF
+
+.       /* Check the 01 for a single active Life rec */
+        CALL FIND_GOOD_ENROLLMENT
+        CONTINUE IF (OVER) ...no good enrollment found
+
+.       /* Find this member's extra Life recs */
+        CALL FIND_DUPE_ENROLLMENT
+        CONTINUE IF (OVER)
+
+        IF (NOT VOID_CNT)
+            CALL LOG_OUT USING DUPE_ID1,"Error: No Dupe Found To Void. Review"
+            CALL UTIL_XCOUNTER USING X_CNT3,1
+            CONTINUE
+        ENDIF
+
+        CALL WRITE_VOID_RECS
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+LOG_OUT ROUTINE ID1@,MSG@
+ID1@        CHAR @
+MSG@        CHAR @
+...
+    debug
+    MOVE (ID1@+" || "+MSG@) TO LOG_REC
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+FIND_GOOD_ENROLLMENT ROUTINE
+./* Go search the 01 for current health enrollment */
+FIRST_PASS      NUM  1
+...
+    FILL " " IN MEM_AIM, CURRENT_LIFE
+    CLEAR MEM_AIM
+
+    MOVE ("01X"+MEM_ESSN+BLANKS) TO MEM_AIM1
+    MOVE ("03X"+"01"+BLANKS) TO MEM_AIM3
+    CALL UTIL_MEM_AIMFIND
+    IF (NOT EQUAL)
+        UNPACK SAVE_MEM INTO MEM_LIST
+        CALL LOG_OUT USING DUPE_ID1,"Error: No Employee MEM record found"
+        CALL UTIL_XCOUNTER USING X_CNT3,1
+        SETFLAG OVER
+        RETURN
+    ENDIF
+
+    SET FIRST_PASS
+    LOOP
+        IF (FIRST_PASS)
+            CLEAR FIRST_PASS
+            CALL UTIL_MEME_FIND USING MEM_ID1
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        BREAK IF (NOT EQUAL)
+        CONTINUE IF (SQUEEZE MEME_NET != "LIFE")
+        CONTINUE IF (SQUEEZE MEME_TRM & MEME_TRM < TODAY)
+        IF (SQUEEZE CURRENT_LIFE)
+            CALL LOG_OUT USING DUPE_ID1,"Error: Employee Has Dupe Coverage Too"
+            CALL UTIL_XCOUNTER USING X_CNT3,1
+            SETFLAG OVER
+            RETURN
+        ENDIF
+        PACK CURRENT_LIFE WITH MEME_LIST
+    REPEAT
+
+    SETFLAG NOT OVER
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+FIND_DUPE_ENROLLMENT ROUTINE
+./* Search this dependent's enrollment for any Life recs that don't
+.   match CURRENT_LIFE */
+FIRST_PASS      NUM  1
+FOUND_MATCH     NUM  1
+TRUE_PLAN       CHAR 4
+TRUE_TERM       CHAR 8
+...
+    debug
+    UNPACK CURRENT_LIFE INTO MEME_LIST
+    MOVE MEME_PLAN TO TRUE_PLAN
+    MOVE MEME_TRM TO TRUE_TERM
+
+    SET FIRST_PASS
+    CLEAR FOUND_MATCH
+    LOOP
+        IF (FIRST_PASS)
+            CLEAR FIRST_PASS
+            CALL UTIL_MEME_FIND USING DUPE_ID1
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        BREAK IF (NOT EQUAL)
+
+        debug
+        CONTINUE IF (SQUEEZE MEME_NET != "LIFE")
+        CONTINUE IF (SQUEEZE MEME_TRM & MEME_TRM < TODAY)
+
+        IF (MEME_PLAN = TRUE_PLAN & NOT FOUND_MATCH)
+            SET FOUND_MATCH
+            CONTINUE
+        ENDIF
+
+.       /* We found a dupe to void */
+        MOVE (VOID_CNT + 1) TO VOID_CNT
+        PACK VOID_RECS[VOID_CNT] WITH MEME_LIST
+    REPEAT
+
+    SETFLAG NOT OVER
+
+    IF (NOT FOUND_MATCH)
+        CALL LOG_OUT USING DUPE_ID1,"Error: Dependent Doesn't Match 01's Life At All"
+        CALL UTIL_XCOUNTER USING X_CNT3,1
+        SETFLAG OVER
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+WRITE_VOID_RECS ROUTINE
+./* Build a properly formatted void record */
+REC     NUM 2
+...
+    debug
+    UNPACK SAVE_MEM INTO MEM_LIST
+    FOR REC FROM 1 TO VOID_CNT
+        UNPACK VOID_RECS[REC] INTO MEME_LIST
+        CALL DATE_CALC USING MEME_EFF,"SUB","DAYS",1,MEME_TRM
+        MOVE "V" TO MEME_TLET
+        MOVE "LFVOID" TO MEME_CHGBY
+        MOVE TODAY TO MEME_CHGDT
+        PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+        UNPACK INM_REC INTO INM_LIST
+        CALL WRITE_OGBREC USING UPDATE_FD,UPDATE_FILE,INM_LIST
+        CALL UTIL_XCOUNTER USING X_CNT2,1
+        CALL LOG_OUT USING DUPE_ID1,("Update: Voided MEME_ID2: "+MEME_ID2+" MEME_PLAN: "+MEME_PLAN)
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_CLEAN ROUTINE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING DUPE_CSV_FD,DUPE_CSV_FILE
+
+.   /* Indicate that the file has been processed */
+    debug
+    MOVE ("mv #""+DUPE_CSV_FILE+"#"  #""+(DUPE_CSV_FILE+".dun")+"#"") TO SCRATCH
+    ROLLOUT SCRATCH
+
+    RETURN
+    ENDROUTINE
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+
+    INC UTIL_COMMON.SR  // OGB Compilation of Standard UTIL routines
+    INC DELIMIT.SR      // Delimited file parser
+    INC UTIL_MEM.SR     // MEM read routines
+    INC UTIL_MEME.SR    // MEME read routines
+
+./* =================
+. * End of shell.ps
+. * ================= */

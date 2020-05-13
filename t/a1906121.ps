@@ -1,0 +1,313 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1906121-Terms HSA Dedection Records for LSUHSC
++                      06/30/XXXX Resident Term File.
++    APSJM 06/12/2019 - INITIAL VERSION
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       MEMB.RL          ...Member Banking
+              INC       CLI.RL           ...Client 
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+              INC       CMDPARAM.CB
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+MEME_REF_FD         FILE       VAR=50,TEXT
+MEME_REF_NAME       INIT       "/w/a1906121_ref.txt"   
+MEME_REF_LIST       LIST
+MEME_REF_SSN        DIM        9
+MEME_REF_FIL        DIM        35
+                    LISTEND
+ 
+.Output Files
+MEME_O_FD     FILE     VAR=5320,TEXT
+MEME_O_NAME   INIT    "a1906121.txt"      
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+BLANK8        INIT  "        "
+CNT_5         DIM  5
+CNT_4         DIM  4
+CNT_3         DIM  3
+CNT_2         DIM  2
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+W_TRM         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Term HSA Deduct"  TO  C_OPER
+         MOVE      "A1906121"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEME_REF_FD,MEME_REF_NAME,MEME_REF_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACKLEN      MEM_AIM1 WITH "01X",MEME_REF_SSN,BLANKS
+    PACKLEN      MEM_AIM3 WITH "03X","01",BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+
+
+    IF (RESULT <> 1)
+       DEBUG
+       CONTINUE
+    ENDIF
+    CALL READ_MEME
+    IF (SQUEEZE MEME_SAV = "")
+      CONTINUE
+    ENDIF
+    CLEAR INM_REC
+    PACKLEN INM_REC WITH MEM_REC,MEME_SAV
+    UNPACK INM_REC INTO INM_LIST
+    MOVE "20190630" TO INME_TRM
+    CLEAR INME_CHGBY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING MEME_O_FD,MEME_O_NAME,INM_LIST
+    CLEAR INM_LIST
+ REPEAT
+ RETURN
+.
+READ_MEME    
+    CLEAR MEME_SAV
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    LOOP 
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST
+                                   MEME_FC:  ...TYPE OF INDEX
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES
+                                   1         ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                  BREAK
+            ENDIF
+            IF ((SQUEEZE MEME_NET = "BLUE") AND (SQUEEZE MEME_PLAN = "STAT"):
+               AND (MEME_TRM > "20190630"))
+               PACKLEN MEME_SAV WITH MEME_LIST
+               CONTINUE
+            ENDIF
+    REPEAT
+    RETURN
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING MEME_REF_FD,MEME_REF_NAME
+         CALL      PREP_OGBFILE USING MEME_O_FD,MEME_O_NAME 
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       CMDPARAM.SR
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1906121.PS
+. +++++++++++++++++++++++++++++++++++++

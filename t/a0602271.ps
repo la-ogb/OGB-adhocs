@@ -1,0 +1,303 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: A0602271                                            *
+.     *                                                                   *
+.     * DESCRIPTION:                                                      * 
+.     *                                                                   *
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APSJM 02/27/2005 A06022721 DEV - INITIAL VERSION.                 *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL           ...Member Enrollment   
+              INC       MEMO.RL           ...Member COB          
+              INC       MEMS.RL           ...Member Salaries     
+              INC       D_MEMMEM.CB
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+ISIS_SUFF_FD  FILE      VAR=44,TEXT
+ISIS_SUFF_NAME INIT      "/w/ups_suff.txt"
+ISIS_SUFF_LIST LIST
+ISIS_SUFF_SSN          DIM       09
+ISIS_SUFF_LNAME        DIM       16
+ISIS_SUFF_FNAME        DIM       16
+ISIS_SUFF_MINIT        DIM       01
+ISIS_SUFF_SUFFIX       DIM       02
+              LISTEND
+.
+U_SUFF_FD     FILE     VAR=2300,TEXT
+U_SUFF_NAME   INIT     "isis_suf.txt"
+.
+ISIS_DEM_FD    IFILE     VAR=2300,TEXT,DUP
+ISIS_DEM_NAME  INIT      "isis_dem.ix1"
+ISIS_DEM_LIST  LIST
+ISIS_DEM_ID1   DIM       8
+ISIS_DEM_RDATA DIM       2292
+               LISTEND
+.
+ISIS_DEM_KEY   DIM       8
+. ----------------------------
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+W_LNAME       DIM  20
+FPTR          FORM 2
+LPTR          FORM 2
+FIRST_READ    DIM  1
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "A0602271"        TO  C_OPER
+         MOVE      "FIX ISIS SUFF"        TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL OPEN_FILES
+   CALL PROCESS_WRK
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   MOVE      "MENU"        TO C_NEXT
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_WRK
+    MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+    CALL READ_OGBFILE USING ISIS_SUFF_FD,ISIS_SUFF_NAME,ISIS_SUFF_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    CALL X_DISPLAY_COUNTS
+.------------------------         
+...Get info from MEM-FILE
+.------------------------
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",ISIS_SUFF_SSN,BLANKS
+    PACK      MEM_AIM3 WITH "03X","01",BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+.   PACK ISIS_DEM_KEY WITH MEM_ID1
+.   CALL READ_OGBFILE_IX USING ISIS_DEM_FD,ISIS_DEM_NAME:
+.                              ISIS_DEM_KEY,ISIS_DEM_LIST
+.   IF (RESULT <> 1)
+.       CONTINUE
+.   ENDIF
+    IF (MEM_ID1 = "00149838")
+      CONTINUE
+    ENDIF
+    CALL BUMP_IMPACT_LNAME
+ REPEAT
+ RETURN
+
+BUMP_IMPACT_LNAME
+ RESET MEM_LNAME
+ SCAN "    " IN MEM_LNAME
+ IF EQUAL
+   CLEAR W_LNAME 
+   BUMP MEM_LNAME BY -1
+   MOVEFPTR MEM_LNAME TO LPTR
+   SETLPTR MEM_LNAME TO LPTR
+   RESET MEM_LNAME
+   PACK W_LNAME WITH MEM_LNAME," ",ISIS_SUFF_SUFFIX
+   MOVE W_LNAME TO MEM_LNAME    
+   MOVE BLANKS TO MEM_CHGBY
+   CLEAR MEME_LIST
+   CLEAR MEMO_LIST
+   CLEAR MEMS_LIST
+   PACKLEN INM_REC WITH MEM_LIST,MEME_LIST,MEMO_LIST,MEMS_LIST
+   UNPACK INM_REC INTO INM_LIST
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING U_SUFF_FD,U_SUFF_NAME,INM_LIST
+   CLEAR INM_LIST
+ ELSE
+   DEBUG
+ ENDIF
+ RETURN
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "Input Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written  :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+.        CALL      OPEN_OGBFILE_IX USING ISIS_DEM_FD,ISIS_DEM_NAME
+         CALL      OPEN_OGBFILE USING ISIS_SUFF_FD,ISIS_SUFF_NAME
+         CALL      PREP_OGBFILE USING U_SUFF_FD,U_SUFF_NAME
+         RETURN
+
+CLOSE_FILES
+.        CALL      CLOSE_OGBFILE_IX USING ISIS_DEM_FD,ISIS_DEM_NAME
+         CALL      CLOSE_OGBFILE USING ISIS_SUFF_FD,ISIS_SUFF_NAME
+         CALL      CLOSE_OGBFILE USING U_SUFF_FD,U_SUFF_NAME
+         RETURN
+
+WRITE_OUT       
+  RETURN
+
+.
+. ----------------------------
+. Update Valid Table with run date
+. ----------------------------
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End 
+. +++++++++++++++++++++++++++++++++++++

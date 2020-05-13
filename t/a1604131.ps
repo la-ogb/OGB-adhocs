@@ -1,0 +1,861 @@
+.     *********************************************************************
+.     *                     OFFICE OF GROUP BENEFITS                      *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: a1604131.ps                                         *
+.     * Description: Extract all dependents' demographic and enrollment   *
+.     *              data for all LaGov employees/retirees/survivors, etc.*
+.     *                                                                   *
+.     *-------------------------------------------------------------------*
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *            ---------------------------------------------          *
+.     * aplls 04/13////6 A1604131 DEV - Initial Version                   *
+.     *-------------------------------------------------------------------*
+.     * XXXXX ##/##/#### X####### MOD - Add comments                      *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       VALID.RL             ...Valid codes
+              INC       CMDPARAM.CB          ...OGB Custom File Handler              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrolllment
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       MEMU.RL          ...Member Underwriting Info
+              INC       CLI.RL           ...Client
+              INC       ISIS_DLY.RL
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+..."01" Members 
+ACTENR_FILE       FILE      VAR=8,TEXT
+ACTENR_NAME       INIT      "/w/mem_enr.txt" 
+
+ACTENR_LIST       LIST
+ACTENR_KEY1       DIM       08
+                  LISTEND
+
+...Output file of dependents demographic and enrollment records
+OUT_FILE          FILE      VAR=400,TEXT
+OUT_NAME          INIT      "/w/currdeps.csv"
+.OUT_NAME          INIT      "/w/a1604131.csv"
+
+OUT_LIST          LIST
+OUT_ESSN          DIM       09
+FILLER1           INIT     ","
+OUT_PSSN          DIM       09
+FILLER2           INIT     ","
+OUT_FNAME         DIM       15
+FILLER3           INIT     ","
+OUT_MINIT         DIM       01
+FILLER4           INIT     ","
+OUT_LNAME         DIM       20  
+FILLER5           INIT     ","
+OUT_DOB           DIM       08   
+FILLER6           INIT     ","
+OUT_SEX           DIM       01
+FILLER7           INIT     ","
+OUT_ADDR1         DIM       35
+FILLER8           INIT     ","
+OUT_ADDR2         DIM       35
+FILLER9           INIT     ","
+OUT_CITY          DIM       30
+FILLER10          INIT     ","
+OUT_STATE         DIM       02 
+FILLER11          INIT     ","
+OUT_ZIP           DIM       13
+FILLER12          INIT     ","
+OUT_ALT_ADDR1     DIM       40
+FILLER13          INIT     ","
+OUT_ALT_ADDR2     DIM       40
+FILLER14          INIT     ","
+OUT_ALT_CITY      DIM       40
+FILLER15          INIT     ","
+OUT_ALT_STATE     DIM       02
+FILLER16          INIT     ","
+OUT_ALT_ZIP       DIM       12
+FILLER17          INIT     ","
+OUT_REL           DIM       02
+FILLER18          INIT     ","
+OUT_HANDICAP      DIM       03
+FILLER19          INIT     ","
+OUT_CUSTODY       DIM       05
+FILLER20          INIT     ","
+OUT_HEALTH        DIM       01 
+FILLER21          INIT     ","
+OUT_HLTH_EFF      DIM       08
+FILLER22          INIT     ","
+OUT_LIFE          DIM       01
+FILLER23          INIT     ","
+OUT_LIFE_EFF      DIM       08 
+FILLER24          INIT     ","
+OUT_MARD          DIM       08
+FILLER25          INIT     ","
+                  LISTEND
+
+OUT_REC           DIM       400
+
+.
+. ---------------------------------------------
+. Program Specific Variables & Working Storage
+. ---------------------------------------------
+.
+INP_RESULT    FORM 1 
+MEM_RESULT    FORM 1 
+MEME_RESULT   FORM 1 
+MEMU_RESULT   FORM 1 
+SAV_MEM       DIM  1500
+SAV_MEME      DIM  600 
+FORM2         FORM 2
+FROM_MM       DIM  2
+FROM_CCYY     DIM  4
+THRU_MM       DIM  2
+THRU_CCYY     DIM  4
+W_DIM1        DIM  1
+DIM2          DIM  2
+DIM3          DIM  3
+DIM80         DIM  80
+ENR           INIT "01"
+BLANK8        INIT "        "
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+WS_EFF_CCYY   DIM       4
+WS_EFF_MM     DIM       2
+WS_EFF_DD     DIM       2
+WS_EFF        DIM       8
+WS_TRM        DIM       8
+TODAY_4       FORM      4
+JUNK4         DIM       4
+PARM_FROM     DIM       8
+PARM_THRU     DIM       8
+CCYY          FORM      4
+MM            DIM       2
+DD            DIM       2
+HLTH_CURR     DIM       1
+LIFE_CURR     DIM       1
+HLD_LEV1      DIM       5
+HLD_LEV2      DIM       5
+SAV_REL       DIM       2
+SAV_ID1       DIM       8
+SAV_MARD      DIM       8
+ENR_SSN       DIM       9
+HOLD_ESSN     DIM       9
+FIRST_READ    INIT     "Y"
+
+PARAM_LIST    LIST     WITH NAMES
+PARAM_FILE    DIM      12
+PARAM_FROM    DIM      8
+PARAM_THRU    DIM      8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "DEP. Extract"      TO  C_OPER
+         MOVE      "A1604131"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. --------------------------------
+... Adding CMD_START for autosys
+. ---------------------------------
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         DEBUG
+         CALL      INITIALIZE
+         CALL      REFORMAT_MEM
+         CALL      OPEN_FILES
+
+         CALL      PROCESS_DATA
+
+. ...Close all files        
+         CALL CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+         
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         IF (NOT C_CMDPAR)
+             MOVE SCH_RTSUCC TO SCH@RTCODE
+         ENDIF
+
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+         UNPACK    TODAY       INTO  TODAY_4,JUNK4
+
+. ...Display Counters
+         MOVE "Records Read      :" TO X_CNTDESC1
+         MOVE "                  :" TO X_CNTDESC2
+         MOVE "                  :" TO X_CNTDESC3
+         MOVE "Records Written   :" TO X_CNTDESC4
+         MOVE "                  :" TO X_CNTDESC5
+         MOVE "                  :" TO X_CNTDESC6
+         
+         IF (NOT C_CMDPAR)
+            CALL      X_DISPLAY_COUNTS
+         ENDIF
+         
+         RETURN
+         
+. ----------------------------
+. ----------------------------
+         
+.-------------------------------
+. Reformat MEM file
+.-------------------------------
+REFORMAT_MEM 
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+...Get only Enrollee records
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "mem.dbf /w/mem_enr.txt": 
+              " -p27-28eq#"",ENR,"#" 1-8 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+           IF (NOT C_CMDPAR)
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(mem.dbf)"
+               CHAIN     "MENU"
+           ELSE
+               CALL CMD_ERROR USING "REFORMAT FAILED (mem.dbf)"
+               STOP
+           ENDIF
+         ENDIF
+
+    SORT "/w/mem_enr.txt /w/mem_enr.txt 1-8 -u -t"
+         IF OVER
+           IF (NOT C_CMDPAR)
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(mem_enr.txt)"
+               CHAIN     "MENU"
+           ELSE
+               CALL CMD_ERROR USING "SORT FAILED (mem_enr.txt)"
+               STOP
+           ENDIF
+         ENDIF
+ 
+    RETURN
+
+.-----------------------------
+. Open Files
+.-----------------------------
+
+OPEN_FILES
+
+         CALL OPEN_OGBFILE USING ACTENR_FILE,ACTENR_NAME
+
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+. Process Data
+. ----------------------------
+
+PROCESS_DATA
+
+... Read the Input file (mem_enr.txt)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ACTENR_FILE,ACTENR_NAME,ACTENR_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+        IF (CNT1_3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the MEM file for the Member 
+
+        CLEAR     SAV_REL
+        CLEAR     SAV_ID1
+        CLEAR     SAV_MARD
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH ACTENR_KEY1
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+
+... If the Member is not found, the program continues to the next record 
+... to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            CONTINUE         
+        ENDIF
+
+        IF (MEM_ID1 <> ACTENR_KEY1)
+            CONTINUE         
+        ENDIF
+
+... Excluding deceased members                                           
+        IF (SQUEEZE MEM_DOD <> "")
+            CONTINUE
+        ENDIF
+               
+        MOVE MEM_ESSN TO   OUT_ESSN
+        MOVE MEM_MARD TO   SAV_MARD
+        MOVE MEM_ID1  TO   SAV_ID1
+
+        CALL CHECK_OUT_MEME
+
+        IF ((SQUEEZE HLTH_CURR = "") AND (SQUEEZE LIFE_CURR = ""))
+           CONTINUE
+        ENDIF
+
+        UNPACK HLD_LEV1 INTO W_DIM1
+        CLEAR CLI_AIM
+        IF (W_DIM1 = "R")
+           PACK CLI_AIM1 WITH "01X",HLD_LEV2,BLANKS
+           PACK CLI_AIM2 WITH "02X","BILL",BLANKS
+        ELSE
+           PACK CLI_AIM1 WITH "01X",HLD_LEV1,BLANKS
+           PACK CLI_AIM2 WITH "02X","BILL",BLANKS
+        ENDIF
+        CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                                 CLI_FN:      ...File Name List
+                                 CLI_FC:      ...(I)ndex Or (A)imdex
+                                 CLI_FV:      ...File Key Varlists
+                                 CLI_AIM:     ...File Key Sizes
+                                 CLI_LIST:    ...File Record (Field List)
+                                 CLI_REC:     ...File Record (Packed)
+                                 CLI_OLD:     ...File Saved When Read
+                                 CLI_QTY:     ...Number Of Files
+                                 2            ...File Number 
+        IF (RESULT <> 1)
+           CONTINUE
+        ENDIF
+        IF (CLI_US02 <> "U")
+           CONTINUE
+        ENDIF
+  
+        CALL READ_DEPS_MEM 
+
+    REPEAT                                   
+
+  RETURN
+
+. -----------------------------------------------------------------------------
+. -----------------------------------------------------------------------------
+
+. ----------------------------------------------
+. Checks for current HEALTH AND/OR LIFE Record
+. ----------------------------------------------
+
+CHECK_OUT_MEME
+  
+         CLEAR HLTH_CURR
+         CLEAR LIFE_CURR
+         CLEAR HLD_LEV1 
+         CLEAR HLD_LEV2 
+         CLEAR MEME_SAV
+         CLEAR MEME_SAV2
+         PACK MEME_FK11 WITH ACTENR_KEY1,BLANKS
+
+         CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                               MEME_FN:  ...FILE NAME LIST  
+                               MEME_FC:  ...TYPE OF INDEX   
+.                                        ...(I)NDEX OR (A)IMDEX
+                               MEME_FV:  ...FILE KEY VARLISTS
+                               MEME_FK:  ...FILE KEY SIZES  
+                               MEME_LIST:...FILE RECORD (FIELD LIST)
+                               MEME_REC: ...FILE RECORD (PACKED)
+                               MEME_OLD: ...FILE SAVED WHEN READ
+                               MEME_QTY: ...NUMBER OF FILES 
+                               1         ...FILE NUMBER FOR THIS READ
+           LOOP
+               CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                     MEME_FN:  ...FILE NAME LIST  
+                                     MEME_FC:  ...TYPE OF INDEX   
+.                                              ...(I)NDEX OR (A)IMDEX
+                                     MEME_FV:  ...FILE KEY VARLISTS
+                                     MEME_FK:  ...FILE KEY SIZES  
+                                     MEME_LIST:...FILE RECORD (FIELD LIST)
+                                     MEME_REC: ...FILE RECORD (PACKED)
+                                     MEME_OLD: ...FILE SAVED WHEN READ
+                                     MEME_QTY: ...NUMBER OF FILES 
+                                     1         ...FILE NUMBER FOR THIS READ
+                                     
+             IF ((MEME_ID1 <> ACTENR_KEY1) OR (RESULT <> 1))
+                 BREAK       
+             ENDIF         
+
+... Excluding Voided records
+             IF (MEME_TLET = "V")  
+                CONTINUE
+             ENDIF
+
+             IF (SQUEEZE MEME_TRM = "")
+                 MOVE "99999999" TO MEME_TRM
+             ENDIF
+
+... Extracting members with current coverage                 
+             IF ((SQUEEZE MEME_EFF <= TODAY) AND (SQUEEZE MEME_TRM <= TODAY))
+                CONTINUE
+             ENDIF
+
+             IF (MEME_NET = "NOCOV")
+                CONTINUE
+             ENDIF
+
+             IF (MEME_RT = "01")
+                CONTINUE
+             ENDIF
+
+             IF (MEME_NET = "EGWP ")
+                CONTINUE
+             ENDIF
+
+... Check to see if "01" member have any Health or Life Coverage
+             IF (MEME_NET = "LIFE ")
+                MOVE "Y" TO LIFE_CURR
+             ELSE
+                MOVE "Y" TO HLTH_CURR
+             ENDIF
+
+             MOVE MEME_LEV1 TO HLD_LEV1
+             MOVE MEME_LEV2 TO HLD_LEV2
+
+           REPEAT
+
+CHECK_OUT_MEME_END
+         RETURN
+
+. ------------------------------------------------------------------------
+. Read for Active Dependent MEM Records under Plan Member   
+. ------------------------------------------------------------------------
+
+READ_DEPS_MEM
+
+         MOVE      "Y" TO FIRST_READ
+         MOVE      OUT_ESSN TO HOLD_ESSN
+         CLEAR     MEM_AIM
+         PACK      MEM_AIM1 WITH "01X",OUT_ESSN,BLANKS
+         LOOP
+           IF (FIRST_READ = "Y")
+             CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                                 MEM_FN:          ...FILE NAME LIST
+                                 MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                                 MEM_FV:          ...FILE KEY VARLISTS
+                                 MEM_AIM:         ...FILE KEY SIZES
+                                 MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                                 MEM_REC:         ...FILE RECORD (PACKED)
+                                 MEM_OLD:         ...FILE SAVED WHEN READ
+                                 MEM_QTY:         ...NUMBER OF FILES
+                                 2                 ...FILE NUMBER FOR THIS READ
+
+               MOVE "N" TO FIRST_READ
+           ELSE
+               CALL FILE_NEXT USING MEM_FD: ...FILE DECLARATION LIST
+                       MEM_FN:              ...FILE NAME LIST
+                       MEM_FC:              ...TYPE OF INDEX
+.                                           ...(I)NDEX or (A)IMDEX
+                       MEM_FV:              ...FILE KEY VARLISTS
+                       MEM_FK:              ...FILE KEY SIZES
+                       MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                       MEM_REC:             ...FILE RECORD (PACKED)
+                       MEM_OLD:             ...FILE SAVED WHEN READ
+                       MEM_QTY:             ...NUMBER OF FIlES
+                       2                    ...FILE NUMBER FOR THIS READ
+           ENDIF
+           
+           IF ((RESULT <> 1) OR (OUT_ESSN <> HOLD_ESSN))
+               BREAK    
+           ENDIF
+    
+           IF (MEM_REL = "01")
+               CONTINUE
+           ENDIF        
+        
+           IF (SQUEEZE MEM_DOD <> "")
+               CONTINUE
+           ENDIF
+                
+           MOVE MEM_PSSN  TO OUT_PSSN 
+           MOVE MEM_DOB   TO OUT_DOB  
+           MOVE MEM_SEX   TO OUT_SEX  
+           MOVE MEM_REL   TO OUT_REL  
+           MOVE MEM_LNAME TO OUT_LNAME
+           REPLACE ", "   IN OUT_LNAME
+           SETLPTR OUT_LNAME TO 20
+           MOVE MEM_FNAME TO OUT_FNAME
+           REPLACE ", "   IN OUT_FNAME
+           SETLPTR OUT_FNAME TO 15
+           MOVE MEM_MINIT TO OUT_MINIT
+           REPLACE ", "   IN OUT_MINIT
+           MOVE MEM_ADDR1 TO OUT_ADDR1
+           REPLACE ", "   IN OUT_ADDR1
+           SETLPTR OUT_ADDR1 TO 35
+           MOVE MEM_ADDR2 TO OUT_ADDR2
+           REPLACE ", "   IN OUT_ADDR2
+           SETLPTR OUT_ADDR2 TO 35
+           MOVE MEM_CITY TO OUT_CITY
+           REPLACE ", "  IN OUT_CITY
+           SETLPTR OUT_CITY TO 30
+           MOVE MEM_STATE TO OUT_STATE
+           REPLACE ", "   IN OUT_STATE
+           MOVE MEM_ZIP TO OUT_ZIP
+           REPLACE ", " IN OUT_ZIP 
+           SETLPTR OUT_ZIP TO 13
+
+...Adding Marriage Date to the file if the dependent is an "02".  If the "01" PM
+...doesn't have a marriage date and the "02" does populating with "02's" date.
+           IF (MEM_REL = "02")
+              IF (SQUEEZE SAV_MARD = "")
+                 MOVE MEM_MARD TO OUT_MARD
+              ELSE
+                 MOVE SAV_MARD TO OUT_MARD
+              ENDIF
+           ELSE 
+              MOVE "        " TO OUT_MARD
+           ENDIF
+
+. Disability/Handicapped Flag                     
+           PACK OUT_HANDICAP  WITH BLANKS
+           IF (SQUEEZE MEM_LIFE = "HANDIC")
+              PACK OUT_HANDICAP  WITH "OGB",BLANKS
+           ENDIF
+           IF (SQUEEZE MEM_LIFE = "LSUHDC")
+              PACK OUT_HANDICAP  WITH "LSU",BLANKS
+           ENDIF
+. Custody Flag                
+           PACK OUT_CUSTODY WITH BLANKS
+           IF (SQUEEZE MEM_LIFE = "LEGAL")
+              PACK OUT_CUSTODY WITH "LEGAL",BLANKS
+           ENDIF                    
+           IF (SQUEEZE MEM_LIFE = "CUMAN")
+              PACK OUT_CUSTODY WITH "CUMAN",BLANKS
+           ENDIF                     
+
+.Clear secondary address fields
+           PACK OUT_ALT_ADDR1 WITH BLANKS
+           PACK OUT_ALT_ADDR2 WITH BLANKS
+           PACK OUT_ALT_CITY  WITH BLANKS
+           PACK OUT_ALT_STATE WITH BLANKS
+           PACK OUT_ALT_ZIP   WITH BLANKS
+
+.Read MEMU for secondary addresses
+           CLEAR MEMU_FK11
+           PACK  MEMU_FK11 WITH SAV_ID1,BLANKS
+           CALL      FILE_READ USING MEMU_FD:    ...File declaration list
+                                     MEMU_FN:  ...File name list
+                                     MEMU_FC:  ...(I)ndex or (A)imdex
+                                     MEMU_FV:  ...File key varlists
+                                     MEMU_FK:  ...File key sizes
+                                     MEMU_LIST: ...File record (field list)
+                                     MEMU_REC: ...File record (packed)
+                                     MEMU_OLD: ...File saved when read
+                                     MEMU_QTY: ...Number of files
+                                     1         ...File number for this read
+           CALL      FILE_NEXT
+       
+       
+           IF ((RESULT = 1) AND (SAV_ID1 = MEMU_ID1))
+                 PACK OUT_ALT_ADDR1 WITH MEMU_L,BLANKS
+                 PACK OUT_ALT_ADDR2 WITH MEMU_M,BLANKS
+                 PACK OUT_ALT_CITY  WITH MEMU_N,BLANKS
+                 PACK OUT_ALT_STATE WITH MEMU_O,BLANKS
+                 PACK OUT_ALT_ZIP   WITH MEMU_P,BLANKS
+           ENDIF 
+
+           CALL CHECK_FOR_DEPS_REC
+
+         REPEAT    
+       
+         RETURN
+
+
+. ----------------------------------------------
+. Checks for Dependents Health and Life Records
+. ----------------------------------------------
+
+CHECK_FOR_DEPS_REC
+  
+         MOVE "N" TO HLTH_CURR
+         MOVE "N" TO LIFE_CURR
+         MOVE BLANKS TO OUT_HLTH_EFF
+         MOVE BLANKS TO OUT_LIFE_EFF
+
+         PACK MEME_FK11 WITH MEM_ID1,BLANKS
+
+         CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                               MEME_FN:  ...FILE NAME LIST  
+                               MEME_FC:  ...TYPE OF INDEX   
+.                                        ...(I)NDEX OR (A)IMDEX
+                               MEME_FV:  ...FILE KEY VARLISTS
+                               MEME_FK:  ...FILE KEY SIZES  
+                               MEME_LIST:...FILE RECORD (FIELD LIST)
+                               MEME_REC: ...FILE RECORD (PACKED)
+                               MEME_OLD: ...FILE SAVED WHEN READ
+                               MEME_QTY: ...NUMBER OF FILES 
+                               1         ...FILE NUMBER FOR THIS READ
+           LOOP
+               CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                     MEME_FN:  ...FILE NAME LIST  
+                                     MEME_FC:  ...TYPE OF INDEX   
+.                                              ...(I)NDEX OR (A)IMDEX
+                                     MEME_FV:  ...FILE KEY VARLISTS
+                                     MEME_FK:  ...FILE KEY SIZES  
+                                     MEME_LIST:...FILE RECORD (FIELD LIST)
+                                     MEME_REC: ...FILE RECORD (PACKED)
+                                     MEME_OLD: ...FILE SAVED WHEN READ
+                                     MEME_QTY: ...NUMBER OF FILES 
+                                     1         ...FILE NUMBER FOR THIS READ
+                                     
+             IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                 BREAK       
+             ENDIF         
+
+... Excluding EGWP records
+             IF (SQUEEZE MEME_NET = "EGWP")
+                CONTINUE
+             ENDIF
+
+... Excluding Voided records
+             IF (MEME_TLET = "V")  
+                CONTINUE
+             ENDIF
+
+... Excluding No Covage records
+             IF (MEME_NET = "NOCOV")
+                CONTINUE
+             ENDIF
+
+             IF (MEME_RT = "01")
+                CONTINUE
+             ENDIF
+
+             IF (SQUEEZE MEME_TRM = "")
+                 MOVE "99999999" TO MEME_TRM
+             ENDIF
+
+... Extracting members with current coverage                 
+             IF ((SQUEEZE MEME_EFF <= TODAY) AND (SQUEEZE MEME_TRM <= TODAY))
+                CONTINUE
+             ENDIF
+
+... Check to see if Dependents have any Health or Life Coverage
+             IF (MEME_NET = "LIFE ")
+                MOVE "Y" TO LIFE_CURR
+                PACK OUT_LIFE_EFF WITH MEME_EFF
+             ELSE
+                MOVE "Y" TO HLTH_CURR
+                PACK OUT_HLTH_EFF WITH MEME_EFF
+             ENDIF
+
+         REPEAT
+ 
+         IF ((LIFE_CURR = "N") AND (HLTH_CURR = "N"))
+            GOTO CHECK_FOR_DEPS_REC_END
+         ENDIF
+
+         PACK OUT_LIFE   WITH LIFE_CURR
+         PACK OUT_HEALTH WITH HLTH_CURR
+
+         CALL WRITE_DEPS_REC  
+
+CHECK_FOR_DEPS_REC_END
+         RETURN
+
+.##############################################################################
+WRITE_DEPS_REC
+.##############################################################################
+.------------------------------
+...Write out Dependents records
+.------------------------------
+
+.   PACK OUT_REC WITH MEME_LIST
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUT_FILE:
+                            OUT_NAME:
+                            OUT_LIST     
+    ADD   1  TO X_CNT4
+
+WRITE_DEPS_REC_END
+  RETURN
+
+.##############################################################################
+
+. ----------------------------------------------------
+. Operator pressed F9
+. ----------------------------------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+.-----------------------------
+. Close Files
+.
+.-----------------------------
+
+CLOSE_FILES
+
+         MOVE ACTENR_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING ACTENR_FILE,ACTENR_NAME
+
+         MOVE OUT_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+      IF (C_CMDPAR)
+         CALL CMD_END
+         STOP
+      ENDIF
+
+      IF (RUN_MODE = "N")
+          DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL
+          MOVE      "        NEOJ        " TO X_FINISH_STATUS
+      ENDIF 
+      CALL        X_DISPLAY_COUNTS
+         
+    RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       CMDPARAM.SR  
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1604131.PS
+. +++++++++++++++++++++++++++++++++++++

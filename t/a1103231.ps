@@ -1,0 +1,609 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1103231
++    Description    :  Grandfathered Vesting Analysis                  
++
++    apeks 03/23/2011 a1103231 DEV - Initial Version. 
++..............................REVISIONS.......................................
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common work area
+              INC       X_OGBFILE.CB
+              INC       PRT.RL               ...Printer Definition File
+              INC       MEM.RL               ...Member Demographics
+              INC       MEME.RL              ...Member Eligibility
+              INC       CLI.RL               ...Client Demographics
+              INC       ANA.RL               ...Name and Address File
+              INC       VALID.RL             ...Valid codes
+
+. --------------------------------------------------------------------------
+.
+DATE1         DIM       8
+DATE2         DIM       8
+DATE3         DIM       8
+IDX_OPTS      DIM       200
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+TIMESTAMP     DIM       14
+FROM_DATE     DIM       8
+THRU_DATE     DIM       8
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+FORM1         FORM      1
+FORM2         FORM      2
+FORM3         FORM      3
+FORM4         FORM      4
+FORM5         FORM      5
+FORM6         FORM      6
+FORM7         FORM      7
+FORM8         FORM      8
+FORM9         FORM      9
+FORM10        FORM      10
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM4          DIM       4
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM8          DIM       8
+DIM9          DIM       9
+DIM10         DIM       10
+DIMTWO        DIM       2
+
+CURRDATE      DIM       8
+W_CLCTRM      DIM       8
+
+W_DAYS        FORM      4
+W_YEARS       FORM      4
+W_TOTDAYS     FORM      4
+
+COUNT_MEM     FORM      8
+COUNT_INP     FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+HLD_CLI       DIM       4
+HLD_MEM       DIM       8
+HLD_DOD       DIM       8
+HLD_RET       DIM       8
+HLD_SSN       DIM       9
+HLD_REL       DIM       2
+
+TMP_FILE      FILE      VAR=100,TEXT
+TMP_NAME      INIT      "/w/a1103231.tmp"     
+TMP_LIST      LIST
+TMP_EFF       DIM       8
+TMP_TRM       DIM       8
+TMP_MEM       DIM       8
+TMP_LEV1      DIM       4
+TMP_LEV2      DIM       4
+TMP_NET       DIM       5
+TMP_PRD       DIM       5
+              LISTEND
+
+ERR_FILE      FILE      VAR=50,TEXT
+ERR_NAME      INIT      "/w/a1103231.err"
+ERR_LIST      LIST
+ERR_MEM       DIM       8
+ERR_MSG       DIM       40
+              LISTEND 
+
+INP_FILE      FILE      VAR=100,TEXT
+INP_NAME      INIT      "/w/a1103231.inp"
+INP_LIST      LIST
+INP_SSN       DIM       9
+INP_EFF       DIM       8
+INP_TRM       DIM       8
+INP_MEM       DIM       8
+INP_LEV1      DIM       4
+INP_LEV2      DIM       4
+INP_NET       DIM       5
+INP_PRD       DIM       5
+INP_REL       DIM       2
+              LISTEND
+
+EXC_FILE      IFILE     FIX=4,TEXT,KEYL=4
+EXC_NAME      INIT      "/w/cli_excluded.ix1"
+EXC_LIST      LIST
+EXC_CLI       DIM       4
+              LISTEND
+
+OUT_FILE      FILE      VAR=100,TEXT
+OUT_NAME      INIT      "/w/a1103231.out"
+OUT_LIST      LIST      
+OUT_MEM       DIM       8
+OUT_FIRST     DIM       8        .earliest effective date
+OUT_LAST      DIM       8        .latest term date
+              LISTEND
+
+ALL_FILE      FILE      VAR=100,TEXT
+ALL_NAME      INIT      "/w/a1103231.all"  
+
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST
+PARAM_FILE    DIM       12
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+.RUN_CLIPCALC    EXTERNAL
+
+. -----------------
+.   Begin Program
+. -----------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "Vesting Analysis"    TO  C_OPER
+         MOVE      "a1103231"            TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+         LOADMOD   "clipcalc"
+
+. --------------------------------------------------------------------------------
+.   1-Help  2-Srch  3-Prev  4-Next  5-New   6-Serv  7-Code  8-Note  9-Quit 10-More
+. --------------------------------------------------------------------------------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         IF (C_RMODE = "B")
+            SHUTDOWN
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+
+MAIN_PROCESS
+
+         CALL      INITIALIZE    
+         CALL      GET_MEMBERS    
+         CALL      NEOJ
+
+         TRAPREST  TRAP_DATA
+
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. -----------------------------------
+.  Prepare for extract
+. -----------------------------------
+
+INITIALIZE
+
+         CLOCK TIMESTAMP INTO CURRDATE 
+         MOVE      0           TO  ERROR_COUNT
+
+. Reformat MEME file
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" Reformatting MEME ":
+                      text=" Please wait...      "
+         ENDIF
+
+         PACK SCRATCH WITH "meme.dbf ",TMP_NAME:
+                           " 96-103 104-111 1-8":    
+                           " 21-25 26-30 112-116 117-121":
+                           " -p21neR":
+                           " -p26-27ne90":
+                           " -p117-121neHMO65":
+                           " -p117-121nePPO65":
+                           " -p117-121neFFS65":
+                           " -p117-119neHSA":
+                           " -p112-116neNOCOV":
+                           " -p112-114neDHH":
+                           " -p112-115neLIFE -j -t",BLANKS
+         REFORMAT SCRATCH
+
+    
+         PACK SCRATCH WITH TMP_NAME," ",TMP_NAME," 17-24 1-8 -j -t",BLANKS
+         SORT SCRATCH 
+
+. Build file with SSN
+         CALL OPEN_OGBFILE USING TMP_FILE,TMP_NAME
+         CALL PREP_OGBFILE USING INP_FILE,INP_NAME
+         CALL PREP_OGBFILE USING ERR_FILE,ERR_NAME
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         LOOP
+            CALL READ_OGBFILE USING TMP_FILE,TMP_NAME,TMP_LIST
+            IF (RESULT <> 1)
+               BREAK
+            ENDIF
+       
+            IF (TMP_MEM <> HLD_MEM)
+               CALL READ_MEM
+            ENDIF                   
+
+            IF (SQUEEZE HLD_SSN = "")
+               PACK ERR_MEM WITH TMP_MEM
+               PACK ERR_MSG WITH "No SSN on File",BLANKS
+               CALL WRITE_OGBREC USING ERR_FILE,ERR_NAME,ERR_LIST
+               CLEAR ERR_LIST
+               ADD 1 TO ERROR_COUNT
+               CONTINUE
+            ENDIF
+
+            CONTINUE IF (SQUEEZE HLD_RET <> "")
+            CONTINUE IF (SQUEEZE HLD_DOD <> "")
+
+            PACK INP_SSN  WITH HLD_SSN,BLANKS
+            PACK INP_MEM  WITH TMP_MEM,BLANKS
+            PACK INP_EFF  WITH TMP_EFF,BLANKS
+            PACK INP_TRM  WITH TMP_TRM,BLANKS
+            PACK INP_LEV1 WITH TMP_LEV1,BLANKS
+            PACK INP_LEV2 WITH TMP_LEV2,BLANKS
+            PACK INP_NET  WITH TMP_NET,BLANKS
+            PACK INP_PRD  WITH TMP_PRD,BLANKS 
+            PACK INP_REL  WITH HLD_REL,BLANKS 
+
+            CALL WRITE_OGBREC USING INP_FILE,INP_NAME,INP_LIST
+            CLEAR INP_LIST
+
+         REPEAT        
+
+         CALL CLOSE_OGBFILE USING TMP_FILE,TMP_NAME
+         CALL CLOSE_OGBFILE USING INP_FILE,INP_NAME
+
+         PACK SCRATCH WITH INP_NAME," ",INP_NAME," 1-17 -j -t",BLANKS
+         SORT SCRATCH
+
+. Set up screen display
+         CALL X_BLANK_SCREEN
+
+         MOVE      0           TO  COUNT_INP 
+         MOVE      0           TO  WRITE_COUNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" Input Read          ":
+                      text=" Written             ":
+                      text=" Errors              "
+         ENDIF
+         CALL      OPEN_OGBFILE USING INP_FILE,INP_NAME
+         CALL      OPEN_OGBFILE_IX USING EXC_FILE,EXC_NAME
+         CALL      PREP_OGBFILE USING OUT_FILE,OUT_NAME
+         CALL      PREP_OGBFILE USING ALL_FILE,ALL_NAME
+
+         RETURN
+
+. -----------------------------------
+. Read MEM file for SSN
+. -----------------------------------
+
+READ_MEM
+
+         CLEAR HLD_RET
+         CLEAR HLD_DOD
+         CLEAR HLD_SSN
+         CLEAR HLD_REL
+
+         PACK MEM_FK11 WITH TMP_MEM
+         CALL   FILE_READ USING MEM_FD:    ...File declaration list
+                MEM_FN:   ...File name list
+                MEM_FC:   ...(I)ndex or (A)imdex
+                MEM_FV:   ...File key varlists
+                MEM_FK:   ...File key sizes
+                MEM_LIST: ...File record (field list)
+                MEM_REC:  ...File record (packed)
+                MEM_OLD:  ...File saved when read
+                MEM_QTY:  ...Number of files
+                1         ...File number for this read
+         IF (RESULT <> 1)
+            PACK ERR_MEM WITH TMP_MEM
+            PACK ERR_MSG WITH "MEM not found"
+            CALL WRITE_OGBREC USING ERR_FILE,ERR_NAME,ERR_LIST
+            CLEAR ERR_LIST
+            ADD 1 TO ERROR_COUNT
+            RETURN
+         ENDIF
+
+         PACK HLD_MEM WITH TMP_MEM
+         PACK HLD_REL WITH MEM_REL
+         IF (MEM_REL = "01")
+            PACK HLD_SSN WITH MEM_ESSN,BLANKS
+         ELSE
+            PACK HLD_SSN WITH MEM_PSSN,BLANKS
+         ENDIF 
+
+         TYPE HLD_SSN
+         IF NOT EQUAL
+            PACK HLD_SSN WITH BLANKS
+         ENDIF
+
+         IF (HLD_SSN = "000000000")
+            PACK HLD_SSN WITH BLANKS
+         ENDIF
+
+         UNPACK HLD_SSN INTO DIM5
+         IF (DIM8 = "00000")
+            PACK HLD_SSN WITH BLANKS
+         ENDIF
+
+         PACK HLD_RET WITH MEM_RETD,BLANKS
+         PACK HLD_DOD WITH MEM_DOD,BLANKS
+
+         RETURN
+
+. -----------------------------------
+. Read through the Input file
+. -----------------------------------
+
+GET_MEMBERS    
+
+         CLEAR HLD_SSN
+         CLEAR HLD_REL
+         CLEAR HLD_MEM
+         MOVE 0 TO W_DAYS 
+         MOVE 0 TO W_YEARS
+         MOVE 0 TO W_TOTDAYS
+         LOOP
+            MOVE      OGB_SEQ1 TO OGB_SEQ
+            CALL      READ_OGBFILE USING INP_FILE,INP_NAME,INP_LIST  
+            IF        (RESULT <> 1) 
+. Write out last member
+                      CALL OUTPUT_MEM                      
+                      BREAK
+            ENDIF
+
+            ADD       1 TO COUNT_INP
+            MOVE      COUNT_INP TO WORK_COUNT
+            UNPACK    WORK_COUNT INTO FRONT,BACK
+            IF (BACK = "000")
+               IF (C_RMODE = "I")
+                  DISPLAY   *P41:20,COUNT_INP
+                  DISPLAY   *P41:21,WRITE_COUNT
+                  DISPLAY   *P41:22,ERROR_COUNT
+               ENDIF
+            ENDIF
+ 
+. Write out prev member                  
+            IF (HLD_SSN <> INP_SSN)
+               IF (SQUEEZE HLD_SSN <> "")
+                  CALL OUTPUT_MEM
+               ENDIF
+               debug
+               PACK HLD_SSN WITH INP_SSN
+               PACK HLD_MEM WITH INP_MEM
+               PACK OUT_FIRST WITH INP_EFF,BLANKS
+               PACK OUT_LAST WITH INP_TRM,BLANKS
+               CLEAR HLD_REL
+               MOVE 0 TO W_DAYS 
+               MOVE 0 TO W_YEARS
+               MOVE 0 TO W_TOTDAYS
+            ENDIF
+
+            CALL DATE_CALC USING INP_EFF,"SUB","DAYS",1,W_CLCTRM
+
+. Eliminate voided enrollment
+            CONTINUE IF (W_CLCTRM = INP_TRM)
+            debug          
+
+. Calculate length of coverage
+            CALL  DELTA_DAYS    USING INP_TRM,INP_EFF,W_DAYS
+            ADD W_DAYS TO W_TOTDAYS
+
+.Check for continuous enrollment
+            IF (W_CLCTRM <> OUT_LAST)
+               PACK OUT_FIRST WITH INP_EFF
+               PACK OUT_LAST WITH INP_TRM
+            ENDIF            
+
+.Get latest term date
+            IF (SQUEEZE INP_TRM = "")
+               PACK OUT_LAST WITH "99999999",BLANKS
+            ELSE
+               IF (INP_TRM > OUT_LAST)
+                  PACK OUT_LAST WITH INP_TRM
+               ENDIF 
+            ENDIF
+
+.Capture current LEV1/REL
+            IF (INP_EFF <= CURRDATE)
+               IF (INP_TRM > CURRDATE OR SQUEEZE INP_TRM = "")
+                  PACK HLD_CLI WITH INP_LEV1
+                  IF (INP_REL = "01")
+                     PACK HLD_REL WITH INP_REL,BLANKS
+                  ENDIF
+               ENDIF
+            ENDIF
+
+         REPEAT
+
+         RETURN
+
+. -----------------------------
+. Output Fully Vested members
+. -----------------------------
+
+OUTPUT_MEM
+
+. Skip members who do not have current coverage
+         IF (SQUEEZE HLD_CLI = "")
+            RETURN
+         ENDIF
+
+         IF (OUT_LAST < CURRDATE)
+            RETURN
+         ENDIF
+
+.Skip current dependents                     
+         IF (SQUEEZE HLD_REL = "")
+            RETURN
+         ENDIF
+
+. Read for excluded agencies
+         CALL READ_OGBFILE_IX USING EXC_FILE,EXC_NAME,HLD_CLI,EXC_LIST
+         IF (RESULT = 1)
+            RETURN
+         ENDIF
+
+. Convert days to years
+         debug
+         DIVIDE 365 INTO W_TOTDAYS GIVING W_YEARS
+
+         PACK OUT_MEM WITH HLD_MEM
+. Write all eligible active members
+         CALL WRITE_OGBREC USING ALL_FILE,ALL_NAME,OUT_LIST
+
+.Eliminate members not grandfathered
+         IF (OUT_FIRST > "20020101" AND W_YEARS < 20)
+            RETURN
+         ENDIF
+
+.Write record
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+         ADD 1 TO WRITE_COUNT
+         CLEAR OUT_LIST
+
+         RETURN
+
+. -----------------------
+.   Normal End of Job  
+. -----------------------
+NEOJ
+         IF (C_RMODE = "I")
+            DISPLAY   *P41:20,COUNT_INP 
+            DISPLAY   *P41:21,WRITE_COUNT
+            DISPLAY   *P41:22,ERROR_COUNT
+            error     horz="23",vert="09":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" a1103231 - Vesting Analysis Done":
+                      text="---------------------------------"
+         ENDIF
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO
+         INC       X_OGBFILE.IO
+         INC       X_STANDARD.SR
+
+

@@ -1,0 +1,415 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0309041.PS
++    Description    :  Program to extract paid claims by Provider
++
++    apeks 09/09/2003 a0309091 DEV - Initial Version. 
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy ayymmdd# MOD - Description        
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       PRO.RL               ...Provider Demographics
+              INC       PROP.RL              ...Provider Contract
+              INC       CLM.RL               ...Claim Header File
+              INC       CLMS.RL              ...Claim Service File
+              INC       SCH.RL               ...Scheduler File  
+.             INC       PRVCLM.RL            ...Provider Claim File 
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+. Reformat of CLM File
+TMP_FILE        FILE    VAR=100,TEXT
+TMP_NAME        INIT    "/w/a0309041.tmp"
+TMP_LIST        LIST
+TMP_CLM         DIM     8
+TMP_SRC         DIM     1
+TMP_BATCH       DIM     8
+TMP_RECD        DIM     8
+TMP_FROM        DIM     8
+TMP_THRU        DIM     8
+TMP_PAID        DIM     8
+TMP_USER        DIM     8
+TMP_CHGBY       DIM     8
+                LISTEND
+
+. Output Files
+OUT_FILE        FILE    VAR=100,TEXT
+OUT_NAME        INIT    "/w/a0309041.txt"
+
+
+. ---------------------------------------------
+. Program Specific Variables & Working Storage
+. ---------------------------------------------
+CAL_CLOCK       DIM       21 
+CYCLE_DATE      DIM       8
+HOLD_CYCLE_DATE DIM       8
+HOLD_FILE_NME   DIM       31
+ORIG_RETURN     FORM      5       
+PARAM_LIST      LIST
+PARAM_XXX       DIM       10
+PARAM_YYY       DIM       5
+PARAM_DATE      DIM       8
+       	        LISTEND
+TRAP_DATA       DIM       500
+
+DIM2            DIM       2
+DIM8            DIM       8
+DIM10           DIM       10
+DIM11           DIM       11
+FORM9           FORM      9 
+FORM10          FORM      10
+FORM20          FORM      20
+
+MCS@DIM1        DIM       @
+MCS@DIM2        DIM       @
+MCS@FORM1       FORM      @
+
+W_YR1           FORM      4
+W_YR2           FORM      4
+
+WS_CCYY         DIM       4
+WS_CC           DIM       2
+WS_YY           DIM       2
+WS_MM           DIM       2
+WS_DD           DIM       2
+
+CLM_RD_CNT      FORM      10 
+CLM_WT_CNT      FORM      10 
+
+CURRDATE        DIM       8
+
+W_FROM          INIT      "20020701"
+W_THRU          DIM       8
+W_CLMDATE       DIM       8
+W_CURRDT        DIM       8
+
+THRU_YEAR       FORM      4
+THRU_MON        FORM      2
+THRU_DAY        FORM      2
+W_LEAP          FORM      1
+
+W_TYPE          DIM       10
+W_PERD          DIM       6 
+W_RGN           DIM       2
+W_SPL           DIM       5
+W_TIN           DIM       9
+W_NAME          DIM       35
+W_CHG           DIM       12  
+W_DEDU          DIM       12 
+W_ALLO          DIM       12 
+W_COIN          DIM       12 
+W_COPAY         DIM       12 
+W_NOTCOV        DIM       12 
+W_PDPRV         DIM       12  
+W_PDMEM         DIM       12 
+
+W_SUBLAG        DIM       12
+W_COMLAG        DIM       12
+W_DAYS          FORM      12
+W_ZERO          DIM       1
+
+W_PPO           DIM       1
+W_PRV           DIM       1
+W_PROD          DIM       5
+W_PLAN          DIM       4
+
+CNT1            FORM      12
+CNT2            FORM      12
+CNT3            FORM      12
+
+AMT1            FORM      9.2
+AMT2            FORM      9.2
+AMT3            FORM      9.2
+
+COMMA           INIT      ","
+QUOTE           INIT      "#""
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ---------------------------------
+. Start here if selected from menu   
+. ---------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. --------------------------------------
+. Start here if called by the Scheduler    
+. --------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "LATE DOS" TO  C_OPER
+         MOVE      "A0309041"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...No Traps should be Set
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         CALL INIT_PROG
+         CALL FIND_CLAIMS
+
+         RETURN
+
+. ----------------------------
+. Initialize Program       
+. ----------------------------
+
+INIT_PROG
+
+         CALL MAKE_INPUT_FILE
+         CALL SCR_DISPLAY
+         CALL OPEN_FILES
+
+         RETURN
+
+. ----------------------------
+. Reformat files for Input  
+. ----------------------------
+
+MAKE_INPUT_FILE
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="15":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" Reformatting CLM File":
+                      text=" Please wait...      "
+         ENDIF
+
+. Reformat claims with a Output date in period
+         debug  
+         PACK DIM8 WITH ZEROS  
+         CLEAR SCRATCH
+         PACK SCRATCH WITH "clm.dbf ",TMP_NAME," 1-25 318-333":
+                           " 2496-2503 2633-2638 2647-2652":
+                           " -p2496-2503ge",W_FROM:
+                           " -p2496-2503ne",DIM8," -t -j"
+        
+         REFORMAT SCRATCH
+
+         RETURN
+
+. ----------------------------
+. Screen display
+. ----------------------------
+
+SCR_DISPLAY
+
+         IF (C_RMODE = "I")
+            message   horz="20",vert="15":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="       -Records Processed-        ":
+                      text=" Claims Read                      ":
+                      text=" Claims Written                   "
+         ENDIF
+
+         MOVE 0 TO CLM_RD_CNT
+         MOVE 0 TO CLM_WT_CNT
+
+         CALL DISPLAY_CNTS 
+
+         RETURN
+
+. ----------------------------
+. Open Program Files        
+. ----------------------------
+
+OPEN_FILES
+
+         CALL OPEN_OGBFILE USING TMP_FILE,TMP_NAME
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+.  Extract Qualified Claims 
+. ----------------------------
+
+FIND_CLAIMS
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+
+. Read re-formatted claim file
+         LOOP
+           CALL READ_OGBFILE USING TMP_FILE,TMP_NAME,TMP_LIST
+           IF (RESULT <> 1)
+              GOTO FIND_CLAIMS_END
+           ENDIF
+
+           ADD 1 TO CLM_RD_CNT
+
+           CALL DELAY_DSP USING CLM_RD_CNT 
+
+           IF (TMP_RECD < TMP_THRU)
+              CALL OUTPUT_DATA
+              GOTO FIND_CLAIMS_MORE 
+           ENDIF  
+              
+           IF (TMP_PAID < TMP_THRU)
+              CALL OUTPUT_DATA
+           ENDIF  
+              
+FIND_CLAIMS_MORE
+         REPEAT
+
+FIND_CLAIMS_END
+         RETURN
+
+. ----------------------------
+. Output file         
+. ----------------------------
+
+OUTPUT_DATA
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL  WRITE_OGBREC USING OUT_FILE,OUT_NAME,TMP_LIST
+
+         ADD 1 TO CLM_WT_CNT
+
+         RETURN
+
+. ----------------------------
+. Display Delay             
+. ----------------------------
+
+DELAY_DSP ROUTINE MCS@FORM1
+
+        MOVE MCS@FORM1 TO DIM10 
+        UNPACK DIM10 INTO DIM8,DIM2
+        IF (DIM2 = "00")
+           CALL DISPLAY_CNTS
+        ENDIF
+
+        RETURN
+
+. ----------------------------
+. Display Counters          
+. ----------------------------
+
+DISPLAY_CNTS 
+
+         IF (C_RMODE = "I")
+            DISPLAY   *P46:17,CLM_RD_CNT
+            DISPLAY   *P46:18,CLM_WT_CNT
+         ENDIF
+
+         RETURN
+
+. ---------------------------------
+.   Set up POP read for CLMS file
+. ---------------------------------
+SETPOP_CLMS
+         MOVEADR   CLMS_REC   TO POP_REC        ...Set up for POP.IO
+         MOVEADR   CLMS_SW    TO POP_SW
+         MOVEADR   CLMS_DECL  TO POP_DECL
+         MOVEADR   CLMS_NAME  TO POP_NAME
+         MOVEADR   CLMS_KEY   TO POP_KEY
+         MOVEADR   CLMS_OLD   TO POP_OLD
+         MOVEADR   CLMS_BASE  TO POP_ID
+         MOVEADR   CLMS_LINE  TO POP_LINE
+
+         RETURN
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       POP.IO
+	 INC	   FILE.IO
+	 INC       VALID.IO
+	 INC       UTIL.SR 
+	 INC       X_STANDARD.SR
+	 INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of prv0300.ps
+. +++++++++++++++++++++++++++++++++++++

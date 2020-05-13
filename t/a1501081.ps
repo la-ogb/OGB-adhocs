@@ -1,0 +1,438 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program NAME   :  a1501081.ps
++    Description    :  Extracts label file for incorrect life retiree billing
++    apdlm 01/08/2015 a1501081 dev - initial version
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              INC       CMDPARAM.CB
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       CLI.RL           ...Client Demographics
+              INC       BIL.RL                               
+              INC       BILD.RL                               
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+MEME_REF_FD         FILE       VAR=8,TEXT
+MEME_REF_NAME       INIT       "/w/life_trm.txt"
+MEME_REF_LIST       LIST
+MEME_REF_ID1        DIM         8
+                   LISTEND
+.
+.
+.I/O Files
+.
+BILD_WRK_FD   IFILE      VAR=1000,TEXT,KEYL=9,DUP
+BILD_WRK_NME  INIT       "/w/a1501081.bild.ix1"
+.
+BILD_WRK_KEY DIM     9
+.
+.Output Files
+.
+LABEL_FD     FILE  VAR=200,TEXT
+LABEL_NAME   INIT  "/w/retlife_trm_lab.txt"
+LABEL_LIST   LIST
+LABEL_LNAME       DIM       20        .>enrollee last name
+LABEL_FNAME       DIM       15        .>enrollee first name
+LABEL_MINIT       DIM       1         .>enrollee middle initial 
+LABEL_ADDRESS1    DIM       35        .>address line 1           
+LABEL_ADDRESS2    DIM       35        .>address line 2           
+LABEL_CITY        DIM       30        .>city                     
+LABEL_STATE       DIM       2         .>state        
+LABEL_ZIP         DIM       13        .>zip code     
+LABEL_EEPOR       DIM       10        .>Employee Life Premium
+              LISTEND
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+DISP3         DIM       3
+DISP4         DIM       4
+HLD_EEPOR     DIM       10
+EXT_DATE      INIT      "20150101"
+VAL_RESULT    FORM      001
+FOUR_THIRTY   INIT      "1630"
+ST_HHMM       DIM       4
+ST_SEC        DIM       2
+BLANK8        INIT "        "
+W_DIM1        DIM  1
+PIPE144       DIM 144
+LPTR          NUM 3
+FIRST_READ    DIM  1
+SPACE_8       INIT "        " 
+CNT_5         DIM  5
+CNT_4         DIM  4
+CNT_3         DIM  3
+CNT_2         DIM  2
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Life Err Labels" TO C_OPER
+         MOVE      "A1501081"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL EXT_BILD
+    CALL OPEN_FILES
+    CALL PROCESS_REF_FILE
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+. ----------------------------
+EXT_BILD      
+    MOVE      BILD_WRK_NME TO C_FILE
+    CALL      PREP_OGBFILE_IX USING BILD_WRK_FD,BILD_WRK_NME
+    MOVE      "Y" TO FIRST_READ
+    CLEAR     BIL_AIM
+    PACK      BIL_AIM6  WITH "06X",EXT_DATE,BLANKS
+
+    LOOP
+        IF (FIRST_READ = "Y")
+            CALL      FILE_READ USING BIL_FD:    ...File declaration list
+                                      BIL_FN:    ...File name list
+                                      BIL_FC:    ...(I)ndex or (A)imdex
+                                      BIL_FV:    ...File key varlists
+                                      BIL_AIM:   ...File key sizes
+                                      BIL_LIST:  ...File record (field list)
+                                      BIL_REC:   ...File record (packed)
+                                      BIL_OLD:   ...File saved when read
+                                      BIL_QTY:   ...Number of files
+                                      2          ...File number for this read
+            MOVE      "N" TO FIRST_READ
+        ELSE
+            CALL      FILE_NEXT USING BIL_FD:    ...File declaration list
+                                      BIL_FN:    ...File name list
+                                      BIL_FC:    ...(I)ndex or (A)imdex
+                                      BIL_FV:    ...File key varlists
+                                      BIL_AIM:   ...File key sizes
+                                      BIL_LIST:  ...File record (field list)
+                                      BIL_REC:   ...File record (packed)
+                                      BIL_OLD:   ...File saved when read
+                                      BIL_QTY:   ...Number of files
+                                      2          ...File number for this read
+        ENDIF
+
+       BREAK IF (RESULT <> 1)
+
+       ADD 1 TO X_CNT1
+       UNPACK X_CNT1 INTO DISP4,DISP3
+       IF (DISP3 = "000")
+           CALL X_DISPLAY_COUNTS
+       ENDIF
+   
+       SWITCH BIL_STAT
+           CASE "POST" OR "PAID"
+.             ok to report on!
+           DEFAULT
+               CONTINUE
+       ENDSWITCH
+
+.      IF (BIL_BILSET <> "RET")
+.              CONTINUE               
+.      ENDIF     
+       PACK BILD_FK11 WITH BIL_ID1,BLANKS
+       CALL FILE_READ USING BILD_FD:    ...File declaration list
+                      BILD_FN:          ...File name list
+                      BILD_FC:          ...(I)ndex or (A)imdex
+                      BILD_FV:          ...File key varlists
+                      BILD_FK:          ...File key sizes
+                      BILD_LIST:        ...File record (field list)
+                      BILD_REC:         ...File record (packed)
+                      BILD_OLD:         ...File saved when read
+                      BILD_QTY:         ...Number of files
+                      1                 ...File number for this read
+       LOOP
+          CALL      FILE_NEXT USING BILD_FD:
+                      BILD_FN:          ...File name list
+                      BILD_FC:          ...(I)ndex or (A)imdex
+                      BILD_FV:          ...File key varlists
+                      BILD_FK:          ...File key sizes
+                      BILD_LIST:        ...File record (field list)
+                      BILD_REC:         ...File record (packed)
+                      BILD_OLD:         ...File saved when read
+                      BILD_QTY:         ...Number of files
+                      1                 ...File number for this read
+          WHILE     (RESULT = 1 AND BILD_ID1 = BIL_ID1)
+          MATCH     "ADJ",BILD_TRAN
+          CONTINUE  IF EQUAL
+          MOVE      BILD_ESSN TO BILD_WRK_KEY
+          CALL      WRITE_OGBREC_IX USING BILD_WRK_FD,BILD_WRK_NME:
+                                           BILD_WRK_KEY,BILD_LIST 
+          ADD       1 TO X_CNT2
+          UNPACK    X_CNT2 INTO DISP4,DISP3
+          IF        (DISP3 = "000")
+                        CALL X_DISPLAY_COUNTS
+          ENDIF
+       REPEAT
+    REPEAT
+    RETURN
+
+
+READ_BILD_IX
+    CLEAR HLD_EEPOR
+    PACK BILD_WRK_KEY WITH MEM_ESSN
+    MOVE "Y" TO FIRST_READ
+    LOOP
+      IF (FIRST_READ = "Y")
+         CALL READ_OGBFILE_IX USING BILD_WRK_FD,BILD_WRK_NME:
+                                   BILD_WRK_KEY,BILD_LIST
+         MOVE "N" TO FIRST_READ
+      ELSE
+         CALL READKS_OGBFILE_IX USING BILD_WRK_FD,BILD_WRK_NME:
+                                   BILD_LIST
+      ENDIF
+
+      IF (RESULT <> 1)
+         BREAK
+      ENDIF 
+
+      IF (BILD_WRK_KEY <> BILD_ESSN)
+         BREAK
+      ENDIF
+
+      IF (SQUEEZE BILD_TRAN <> "BILL")
+         CONTINUE
+      ENDIF
+     
+      SWITCH BILD_TYPE
+          CASE "PRLI"
+            MOVE BILD_EEPOR TO HLD_EEPOR  
+      ENDSWITCH
+
+   REPEAT
+  RETURN
+
+PROCESS_REF_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEME_REF_FD,MEME_REF_NAME,MEME_REF_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACK MEM_FK11 WITH MEME_REF_ID1,BLANKS
+    CALL FILE_READ USING MEM_FD:            ...FILE DECLARATION LIST
+                   MEM_FN:            ...FILE NAME LIST
+                   MEM_FC:            ...TYPE OF INDEX
+.                                     ...(I)NDEX or (A)IMDEX
+                   MEM_FV:            ...FILE KEY VARLISTS
+                   MEM_FK:            ...FILE KEY SIZES
+                   MEM_LIST:          ...FILE RECORD (FIELD LIST)
+                   MEM_REC:           ...FILE RECORD (PACKED)
+                   MEM_OLD:           ...FILE SAVED WHEN READ
+                   MEM_QTY:           ...NUMBER OF FILES
+                   1                   ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+     MOVE MEM_LNAME TO LABEL_LNAME
+     REPLACE ", "   IN LABEL_LNAME
+     SETLPTR LABEL_LNAME TO 20
+     MOVE MEM_FNAME TO LABEL_FNAME
+     REPLACE ", "   IN LABEL_FNAME
+     SETLPTR LABEL_FNAME TO 15
+     MOVE MEM_MINIT TO LABEL_MINIT
+     REPLACE ", "   IN LABEL_MINIT
+     MOVE MEM_ADDR1 TO LABEL_ADDRESS1
+     REPLACE ", "   IN LABEL_ADDRESS1
+     SETLPTR LABEL_ADDRESS1 TO 35
+     MOVE MEM_ADDR2 TO LABEL_ADDRESS2
+     REPLACE ", "   IN LABEL_ADDRESS2
+     SETLPTR LABEL_ADDRESS2 TO 35
+     MOVE MEM_CITY TO LABEL_CITY
+     REPLACE ", "  IN LABEL_CITY
+     SETLPTR LABEL_CITY TO 30
+     MOVE MEM_STATE TO LABEL_STATE
+     REPLACE ", "   IN LABEL_STATE
+     MOVE MEM_ZIP TO LABEL_ZIP
+     REPLACE ", " IN LABEL_ZIP
+     SETLPTR LABEL_ZIP TO 13
+     CALL READ_BILD_IX
+     MOVE HLD_EEPOR TO LABEL_EEPOR
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL WRITE_OGBREC USING LABEL_FD,LABEL_NAME,LABEL_LIST
+     CLEAR LABEL_LIST
+ REPEAT
+ RETURN
+
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING MEME_REF_FD,MEME_REF_NAME
+         CALL      PREP_OGBFILE USING LABEL_FD,LABEL_NAME              
+         CALL OPEN_OGBFILE_IX USING BILD_WRK_FD,BILD_WRK_NME
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       CMDPARAM.SR
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1501081.PS
+. +++++++++++++++++++++++++++++++++++++

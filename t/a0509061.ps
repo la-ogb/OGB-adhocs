@@ -1,0 +1,296 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: A0509061                                            *
+.     *                                                                   *
+.     * DESCRIPTION:                                                      * 
+.     *                                                                   *
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APSJM 09/06/2005 A0509061 DEV - INITIAL VERSION.                  *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrolllment
+              INC       BILD.RL
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+BILD_REF_FD   IFILE     VAR=1000,KEYL=8,TEXT,DUP
+BILD_REF_NAME INIT      "/w/bild_ref.ix1"
+BILD_REF_KEY  DIM       8
+.
+INP_FD        FILE      VAR=8,TEXT
+INP_NAME      INIT      "/w/memedt.txt"  
+INP_LIST      LIST
+INP_ID1       DIM       8
+              LISTEND
+.
+PREM_ERR_FD   FILE     VAR=100,TEXT
+PREM_ERR_NAME INIT     "/w/prem_err.txt"
+PREM_ERR_LIST LIST
+PREM_ERR_ID1  DIM      8
+PREM_ERR_OLD  FORM     7.2
+PREM_ERR_NEW  FORM     7.2
+              LISTEND
+.
+. ----------------------------
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+FIRST_TIME    INTEGER 1
+FORM_72       FORM 7.2
+INV_DATE      DIM  8
+WS_OLD        FORM 7.2
+WS_NEW        FORM 7.2
+SVE_KEY       DIM  20
+FIRST_READ    DIM  1
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "a0509061"        TO  C_OPER
+         MOVE      "FIND PREM"        TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL OPEN_FILES
+   CALL PROCESS_WRK
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   MOVE      "MENU"        TO C_NEXT
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_WRK
+    MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+    CALL READ_OGBFILE USING INP_FD,INP_NAME,INP_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    CALL X_DISPLAY_COUNTS
+    CALL READ_BILD 
+    IF (WS_NEW > WS_OLD)
+       CALL WRITE_REC
+    ENDIF
+ REPEAT
+ RETURN
+
+READ_BILD    
+     CLEAR WS_OLD
+     CLEAR WS_NEW
+     SET FIRST_TIME
+     PACK BILD_REF_KEY WITH INP_ID1
+    LOOP
+         IF (FIRST_TIME)
+            CALL READ_OGBFILE_IX USING BILD_REF_FD,BILD_REF_NAME:
+                                       BILD_REF_KEY,BILD_LIST
+            CLEAR FIRST_TIME
+         ELSE
+            CALL READKS_OGBFILE_IX USING BILD_REF_FD,BILD_REF_NAME:
+                                         BILD_LIST
+         ENDIF
+         IF (RESULT <> 1)
+            BREAK
+         ENDIF
+         IF (BILD_MEM <> INP_ID1)
+            BREAK
+         ENDIF
+         IF ((SQUEEZE BILD_TRAN = "BILL") OR (SQUEEZE BILD_TRAN = "PAID"))
+         ELSE
+            CONTINUE
+         ENDIF
+         IF (SQUEEZE BILD_NET <> "LIFE")        
+              CLEAR FORM_72
+              MOVE BILD_EEPOR TO FORM_72
+              SWITCH BILD_COVGF
+                 CASE "20050901"
+                    ADD FORM_72 TO WS_OLD
+                 CASE "20051001"
+                    ADD FORM_72 TO WS_NEW
+              ENDSWITCH 
+         ENDIF
+    REPEAT
+    RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "Input Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written   :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE_IX USING BILD_REF_FD,BILD_REF_NAME
+         CALL      OPEN_OGBFILE USING INP_FD,INP_NAME               
+         CALL      PREP_OGBFILE USING PREM_ERR_FD,PREM_ERR_NAME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE_IX USING BILD_REF_FD,BILD_REF_NAME
+         CALL      CLOSE_OGBFILE USING INP_FD,INP_NAME               
+         CALL      CLOSE_OGBFILE USING PREM_ERR_FD,PREM_ERR_NAME
+         RETURN
+
+WRITE_REC       
+  MOVE INP_ID1 TO PREM_ERR_ID1
+  MOVE WS_OLD TO PREM_ERR_OLD
+  MOVE WS_NEW TO PREM_ERR_NEW
+  CALL WRITE_OGBREC USING PREM_ERR_FD,PREM_ERR_NAME,PREM_ERR_LIST
+  CLEAR PREM_ERR_LIST
+  ADD 1 TO X_CNT2
+  UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+  CALL X_DISPLAY_COUNTS
+  RETURN
+
+.
+. ----------------------------
+. Update Valid Table with run date
+. ----------------------------
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End 
+. +++++++++++++++++++++++++++++++++++++

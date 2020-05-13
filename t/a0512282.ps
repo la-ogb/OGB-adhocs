@@ -1,0 +1,1272 @@
++    Program Name   :  A0512282.ps 
++    Description    :  Reads the external billing and outputs     
++                      an isis file with the earliest date of uninterupted
++                      coverage for the eff date         
++    apsjm 12/27/2005 a0512271 adh - initial version                      
++    
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       BILD.RL
+              INC       MEME.RL
+              INC       MEM.RL
+              INC       MEMS.RL
+              INC       CLI.RL
+
+.----------------------------------------------------------------------------
+.Input File Declaration   
+.----------------------------------------------------------------------------
+BEN_INP_FD      FILE      VAR=16,TEXT
+BEN_INP_NAME    INIT      "/w/ben_id1.txt"
+BEN_INP_LIST    LIST
+BEN_INP_ID1     DIM       8
+BEN_FILL        DIM       8
+                LISTEND
+.
+BILDEXT_FD        IFILE     VAR=94,KEYL=28,TEXT    
+BILDEXT_NAME      INIT     "/w/bil_ben.txt"
+BILDEXT_IDX_NAME  INIT     "/w/bil_ben.ix1"
+BILDEXT_LIST      LIST
+BILDEXT_ELG_EFF   DIM      8         ...1-8
+BILDEXT_ELG_TRM   DIM      8         ...9-16
+BILDEXT_NET       DIM      5         ...17-21
+BILDEXT_PRD       DIM      5         ...22-26
+BILDEXT_CARR      DIM      4         ...27-30
+BILDEXT_PLAN      DIM      4         ...31-34
+BILDEXT_DEPC      DIM      2         ...35-36
+BILDEXT_IVOL      DIM      10        ...37-46
+BILDEXT_MEM       DIM      8         ...47-54
+BILDEXT_TYPE      DIM      4         ...55-58
+BILDEXT_EEPOR     DIM      10        ...59-68
+BILDEXT_LEV1      DIM      5         ...69-73
+BILDEXT_LEV2      DIM      5         ...74-78
+BILDEXT_COVGF     DIM      8         ...79-86
+BILDEXT_COVGT     DIM      8         ...87-94 
+                  LISTEND
+BILDEXT_SVE      DIM       94
+BILDEXT_SVE_LIST LIST
+BILDEXT_SVE_ELG_EFF   DIM      8         ...1-8
+BILDEXT_SVE_ELG_TRM   DIM      8         ...9-16
+BILDEXT_SVE_NET       DIM      5         ...17-21
+BILDEXT_SVE_PRD       DIM      5         ...22-26
+BILDEXT_SVE_CARR      DIM      4         ...27-30
+BILDEXT_SVE_PLAN      DIM      4         ...31-34
+BILDEXT_SVE_DEPC      DIM      2         ...35-36
+BILDEXT_SVE_IVOL      DIM      10        ...37-46
+BILDEXT_SVE_MEM       DIM      8         ...47-54
+BILDEXT_SVE_TYPE      DIM      4         ...55-58
+BILDEXT_SVE_EEPOR     DIM      10        ...59-68
+BILDEXT_SVE_LEV1      DIM      5         ...69-73
+BILDEXT_SVE_LEV2      DIM      5         ...74-78
+BILDEXT_SVE_COVGF     DIM      8         ...79-86
+BILDEXT_SVE_COVGT     DIM      8         ...87-94 
+                  LISTEND
+
+.
+UPS_WRK_FD       FILE    VAR=16,TEXT
+UPS_WRK_NAME     INIT    "/w/ups_wrk.txt"
+UPS_WRK_LIST     LIST
+UPS_WRK_EFF      DIM     8
+UPS_WRK_TRM      DIM     8
+                 LISTEND
+.
+HLT_WRK_FD       FILE      VAR=51,TEXT
+HLT_WRK_NAME     INIT      "/w/hlt_wrk.txt"
+HLT_WRK_LIST     LIST
+HLT_WRK_NET      DIM      5
+HLT_WRK_PRD      DIM      5
+HLT_WRK_CARR     DIM      4
+HLT_WRK_PLAN     DIM      4
+HLT_WRK_COVL     DIM      2
+HLT_WRK_EEPOR    DIM      10
+HLT_WRK_EFF      DIM      8
+HLT_WRK_TRM      DIM      8
+HLT_WRK_LEV1     DIM      5      
+                 LISTEND
+HLT_WRK_SVE      DIM      51
+HLT_WRK_KEY      DIM      20
+PR_HLT_WRK_KEY   DIM      20
+.
+LIFE_WRK_FD      FILE      VAR=61,TEXT
+LIFE_WRK_NAME    INIT      "/w/life_wrk.txt"
+LIFE_WRK_LIST    LIST
+LIFE_WRK_EFF     DIM      8
+LIFE_WRK_TRM     DIM      8
+LIFE_WRK_FL      DIM      10
+LIFE_WRK_EEPOR   DIM      10
+LIFE_WRK_NET     DIM      5         
+LIFE_WRK_PRD     DIM      5      
+LIFE_WRK_CARR    DIM      4        
+LIFE_WRK_PLAN    DIM      4        
+LIFE_WRK_DEPC    DIM      2       
+LIFE_WRK_LEV1    DIM      5      
+                 LISTEND
+LIFE_WRK_SVE     DIM      61
+.
+DL_WRK_FD      FILE      VAR=65,TEXT
+DL_WRK_NAME    INIT      "/w/dl_wrk.txt"
+DL_WRK_LIST    LIST
+DL_WRK_EFF     DIM      8
+DL_WRK_TRM     DIM      8
+DL_WRK_FL      DIM      10
+DL_WRK_EEPOR   DIM      10
+DL_WRK_NET     DIM      5         
+DL_WRK_PRD     DIM      5      
+DL_WRK_CARR    DIM      4        
+DL_WRK_PLAN    DIM      4        
+DL_WRK_DEPC    DIM      2       
+DL_WRK_LEV1    DIM      5      
+DL_WRK_TYPE    DIM      4
+                 LISTEND
+DL_WRK_SVE     DIM      65
+.
+L_DL_READ           DIM      26
+N_DL_READ           DIM      26
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+ISISWRK_FILE     IFILE     VAR=73,KEYL=13,TEXT
+ISISWRK_NAME     INIT      "/w/elg0902wrk.ix1"
+.
+ISISWRK_KEY      DIM       13
+ISISWRK_REC           LIST
+..<BEGIN>....................................................................
+ISISWRK_TYPE          DIM       4     001-004      Determined from table below 
+ISISWRK_EMP_SSN       DIM       9     005-013      MEM_ESSN 
+ISISWRK_AGENCY        DIM       4     014-017      MEME_LEV1 
+ISISWRK_EFFDATE       DIM       8     018-025      MEME_EFF 
+ISISWRK_TRMDATE       DIM       8     026-033      MEME_TRM 
+ISISWRK_NETWORK       DIM       5     034-038      MEME_NET 
+ISISWRK_PRODUCT       DIM       5     039-043      MEME_PRD 
+ISISWRK_PLANCODE      DIM       4     044-047      MEME_PLAN 
+ISISWRK_COVLEVEL      DIM       2     048-049      MEME_DEPC 
+ISISWRK_RIDER         DIM       4     050-053      MEME_RD01 thru MEME_RD10 
+ISISWRK_FACELIFE      DIM       5     054-058      BILD_IVOL 
+ISISWRK_PREMIUM       DIM       7     059-065      BILD_RATE 
+ISISWRK_RUN_DATE      DIM       8     066-073      RUN DATE
+..<END>......................................................................
+                      LISTEND
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+UPS_WRK_SRTKEY     INIT "1-16 -J -U -T"
+HLT_WRK_SRTKEY     INIT "31-46 -J -U -T"
+LIFE_WRK_SRTKEY    INIT "1-16 -J -U -T"
+BILDEXT_SRTKEY     INIT "47-58 79-86 1-16 -J -U -T"
+BILDEXT_IDXKEY     INIT "47-58 1-16 -J -D"
+BILDEXT_KEY     DIM       28
+SVE_BILDEXT_KEY DIM       28
+.
+DIM_2           DIM      2
+E_UNINT_EFFDATE DIM      8
+E_UNINT_KEY     DIM      4
+PR_E_UNINT_KEY  DIM      4
+FY_END         DIM       8
+U_DATE         DIM       8
+MEMS_FOUND     DIM       1
+FIRST_READ     DIM       1
+SVE_H_PREM     DIM       10  
+DIM_3          DIM       3
+DIM_7          DIM       7
+DIM_10         DIM       10
+FORM_72_1      FORM      7.2
+FORM_72_2      FORM      7.2
+PREM_KEY       DIM       30
+L_PREM_KEY     DIM       30
+PSYC_KEY       DIM       10
+L_PSYC_KEY     DIM       10
+PRLI_KEY       DIM       10
+L_PRLI_KEY     DIM       10
+DL_KEY         DIM       4 
+L_DL_KEY       DIM       4 
+H_EFFDATE      DIM       8
+P_EFFDATE      DIM       8
+L_EFFDATE      DIM       8
+DL_EFFDATE     DIM       8
+BIL_CCYYMM     DIM       6
+W_CCYY         DIM       4
+F_W_CCYY       FORM      4
+W_CCYYMM       DIM       6
+WRK_PLAN       DIM       2
+WRK_RIDER      DIM       2
+NUM_OF_DAYS   FORM      5
+SAVE_TRM       DIM       8
+WRK_F4        FORM      4
+WRK_EMP_SSN    DIM       9
+WRK_FACELIFE   DIM       5  
+ISIS_START_DATE INIT      "20030701"
+INFINITY       INIT      "99991231"
+SVE_MEMS_TRM   DIM       8
+SWT_RIDER      DIM       1
+WRK_HRIDER     DIM       4
+
+FIRST_TIME     FORM      "1"
+
+DIM49          DIM       49
+BLANK8         INIT      "        "
+SPACES         INIT      "     "
+
+WRK_BEGFL      DIM       5
+WRK_ENDFL      DIM       5
+
+WRK_BEGPREM    DIM       3
+WRK_ENDPREM    DIM       7
+
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+WRK_DATE       DIM       8
+WRK_DD         DIM       2
+WRK_MM         DIM       2
+WRK_CCYY       DIM       4
+FORM_CCYY      FORM      4
+FORM_MM        FORM      2
+WRK_TYPE       DIM       2
+DIM2           DIM       2
+
+FORM_EEPOR     FORM      7.2
+EMPH_PORTION   FORM      7.2
+EMPL_PORTION   FORM      7.2
+
+WORK_DATEMM    DIM       2
+WORK_DATEDD    DIM       2
+WORK_DATECCYY  DIM       4
+
+STAR10        INIT      "**********"
+STAR5         INIT      "*****"
+STAR4         INIT      "****"
+STAR2         INIT      "**"
+STAR1         INIT      "*"
+
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<EXTRACT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+         CALL MAIN_PROCESS
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+    DEBUG
+    CALL REFORMAT_BILEXT
+    CALL OPEN_FILES
+    CALL READ_INPUT
+    CALL CLOSE_FILES
+    RETURN
+
+. -------------------------------
+.Reads meme file created from reformat
+. -------------------------------
+READ_INPUT  
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        CALL READ_OGBFILE USING BEN_INP_FD,BEN_INP_NAME,BEN_INP_LIST
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+        CALL MAKE_UPS_WRK
+        CALL CLOSE_OGBFILE USING UPS_WRK_FD,UPS_WRK_NAME
+        CALL SORT_OGBFILE USING UPS_WRK_NAME,UPS_WRK_NAME,UPS_WRK_SRTKEY
+        IF OVER
+           ERROR HORZ="15",VERT="19":
+           BGCOL=C_ERRB,FGCOL=C_ERRF:
+           LNCOL=C_ERRL,SHADE="Y":
+           TEXT="SORT FAILED - UPS_WRK"
+           CHAIN "MENU"
+        ENDIF
+        CALL OPEN_OGBFILE USING UPS_WRK_FD,UPS_WRK_NAME
+        CALL CALC_UPS
+        CALL MAKE_H_WRK
+        CALL CLOSE_OGBFILE USING HLT_WRK_FD,HLT_WRK_NAME
+        CALL SORT_OGBFILE USING HLT_WRK_NAME,HLT_WRK_NAME,HLT_WRK_SRTKEY
+          IF OVER
+              ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORT FAILED - HLT_WRK"
+              CHAIN "MENU"
+          ENDIF
+        CALL OPEN_OGBFILE USING HLT_WRK_FD,HLT_WRK_NAME
+        CALL CALC_HEALTH 
+        IF (SQUEEZE HLT_WRK_SVE <> "")
+           UNPACK HLT_WRK_SVE INTO HLT_WRK_LIST
+           MOVE "HLPN" TO ISISWRK_TYPE
+           MOVE HLT_WRK_LEV1 TO ISISWRK_AGENCY
+           MOVE HLT_WRK_NET  TO ISISWRK_NETWORK
+           MOVE HLT_WRK_PRD  TO ISISWRK_PRODUCT
+           MOVE HLT_WRK_PLAN TO ISISWRK_PLANCODE
+           MOVE HLT_WRK_COVL TO ISISWRK_COVLEVEL
+           IF (U_DATE > H_EFFDATE)
+              MOVE U_DATE TO ISISWRK_EFFDATE
+           ELSE
+              MOVE H_EFFDATE TO ISISWRK_EFFDATE
+           ENDIF
+           MOVE HLT_WRK_TRM TO ISISWRK_TRMDATE
+           IF (SQUEEZE ISISWRK_TRMDATE = "")
+              MOVE INFINITY TO ISISWRK_TRMDATE
+           ENDIF
+           MOVE HLT_WRK_EEPOR TO SVE_H_PREM
+           CALL CALC_PSYC
+           IF (P_EFFDATE = "99999999")
+             REPLACE " 0" IN SVE_H_PREM
+             UNPACK SVE_H_PREM INTO DIM_3,DIM_7
+             MOVE DIM_7 TO ISISWRK_PREMIUM
+           ELSE
+             MOVE BILDEXT_EEPOR TO FORM_72_1
+             MOVE SVE_H_PREM TO FORM_72_2
+             ADD  FORM_72_1 TO FORM_72_2
+             MOVE FORM_72_2 TO DIM_10
+             REPLACE " 0" IN DIM_10
+             UNPACK DIM_10 INTO DIM_3,DIM_7
+             MOVE DIM_7 TO ISISWRK_PREMIUM
+             MOVE "PSYC" TO ISISWRK_RIDER
+           ENDIF
+           MOVE CURRDATE TO ISISWRK_RUN_DATE
+           CALL WRITE_RECORD
+        ENDIF
+        CALL MAKE_L_WRK_1
+        CALL CLOSE_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME
+        CALL SORT_OGBFILE USING LIFE_WRK_NAME,LIFE_WRK_NAME,LIFE_WRK_SRTKEY
+          IF OVER
+              ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORT FAILED - LIFE_WRK"
+              CHAIN "MENU"
+          ENDIF
+        CALL OPEN_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME
+        CALL CALC_EARL_EFF_UNINT
+        IF (SQUEEZE LIFE_WRK_SVE <> "")
+           UNPACK LIFE_WRK_SVE INTO LIFE_WRK_LIST
+           CALL MAKE_L_WRK_2
+           CALL CLOSE_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME
+           CALL SORT_OGBFILE USING LIFE_WRK_NAME,LIFE_WRK_NAME,LIFE_WRK_SRTKEY
+             IF OVER
+               ERROR HORZ="15",VERT="19":
+               BGCOL=C_ERRB,FGCOL=C_ERRF:
+               LNCOL=C_ERRL,SHADE="Y":
+               TEXT="SORT FAILED - LIFE_WRK"
+              CHAIN "MENU"
+             ENDIF
+           CALL OPEN_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME
+           CALL CALC_LIFE
+           UNPACK LIFE_WRK_SVE INTO LIFE_WRK_LIST
+           MOVE "LFPN" TO ISISWRK_TYPE
+           MOVE LIFE_WRK_LEV1 TO ISISWRK_AGENCY
+           MOVE LIFE_WRK_NET  TO ISISWRK_NETWORK
+           MOVE LIFE_WRK_PRD  TO ISISWRK_PRODUCT
+           MOVE LIFE_WRK_PLAN TO ISISWRK_PLANCODE
+           MOVE LIFE_WRK_DEPC TO ISISWRK_COVLEVEL
+           IF (SQUEEZE L_EFFDATE > SQUEEZE E_UNINT_EFFDATE)
+                MOVE L_EFFDATE TO ISISWRK_EFFDATE
+           ELSE
+                MOVE E_UNINT_EFFDATE TO ISISWRK_EFFDATE
+           ENDIF
+           IF (U_DATE > ISISWRK_EFFDATE)
+              MOVE U_DATE TO ISISWRK_EFFDATE
+           ENDIF
+           MOVE LIFE_WRK_TRM TO ISISWRK_TRMDATE
+           IF (SQUEEZE ISISWRK_TRMDATE = "")
+                MOVE INFINITY TO ISISWRK_TRMDATE
+           ENDIF
+           UNPACK LIFE_WRK_FL INTO WRK_BEGFL,WRK_ENDFL
+           REPLACE " 0" IN WRK_ENDFL
+           MOVE WRK_ENDFL TO ISISWRK_FACELIFE
+           CALL GET_ADD_PREM  
+           IF (SQUEEZE BILDEXT_SVE = "")
+                DEBUG
+           ENDIF
+           UNPACK BILDEXT_SVE INTO BILDEXT_LIST
+           CLEAR FORM_72_1
+           CLEAR FORM_72_2
+           MOVE BILDEXT_EEPOR TO FORM_72_1
+           MOVE LIFE_WRK_EEPOR TO FORM_72_2
+           ADD  FORM_72_1 TO FORM_72_2
+           MOVE FORM_72_2 TO DIM_10
+           REPLACE " 0" IN DIM_10
+           UNPACK DIM_10 INTO DIM_3,DIM_7
+           MOVE DIM_7 TO ISISWRK_PREMIUM
+           CALL WRITE_RECORD
+        ENDIF
+        CALL MAKE_DL_WRK
+        CALL CLOSE_OGBFILE USING DL_WRK_FD,DL_WRK_NAME
+        CALL SORT_OGBFILE USING DL_WRK_NAME,DL_WRK_NAME,LIFE_WRK_SRTKEY
+             IF OVER
+               ERROR HORZ="15",VERT="19":
+               BGCOL=C_ERRB,FGCOL=C_ERRF:
+               LNCOL=C_ERRL,SHADE="Y":
+               TEXT="SORT FAILED - DL_WRK"
+              CHAIN "MENU"
+             ENDIF
+        CALL OPEN_OGBFILE USING DL_WRK_FD,DL_WRK_NAME
+        CALL CALC_EARL_EFF_UNIN_DL
+        IF (SQUEEZE DL_WRK_SVE <> "")
+          UNPACK DL_WRK_SVE INTO DL_WRK_LIST 
+          MOVE "LF01" TO ISISWRK_TYPE
+          MOVE DL_WRK_LEV1 TO ISISWRK_AGENCY
+          MOVE DL_WRK_NET  TO ISISWRK_NETWORK
+          MOVE DL_WRK_PRD  TO ISISWRK_PRODUCT
+          MOVE DL_WRK_PLAN TO ISISWRK_PLANCODE
+          MOVE DL_WRK_DEPC TO ISISWRK_COVLEVEL
+          MOVE E_UNINT_EFFDATE TO ISISWRK_EFFDATE
+          IF (U_DATE > ISISWRK_EFFDATE)
+             MOVE U_DATE TO ISISWRK_EFFDATE
+          ENDIF
+          MOVE DL_WRK_TRM TO ISISWRK_TRMDATE
+          IF (SQUEEZE ISISWRK_TRMDATE = "")
+              MOVE INFINITY TO ISISWRK_TRMDATE
+          ENDIF
+          MOVE DL_WRK_EEPOR TO FORM_EEPOR
+          MOVE (FORM_EEPOR / 2) TO BILDEXT_EEPOR  
+          MOVE DL_WRK_TYPE TO ISISWRK_RIDER
+          REPLACE " 0" IN BILDEXT_EEPOR 
+          UNPACK BILDEXT_EEPOR INTO DIM_3,DIM_7
+          MOVE DIM_7 TO ISISWRK_PREMIUM
+          CALL WRITE_RECORD
+        ENDIF
+    REPEAT
+    RETURN
+
+MAKE_UPS_WRK
+   CALL PREP_OGBFILE USING UPS_WRK_FD,UPS_WRK_NAME
+   PACK MEME_FK11 WITH BEN_INP_ID1,BLANKS
+   CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              IF ((MEME_ID1 <> BEN_INP_ID1) OR (RESULT <> 1))
+                BREAK       
+              ENDIF
+              IF ((SQUEEZE MEME_LEV2 = "95") OR (SQUEEZE MEME_LEV2 = "93"):
+                  OR (SQUEEZE MEME_LEV2 = "99") OR (SQUEEZE MEME_LEV2 = "92"):
+                  OR (SQUEEZE MEME_LEV2 = "94"))
+                 CONTINUE
+              ENDIF
+              UNPACK MEME_LEV1 INTO DIM1
+              IF (DIM1 = "R")
+                  CONTINUE
+              ENDIF
+              IF ((SQUEEZE MEM_RETD <> "") OR (SQUEEZE MEM_SPRET <> ""))
+                  CONTINUE
+              ENDIF
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_EFF > MEME_TRM))
+                  CONTINUE
+              ENDIF
+              PACK CLI_AIM1 WITH "01X",MEME_LEV1
+              PACK CLI_AIM2 WITH "02X",MEME_LEV2
+              CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                             CLI_FN:      ...File Name List
+                             CLI_FC:      ...(I)ndex Or (A)imdex
+                             CLI_FV:      ...File Key Varlists
+                             CLI_AIM:     ...File Key Sizes
+                             CLI_LIST:    ...File Record (Field List)
+                             CLI_REC:     ...File Record (Packed)
+                             CLI_OLD:     ...File Saved When Read
+                             CLI_QTY:     ...Number Of Files
+                             2            ...File Number For This Read
+              IF (CLI_US02 <> "U")
+                  CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_NET = "DEFIN")
+                 CONTINUE
+              ENDIF
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < "20030701"))
+                 CONTINUE
+              ENDIF
+              IF (MEME_EFF < "20030701")
+                 MOVE "20030701" TO MEME_EFF
+              ENDIF
+              MOVE MEME_EFF TO UPS_WRK_EFF
+              MOVE MEME_TRM TO UPS_WRK_TRM
+              MOVE OGB_SEQ1 TO OGB_SEQ
+              CALL WRITE_OGBREC USING UPS_WRK_FD,UPS_WRK_NAME,UPS_WRK_LIST
+              CLEAR UPS_WRK_LIST
+        REPEAT
+    RETURN
+
+CALC_UPS
+    CLEAR SAVE_TRM
+    MOVE "99999999" TO U_DATE
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+      CALL READ_OGBFILE USING UPS_WRK_FD,UPS_WRK_NAME,UPS_WRK_LIST 
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      CLEAR NUM_OF_DAYS
+      IF (U_DATE = "99999999") 
+             MOVE UPS_WRK_EFF TO U_DATE   
+             MOVE UPS_WRK_TRM TO SAVE_TRM
+             CONTINUE
+      ELSE
+             CALL DELTA_DAYS USING UPS_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+             IF (NUM_OF_DAYS > 1)
+                  MOVE UPS_WRK_EFF TO U_DATE   
+             ENDIF
+             MOVE UPS_WRK_TRM TO SAVE_TRM
+      ENDIF
+    REPEAT
+    RETURN
+.   
+MAKE_L_WRK_1
+    CALL PREP_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME
+    PACK BILDEXT_KEY WITH BEN_INP_ID1,"PRLI",BLANKS 
+    MOVE BILDEXT_KEY TO SVE_BILDEXT_KEY
+    CALL READ_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                               BILDEXT_KEY,BILDEXT_LIST
+    LOOP
+      CALL READKS_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                                   BILDEXT_LIST
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK BILDEXT_KEY WITH BILDEXT_MEM,BILDEXT_TYPE,BLANKS
+      IF (BILDEXT_KEY <> SVE_BILDEXT_KEY)
+             BREAK
+      ENDIF 
+      MOVE BILDEXT_IVOL TO LIFE_WRK_FL
+      MOVE BILDEXT_EEPOR TO LIFE_WRK_EEPOR
+      MOVE BILDEXT_NET TO LIFE_WRK_NET 
+      MOVE BILDEXT_PRD TO LIFE_WRK_PRD
+      MOVE BILDEXT_CARR TO LIFE_WRK_CARR
+      MOVE BILDEXT_PLAN TO LIFE_WRK_PLAN    
+      MOVE BILDEXT_DEPC TO LIFE_WRK_DEPC        
+      MOVE BILDEXT_LEV1 TO LIFE_WRK_LEV1     
+      MOVE BILDEXT_ELG_EFF TO LIFE_WRK_EFF
+      MOVE BILDEXT_ELG_TRM TO LIFE_WRK_TRM
+      CALL WRITE_OGBREC USING LIFE_WRK_FD,LIFE_WRK_NAME,LIFE_WRK_LIST
+      CLEAR LIFE_WRK_LIST
+    REPEAT
+    RETURN
+.
+MAKE_L_WRK_2
+    CALL PREP_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME
+    PACK BILDEXT_KEY WITH BEN_INP_ID1,"PRLI",BLANKS 
+    MOVE BILDEXT_KEY TO SVE_BILDEXT_KEY
+    CALL READ_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                               BILDEXT_KEY,BILDEXT_LIST
+    LOOP
+      CALL READKS_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                                   BILDEXT_LIST
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK BILDEXT_KEY WITH BILDEXT_MEM,BILDEXT_TYPE,BLANKS
+      IF (BILDEXT_KEY <> SVE_BILDEXT_KEY)
+             BREAK
+      ENDIF 
+      IF (BILDEXT_COVGF <> BILDEXT_ELG_EFF)
+         CALL READ_MEMS
+         IF (SQUEEZE MEMS_FOUND <> "")
+           IF (SQUEEZE SVE_MEMS_TRM = "")
+              MOVE "99999999" TO SVE_MEMS_TRM
+           ENDIF
+           IF (SQUEEZE BILDEXT_ELG_TRM = "")
+              MOVE "99999999" TO BILDEXT_ELG_TRM
+           ENDIF
+           IF (BILDEXT_ELG_TRM < SVE_MEMS_TRM)
+              MOVE BILDEXT_ELG_TRM TO LIFE_WRK_TRM
+           ELSE
+              MOVE SVE_MEMS_TRM TO LIFE_WRK_TRM
+           ENDIF
+           IF (SQUEEZE LIFE_WRK_TRM = "99999999")
+              CLEAR LIFE_WRK_TRM
+           ENDIF
+           MOVE BILDEXT_COVGF TO LIFE_WRK_EFF
+           MOVE BILDEXT_IVOL TO LIFE_WRK_FL
+           MOVE BILDEXT_EEPOR TO LIFE_WRK_EEPOR
+           MOVE BILDEXT_NET TO LIFE_WRK_NET 
+           MOVE BILDEXT_PRD TO LIFE_WRK_PRD
+           MOVE BILDEXT_CARR TO LIFE_WRK_CARR
+           MOVE BILDEXT_PLAN TO LIFE_WRK_PLAN    
+           MOVE BILDEXT_DEPC TO LIFE_WRK_DEPC        
+           MOVE BILDEXT_LEV1 TO LIFE_WRK_LEV1     
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL WRITE_OGBREC USING LIFE_WRK_FD,LIFE_WRK_NAME,LIFE_WRK_LIST
+           CLEAR LIFE_WRK_LIST
+         ENDIF
+      ELSE
+         MOVE BILDEXT_ELG_EFF TO LIFE_WRK_EFF
+         MOVE BILDEXT_ELG_TRM TO LIFE_WRK_TRM
+         MOVE BILDEXT_IVOL TO LIFE_WRK_FL
+         MOVE BILDEXT_EEPOR TO LIFE_WRK_EEPOR
+         MOVE BILDEXT_NET TO LIFE_WRK_NET 
+         MOVE BILDEXT_PRD TO LIFE_WRK_PRD
+         MOVE BILDEXT_CARR TO LIFE_WRK_CARR
+         MOVE BILDEXT_PLAN TO LIFE_WRK_PLAN    
+         MOVE BILDEXT_DEPC TO LIFE_WRK_DEPC        
+         MOVE BILDEXT_LEV1 TO LIFE_WRK_LEV1     
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING LIFE_WRK_FD,LIFE_WRK_NAME,LIFE_WRK_LIST
+         CLEAR LIFE_WRK_LIST
+      ENDIF
+    REPEAT
+    RETURN
+.
+MAKE_DL_WRK 
+    CALL PREP_OGBFILE USING DL_WRK_FD,DL_WRK_NAME
+    PACK BILDEXT_KEY WITH BEN_INP_ID1,"DL",BLANKS 
+    MOVE BILDEXT_KEY TO SVE_BILDEXT_KEY
+    CALL READ_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                               BILDEXT_KEY,BILDEXT_LIST
+    LOOP
+      CALL READKS_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                                   BILDEXT_LIST
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      UNPACK BILDEXT_TYPE INTO DIM_2
+      PACK BILDEXT_KEY WITH BILDEXT_MEM,DIM_2,BLANKS
+      IF (BILDEXT_KEY <> SVE_BILDEXT_KEY)
+             BREAK
+      ENDIF 
+      MOVE BILDEXT_IVOL TO DL_WRK_FL
+      MOVE BILDEXT_EEPOR TO DL_WRK_EEPOR
+      MOVE BILDEXT_NET TO DL_WRK_NET 
+      MOVE BILDEXT_PRD TO DL_WRK_PRD
+      MOVE BILDEXT_CARR TO DL_WRK_CARR
+      MOVE BILDEXT_PLAN TO DL_WRK_PLAN    
+      MOVE BILDEXT_DEPC TO DL_WRK_DEPC        
+      MOVE BILDEXT_LEV1 TO DL_WRK_LEV1     
+      MOVE BILDEXT_ELG_EFF TO DL_WRK_EFF
+      MOVE BILDEXT_ELG_TRM TO DL_WRK_TRM
+      MOVE BILDEXT_TYPE TO DL_WRK_TYPE
+      CALL WRITE_OGBREC USING DL_WRK_FD,DL_WRK_NAME,DL_WRK_LIST
+      CLEAR DL_WRK_LIST
+    REPEAT
+    RETURN
+.
+READ_MEMS
+   CLEAR MEMS_FOUND
+   CLEAR SVE_MEMS_TRM
+   PACK MEMS_FK11 WITH BEN_INP_ID1,BLANKS 
+   CALL  FILE_READ USING MEMS_FD:  ...FILE DECLARATION LIST
+        	           MEMS_FN:  ...FILE NAME LIST  
+		           MEMS_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEMS_FV:  ...FILE KEY VARLISTS
+		           MEMS_FK:  ...FILE KEY SIZES  
+		           MEMS_LIST:...FILE RECORD (FIELD LIST)
+		           MEMS_REC: ...FILE RECORD (PACKED)
+		           MEMS_OLD: ...FILE SAVED WHEN READ
+		           MEMS_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEMS_FD:  ...FILE DECLARATION LIST
+  	          	           MEMS_FN:  ...FILE NAME LIST  
+		                   MEMS_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEMS_FV:  ...FILE KEY VARLISTS
+		                   MEMS_FK:  ...FILE KEY SIZES  
+		                   MEMS_LIST:...FILE RECORD (FIELD LIST)
+		                   MEMS_REC: ...FILE RECORD (PACKED)
+		                   MEMS_OLD: ...FILE SAVED WHEN READ
+		                   MEMS_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              IF ((BEN_INP_ID1 <> MEMS_ID1) OR (RESULT <> 1))
+                BREAK       
+              ENDIF
+              IF (MEMS_EFF = BILDEXT_COVGF)
+                 MOVE "1" TO MEMS_FOUND
+                 MOVE MEMS_TRM TO SVE_MEMS_TRM
+                 BREAK
+              ENDIF
+         REPEAT
+         RETURN
+
+MAKE_H_WRK 
+    CALL PREP_OGBFILE USING HLT_WRK_FD,HLT_WRK_NAME 
+    PACK BILDEXT_KEY WITH BEN_INP_ID1,"PREM",BLANKS 
+    MOVE BILDEXT_KEY TO SVE_BILDEXT_KEY
+    CALL READ_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                               BILDEXT_KEY,BILDEXT_LIST
+    LOOP
+      CALL READKS_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                                   BILDEXT_LIST
+      IF  (RESULT <> 1)
+          BREAK
+      ENDIF
+      PACK BILDEXT_KEY WITH BILDEXT_MEM,BILDEXT_TYPE,BLANKS
+      IF (BILDEXT_KEY <> SVE_BILDEXT_KEY)
+          BREAK
+      ENDIF 
+      MOVE BILDEXT_LEV1 TO HLT_WRK_LEV1
+      MOVE BILDEXT_NET TO HLT_WRK_NET
+      MOVE BILDEXT_PRD TO HLT_WRK_PRD
+      MOVE BILDEXT_CARR TO HLT_WRK_CARR
+      MOVE BILDEXT_PLAN TO HLT_WRK_PLAN
+      MOVE BILDEXT_DEPC TO HLT_WRK_COVL
+      MOVE BILDEXT_EEPOR TO HLT_WRK_EEPOR
+      MOVE BILDEXT_ELG_EFF TO HLT_WRK_EFF
+      MOVE BILDEXT_ELG_TRM TO HLT_WRK_TRM
+      CALL WRITE_OGBREC USING HLT_WRK_FD,HLT_WRK_NAME,HLT_WRK_LIST  
+      CLEAR HLT_WRK_LIST
+    REPEAT
+    RETURN
+.
+CALC_PSYC  
+    PACK BILDEXT_KEY WITH BEN_INP_ID1,"PSYC",BLANKS 
+    MOVE BILDEXT_KEY TO SVE_BILDEXT_KEY
+    CLEAR SAVE_TRM
+    MOVE "99999999" TO P_EFFDATE
+    CLEAR PSYC_KEY
+    CLEAR BILDEXT_SVE
+    CALL READ_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                               BILDEXT_KEY,BILDEXT_LIST
+    LOOP
+      CALL READKS_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                                     BILDEXT_LIST
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK BILDEXT_KEY WITH BILDEXT_MEM,BILDEXT_TYPE
+      IF (BILDEXT_KEY <> SVE_BILDEXT_KEY)
+             BREAK
+      ENDIF 
+      PACK PSYC_KEY WITH BILDEXT_EEPOR                             
+      CLEAR NUM_OF_DAYS
+      MOVE BILDEXT_ELG_TRM TO SAVE_TRM
+      PACK BILDEXT_SVE WITH BILDEXT_LIST
+      IF (P_EFFDATE = "99999999") 
+             MOVE PSYC_KEY TO L_PSYC_KEY
+             MOVE BILDEXT_ELG_EFF TO P_EFFDATE
+             CONTINUE
+      ELSE
+             IF (PSYC_KEY = L_PSYC_KEY)
+               CALL DELTA_DAYS USING BILDEXT_ELG_EFF,SAVE_TRM,NUM_OF_DAYS
+               IF (NUM_OF_DAYS > 1)
+                  MOVE BILDEXT_ELG_EFF TO P_EFFDATE
+               ENDIF
+             ELSE
+                MOVE PSYC_KEY TO L_PSYC_KEY
+                MOVE BILDEXT_ELG_EFF TO P_EFFDATE
+             ENDIF
+      ENDIF
+    REPEAT
+    RETURN
+    
+CALC_HEALTH
+    CLEAR HLT_WRK_SVE
+    CLEAR SAVE_TRM
+    MOVE "99999999" TO H_EFFDATE
+    CLEAR HLT_WRK_KEY
+    CLEAR PR_HLT_WRK_KEY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+      CALL READ_OGBFILE USING HLT_WRK_FD,HLT_WRK_NAME,HLT_WRK_LIST 
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK HLT_WRK_KEY WITH HLT_WRK_NET,HLT_WRK_PRD,HLT_WRK_CARR,HLT_WRK_PLAN:
+                            HLT_WRK_COVL
+      CLEAR NUM_OF_DAYS
+      PACK HLT_WRK_SVE WITH HLT_WRK_LIST
+      IF (H_EFFDATE = "99999999") 
+             MOVE HLT_WRK_KEY TO PR_HLT_WRK_KEY 
+             MOVE HLT_WRK_EFF TO H_EFFDATE
+             MOVE HLT_WRK_TRM TO SAVE_TRM
+             CONTINUE
+      ELSE
+             IF (HLT_WRK_KEY = PR_HLT_WRK_KEY)
+               CALL DELTA_DAYS USING HLT_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+               IF (NUM_OF_DAYS > 1)
+                  MOVE HLT_WRK_EFF TO H_EFFDATE
+               ENDIF
+             ELSE
+                MOVE HLT_WRK_KEY TO PR_HLT_WRK_KEY 
+                MOVE HLT_WRK_EFF TO H_EFFDATE
+             ENDIF
+             MOVE HLT_WRK_TRM TO SAVE_TRM
+      ENDIF
+    REPEAT
+    RETURN
+.   
+    
+CALC_EARL_EFF_UNINT
+    CLEAR LIFE_WRK_SVE
+    CLEAR SAVE_TRM
+    MOVE "99999999" TO E_UNINT_EFFDATE
+    CLEAR E_UNINT_KEY
+    CLEAR PR_E_UNINT_KEY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+      CALL READ_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME,LIFE_WRK_LIST 
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK E_UNINT_KEY WITH LIFE_WRK_PLAN                            
+      CLEAR NUM_OF_DAYS
+      PACK LIFE_WRK_SVE WITH LIFE_WRK_LIST
+      IF (E_UNINT_EFFDATE = "99999999") 
+             MOVE E_UNINT_KEY TO PR_E_UNINT_KEY 
+             MOVE LIFE_WRK_EFF TO E_UNINT_EFFDATE
+             MOVE LIFE_WRK_TRM TO SAVE_TRM
+             CONTINUE
+      ELSE
+             IF (E_UNINT_KEY = PR_E_UNINT_KEY)
+               CALL DELTA_DAYS USING LIFE_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+               IF (NUM_OF_DAYS > 1)
+                  MOVE LIFE_WRK_EFF TO E_UNINT_EFFDATE
+               ENDIF
+             ELSE
+                MOVE E_UNINT_KEY TO PR_E_UNINT_KEY 
+                MOVE LIFE_WRK_EFF TO E_UNINT_EFFDATE
+             ENDIF
+             MOVE LIFE_WRK_TRM TO SAVE_TRM
+      ENDIF
+    REPEAT
+    RETURN
+.   
+CALC_EARL_EFF_UNIN_DL
+    CLEAR DL_WRK_SVE
+    CLEAR SAVE_TRM
+    MOVE "99999999" TO E_UNINT_EFFDATE
+    CLEAR E_UNINT_KEY
+    CLEAR PR_E_UNINT_KEY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+      CALL READ_OGBFILE USING DL_WRK_FD,DL_WRK_NAME,DL_WRK_LIST 
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK E_UNINT_KEY WITH DL_WRK_TYPE                            
+      CLEAR NUM_OF_DAYS
+      PACK DL_WRK_SVE WITH DL_WRK_LIST
+      IF (E_UNINT_EFFDATE = "99999999") 
+             MOVE E_UNINT_KEY TO PR_E_UNINT_KEY 
+             MOVE DL_WRK_EFF TO E_UNINT_EFFDATE
+             MOVE DL_WRK_TRM TO SAVE_TRM
+             CONTINUE
+      ELSE
+             IF (E_UNINT_KEY = PR_E_UNINT_KEY)
+               CALL DELTA_DAYS USING DL_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+               IF (NUM_OF_DAYS > 1)
+                  MOVE DL_WRK_EFF TO E_UNINT_EFFDATE
+               ENDIF
+             ELSE
+                MOVE E_UNINT_KEY TO PR_E_UNINT_KEY 
+                MOVE DL_WRK_EFF TO E_UNINT_EFFDATE
+             ENDIF
+             MOVE DL_WRK_TRM TO SAVE_TRM
+      ENDIF
+    REPEAT
+    RETURN
+.   
+CALC_LIFE  
+    CLEAR LIFE_WRK_SVE
+    MOVE "99999999" TO L_EFFDATE
+    CLEAR PRLI_KEY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+      CALL READ_OGBFILE USING LIFE_WRK_FD,LIFE_WRK_NAME,LIFE_WRK_LIST 
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK LIFE_WRK_SVE WITH LIFE_WRK_LIST
+      PACK PRLI_KEY WITH LIFE_WRK_FL                                
+      PACK LIFE_WRK_SVE WITH LIFE_WRK_LIST
+      IF (L_EFFDATE = "99999999") 
+             MOVE PRLI_KEY TO L_PRLI_KEY
+             MOVE LIFE_WRK_EFF TO L_EFFDATE
+             MOVE LIFE_WRK_TRM TO SAVE_TRM
+             CONTINUE
+      ELSE
+             IF (PRLI_KEY = L_PRLI_KEY)
+               CONTINUE                 
+             ELSE
+                MOVE PRLI_KEY TO L_PRLI_KEY
+                MOVE LIFE_WRK_EFF TO L_EFFDATE
+             ENDIF
+      ENDIF
+    REPEAT
+    RETURN
+    
+GET_ADD_PREM
+    PACK BILDEXT_KEY WITH BEN_INP_ID1,"PRAD",BLANKS 
+    MOVE BILDEXT_KEY TO SVE_BILDEXT_KEY
+    CLEAR BILDEXT_SVE
+    CALL READ_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                               BILDEXT_KEY,BILDEXT_LIST
+    LOOP
+      CALL READKS_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                                     BILDEXT_LIST
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK BILDEXT_KEY WITH BILDEXT_MEM,BILDEXT_TYPE,BLANKS
+      IF (BILDEXT_KEY <> SVE_BILDEXT_KEY)
+             BREAK
+      ENDIF 
+      IF (L_EFFDATE = BILDEXT_COVGF)
+          PACK BILDEXT_SVE WITH BILDEXT_LIST
+      ENDIF
+    REPEAT
+    RETURN
+
+CALC_DL    
+    PACK BILDEXT_KEY WITH BEN_INP_ID1,BILDEXT_TYPE,BLANKS 
+    MOVE BILDEXT_KEY TO SVE_BILDEXT_KEY
+    CLEAR SAVE_TRM
+    MOVE "99999999" TO DL_EFFDATE
+    CLEAR DL_KEY
+    CLEAR BILDEXT_SVE
+    CLEAR L_DL_READ
+    CLEAR N_DL_READ
+    CALL READ_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                               BILDEXT_KEY,BILDEXT_LIST
+    LOOP
+      CALL READKS_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME:            
+                                     BILDEXT_LIST
+      IF  (RESULT <> 1)
+             BREAK       
+      ENDIF
+      PACK BILDEXT_KEY WITH BILDEXT_MEM,BILDEXT_TYPE,BLANKS
+      IF (BILDEXT_KEY <> SVE_BILDEXT_KEY)
+             BREAK
+      ENDIF 
+      PACKLEN N_DL_READ WITH BILDEXT_ELG_EFF,BILDEXT_ELG_TRM,BILDEXT_EEPOR
+      IF (N_DL_READ = L_DL_READ)
+        CONTINUE
+      ELSE
+        PACK L_DL_READ WITH N_DL_READ
+      ENDIF 
+      PACK DL_KEY WITH BILDEXT_TYPE                              
+      CLEAR NUM_OF_DAYS
+      PACK BILDEXT_SVE WITH BILDEXT_LIST
+      IF (DL_EFFDATE = "99999999") 
+             MOVE DL_KEY TO L_DL_KEY
+             MOVE BILDEXT_ELG_EFF TO DL_EFFDATE
+             MOVE BILDEXT_ELG_TRM TO SAVE_TRM
+             CONTINUE
+      ELSE
+             IF (DL_KEY = L_DL_KEY)
+               CONTINUE                              
+             ELSE
+                MOVE DL_KEY TO L_DL_KEY
+                MOVE BILDEXT_ELG_EFF TO DL_EFFDATE
+             ENDIF
+      ENDIF
+    REPEAT
+    RETURN
+
+. ----------------------------
+. Write output record 
+. ----------------------------
+WRITE_RECORD
+    PACK      MEM_FK11 WITH BEN_INP_ID1
+    CALL      FILE_READ USING MEM_FD:    ...File declaration list
+        MEM_FN:   ...File name list
+        MEM_FC:   ...(I)ndex or (A)imdex
+        MEM_FV:   ...File key varlists
+        MEM_FK:   ...File key sizes
+        MEM_LIST: ...File record (field list)
+        MEM_REC:  ...File record (packed)
+        MEM_OLD:  ...File saved when read
+        MEM_QTY:  ...Number of files
+        1         ...File number for this read
+        MOVE MEM_ESSN TO ISISWRK_EMP_SSN
+        IF (ISISWRK_EFFDATE < ISIS_START_DATE)
+             MOVE ISIS_START_DATE TO ISISWRK_EFFDATE
+        ENDIF
+        UNPACK ISISWRK_EFFDATE INTO WRK_CCYY,WRK_MM,WRK_DD        
+        SWITCH WRK_DD
+           CASE "01"
+           DEFAULT
+             IF ((WRK_DD > "01") AND (WRK_DD <= "14")) 
+                 PACK ISISWRK_EFFDATE WITH WRK_CCYY,WRK_MM,"01"
+             ELSE
+                 MOVE WRK_CCYY TO FORM_CCYY
+                 MOVE WRK_MM TO FORM_MM
+                 CALL ADD_1M_DATE
+                 MOVE WRK_DATE TO ISISWRK_EFFDATE
+             ENDIF
+        ENDSWITCH
+        IF (SQUEEZE ISISWRK_TYPE <> "LFPN")
+            MOVE STAR5  TO ISISWRK_FACELIFE
+        ENDIF
+
+        IF (SQUEEZE ISISWRK_RIDER = "")
+            MOVE STAR4 TO ISISWRK_RIDER
+        ENDIF
+
+        REPLACE " *" IN ISISWRK_TYPE
+        REPLACE " *" IN ISISWRK_EMP_SSN
+        REPLACE " *" IN ISISWRK_AGENCY
+        REPLACE " *" IN ISISWRK_EFFDATE
+        REPLACE " *" IN ISISWRK_TRMDATE
+        REPLACE " *" IN ISISWRK_NETWORK
+        REPLACE " *" IN ISISWRK_PRODUCT
+        REPLACE " *" IN ISISWRK_PLANCODE
+        REPLACE " *" IN ISISWRK_COVLEVEL
+        REPLACE " *" IN ISISWRK_RIDER
+        MOVE CURRDATE TO ISISWRK_RUN_DATE
+        PACK ISISWRK_KEY WITH ISISWRK_EMP_SSN,ISISWRK_TYPE
+        CALL WRITE_OGBREC_IX USING ISISWRK_FILE,ISISWRK_NAME:
+                                   ISISWRK_KEY,ISISWRK_REC
+        ADD 1 TO X_CNT2
+        UNPACK X_CNT2 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+
+        CLEAR ISISWRK_REC
+
+    RETURN
+
+ADD_1M_DATE
+         ADD       01 TO FORM_MM
+         IF        (FORM_MM = 13)
+                   ADD 1 TO FORM_CCYY
+                   MOVE 01 TO FORM_MM
+         ENDIF
+         PACK      WRK_DATE WITH FORM_CCYY,FORM_MM,"01"
+         REPLACE   " 0" IN WRK_DATE
+         RETURN
+                   
+LAST_DAY_M
+      SWITCH WRK_MM
+         CASE "01"
+             MOVE "31" TO WRK_DD
+         CASE "02"
+             MOVE WRK_CCYY TO FORM_CCYY
+             MOD "4" INTO FORM_CCYY GIVING WRK_F4
+             IF (WRK_F4 = 0)
+                 MOVE "29" TO WRK_DD
+             ELSE
+                 MOVE "28" TO WRK_DD
+             ENDIF
+         CASE "03"
+             MOVE "31" TO WRK_DD
+         CASE "04"
+             MOVE "30" TO WRK_DD
+         CASE "05"
+             MOVE "31" TO WRK_DD
+         CASE "06"
+             MOVE "30" TO WRK_DD
+         CASE "07"
+             MOVE "31" TO WRK_DD
+         CASE "08"
+             MOVE "31" TO WRK_DD
+         CASE "09"
+             MOVE "30" TO WRK_DD
+         CASE "10"
+             MOVE "31" TO WRK_DD
+         CASE "11"
+             MOVE "30" TO WRK_DD
+         CASE "12"
+             MOVE "31" TO WRK_DD
+      ENDSWITCH
+      PACK WRK_DATE WITH WRK_CCYY,WRK_MM,WRK_DD
+      RETURN
+
+REFORMAT_BILEXT
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "bil_ben.bild ",BILDEXT_NAME," 33-48 368-385 388-389 ":
+                      "395-404 457-464 469-472 602-611 632-641 254-269 -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED - BIL_BEN"
+        CHAIN "MENU"
+    ENDIF
+ CALL SORT_OGBFILE USING BILDEXT_NAME,BILDEXT_NAME,BILDEXT_SRTKEY
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORT FAILED - BILDEXT_NAME"
+        CHAIN "MENU"
+    ENDIF
+ CALL INDEX_OGBFILE USING BILDEXT_NAME,BILDEXT_IDX_NAME,BILDEXT_IDXKEY
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="INDEX FAILED - BILDEXT_NAME"
+        CHAIN "MENU"
+    ENDIF
+  RETURN
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+    CALL OPEN_OGBFILE USING BEN_INP_FD,BEN_INP_NAME
+    CALL PREP_OGBFILE_IX USING ISISWRK_FILE,ISISWRK_NAME
+    CALL OPEN_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME
+    RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+    CALL CLOSE_OGBFILE USING BEN_INP_FD,BEN_INP_NAME
+    CALL CLOSE_OGBFILE_IX USING ISISWRK_FILE,ISISWRK_NAME
+    CALL CLOSE_OGBFILE_IX USING BILDEXT_FD,BILDEXT_IDX_NAME
+
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+    
+       CLOCK     TIMESTAMP INTO CURRDATE
+       MOVE      "menu"         TO C_NEXT
+       MOVE      "A0512282"  TO C_PROG
+       MOVE      "ISIS BENCH-MARK " TO C_OPER
+       MOVE      1 TO C_LEVEL
+       MOVE      BLANKS TO C_LABEL
+       MOVE      BLANKS TO C_FILE
+       MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	 MOVE      "Records Read:     " TO X_CNTDESC1
+	 MOVE      "Records Written:  " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+	 
+       RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

@@ -1,0 +1,270 @@
+./* ====================================================================
+. *          Name : a1710091.ps
+. *   Description : Fix LAGOV 834 Bad HSA STAT MEME_RT from "AC" to "01"
+. * ....................................................................
+. *  apjwh - 10/09/2017 - DEV - Initial Version
+. * ...........................CHANGE LOG...............................
+. *  apiii - mm/dd/ccyy - TYP -
+. */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC MEM.RL ...demographic
+    INC MEME.RL ...enrollment
+    INC D_MEMMEM.CB ...Impact update record
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+WORK_FD         FILE VAR=600,TEXT ...filled with MEME_LIST
+WORK_FILE       INIT "/w/a1710091.wrk"
+
+LOG_FD          FILE VAR=100,TEXT
+LOG_FILE        INIT "/w/lagov834_bad_hsa_updt.log"
+LOG_LIST        LIST
+LOG_REC         CHAR 100
+                LISTEND
+
+IMP_UPDT_FD     FILE VAR=X_INM_SIZE,TEXT ...update rec. Filled with INM_LIST
+IMP_UPDT_FILE   INIT "a1710091.txt"
+
+UPDT            EQU  0
+ERROR           EQU  1
+TODAY           CHAR 8
+
+PARAM_LIST          LIST WITH NAMES
+.// add parameter variables here
+                    LISTEND
+
+./* =============
+. * Begin Program
+. * ============= */
+
+.// Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+.// Scheduler begins here
+.//    inc  SCHED_WP.SR // for use with the printer
+    INC SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW ROUTINE
+
+... Check return stack
+    RETCOUNT  ORIG_RETURN
+
+.   // Set runtime variables
+    MOVE "a1710091" TO C_PROG
+    MOVE "FIX BAD HSA RATE" TO C_OPER
+    MOVE "menu" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG // signal start TO Autosys
+    ELSE
+        CALL X_BLANK_SCREEN // draw the standard screen
+    ENDIF
+
+.   // Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.   // Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+MAIN_PROCESS ROUTINE
+    debug
+    CALL DRAW_COUNTERS
+    CALL GATHER_BAD_STATS
+    CALL IO_PREP
+    CALL REPAIR_BAD_HSA_STATS
+    CALL IO_CLEAN
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+DRAW_COUNTERS ROUTINE
+./* Draw the screen (IF running manually) */
+    IF (RUN_MODE != "B" & NOT C_CMDPAR)
+        MOVE "Bad HSA STAT ID1s" TO X_CNTDESC1
+        MOVE "Bad HSA STAT MEMEs" TO X_CNTDESC2
+        MOVE "Updated MEMEs" TO X_CNTDESC3
+        MOVE "Weird Errors" TO X_CNTDESC4
+        MOVE "Not Used" TO X_CNTDESC5
+        MOVE "Not Used" TO X_CNTDESC6
+
+        CALL X_ZERO_COUNTS
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+GATHER_BAD_STATS ROUTINE
+./* Get a set of MEMEs to work with and sort by person */
+    IF (NOT C_CMDPAR)
+        MESSAGE HORZ="23",VERT="20":
+                BGCOL=C_DLGB,FGCOL=C_DLGF,LNCOL=C_DLGL,SHADE="y":
+                TEXT="Building Bad HSA STAT Work File...";
+    ENDIF
+
+    MOVE ("meme.dbf "+WORK_FILE+" -p112-115eqBLUE -p117-119eqHSA -p126-129eqSTAT -p130-131eqAC -t -j") TO SCRATCH
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Reformat Failed","GATHER_BAD_STATS"
+    ENDIF
+
+.   /* Sort by member ID */
+    MOVE (WORK_FILE+" "+WORK_FILE+" 1-8 -t") TO SCRATCH
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort Failed","GATHER_BAD_STATS"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_PREP ROUTINE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL PREP_OGBFILE USING IMP_UPDT_FD,IMP_UPDT_FILE
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+REPAIR_BAD_HSA_STATS ROUTINE
+./* Fix, and write to update all MEME records that are HSA deduction
+.   records with an "AC" rate that the 834 created (or are currently
+.   not termed) */
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CLOCK TIMESTAMP INTO TODAY
+    FILL " " IN MEM_LIST
+
+    IF (NOT C_CMDPAR)
+        MESSAGEERASE
+        MESSAGE HORZ="24",VERT="20":
+                BGCOL=C_DLGB,FGCOL=C_DLGF,LNCOL=C_DLGL,SHADE="y":
+                TEXT="Building Impact Update File...";
+    ENDIF
+    debug
+    LOOP
+        FILL " " IN MEME_LIST
+        CALL READ_OGBFILE USING WORK_FD,WORK_FILE,MEME_LIST
+        BREAK IF (RESULT != 1)
+
+.       /* Let's avoid touching old, done records */
+        CONTINUE IF (SQUEEZE MEME_TRM & MEME_TRM < TODAY)
+
+        CALL UTIL_XCOUNTER USING X_CNT2,10
+
+        IF (MEME_RT != "AC")
+            debug ...means the reformat was bad
+            CALL UTIL_ERRORMSG USING "Reformat Returned Bad Values","REPAIR_BAD_HSA_STATS"
+        ENDIF
+
+        IF (NOT SQUEEZE MEME_ID1)
+            debug ...not possible, but who knows...
+            CALL WRITE_LOG USING ERROR,("No ID1 on this MEME")
+            CONTINUE
+        ENDIF
+
+.       /* Sorted by ID1. Should be a single read per person */
+        IF (MEME_ID1 != SQUEEZE MEM_ID1)
+            FILL " " IN MEM_LIST
+            CALL UTIL_MEM_FIND USING MEME_ID1
+            IF (NOT EQUAL)
+                debug
+                CALL WRITE_LOG USING ERROR,("No MEM Found for "+MEME_ID1)
+                CONTINUE
+            ENDIF
+            CALL UTIL_XCOUNTER USING X_CNT1,10
+        ENDIF
+
+.       /* The HSA Deduction Record Defaults to an 01 rate. It's convention  */
+        MOVE "01" TO MEME_RT    // <-- default HSA rate
+        MOVE "HSAFIX" TO MEME_CHGBY
+        MOVE TODAY TO MEME_CHGDT
+
+.       /* Write an update record */
+        CALL WRITE_LOG USING UPDT
+        PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+        UNPACK INM_REC INTO INM_LIST
+        CALL WRITE_OGBREC USING IMP_UPDT_FD,IMP_UPDT_FILE,INM_LIST
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+WRITE_LOG ROUTINE ERROR@,ERRORMSG@
+./* Let's keep track of what was touched */
+ERROR@      NUM  @
+ERRORMSG@   CHAR @
+STATUS      CHAR 10
+ENDOFMSG    CHAR 50
+...
+    FILL " " IN ENDOFMSG
+    IF (ERROR@)
+        MOVE "Error" TO STATUS
+        CALL UTIL_XCOUNTER USING X_CNT4,10
+        MOVE (PIPE+ERRORMSG@) TO ENDOFMSG
+    ELSE
+        MOVE "Update" TO STATUS
+        CALL UTIL_XCOUNTER USING X_CNT3,10
+        CLEAR ENDOFMSG
+    ENDIF
+
+    MOVE (">>"+MEME_ID1+PIPE+STATUS+ENDOFMSG) TO LOG_REC
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_CLEAN ROUTINE
+    MESSAGEERASE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+    CALL CLOSE_OGBFILE USING IMP_UPDT_FD,IMP_UPDT_FILE
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    ERASE WORK_FILE
+    IF (OVER)
+        debug
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+
+    INC UTIL_COMMON.SR  // OGB Compilation of Standard UTIL routines
+    INC UTIL_MEM.SR     // MEM read routines
+
+./* ==============
+. * End of program
+. * ============== */

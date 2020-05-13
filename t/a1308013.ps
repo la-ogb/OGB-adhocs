@@ -1,0 +1,407 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1308013.PS 
++    Description    :  Terming all PECs for 12/31/2013                          
++
++    APDLM 11/20/2013 A1308013 dev - initial version                      
++    apazw 06/12/2017 - mod - increase file size
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              INC       D_MEMMEM.CB          
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrollment   
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+...First reformat no blank term dates
+REF1_FD     FILE     VAR=28,TEXT
+REF1_NME   INIT    "/w/a1308013.ref1"   
+REF1_LIST  LIST
+REF1_ID1   DIM     8
+REF1_ID2   DIM     4
+REF1_ORIG  DIM     8
+REF1_PREX  DIM     8
+               LISTEND 
+
+...Final reformat pre-existing term date > 20131231
+REF_FD     FILE     VAR=28,TEXT
+REF_NME    INIT    "/w/a1308013.ref"   
+REF_LIST   LIST
+REF_ID1    DIM     8
+REF_ID2    DIM     4
+REF_ORIG   DIM     8
+REF_PREX   DIM     8
+               LISTEND 
+
+INM_FILE       FILE     VAR=X_INM_SIZE,TEXT
+INM_NAME       INIT     "a1308013.txt"
+
+SRTKEY        INIT "21-28 13-20 1-12 -t -r"
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+BLANK8        INIT "        "
+PARAM_PREX    INIT "20131231"
+
+TILDE         INIT "~"
+
+FIRST_READ    DIM  1
+CNT_4         DIM  4
+CNT_3         DIM  3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Remove Pre-Exist" TO  C_OPER
+         MOVE      "A1308013"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+NITIALIZE
+. ----------------------------
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+. ...Display Counters
+         MOVE      "Recs Read:     " TO X_CNTDESC1
+         MOVE      "Recs Written:  " TO X_CNTDESC2
+         MOVE      "No Rider Recs: " TO X_CNTDESC3
+
+         CALL      X_DISPLAY_COUNTS
+         RETURN
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+
+    CALL INITIALIZE
+ 
+    CALL REFORMAT_MEME
+ 
+    CALL OPEN_FILES
+ 
+    CALL READ_FILE          
+ 
+    CALL      CLOSE_FILES 
+ 
+    CALL      X_DISPLAY_COUNTS
+ 
+    TRAPREST  TRAP_DATA
+ 
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+ 
+    RETURN                                                   
+
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+INITIALIZE
+
+    DISPLAY *P1:9,*ES
+    CALL X_BLANK_SCREEN
+    CLOCK     TIMESTAMP   INTO  CURRDATE
+
+...Display Counters
+    MOVE      "Recs Read:     " TO X_CNTDESC1
+    MOVE      "Recs Written:  " TO X_CNTDESC2
+
+    CALL      X_DISPLAY_COUNTS
+
+    RETURN
+
+.---------------------------------
+.Reformatting MEME file
+.---------------------------------
+REFORMAT_MEME
+
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+...Getting records without a blank pre-existing condition term date
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf ",REF1_NME:
+              " -p424-431ne#"",BLANK8,"#" 1-12 358-365 424-431 -t" 
+
+    REFORMAT SCRATCH
+
+    IF OVER
+        ERROR     HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(ref1)"
+         CHAIN     "MENU"
+    ENDIF
+
+...Getting records with pre-existing condition term date greater than 20131231 
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH REF1_NME," ",REF_NME:        
+              " -p21-28gt#"",PARAM_PREX,"#" 1-28 -t"                     
+
+    REFORMAT SCRATCH
+
+    IF OVER
+        ERROR     HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(ref)"
+         CHAIN     "MENU"
+    ENDIF
+
+...Sorting file by PEC term date, PEC eff date, member ID
+    MOVE BLANKS TO SCRATCH
+    
+    DISPLAY   *BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+              *P30:21, "     SORTING FILE PLEASE WAIT    ", *BOLDOFF:
+              *P30:22, "                                 ", *BOLDOFF
+    PACK SCRATCH WITH REF_NME," ",REF_NME," ",SRTKEY
+
+    SORT     SCRATCH
+
+    IF OVER
+         ERROR     HORZ="22",VERT="20":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="SORT FAILED(ref_nme)"   
+         CHAIN     "MENU"
+    ENDIF
+
+    RETURN
+
+.---------------------------------
+.Reading input file      
+.---------------------------------
+READ_FILE
+
+    LOOP      
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING REF_FD,REF_NME,REF_LIST
+        IF (RESULT <> 1)
+            BREAK 
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_4,CNT_3
+        IF (CNT_3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        IF (REF_PREX <= PARAM_PREX)
+            CONTINUE
+        ENDIF
+
+        CALL UPDATE_MEMBER
+ 
+    REPEAT
+
+    RETURN
+
+.---------------------------------
+.Updating the pre-existing condition dates
+.---------------------------------
+UPDATE_MEMBER
+
+...Getting MEM record
+    PACK MEM_FK11 WITH REF_ID1,BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...File declaration list
+        MEM_FN:   ...File name list
+        MEM_FC:   ...(I)ndex or (A)imdex
+        MEM_FV:   ...File key varlists
+        MEM_FK:   ...File key sizes
+        MEM_LIST: ...File record (field list)
+        MEM_REC:  ...File record (packed)
+        MEM_OLD:  ...File saved when read
+        MEM_QTY:  ...Number of files
+        1         ...File number for this read
+
+    IF ((MEM_ID1 <> REF_ID1) OR (RESULT <> 1)) 
+        RETURN
+    ENDIF   
+
+...Getting MEME record
+    PACK MEME_FK11 WITH REF_ID1,REF_ID2,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                           MEME_FN:  ...FILE NAME LIST
+                           MEME_FC:  ...TYPE OF INDEX
+.                                    ...(I)NDEX OR (A)IMDEX
+                           MEME_FV:  ...FILE KEY VARLISTS
+                           MEME_FK:  ...FILE KEY SIZES
+                           MEME_LIST:...FILE RECORD (FIELD LIST)
+                           MEME_REC: ...FILE RECORD (PACKED)
+                           MEME_OLD: ...FILE SAVED WHEN READ
+                           MEME_QTY: ...NUMBER OF FILES
+                           1         ...FILE NUMBER FOR THIS READ
+    IF ((REF_ID1 <> MEME_ID1) OR (REF_ID2 <> MEME_ID2) OR (RESULT <> 1))
+        RETURN
+    ENDIF
+
+    PACKLEN INM_REC WITH MEM_REC,MEME_REC
+    UNPACK  INM_REC INTO INM_LIST
+
+...If pre-existing condition effective date is after param date we clear dates
+...otherwise we term pre-existing condition with param date
+    IF (INME_ORIG > PARAM_PREX)
+        MOVE TILDE TO INME_ORIG
+        MOVE TILDE TO INME_PREX
+    ELSE
+        MOVE PARAM_PREX TO INME_PREX
+    ENDIF
+
+    MOVE BLANKS TO INME_CHGBY
+    MOVE "PEC13" TO INME_CHGBY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING INM_FILE,INM_NAME,INM_LIST
+    ADD 1 TO X_CNT2
+    CLEAR INM_LIST
+ 
+    RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+OPEN_FILES
+. ----------------------------
+
+    CALL      PREP_OGBFILE USING INM_FILE,INM_NAME
+    CALL      OPEN_OGBFILE USING REF_FD,REF_NME 
+
+    RETURN
+
+. ----------------------------
+CLOSE_FILES
+. ----------------------------
+
+    CALL      CLOSE_OGBFILE USING INM_FILE,INM_NAME
+    CALL      CLOSE_OGBFILE USING REF_FD,REF_NME 
+
+    RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1308013.PS
+. +++++++++++++++++++++++++++++++++++++

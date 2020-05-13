@@ -1,0 +1,364 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A040706a.PS
++    Description    :  CUS - EXTRACTS DEPENDENT INFO FOR LSU BR
++    Author         :  Stephen J. McDonald
++    Date created   :  07/08/2004
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. --------------------------- 
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member enrollment
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+LSUDEP_FD        FILE     VAR=73,TEXT 
+LSUDEP_NME       INIT     "/w/lsudep.txt"
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+LSUDEP_LIST   LIST        LOC
+LSUDEP_ESSN   DIM  9    001-009         
+LSUDEP_H_SW   DIM  1    010-010 (Y or N) 
+LSUDEP_L_SW   DIM  1    011-011 (Y or N) 
+LSUDEP_PSSN   DIM  9    012-020 
+LSUDEP_LNAME  DIM  20   021-040
+LSUDEP_FNAME  DIM  15   041-055
+LSUDEP_MINIT  DIM  1    056-056
+LSUDEP_DOB    DIM  8    057-064 (CCYYMMDD)
+LSUDEP_DIS    DIM  1    065-065 (Y OR N)
+LSUDEP_MDTE   DIM  8    066-073 (CCYYMMDD) 
+              LISTEND
+.
+DATE_RESULT   DIM  2
+DIM3          DIM  3
+DIM10         DIM  10     
+W_CCYY        DIM  4
+CNT_4         DIM  4
+CNT_3         DIM  3
+W_DIM4        DIM  4
+WS_ACCDATE    DIM       8
+FIRST_READ    DIM       1  
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "LSU BR DEPS" TO  C_OPER
+         MOVE      "A040706a"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL      INITIALIZE
+    CALL      OPEN_FILES
+    CALL      EXT_DATA 
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    ROLLOUT   "a040706a.ftp"
+         IF OVER
+              ERROR     HORZ="15",VERT="19":
+                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+                        LNCOL=C_ERRL,SHADE="Y":
+                        TEXT="ROLLOUT FAILED"
+              CHAIN     "MENU"
+         ENDIF
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+EXT_DATA
+    PACK      MEM_FK11 WITH BLANKS   
+    CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                      MEM_FN:   ...File name list
+                      MEM_FC:   ...(I)ndex or (A)imdex
+                      MEM_FV:   ...File key varlists
+                      MEM_FK:   ...File key sizes
+                      MEM_LIST: ...File record (field list)
+                      MEM_REC:  ...File record (packed)
+                      MEM_OLD:  ...File saved when read
+                      MEM_QTY:  ...Number of files
+                      1         ...File number for this read
+    LOOP
+         CALL    FILE_NEXT USING MEM_FD:    ...File declaration list
+                 MEM_FN:   ...File name list
+                 MEM_FC:   ...(I)ndex or (A)imdex
+                 MEM_FV:   ...File key varlists
+                 MEM_FK:   ...File key sizes
+                 MEM_LIST: ...File record (field list)
+                 MEM_REC:  ...File record (packed)
+                 MEM_OLD:  ...File saved when read
+                 MEM_QTY:  ...Number of files
+                 1         ...File number for this read
+         BREAK IF (RESULT <> 1)
+         ADD 1 TO X_CNT1
+         UNPACK X_CNT1 INTO CNT_4,CNT_3
+         IF (CNT_3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF 
+         IF (SQUEEZE MEM_REL = "01")
+            CONTINUE
+         ENDIF
+         CLEAR LSUDEP_H_SW 
+         CLEAR LSUDEP_L_SW 
+         PACK MEME_FK11 WITH MEM_ID1,BLANKS 
+         CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             IF ((RESULT <> 1) OR (MEM_ID1 <> MEME_ID1)) 
+                IF ((LSUDEP_H_SW = "Y") OR (LSUDEP_L_SW = "Y"))
+                   CALL WRITE_REC
+                ENDIF
+                BREAK   
+             ENDIF
+             ADD 1 TO X_CNT2
+             UNPACK X_CNT2 INTO CNT_4,CNT_3
+             IF (CNT_3 = "000")
+               CALL X_DISPLAY_COUNTS
+             ENDIF
+             IF ((SQUEEZE MEME_TRM <> "") AND (TODAY > MEME_TRM))
+                CONTINUE
+             ENDIF
+             IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                CONTINUE
+             ENDIF
+             IF ((SQUEEZE MEME_LEV1 <> "1901") AND:
+                 (SQUEEZE MEME_LEV2 <> "1901")) 
+                  CONTINUE
+             ENDIF
+             IF (MEME_EFF > TODAY)
+                  CONTINUE
+             ENDIF
+             IF (SQUEEZE MEME_NET = "LIFE")
+                  MOVE "Y" TO LSUDEP_L_SW
+             ELSE 
+                  MOVE "Y" TO LSUDEP_H_SW 
+             ENDIF
+             CONTINUE
+         REPEAT
+    REPEAT
+    RETURN
+         
+WRITE_REC
+    MOVE MEM_ESSN TO LSUDEP_ESSN
+    MOVE MEM_PSSN TO LSUDEP_PSSN
+    MOVE MEM_LNAME TO LSUDEP_LNAME
+    MOVE MEM_FNAME TO LSUDEP_FNAME
+    MOVE MEM_MINIT TO LSUDEP_MINIT
+    MOVE MEM_DOB TO LSUDEP_DOB
+    IF (MEM_REL = "03")
+       UNPACK MEM_LIFE INTO W_DIM4
+       IF (W_DIM4 = "HAND")
+            MOVE "Y" TO LSUDEP_DIS
+       ELSE
+            MOVE "N" TO LSUDEP_DIS
+       ENDIF
+    ELSE
+       CLEAR LSUDEP_DIS
+    ENDIF          
+    IF (MEM_REL = "02")
+         CALL GET_ENROLLEE
+         MOVE MEM_MARD TO LSUDEP_MDTE
+    ENDIF
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LSUDEP_FD,LSUDEP_NME,LSUDEP_LIST
+    CLEAR LSUDEP_LIST
+    ADD 1 TO X_CNT3
+    UNPACK X_CNT3 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF 
+    RETURN
+
+GET_ENROLLEE
+        CLEAR     MEM_AIM
+        PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+        PACK      MEM_AIM3 WITH "03X","01",BLANKS
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+        RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Mem Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Meme Recs Read:    " TO X_CNTDESC2
+	 MOVE      "Records Written:   " TO X_CNTDESC3
+
+	 CALL      X_DISPLAY_COUNTS
+
+         RETURN
+
+.
+OPEN_FILES
+         MOVE      LSUDEP_NME TO C_FILE
+         CALL      PREP_OGBFILE USING LSUDEP_FD,LSUDEP_NME
+         RETURN
+
+CLOSE_FILES
+         MOVE      LSUDEP_NME TO C_FILE
+         CALL      CLOSE_OGBFILE USING LSUDEP_FD,LSUDEP_NME
+         RETURN
+
+. -------------------------------
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0407061.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,758 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0309091.PS
++    Description    :  Program to extract paid claims by Provider
++
++    apeks 09/09/2003 a0309091 DEV - Initial Version. 
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy ayymmdd# MOD - Description        
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       PRO.RL               ...Provider Demographics
+              INC       PROP.RL              ...Provider Contract
+              INC       CLM.RL               ...Claim Header File
+              INC       CLMS.RL              ...Claim Service File
+              INC       SCH.RL               ...Scheduler File  
+.             INC       PRVCLM.RL            ...Provider Claim File 
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+. Reformat of CLM File
+TMP_FILE        FILE    VAR=100,TEXT
+TMP_NAME        INIT    "/w/a0309091.tmp"
+TMP_LIST        LIST
+TMP_CLM         DIM     8
+TMP_PRV         DIM     8
+TMP_PROD        DIM     5
+TMP_PLAN        DIM     4
+TMP_PAID        DIM     8
+TMP_FROM        DIM     8
+TMP_THRU        DIM     8
+TMP_RECD        DIM     8
+TMP_ADJF        DIM     8
+TMP_INOUT       DIM     1
+TMP_LOS         DIM     4
+                LISTEND
+
+. Output Files
+OUT_IFILE       IFILE   VAR=250,KEYLEN=25,TEXT
+OUT_NAME        INIT    "/w/a0309091.ix1"
+
+PCLM_LIST  LIST
+PCLM_TYPE  DIM     10                  0001 0010        Claim Type 
+PCLM_TIN   DIM     9                   0017 0025        Payer Tax ID
+PCLM_RGN   DIM     2                   0025 0027        OGB Region
+PCLM_SPL   DIM     3                   0028 0030        Provider Specialty
+PCLM_PRNM  DIM     35                  0031 0065        Provider Name 
+PCLM_CNT   DIM     12                  0066 0077        Claim Count  
+PCLM_REJ   DIM     12                  0078 0089        Reject Count
+PCLM_CHG   DIM     12                  0090 0101        Charges  
+PCLM_ALLO  DIM     12                  0102 0113        Deductible
+PCLM_PDPR  DIM     12                  0150 0161        Paid to Provider
+PCLM_PDMEM DIM     12                  0162 0173        Paid to Member
+...<END>------------------------------------------------------------------------
+           LISTEND
+
+OUT_FILE        FILE    VAR=250,TEXT
+OUT_TEXT        INIT    "/w/a0309091.txt"
+
+OUT_KEY         DIM     25
+
+. ---------------------------------------------
+. Program Specific Variables & Working Storage
+. ---------------------------------------------
+CAL_CLOCK       DIM       21 
+CYCLE_DATE      DIM       8
+HOLD_CYCLE_DATE DIM       8
+HOLD_FILE_NME   DIM       31
+ORIG_RETURN     FORM      5       
+PARAM_LIST      LIST
+PARAM_XXX       DIM       10
+PARAM_YYY       DIM       5
+PARAM_DATE      DIM       8
+       	        LISTEND
+TRAP_DATA       DIM       500
+
+DIM2            DIM       2
+DIM8            DIM       8
+DIM10           DIM       10
+DIM11           DIM       11
+FORM9           FORM      9 
+FORM10          FORM      10
+FORM20          FORM      20
+
+MCS@DIM1        DIM       @
+MCS@DIM2        DIM       @
+MCS@FORM1       FORM      @
+
+W_YR1           FORM      4
+W_YR2           FORM      4
+
+WS_CCYY         DIM       4
+WS_CC           DIM       2
+WS_YY           DIM       2
+WS_MM           DIM       2
+WS_DD           DIM       2
+
+CLM_RD_CNT      FORM      10 
+CLM_WT_CNT      FORM      10 
+
+CURRDATE        DIM       8
+
+W_FROM          DIM       8
+W_THRU          DIM       8
+W_CLMDATE       DIM       8
+W_CURRDT        DIM       8
+
+THRU_YEAR       FORM      4
+THRU_MON        FORM      2
+THRU_DAY        FORM      2
+W_LEAP          FORM      1
+
+W_TYPE          DIM       10
+W_PERD          DIM       6 
+W_RGN           DIM       2
+W_SPL           DIM       5
+W_TIN           DIM       9
+W_NAME          DIM       35
+W_CHG           DIM       12  
+W_DEDU          DIM       12 
+W_ALLO          DIM       12 
+W_COIN          DIM       12 
+W_COPAY         DIM       12 
+W_NOTCOV        DIM       12 
+W_PDPRV         DIM       12  
+W_PDMEM         DIM       12 
+
+W_SUBLAG        DIM       12
+W_COMLAG        DIM       12
+W_DAYS          FORM      12
+W_ZERO          DIM       1
+
+W_PPO           DIM       1
+W_PRV           DIM       1
+W_PROD          DIM       5
+W_PLAN          DIM       4
+
+CNT1            FORM      12
+CNT2            FORM      12
+CNT3            FORM      12
+
+AMT1            FORM      9.2
+AMT2            FORM      9.2
+AMT3            FORM      9.2
+
+COMMA           INIT      ","
+QUOTE           INIT      "#""
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ---------------------------------
+. Start here if selected from menu   
+. ---------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. --------------------------------------
+. Start here if called by the Scheduler    
+. --------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "PPO OUTP BY DOS" TO  C_OPER
+         MOVE      "A0309091"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...No Traps should be Set
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         CALL INIT_PROG
+         CALL FIND_CLAIMS
+
+         RETURN
+
+. ----------------------------
+. Initialize Program       
+. ----------------------------
+
+INIT_PROG
+
+         CALL KEY_PARAMETERS
+         CALL MAKE_INPUT_FILE
+         CALL SCR_DISPLAY
+         CALL OPEN_FILES
+
+         RETURN
+
+. ----------------------------
+. Key-in Date Parameters    
+. ----------------------------
+
+KEY_PARAMETERS 
+
+         message   horz="15",vert="06":
+                   bgcol=C_ERRB,fgcol=C_ERRF:
+                   lncol=C_ERRL,shade="Y":
+                   text="   PROVIDER CLAIM SUMMARY    ":
+                   text="---------------------------------------":
+                   text=" From Date (ccyymmdd) ": 
+                   text=" Thru Date (ccyymmdd) ": 
+                   text="                      " 
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_ERRB,*COLOR=C_ERRF:
+                   *P40:9,W_FROM:  
+                   *P40:10,W_THRU
+
+KEY_FROM
+         MOVE      40          TO  KEY_COL                                      
+         MOVE      9           TO  KEY_ROW                                      
+         MOVE      8           TO  KEY_SIZ                                      
+         MOVE      0           TO  KEY_DEC                                      
+         MOVE      "X"         TO  KEY_TYP                                      
+         MOVE      "L"         TO  KEY_JUS                                      
+         MOVE      "O"         TO  KEY_REQ                                      
+         DISPLAY   *BGCOLOR=C_ERRB,*COLOR=C_ERRF                                
+         CALL      KEY_IN   USING  W_FROM  
+
+         IF (SQUEEZE W_FROM = "")
+            GOTO KEY_FROM
+         ENDIF
+
+KEY_THRU
+         MOVE      40          TO  KEY_COL                                      
+         MOVE      10          TO  KEY_ROW                                      
+         MOVE      8           TO  KEY_SIZ                                      
+         MOVE      0           TO  KEY_DEC                                      
+         MOVE      "X"         TO  KEY_TYP                                      
+         MOVE      "L"         TO  KEY_JUS                                      
+         MOVE      "O"         TO  KEY_REQ                                      
+         DISPLAY   *BGCOLOR=C_ERRB,*COLOR=C_ERRF                                
+         CALL      KEY_IN   USING  W_THRU                                      
+
+         IF (SQUEEZE W_THRU = "")
+            GOTO KEY_THRU
+         ENDIF
+
+         RETURN
+
+. ----------------------------
+. Reformat files for Input  
+. ----------------------------
+
+MAKE_INPUT_FILE
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="15":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" Reformatting CLM File":
+                      text=" Please wait...      "
+         ENDIF
+
+. Reformat claims with a Output date in period
+         debug  
+         CLEAR SCRATCH
+         PACK SCRATCH WITH "clm.dbf ",TMP_NAME," 1-8 46-53":
+                           " 2478-2482 2487-2490 2496-2503":
+                           " 318-325 326-333 18-25":
+                           " 2505-2512 2504-2504 2550-2553":
+                           " -p318-325ge",W_FROM:
+                           " -p318-325le",W_THRU," -t -j"
+        
+         REFORMAT SCRATCH
+
+         RETURN
+
+. ----------------------------
+. Screen display
+. ----------------------------
+
+SCR_DISPLAY
+
+         IF (C_RMODE = "I")
+            message   horz="20",vert="15":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="       -Records Processed-        ":
+                      text=" Claims Read                      ":
+                      text=" Claims Written                   "
+         ENDIF
+
+         MOVE 0 TO CLM_RD_CNT
+         MOVE 0 TO CLM_WT_CNT
+
+         CALL DISPLAY_CNTS 
+
+         RETURN
+
+. ----------------------------
+. Open Program Files        
+. ----------------------------
+
+OPEN_FILES
+
+         CALL OPEN_OGBFILE USING TMP_FILE,TMP_NAME
+         CALL PREP_OGBFILE_IX USING OUT_IFILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+.  Extract Qualified Claims 
+. ----------------------------
+
+FIND_CLAIMS
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+
+. Read re-formatted claim file
+         LOOP
+           CALL READ_OGBFILE USING TMP_FILE,TMP_NAME,TMP_LIST
+           IF (RESULT <> 1)
+              GOTO FIND_CLAIMS_END
+           ENDIF
+
+           CONTINUE IF ((SQUEEZE TMP_ADJF) <> "")
+
+           ADD 1 TO CLM_RD_CNT
+
+           CALL DELAY_DSP USING CLM_RD_CNT 
+
+           CONTINUE IF ((SQUEEZE TMP_PROD) <> "PPO")
+
+. Find Provider Information
+           CALL GET_PROVIDER
+
+           IF (W_PRV <> "O")
+              GOTO FIND_CLAIMS_MORE
+           ENDIF
+
+           PACK W_TYPE WITH "OUTPATIENT",BLANKS
+
+. Calculate Days...
+           debug
+           CLEAR W_DAYS
+           CALL DELTA_DAYS USING TMP_RECD,TMP_THRU,W_DAYS
+           MOVE W_DAYS TO W_SUBLAG
+
+           CLEAR W_DAYS
+           CALL DELTA_DAYS USING TMP_PAID,TMP_RECD,W_DAYS
+           MOVE W_DAYS TO W_COMLAG
+
+. Get Service Line Detail
+           CALL SERVICE_LINES
+
+           debug
+           CALL OUTPUT_DATA
+              
+FIND_CLAIMS_MORE
+         REPEAT
+
+FIND_CLAIMS_END
+         RETURN
+
+. ----------------------------
+.  Provider Information     
+. ----------------------------
+
+GET_PROVIDER
+
+         PACK      W_PRV WITH "N"
+         PACK      PRO_FK11 WITH TMP_PRV,BLANKS
+         CALL      FILE_READ USING PRO_FD:    ...File declaration list
+                   PRO_FN:   ...File name list
+                   PRO_FC:   ...(I)ndex or (A)imdex
+                   PRO_FV:   ...File key varlists
+                   PRO_FK:   ...File key sizes
+                   PRO_LIST: ...File record (field list)
+                   PRO_REC:  ...File record (packed)
+                   PRO_OLD:  ...File saved when read
+                   PRO_QTY:  ...Number of files
+                   1         ...File number for this read
+
+         IF (RESULT <> 1)
+            GOTO GET_PRV_END
+         ENDIF
+
+         IF (SQUEEZE PRO_XTYP = "DOC")
+            PACK W_PRV WITH "D"
+         ELSE
+            IF (SQUEEZE PRO_XTYP = "FAC")
+               PACK W_PRV WITH TMP_INOUT
+            ELSE 
+               GOTO GET_PRV_END
+            ENDIF
+         ENDIF
+
+         PACK W_TIN  WITH PRO_TAX1
+         PACK W_SPL  WITH PRO_SPEC1
+
+..Get service provider region
+         PACK W_RGN WITH PRO_GEO 
+         REPLACE " 0" IN W_RGN
+
+..Use 1099 provider for name....
+         IF (SQUEEZE PRO_TREF = "")
+            PACK W_NAME WITH PRO_OFFICE,BLANKS
+         ELSE
+            CALL GET_1099_NAME
+         ENDIF
+
+         IF (SQUEEZE W_NAME = "")
+            PACK W_NAME WITH (CHOP PRO_FNAME)," ":
+                             (CHOP PRO_LNAME),BLANKS
+         ENDIF
+
+GET_PRV_END
+         RETURN
+
+. ----------------------------
+. 1099 Provider Name       
+. ----------------------------
+
+GET_1099_NAME
+
+         PACK      PRO_FK11 WITH PRO_TREF,BLANKS
+         CALL      FILE_READ USING PRO_FD:    ...File declaration list
+                   PRO_FN:   ...File name list
+                   PRO_FC:   ...(I)ndex or (A)imdex
+                   PRO_FV:   ...File key varlists
+                   PRO_FK:   ...File key sizes
+                   PRO_LIST: ...File record (field list)
+                   PRO_REC:  ...File record (packed)
+                   PRO_OLD:  ...File saved when read
+                   PRO_QTY:  ...Number of files
+                   1         ...File number for this read
+
+         IF (RESULT <> 1)
+            GOTO GET_1099_END
+         ENDIF
+         
+         PACK W_NAME WITH PRO_OFFICE,BLANKS
+
+GET_1099_END
+         RETURN 
+
+. ----------------------------
+. Claim Service Lines       
+. ----------------------------
+
+SERVICE_LINES
+
+         CLEAR W_CHG
+         CLEAR W_DEDU
+         CLEAR W_ALLO
+         CLEAR W_COIN
+         CLEAR W_COPAY
+         CLEAR W_NOTCOV
+         CLEAR W_PDPRV 
+         CLEAR W_PDMEM 
+
+         CALL      SETPOP_CLMS
+..Read the clms file by key 11 (claim #)   
+         PACK CLMS_BASE WITH TMP_CLM,BLANKS
+         PACK CLMS_KEY  WITH CLMS_BASE,"   " 
+         CALL POP_READ
+         LOOP
+            CALL POP_NEXT
+ 
+              debug
+              IF ((RESULT <> 1) OR (CLMS_ID <> TMP_CLM))
+                   BREAK
+              ENDIF                  
+
+..Exclude Charges less than zero
+            MOVE CLMS_CHG TO FORM10
+            CONTINUE IF (FORM10 <= 0)
+
+..Accumulate amounts for claim
+            debug
+            CALL ADD_AMT USING CLMS_CHG,W_CHG 
+            CALL ADD_AMT USING CLMS_DEDU,W_DEDU
+            CALL ADD_AMT USING CLMS_ALLOW,W_ALLO
+            CALL ADD_AMT USING CLMS_COIN,W_COIN
+            CALL ADD_AMT USING CLMS_COPA,W_COPAY
+            CALL ADD_AMT USING CLMS_NON,W_NOTCOV
+            CALL ADD_AMT USING CLMS_PAYP,W_PDPRV 
+            CALL ADD_AMT USING CLMS_PAYE,W_PDMEM 
+
+         REPEAT 
+
+         RETURN
+
+. ----------------------------
+. Output file         
+. ----------------------------
+
+OUTPUT_DATA
+
+         CLEAR PCLM_CHG
+         CLEAR PCLM_ALLO
+         CLEAR PCLM_PDPR
+         CLEAR PCLM_PDMEM
+
+         PACK OUT_KEY WITH W_TYPE,W_PERD,W_TIN,BLANKS
+         CALL READ_OGBFILE_IX USING OUT_IFILE,OUT_NAME,OUT_KEY,PCLM_LIST
+         IF (RESULT <> 1)
+            CALL WRITE_OUT     
+            GOTO OUTPUT_DATA_END
+         ENDIF
+
+         CALL OUT_AMOUNTS
+         CALL ADD_CNT USING "1",PCLM_CNT 
+
+         CALL UPDATE_OGBREC_IX USING OUT_IFILE,PCLM_LIST
+
+OUTPUT_DATA_END
+         RETURN
+
+. ----------------------------
+. Write Output File         
+. ----------------------------
+
+WRITE_OUT
+
+         PACK PCLM_TYPE   WITH W_TYPE
+         PACK PCLM_TIN    WITH W_TIN
+         PACK PCLM_PRNM   WITH W_NAME 
+         PACK PCLM_RGN    WITH W_RGN
+         PACK PCLM_SPL    WITH W_SPL   
+
+         CALL OUT_AMOUNTS
+
+         PACK DIM11 WITH BLANKS
+         PACK PCLM_CNT WITH DIM11,"1"
+
+         PACK OUT_KEY WITH W_TYPE,W_PERD,W_TIN,BLANKS
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL  WRITE_OGBREC_IX USING OUT_IFILE,OUT_NAME,OUT_KEY,PCLM_LIST
+
+         ADD 1 TO CLM_WT_CNT
+
+         RETURN
+
+. ----------------------------
+. Output amount fields         
+. ----------------------------
+
+OUT_AMOUNTS
+
+         CALL ADD_AMT USING W_CHG,PCLM_CHG 
+         CALL ADD_AMT USING W_ALLO,PCLM_ALLO
+         CALL ADD_AMT USING W_PDPRV,PCLM_PDPR 
+         CALL ADD_AMT USING W_PDMEM,PCLM_PDMEM
+         CALL REJ_CNT
+
+         RETURN
+
+. ----------------------------
+. Determine if Claim Rejected
+. ----------------------------
+
+REJ_CNT
+
+         PACK W_ZERO WITH "Y" 
+         CALL ZERO_AMT USING W_DEDU
+         CALL ZERO_AMT USING W_COIN
+         CALL ZERO_AMT USING W_COPAY
+         CALL ZERO_AMT USING W_PDPRV
+         CALL ZERO_AMT USING W_PDMEM
+
+         IF (W_ZERO = "Y") 
+            CALL ADD_CNT USING "1",PCLM_REJ 
+         ENDIF
+
+REJ_CNT_END
+         RETURN
+
+. ----------------------------
+. Check for zero amounts    
+. ----------------------------
+
+ZERO_AMT ROUTINE MCS@DIM1
+
+         MOVE MCS@DIM1 TO AMT1
+         IF (AMT1 <> 0)
+            PACK W_ZERO WITH "N"
+         ENDIF
+
+ZERO_AMT_END
+         RETURN
+
+. ----------------------------
+. Add amount fields         
+. ----------------------------
+
+ADD_AMT ROUTINE MCS@DIM1,MCS@DIM2
+
+         MOVE MCS@DIM1 TO AMT1
+         MOVE MCS@DIM2 TO AMT2
+         ADD AMT1 TO AMT2 GIVING AMT3
+         MOVE AMT3 TO MCS@DIM2
+
+         CLEAR AMT1
+         CLEAR AMT2
+         CLEAR AMT3
+
+         RETURN
+
+. ----------------------------
+. Add count fields         
+. ----------------------------
+
+ADD_CNT ROUTINE MCS@DIM1,MCS@DIM2
+
+         MOVE MCS@DIM1 TO CNT1
+         MOVE MCS@DIM2 TO CNT2
+         ADD CNT1 TO CNT2 GIVING CNT3
+         MOVE CNT3 TO MCS@DIM2
+
+         CLEAR CNT1
+         CLEAR CNT2
+         CLEAR CNT3
+
+         RETURN
+
+. ----------------------------
+. Display Delay             
+. ----------------------------
+
+DELAY_DSP ROUTINE MCS@FORM1
+
+        MOVE MCS@FORM1 TO DIM10 
+        UNPACK DIM10 INTO DIM8,DIM2
+        IF (DIM2 = "00")
+           CALL DISPLAY_CNTS
+        ENDIF
+
+        RETURN
+
+. ----------------------------
+. Display Counters          
+. ----------------------------
+
+DISPLAY_CNTS 
+
+         IF (C_RMODE = "I")
+            DISPLAY   *P46:17,CLM_RD_CNT
+            DISPLAY   *P46:18,CLM_WT_CNT
+         ENDIF
+
+         RETURN
+
+. ---------------------------------
+.   Set up POP read for CLMS file
+. ---------------------------------
+SETPOP_CLMS
+         MOVEADR   CLMS_REC   TO POP_REC        ...Set up for POP.IO
+         MOVEADR   CLMS_SW    TO POP_SW
+         MOVEADR   CLMS_DECL  TO POP_DECL
+         MOVEADR   CLMS_NAME  TO POP_NAME
+         MOVEADR   CLMS_KEY   TO POP_KEY
+         MOVEADR   CLMS_OLD   TO POP_OLD
+         MOVEADR   CLMS_BASE  TO POP_ID
+         MOVEADR   CLMS_LINE  TO POP_LINE
+
+         RETURN
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       POP.IO
+	 INC	   FILE.IO
+	 INC       VALID.IO
+	 INC       UTIL.SR 
+	 INC       X_STANDARD.SR
+	 INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of prv0300.ps
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,446 @@
++    Program Name   :  a0611291.ps  
++    Description    :  Updating records for the following:
++                      Giving all Ouachita Sch Brd enrollees basic life covg  
++    apdlm 11/30/2006 A0611291 dev - initial version                      
++ 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+              INC       D_MEMMEM.CB
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEME.RL              Member Enrollment/Elig File 
+              INC       MEMO.RL              Member Other Coverage       
+              INC       MEMS.RL              Member Salary               
+              INC       CLI.RL               Client Demograhics File     
+
+.----------------------------------------------------------------------------
+.Input File Declarations
+.----------------------------------------------------------------------------
+...Input file from Ouchita Parish SB
+INPUT_FILE          FILE    VAR=177,TEXT
+INPUT_NAME          INIT    "a0611291in.txt"
+INPUT_NAME1         DIM     30
+
+INPUT_LIST          LIST
+..<BEGIN>....................................................................
+INPUT_SSN           DIM     9    001-009
+INPUT_LNAME         DIM     20   010-029
+INPUT_FNAME         DIM     15   030-044
+INPUT_MI            DIM     1    045-045
+INPUT_ADDR1         DIM     35   046-080
+INPUT_ADDR2         DIM     35   081-115
+INPUT_CITY          DIM     30   116-145
+INPUT_STATE         DIM     2    146-147
+INPUT_ZIP           DIM     10   148-157
+INPUT_FILL          DIM     3    158-160
+INPUT_DOB           DIM     8    161-168
+INPUT_SEX           DIM     1    169-169
+INPUT_EFFDT         DIM     8    170-177
+..<END>......................................................................
+                    LISTEND
+
+.----------------------------------------------------------------------------
+.Output File Declarations
+.----------------------------------------------------------------------------
+INM_FILE            FILE     VAR=2300,TEXT
+INM_NAME            INIT     "a0611291.txt"
+INM_NAME1           DIM      30
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+...Work file variables
+
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+
+SWT_COV        DIM       1
+SWT_MEM        DIM       1
+
+WRK_DOB        DIM       8
+
+WS_DATE        LIST
+WS_MM          DIM       2
+WS_DD          DIM       2
+WS_CCYY        DIM       4
+               LISTEND
+
+WRK_REL        INIT      "01"
+WRK_CLIR       INIT      "00001007"
+WRK_LEV1       INIT      "2037 "
+WRK_LEV2       INIT      "00   "
+WRK_EFF        INIT      "20070101"
+WRK_NET        INIT      "LIFE "
+WRK_PRD        INIT      "LIFE "
+WRK_PLAN       INIT      "BASI"
+WRK_RT         INIT      "LF"
+WRK_DEPC       INIT      "EE" 
+
+
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+
+ASK_OPTION
+
+         MOVE      BLANKS TO WCHAR
+         dialog    horz="20",vert="08":
+                   bgcol=C_DLGB,fgcol=C_DLGF:
+                   lncol=C_DLGL,shade="Y":
+                   text="This program gives select Ouachita PSB":   
+                   text="employees basic life coverage":        
+                   text="Ready to go (Y/N): ":
+                   field=WCHAR
+         GOTO      QUIT IF (WCHAR <> "Y")
+
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN     C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+
+         CALL MAIN_PROCESS
+         
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+    DEBUG
+
+    CALL INITIAL
+
+    CALL OPEN_OGBFILE USING INPUT_FILE,INPUT_NAME1
+    CALL PREP_OGBFILE USING INM_FILE,INM_NAME1
+
+    CALL READ_INFILE    
+
+    CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME1
+    CALL CLOSE_OGBFILE USING INM_FILE,INM_NAME1
+
+    RETURN
+
+. ------------------------------
+. Reads the input file from Ouachita and reformats the dates to ccyymmdd
+. ------------------------------
+READ_INFILE
+
+        LOOP
+
+            CLEAR WRK_DOB
+
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING INPUT_FILE,INPUT_NAME1,INPUT_LIST
+            IF (RESULT <> 1)
+                BREAK
+            ENDIF
+
+            ADD 1 TO X_CNT1
+            UNPACK X_CNT1 INTO CNT_5,CNT_2 
+            IF (CNT_2 = "00")
+                CALL X_DISPLAY_COUNTS
+            ENDIF
+
+            UNPACK INPUT_DOB INTO WS_DATE
+            PACK WRK_DOB WITH WS_CCYY,WS_MM,WS_DD
+
+            CALL READ_MEM
+
+        REPEAT
+
+    RETURN
+
+. ------------------------------
+. Checks to see whether or not the employee already has life coverage.
+. ------------------------------
+READ_MEM
+
+...for meme life rec
+      CLEAR SWT_COV
+...for mem rec
+      CLEAR SWT_MEM
+
+      CLEAR MEM_AIM
+      PACK  MEM_AIM1 WITH "01X",INPUT_SSN,BLANKS
+      PACK  MEM_AIM3 WITH "03X","01",BLANKS   
+      CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                            MEM_FN:        ...FILE NAME LIST
+                            MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:        ...FILE KEY VARLISTS
+                            MEM_AIM:       ...FILE KEY SIZES
+                            MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                            MEM_REC:       ...FILE RECORD (PACKED)
+                            MEM_OLD:       ...FILE SAVED WHEN READ
+                            MEM_QTY:       ...NUMBER OF FILES
+                            2              ...FILE NUMBER FOR THIS READ
+
+...No mem record exists for this person so we create it
+      IF ((RESULT <> 1) OR (INPUT_SSN <> MEM_ESSN))
+   DEBUG
+          MOVE "N" TO SWT_MEM
+          MOVE "N" TO SWT_COV
+          CALL UPDATE_RECS
+          ADD 1 TO X_CNT3
+          RETURN
+      ENDIF
+
+      PACK MEME_FK11 WITH MEM_ID1,BLANKS   
+      CALL FILE_READ USING MEME_FD:    ...FILE DECLARATION LIST
+                           MEME_FN:    ...FILE NAME LIST
+                           MEME_FC:    ...(I)NDEX OR (A)IMDEX
+                           MEME_FV:    ...FILE KEY VARLISTS
+                           MEME_FK:    ...FILE KEY SIZES
+                           MEME_LIST:  ...FILE RECORD (FIELD LIST)
+                           MEME_REC:   ...FILE RECORD (PACKED)
+                           MEME_OLD:   ...FILE SAVED WHEN READ
+                           MEME_QTY:   ...NUMBER OF FILES
+                           1           ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:     ...FILE DECLARATION LIST
+                               MEME_FN:     ...FILE NAME LIST
+                               MEME_FC:     ...(I)NDEX OR (A)IMDEX
+                               MEME_FV:     ...FILE KEY VARLISTS
+                               MEME_FK:     ...FILE KEY SIZES
+                               MEME_LIST:   ...FILE RECORD (FIELD LIST)
+                               MEME_REC:    ...FILE RECORD (PACKED)
+                               MEME_OLD:    ...FILE SAVED WHEN READ
+                               MEME_QTY:    ...NUMBER OF FILES
+                               1            ...FILE NUMBER FOR THIS READ
+
+          IF ((MEM_ID1 <> MEME_ID1) OR (RESULT <> 1))
+              CALL UPDATE_RECS
+              BREAK
+          ENDIF
+
+...This is not current coverage
+              IF ((SQUEEZE MEME_TRM <> "") OR (SQUEEZE MEME_TRM > CURRDATE)) 
+                 CONTINUE
+              ENDIF
+
+...This is not life coverage
+              IF (SQUEEZE MEME_NET <> "LIFE")
+                  CONTINUE
+              ENDIF
+
+              MOVE "Y" TO SWT_COV
+
+    REPEAT
+
+    RETURN
+
+. ----------------------------
+. Updating/creating mem and meme records
+. ----------------------------
+UPDATE_RECS
+
+...Already has life so no action is necessary
+        IF (SWT_COV = "Y")
+   DEBUG
+            ADD 1 TO X_CNT5
+            RETURN 
+        ENDIF
+
+        CLEAR MEMO_REC
+        CLEAR MEMS_REC
+        CLEAR MEME_REC
+        IF (SWT_MEM = "N")
+            CLEAR MEM_REC
+        ENDIF
+
+        PACKLEN INM_REC WITH MEM_REC,MEME_REC,MEMO_REC,MEMS_REC
+        UNPACK INM_REC INTO INM_LIST
+
+        IF (SWT_MEM = "N")
+            MOVE INPUT_SSN   TO INM_ESSN
+            MOVE INPUT_SSN   TO INM_PSSN
+            MOVE WRK_REL     TO INM_REL
+            MOVE INPUT_LNAME TO INM_LNAME
+            MOVE INPUT_FNAME TO INM_FNAME
+            MOVE INPUT_MI    TO INM_MINIT
+            MOVE INPUT_ADDR1 TO INM_ADDR1
+            MOVE INPUT_ADDR2 TO INM_ADDR2
+            MOVE INPUT_CITY  TO INM_CITY
+            MOVE INPUT_STATE TO INM_STATE
+            MOVE INPUT_ZIP   TO INM_ZIP
+            MOVE WRK_DOB     TO INM_DOB
+            MOVE INPUT_SEX   TO INM_SEX
+        ENDIF
+
+        CALL READ_CLI
+        MOVE WRK_LEV1    TO INME_LEV1
+        MOVE WRK_LEV2    TO INME_LEV2
+        MOVE WRK_EFF     TO INME_EFF
+        MOVE WRK_NET     TO INME_NET
+        MOVE WRK_PRD     TO INME_PRD
+        MOVE WRK_PLAN    TO INME_PLAN
+        MOVE WRK_RT      TO INME_RT
+        MOVE WRK_DEPC    TO INME_DEPC
+
+    DEBUG
+        ADD 1 TO X_CNT4
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING INM_FILE,INM_NAME,INM_LIST
+        CLEAR INM_LIST
+
+    RETURN
+
+. ----------------------------
+. Getting group name for meme record
+. ----------------------------
+READ_CLI
+
+              PACK CLI_AIM1 WITH "01X",WRK_LEV1
+              PACK CLI_AIM2 WITH "02X",WRK_LEV2
+              CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                                       CLI_FN:      ...File Name List
+                                       CLI_FC:      ...(I)ndex Or (A)imdex
+                                       CLI_FV:      ...File Key Varlists
+                                       CLI_AIM:     ...File Key Sizes
+                                       CLI_LIST:    ...File Record (Field List)
+                                       CLI_REC:     ...File Record (Packed)
+                                       CLI_OLD:     ...File Saved When Read
+                                       CLI_QTY:     ...Number Of Files
+                                       2            ...File Number For This Read
+             IF (RESULT <> 1)
+                 CLEAR INME_GRPN
+             ELSE
+                 MOVE CLI_NAME TO INME_GRPN
+                 MOVE CLI_ID1  TO INME_CLIR
+             ENDIF
+
+    RETURN
+             
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       CLOCK     TIMESTAMP INTO CURRDATE
+       MOVE      "menu"         TO C_NEXT
+       MOVE      "A0611291" TO C_PROG
+       MOVE      "UPDATE OUACHITA SB W/BASIC" TO C_OPER
+       MOVE      1 TO C_LEVEL
+       MOVE      BLANKS TO C_LABEL
+       MOVE      BLANKS TO C_FILE 
+       MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	 MOVE      "Ouachita recs read" TO X_CNTDESC1
+	 MOVE      "                  " TO X_CNTDESC2
+	 MOVE      "New MEM's created " TO X_CNTDESC3
+	 MOVE      "Mew MEME's created" TO X_CNTDESC4
+	 MOVE      "No changes        " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+
+         PACK    INPUT_NAME1 WITH OGB_PATH,INPUT_NAME
+         PACK    INM_NAME1 WITH INM_NAME
+
+    RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

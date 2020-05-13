@@ -1,0 +1,389 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : A1101264.PS
++    Description    : FIX CHIP5 DEPS                                           
++    Date created   : 01/27/2011
++    APSJM  A1101261 DEV - Initial Version 
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
++    apazw 06/12/2017 - mod - increase file size
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC   COMMON.CB          ...Common work area
+              INC   X_COMMON.CB        ...OGB Common Work Area
+              INC   VALID.RL           ...Valid codes
+              INC   X_OGBFILE.CB       ...OGB Custom File Handler
+              INC   PRT.RL             ...Printer definition file
+              INC   XALID.RL           ...Xalid codes
+              INC   CMDPARAM.CB        ...Command Line Routines
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC   D_MEMMEM.CB        ...Impact Eligiblity Update Layout
+              INC   MEM.RL             ...Member Demographics
+              INC   MEME.RL            ...Member Enrollment   
+. ---------------------------
+...Input file
+. ---------------------------
+
+OGB_DHH_FILE    FILE    VAR=12,TEXT
+OGB_DHH_NAME    INIT    "/w/fix_meme.txt"
+OGB_DHH_LIST    LIST
+OGB_DHH_ID1     DIM     8
+OGB_DHH_ID2     DIM     4
+                LISTEND
+
+. ---------------------------
+...Output file
+. ---------------------------
+UPD_CHP5_FD     FILE    VAR=X_INM_SIZE,TEXT
+UPD_CHP5_NAME   INIT    "fix_dep.txt"
+.
+ERR_MAX_FD      FILE    VAR=50,TEXT
+ERR_MAX_NAME    INIT    "/w/err_max.txt"
+ERR_MAX_LIST    LIST   
+ERR_MAX_ID1     DIM     8
+ERR_MAX_ID2     DIM     4
+ERR_MAX_IVOL    DIM     10
+ERR_MAX_ESSN    DIM     9
+ERR_MAX_MSSN    DIM     9
+                LISTEND
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+
+FORM_72              FORM      7.2
+DIM_85_OGB           DIM       85
+DIM_85_DHH           DIM       85
+DIM_32_OGB           DIM       32
+DIM_32_DHH           DIM       32
+DIM_6            DIM       6
+FORM_6           FORM      6
+FIRST_PAGE       DIM       1
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       8
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+REC_DATE         DIM       10
+PDF_DATE         DIM       8
+AREA             DIM       3
+PHN3             DIM       3
+PHN4             DIM       4
+DASH             INIT      "-"
+SSN3             DIM       3
+SSN2             DIM       2
+SSN4             DIM       4
+YEAR             DIM       4
+MM               DIM       2
+DD               DIM       2
+SLASH            INIT      "/"
+JUNK1            DIM       2
+JUNK2            DIM       2
+JUNK4            DIM       4
+S1               DIM       1
+S2               DIM       1
+                         
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.     Program Specific Varibles
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+REC_CNT          FORM      1
+FIRST_READ       INIT      "Y"
+PRO_RET_CODE     FORM      1
+DUP_RET_CODE     FORM      1
+WRITE_COUNT      FORM      8
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+
+.-------------------------------------
+... Scheduler Fields for Autosys
+.-------------------------------------
+
+PARAM_LIST        LIST     WITH NAMES
+PARAM_FILE        DIM      12
+PARAM_FROM        DIM      8
+PARAM_THRU        DIM      8
+                  LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "CHP5 RECON UPDATE" TO  C_OPER  ...(20-bytes Max)
+         MOVE      "A1101264"             TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+            CALL X_BLANK_SCREEN
+
+. ---------------------------------
+... Adding CMD_START for autosys
+. ---------------------------------
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. ~~~~~~~ Main Process ~~~~~~~
+. ----------------------------
+
+MAIN_PROCESS
+
+  DEBUG
+
+. ...Initialize
+        CALL      INITIALIZE
+        CALL      OPEN_FILES 
+        CALL      PROCESS_RECON   
+
+. ...Close Files
+        CALL      CLOSE_FILES
+ 
+. ...Normal End-Of-Job
+        CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         IF (NOT C_CMDPAR)
+             MOVE SCH_RTSUCC TO SCH@RTCODE
+         ENDIF
+
+     RETURN                                   
+
+++++++++++++++++++<< END OF MAIN PROCESS >>++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+    CLOCK     TIMESTAMP   INTO  TIMESTAMP
+    CLOCK     TIMESTAMP   INTO  CURRDATE
+    CLOCK     TIMESTAMP     TO  TODAY
+
+
+. ...Display Counters
+
+     MOVE      "Recs Read  : " TO X_CNTDESC1
+     MOVE      "Recs Found : " TO X_CNTDESC2
+     MOVE      "Not Used   : " TO X_CNTDESC3
+     MOVE      "Not Used   : " TO X_CNTDESC4
+     MOVE      "Not Used   : " TO X_CNTDESC5  
+     MOVE      "Not Used   : " TO X_CNTDESC6
+	 
+     IF (NOT C_CMDPAR)
+        CALL      X_DISPLAY_COUNTS
+     ENDIF
+
+     RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+     CALL OPEN_OGBFILE USING OGB_DHH_FILE,OGB_DHH_NAME
+     CALL PREP_OGBFILE USING UPD_CHP5_FD,UPD_CHP5_NAME
+     CALL PREP_OGBFILE USING ERR_MAX_FD,ERR_MAX_NAME
+  RETURN
+
+. ----------------------------
+. Extract Data
+. ----------------------------
+
+PROCESS_RECON     
+
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING OGB_DHH_FILE,OGB_DHH_NAME,OGB_DHH_LIST
+    IF (RESULT <> 1) 
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1                        ...Display Counters
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    CALL READ_DEP
+  REPEAT
+  RETURN 
+.
+READ_DEP
+    CLEAR INM_REC
+    PACK MEM_FK11 WITH OGB_DHH_ID1,BLANKS
+    CALL  FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+        	           MEM_FN:  ...FILE NAME LIST  
+	                   MEM_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEM_FV:  ...FILE KEY VARLISTS
+		           MEM_FK:  ...FILE KEY SIZES  
+		           MEM_LIST:...FILE RECORD (FIELD LIST)
+		           MEM_REC: ...FILE RECORD (PACKED)
+		           MEM_OLD: ...FILE SAVED WHEN READ
+		           MEM_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+              IF (RESULT <> 1) 
+                 RETURN
+              ENDIF
+              IF (MEM_REL = "01")
+                RETURN
+              ENDIF
+    PACK MEME_FK11 WITH OGB_DHH_ID1,OGB_DHH_ID2,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+	                   MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+              IF (RESULT <> 1) 
+                    RETURN
+              ENDIF
+     PACKLEN INM_REC WITH MEM_REC,MEME_REC
+     UNPACK INM_REC INTO INM_LIST 
+     MOVE "DELETE" TO INME_NEWBY
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL WRITE_OGBREC USING UPD_CHP5_FD,UPD_CHP5_NAME,INM_LIST
+     CLEAR INM_LIST 
+  RETURN
+.
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+    UNLOAD    "schema"
+         
+    IF (C_RMODE = "I")
+       error     horz="23",vert="19":
+                 bgcol=C_ERRB,fgcol=C_ERRF:
+                 lncol=C_ERRL,shade="Y":
+                 text=" Process Aborted by Operator ":
+                 text="-----------------------------"
+        messageerase
+    ENDIF
+
+    CLEAR     C_NOHIST
+
+    TRAPREST  TRAP_DATA
+
+    IF (RUN_MODE = "B")
+        LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE     (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+          REPEAT
+          MOVE      SCH_RTABRT  TO  SCH@RTCODE
+         RETURN
+    ENDIF
+        CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+   RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+      IF (C_CMDPAR)
+         CALL CMD_END
+         STOP
+      ENDIF
+
+         IF (RUN_MODE = "N")
+             DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL
+             MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         ENDIF 
+         CALL        X_DISPLAY_COUNTS
+     RETURN
+
+. --------------------------------
+. Subroutines and other includes
+. --------------------------------
+
+              INC       UTIL.SR      
+              INC       PRINT.SR
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       CMDPARAM.SR
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             End of A1101261.PS
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,905 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  A1211161
++    Description    :  Extract of ValueOptions claims paid for the previous
++                   :  day.    
++                   :  (Ad-hoc version of acc0400 for 2011 accums)
++ 
++    Author         :  Lisa Spurlock/Eileen Stark
++    Date created   :  04/15/2011
++................................REVISIONS....................................
++  aplls A####### 07/18/2011 ENH - Removed the extract of CHIP5 members 
++                                  only want to extract PPO.
++  aplls A1211161 11/15/2012 ENH - Sends both current and prior plan year
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       VALID.RL
+              INC       CMDPARAM.CB          ...OGB Custom File Handler
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       CLM.RL               ...Claim Record Layout
+              INC       CLMS.RL              ...Claim Service Lines
+              INC       VOHCLM.RL            ...VOH Standard Claims
+              INC       MEM.RL               ...Member Demographics
+              INC       MEME.RL              ...Member Enrollment
+              INC       MEMA.RL              ...Member Accum File
+              INC       MEMX.RL              ...Member Accum File
+              INC       CLMA.RL              ...Claim Accum File
+              INC       SCH.RL               ...Scheduler File  
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+OUT_FILE    FILE      VAR=527,TEXT
+OUT_NAME    INIT      "/w/acc0400.out"
+IDX_FILE    IFILE     VAR=75,KEYL=8,TEXT
+IDX_NAME    INIT      "/w/acc0400.ix1"
+
+IDX_LIST    LIST
+IDX_PAT_ID        DIM       08
+IDX_FIL1          DIM       01
+IDX_MEM_ID        DIM       08
+IDX_FIL2          DIM       01
+IDX_MEM_ESSN      DIM       09
+IDX_FIL3          DIM       01
+IDX_CLM_CNT       FORM      10
+IDX_FIL4          DIM       01
+IDX_DEDU_AMT      FORM      12.2
+IDX_FIL5          DIM       01
+IDX_NEGO_AMT      FORM      12.2
+            LISTEND
+
+ERR_FILE    FILE      VAR=61,TEXT
+ERR_NAME    INIT      "/ogb/work/acc0400.err" 
+
+ERR_LIST    LIST
+ERR_CLMNO   DIM       08
+ERR_ID      DIM       08
+ERR_REASON  DIM       40
+            LISTEND
+
+INFILE_FD   FILE      VAR=57,TEXT
+INFILE_NME  INIT      "/ogb/work/acc0400.inp"
+
+INFILE_REC       LIST
+..<Begin>.......................................................................
+.......
+INFILE_CLMNO     DIM 008     ...Claim Number
+INFILE_FRM_DOS   DIM 008     ...From Date of Service
+INFILE_THR_DOS   DIM 008     ...Thru Date of Service
+INFILE_PAT_ID    DIM 008     ...Patient Record ID
+INFILE_MEM_ID    DIM 008     ...Member Record ID
+INFILE_PAT_SSN   DIM 009     ...Patient SSN 
+INFILE_PAID_DT   DIM 008     ...Paid Date   
+..<End>.........................................................................
+.......
+                 LISTEND
+
+.----------------------------------------------------------------------------
+.Output File Lists                                 
+.----------------------------------------------------------------------------
+
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+TRAP_DATA     DIM       500
+
+PARAM_LIST    LIST
+PARAM_CC      DIM       2         
+PARAM_YY      DIM       2         
+PARAM_MM      DIM       2        
+PARAM_DD      DIM       2         
+              LISTEND
+
+DATADATE      DIM       6
+
+HDR_LIST      LIST
+HDR_REC_TYPE  DIM       1         
+TRN_TYPE      DIM       1        
+HDR_FILL1     DIM       17
+CREATE_DATE   DIM       8
+TIME_OF_DAY   DIM       4
+HDR_FILL2     DIM       496
+              LISTEND
+
+TRL_LIST      LIST
+TRL_REC_TYPE  DIM       1         
+TRL_FILL1     DIM       5
+TRL_REC_CNT   DIM       10
+TRL_FILL2     DIM       511
+              LISTEND
+
+MEM_RESULT    FORM      1 
+TIMESTAMP     DIM       14
+DATE_TIME     DIM       14
+TODAY         DIM       8
+TOD           DIM       6
+CURRDATE      DIM       8
+JAN01         INIT      "0101"
+DEC31         INIT      "1231"
+FORM_Y1       FORM      4
+FORM_Y2       FORM      4
+LAST_YR       DIM       4
+CURR_YR       DIM       4
+LAST_YR_EFF   DIM       8
+LAST_YR_TRM   DIM       8
+CURR_YR_EFF   DIM       8
+CURR_YR_TRM   DIM       8
+PLAN_YR_BEG   INIT      "20100701"
+JULY2011      INIT      "20110701"
+PRIOR_YRMO    DIM       6       
+CHECK_DATE    DIM       8       
+PRIOR_YR      DIM       4       
+PRIOR_MO      DIM       2
+SLASH         INIT      "/"
+.THRU_PRI_DT   DIM       8       
+THRU_PRI_DT   INIT      "20111231"
+ZEROES        INIT      "00000000"
+THRU_PAID_DT  INIT      "20110630"
+.THRU_PAID_DT  DIM       8       
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+SEQ           FORM      "-1"
+
+CNT_4         DIM  4
+CNT_3         DIM  3
+
+FIRST_SERV_READ DIM  1  
+
+MCS@DIM1      DIM  @
+MCS@FORM1     FORM @
+
+FORM_CHG      FORM 7.2
+FORM_PAID     FORM 7.2
+
+ACCUM_LIST    LIST
+ACC_CHG       FORM  12.2
+ACC_PAID      FORM  12.2
+               LISTEND
+
+ELIG_SWT      DIM   01
+
+MASK_AMT      INIT      "$$$,$$$,$$$,$$9.99"
+MASK_CNT      INIT      "ZZ,ZZZ,ZZ9"
+
+HLD_MEM_ESSN  DIM   9  
+HLD_MEM_EFF   DIM   8  
+HLD_MEM_TRM   DIM   8  
+HLD_CLMA      DIM   150
+
+AMT_CLMA      FORM  12.2
+DEDU_C        FORM  12.2
+NEGO_C        FORM  12.2
+
+REC_CNT       FORM  10 
+
+DIM_08        DIM   08
+PAT_KEY       DIM   08
+
+FIRST_READ    DIM   01
+
+OUT_CLMS_AMT  DIM   18
+OUT_CLMS_PAID DIM   18
+OUT_CLMS_CNT  DIM   10
+OUT_CLM_CNT   DIM   10 
+
+ERROR_1       INIT  "PATIENT MEMBER RECORD ID NOT FOUND.     "
+ERROR_2       INIT  "ENROLLEE MEMBER RECORD ID NOT FOUND.    "
+ERROR_3       INIT  "NO INSURANCE FOR MEMBER ID.             "
+ERROR_4       INIT  "PATIENT ACCUM MEMBER RECORD ID NOT FOUND"
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+. --------------------------------
+. Start here if selected from menu
+. --------------------------------
+         CALL      RUN_NOW        
+
+         CHAIN     C_NEXT         
+
+. --------------------------------------
+. Start here if called by the Scheduler
+. --------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "MENU"               TO C_NEXT     
+         MOVE      "CLAIMS PAID/DAILY " TO C_OPER
+         MOVE      "ACC0400"            TO C_PROG
+         MOVE      BLANKS               TO C_LABEL
+         MOVE      BLANKS               TO C_FILE
+         MOVE      BLANKS               TO C_KEYS
+
+         CALL  X_BLANK_SCREEN  
+
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+
+. -------------------------
+. Get scheduler information
+. -------------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" or RUN_MODE = "N")
+             CALL      MAIN_PROCESS
+         ENDIF
+
+       RETURN
+
++ ------------------------------------------------------------------------
++   Begin Main Process
++ ------------------------------------------------------------------------
+
+MAIN_PROCESS
+
+. Initialize program info
+         CALL INITIAL
+         
+         CALL REFORMAT_CLM
+         
+. ...Prepare output files
+         CALL PREP_OUTPUT_FILES
+         
+. ...Extract Data for output
+         CALL EXTRACT_DATA
+
+. ...Close all files
+         CALL CLOSE_FILES       
+         
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. Copy the file sent to Value Options with a check date.        
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                                              
+. Copy file....
+         PACK SCRATCH WITH "cp ",OUT_NAME," ",OUT_NAME,".",CHECK_DATE
+         ROLLOUT SCRATCH 
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. FTP output file for transmission to ValueOptions Contractor
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                                              
+         CLEAR SCRATCH
+         PACK SCRATCH WITH "a1211161.ftp ",DATADATE
+         ROLLOUT SCRATCH                 
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="a1211161.ftp FAILED"
+         ENDIF  
+ 
+.
+. ...Exit Program 
+         CALL NORMAL_EOJ        
+         
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       DEBUG
+
+.....Display Counters
+       MOVE "Ext. Claim Recs.: " TO X_CNTDESC1
+       MOVE "Claim Recs Wrote: " TO X_CNTDESC2
+       MOVE "Zero Claim Amt. : " TO X_CNTDESC3
+       MOVE "Error Records   : " TO X_CNTDESC4
+       MOVE "Unique Patients : " TO X_CNTDESC5
+       MOVE "                  " TO X_CNTDESC6
+
+       CLOCK  TIMESTAMP        INTO DATE_TIME
+       UNPACK DATE_TIME        INTO TODAY,TOD
+       CLOCK  TIMESTAMP        INTO CURRDATE
+       UNPACK CURRDATE         INTO CURR_YR
+
+       CALL X_DISPLAY_COUNTS
+
+       PACK VAL_KEY1 WITH "155EOCDAT"
+       CALL      VAL_READ1
+       IF (RESULT = 1)
+         MOVE VAL_OPT TO CHECK_DATE
+         UNPACK VAL_OPT INTO PARAM_CC,PARAM_YY,PARAM_MM,PARAM_DD
+         PACK DATADATE  WITH PARAM_MM,PARAM_DD,PARAM_YY 
+       ENDIF
+
+
+     RETURN
+
+
+. ----------------------------------------------------------------- 
+. Reformat CLM.DBF - Get Claims with Check Date the same as EOCDAT
+. -----------------------------------------------------------------
+
+REFORMAT_CLM
+
+         DEBUG
+
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="20",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="REFORMATTING CLM RECORDS...please wait";
+         
+...Erase the reformatted input from the last run
+         ERASE "/ogb/work/acc0400.inp" 
+
+...ad-hoc - reformat revised to get claims paid after 01/03/2012
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "clm.dbf /ogb/work/acc0400.inp -t -j": 
+                           " -p2496-2503gt20120104": ...Paid Date
+                           " -p2496-2503lt20121115": ...Paid Date
+                           " 1-8":            ...Claim Number 
+                           " 318-333":        ...From and Thru DOS
+                           " 347-354":        ...Patient Record ID
+                           " 553-560":        ...Member Record ID 
+                           " 2102-2110":      ...Patient SSN      
+                           " 2496-2503"       ...Paid Date     
+
+         REFORMAT SCRATCH
+             
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - clm.dbf to acc0400.inp" 
+             CHAIN     "menu"
+         ENDIF  
+
+         
+...Erase message to Operations
+
+         DISPLAY        *P17:20,*BGCOLOR=*CYAN,*EL:
+                        *P17:21,*BGCOLOR=*CYAN,*EL:
+                        *P17:22,*BGCOLOR=*CYAN,*EL:
+                        *P17:23,*BGCOLOR=*CYAN,*EL         
+                        
+         RETURN                   
+
+. -------------------------------------------------
+..Opens the files and prepares them for output
+. -------------------------------------------------
+PREP_OUTPUT_FILES
+
+         MOVE      ERR_NAME TO C_FILE
+         CALL      PREP_OGBFILE USING ERR_FILE,ERR_NAME
+
+         MOVE      INFILE_NME TO C_FILE
+         CALL      OPEN_OGBFILE USING INFILE_FD,INFILE_NME
+
+         MOVE      OUT_NAME TO C_FILE
+         CALL      PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         CALL      PREP_OGBFILE_IX USING IDX_FILE,IDX_NAME   
+         CALL      CLOSE_OGBFILE_IX USING IDX_FILE,IDX_NAME   
+         CALL      OPEN_OGBFILE_IX USING IDX_FILE,IDX_NAME   
+
+     RETURN
+
+. -------------------------------------------------
+. ...Extract Data for output
+. -------------------------------------------------
+
+EXTRACT_DATA
+
+    MOVE "Y" TO FIRST_READ
+    
+    LOOP
+
+        MOVE INFILE_NME TO C_FILE
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING INFILE_FD,INFILE_NME,INFILE_REC
+        IF (RESULT <> 1)
+            IF (FIRST_READ = "Y")  
+              MOVE "H" TO HDR_REC_TYPE  
+              MOVE "T" TO TRN_TYPE  
+              MOVE TODAY TO CREATE_DATE
+              MOVE TOD   TO TIME_OF_DAY
+              MOVE OGB_SEQ1 TO OGB_SEQ
+              CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,HDR_LIST
+              ADD 1 TO X_CNT2
+              ADD 1 TO REC_CNT
+              MOVE "N" TO FIRST_READ
+            ENDIF
+            MOVE "T" TO TRL_REC_TYPE  
+            ADD 1 TO X_CNT2
+            ADD 1 TO REC_CNT
+            PACK TRL_REC_CNT WITH REC_CNT
+            REPLACE " 0" IN TRL_REC_CNT
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,TRL_LIST
+            BREAK   
+        ENDIF
+
+        IF (FIRST_READ = "Y")
+           MOVE "H" TO HDR_REC_TYPE  
+           MOVE "T" TO TRN_TYPE  
+           MOVE TODAY TO CREATE_DATE
+           MOVE TOD   TO TIME_OF_DAY
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,HDR_LIST
+           ADD 1 TO X_CNT2
+           ADD 1 TO REC_CNT
+           MOVE "N" TO FIRST_READ
+        ENDIF
+   
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_4,CNT_3
+        IF (CNT_3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+           
+....Move fields from input file record to the output file record
+        PACK VOHC_REC_TYPE     WITH "D"    
+        PACK VOHC_PRT_CODE     WITH "LAGB" 
+        PACK VOHC_TOT_NBR_RECS WITH "0000" 
+        MOVE TODAY             TO VOHC_CRE_DTE
+        MOVE INFILE_CLMNO      TO VOHC_CLM_ID 
+        MOVE INFILE_CLMNO      TO ERR_CLMNO
+        MOVE INFILE_PAT_ID     TO ERR_ID   
+        PACK CURR_YR_EFF       WITH CURR_YR, JAN01
+        PACK CURR_YR_TRM       WITH CURR_YR, DEC31
+        MOVE CURR_YR           TO FORM_Y1
+        SUBTRACT 1 FROM FORM_Y1 GIVING FORM_Y2
+        MOVE FORM_Y2           TO LAST_YR
+        IF (LAST_YR = "2011")
+           PACK LAST_YR_EFF    WITH PLAN_YR_BEG,BLANKS
+        ELSE
+           PACK LAST_YR_EFF    WITH LAST_YR, JAN01
+        ENDIF
+        PACK LAST_YR_TRM       WITH LAST_YR, DEC31
+.       PACK VOHC_BEN_YR_EFF   WITH CURR_YR, JAN01
+.       PACK VOHC_BEN_YR_TRM   WITH CURR_YR, DEC31
+        MOVE INFILE_FRM_DOS    TO VOHC_DOS_FRM
+        MOVE INFILE_THR_DOS    TO VOHC_DOS_THRU
+             
+        CLEAR MEM_SAV
+        PACK  MEM_FK11 WITH INFILE_PAT_ID
+        CALL  GET_MEMBER_INFO
+ 
+        IF (MEM_RESULT <> 1)
+            MOVE ERROR_1 TO ERR_REASON
+            CALL WRITE_ERROR_RECS 
+            CONTINUE         
+        ENDIF
+
+        IF (MEM_ID1 <> INFILE_PAT_ID)
+            MOVE ERROR_1 TO ERR_REASON
+            CALL WRITE_ERROR_RECS 
+            CONTINUE
+        ENDIF
+ 
+        MOVE MEM_ESSN       TO HLD_MEM_ESSN
+        MOVE MEM_ID1        TO VOHC_PAT_NBR
+        MOVE MEM_SEX        TO VOHC_PAT_SEX
+        MOVE MEM_DOB        TO VOHC_PAT_BDTE
+        IF (MEM_REL = "01")
+           MOVE "1"         TO VOHC_PAT_RELC
+        ELSE
+           IF (MEM_REL = "02")
+              MOVE "2"      TO VOHC_PAT_RELC
+           ELSE
+              MOVE "3"      TO VOHC_PAT_RELC
+           ENDIF
+        ENDIF
+        MOVE MEM_LNAME      TO VOHC_PAT_LNAME
+        MOVE MEM_FNAME      TO VOHC_PAT_FNAME
+        MOVE MEM_MINIT      TO VOHC_PAT_MINIT
+        MOVE MEM_ACCU       TO VOHC_PAT_ALT_ID
+        MOVE MEM_EFF        TO HLD_MEM_EFF
+        MOVE MEM_TRM        TO HLD_MEM_TRM
+
+
+        IF (MEM_REL = "01")
+           MOVE MEM_ID1     TO VOHC_SBSCR_NBR
+           MOVE MEM_LNAME   TO VOHC_SBSCR_LNAME
+           MOVE MEM_FNAME   TO VOHC_SBSCR_FNAME
+           MOVE MEM_MINIT   TO VOHC_SBSCR_MINIT
+           MOVE MEM_ESSN    TO VOHC_SBSCR_SSN 
+           MOVE MEM_DOB     TO VOHC_SBSCR_BDTE
+           MOVE MEM_SEX     TO VOHC_SBSCR_SEX
+           MOVE MEM_ACCU    TO VOHC_SBSCR_ALTID
+        ELSE
+           CALL READ_FOR_ENROLLEE_AGAIN
+        ENDIF
+
+        MOVE 0 TO DEDU_C
+        MOVE 0 TO NEGO_C
+
+        CALL READ_CLMA USING "DEDU",DEDU_C 
+        PACK VOHC_DEDU_AMT WITH MCS@FORM1
+
+        CALL READ_CLMA USING "NEGO",NEGO_C 
+        PACK VOHC_ELIG_EXP_AMT WITH MCS@FORM1
+
+        CONTINUE IF (SQUEEZE VOHC_BEN_YR_EFF = "")
+
+        IF ((DEDU_C = 0.00) AND (NEGO_C = 0.00)) 
+           ADD 1 TO X_CNT3
+           CONTINUE
+        ENDIF
+      
+        IF ((VOHC_DOS_FRM < JULY2011) AND (SQUEEZE VOHC_PAT_ALT_ID <> ""))
+           CALL READ_MEME
+        ENDIF
+ 
+        IF (SQUEEZE VOHC_PAT_ALT_ID = "*CHECKTHISOUT*")
+           CLEAR VOHC_PAT_ALT_ID
+           CLEAR MEM_SAV
+           PACK  MEM_FK11 WITH VOHC_PAT_NBR 
+           CALL  GET_MEMBER_INFO
+           IF (MEM_RESULT <> 1)
+               MOVE ERROR_4 TO ERR_REASON
+               CALL WRITE_ERROR_RECS 
+               CONTINUE         
+           ENDIF
+           MOVE MEM_ESSN TO HLD_MEM_ESSN 
+           CALL READ_FOR_ENROLLEE_AGAIN
+        ENDIF
+
+        CLEAR ELIG_SWT
+
+        CALL CHECK_ELIG
+
+        IF (ELIG_SWT = "Y")
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,VOHC_LIST
+        ELSE
+           CONTINUE
+        ENDIF
+ 
+        ADD 1 TO X_CNT2
+        ADD 1 TO REC_CNT
+
+        CLEAR PAT_KEY
+        CLEAR IDX_LIST
+        PACKLEN PAT_KEY WITH VOHC_PAT_NBR
+        CALL READ_OGBFILE_IX USING IDX_FILE,IDX_NAME:      
+                                   PAT_KEY,IDX_LIST         
+        IF (RESULT = 1)
+           ADD 1 TO IDX_CLM_CNT
+           ADD DEDU_C TO IDX_DEDU_AMT
+           ADD NEGO_C TO IDX_NEGO_AMT
+           CALL UPDATE_OGBREC_IX USING IDX_FILE,IDX_LIST
+        ELSE        
+           MOVE 0 TO IDX_DEDU_AMT
+           MOVE 0 TO IDX_NEGO_AMT
+           MOVE VOHC_PAT_NBR   TO IDX_PAT_ID
+           MOVE VOHC_SBSCR_NBR TO IDX_MEM_ID
+           MOVE VOHC_SBSCR_SSN TO IDX_MEM_ESSN
+           ADD  1              TO IDX_CLM_CNT
+           MOVE DEDU_C         TO IDX_DEDU_AMT
+           MOVE NEGO_C         TO IDX_NEGO_AMT
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL WRITE_OGBREC_IX USING IDX_FILE,IDX_NAME:
+                                      VOHC_PAT_NBR,IDX_LIST  
+           ADD 1 TO X_CNT5 
+        ENDIF
+
+        CLEAR VOHC_LIST
+
+      REPEAT
+
+      RETURN
+
+
+
+. ----------------------------
+. Read for CLMA record 
+. ----------------------------
+
+READ_CLMA ROUTINE MCS@DIM1,MCS@FORM1
+
+         debug
+         MOVE 0 TO AMT_CLMA
+         PACK CLMA_KEY WITH INFILE_CLMNO,BLANKS
+         CALL CLMA_READ
+         LOOP 
+            CALL CLMA_NEXT
+            WHILE (CLMA_ID = INFILE_CLMNO AND RESULT = 1)
+            PACK CLMA_SAV WITH CLMA_REC
+            IF (CLMA_SAV = HLD_CLMA)
+               BREAK
+            ENDIF
+            PACK HLD_CLMA WITH CLMA_SAV
+            IF (CLMA_ACCU = MCS@DIM1)
+               MOVE CLMA_AMT TO AMT_CLMA
+               ADD AMT_CLMA TO MCS@FORM1
+               IF (CLMA_EFF >= LAST_YR_EFF AND CLMA_EFF < LAST_YR_TRM)
+                  PACK VOHC_BEN_YR_EFF WITH LAST_YR_EFF
+                  PACK VOHC_BEN_YR_TRM WITH LAST_YR_TRM
+               ELSE
+. ad-hoc no dates for current year
+                  PACK VOHC_BEN_YR_EFF WITH BLANKS       
+                  PACK VOHC_BEN_YR_TRM WITH BLANKS       
+.                 PACK VOHC_BEN_YR_EFF WITH CURR_YR_EFF
+.                 PACK VOHC_BEN_YR_TRM WITH CURR_YR_TRM
+               ENDIF
+            ENDIF
+         REPEAT
+
+         RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------------------
+. Get the member demographics information
+. ----------------------------------------
+GET_MEMBER_INFO
+
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+        MOVE RESULT TO MEM_RESULT
+
+  RETURN                                                   
+
+
+. ----------------------------
+. Read MEME file            
+. ----------------------------
+
+READ_MEME
+
+. Read MEME file for DOS
+         PACK      MEME_FK11 WITH VOHC_PAT_ALT_ID,BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                   MEME_FN:  ...File name list
+                   MEME_FC:  ...(I)ndex or (A)imdex
+                   MEME_FV:  ...File key varlists
+                   MEME_FK:  ...File key sizes
+                   MEME_LIST: ...File record (field list)
+                   MEME_REC: ...File record (packed)
+                   MEME_OLD: ...File saved when read
+                   MEME_QTY: ...Number of files
+                   1         ...File number for this read
+         LOOP
+           CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                     MEME_FN:  ...File name list
+                     MEME_FC:  ...(I)ndex or (A)imdex
+                     MEME_FV:  ...File key varlists
+                     MEME_FK:  ...File key sizes
+                     MEME_LIST: ...File record (field list)
+                     MEME_REC: ...File record (packed)
+                     MEME_OLD: ...File saved when read
+                     MEME_QTY: ...Number of files
+                     1         ...File number for this read
+         
+           IF (RESULT <> 1 OR VOHC_PAT_ALT_ID <> MEME_ID1)
+              GOTO READ_MEME_END     
+           ENDIF
+
+           IF (SQUEEZE MEME_PRD = "PPO")
+...           IF ((VOHC_DOS_FRM < MEME_TRM) AND (VOHC_DOS_FRM >= MEME_EFF))
+              IF (VOHC_DOS_THRU <= MEME_EFF))
+                 MOVE VOHC_PAT_ALT_ID TO VOHC_PAT_NBR
+                 MOVE "*CHECKTHISOUT*" TO VOHC_PAT_ALT_ID
+              ELSE 
+                 CONTINUE
+              ENDIF
+           ELSE 
+              CONTINUE
+           ENDIF
+
+         REPEAT
+
+READ_MEME_END 
+         RETURN
+
+. ------------------------------
+. Read MEME file for eligibility           
+. ------------------------------
+
+CHECK_ELIG
+
+. Read MEME file for DOS
+         PACK      MEME_FK11 WITH VOHC_PAT_NBR,BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                   MEME_FN:  ...File name list
+                   MEME_FC:  ...(I)ndex or (A)imdex
+                   MEME_FV:  ...File key varlists
+                   MEME_FK:  ...File key sizes
+                   MEME_LIST: ...File record (field list)
+                   MEME_REC: ...File record (packed)
+                   MEME_OLD: ...File saved when read
+                   MEME_QTY: ...Number of files
+                   1         ...File number for this read
+         LOOP
+           CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                     MEME_FN:  ...File name list
+                     MEME_FC:  ...(I)ndex or (A)imdex
+                     MEME_FV:  ...File key varlists
+                     MEME_FK:  ...File key sizes
+                     MEME_LIST: ...File record (field list)
+                     MEME_REC: ...File record (packed)
+                     MEME_OLD: ...File saved when read
+                     MEME_QTY: ...Number of files
+                     1         ...File number for this read
+         
+           IF (RESULT <> 1 OR VOHC_PAT_NBR <> MEME_ID1)
+              GOTO CHECK_ELIG_END     
+           ENDIF
+
+           IF (SQUEEZE MEME_PRD = "PPO")
+             IF ((SQUEEZE MEME_TRM = "") OR (SQUEEZE MEME_TRM >= TODAY))
+               MOVE "Y" TO ELIG_SWT
+             ENDIF
+           ENDIF
+
+         REPEAT
+
+CHECK_ELIG_END
+         RETURN
+
+. ----------------------------------------
+. Get the member demographics information
+. ----------------------------------------
+READ_FOR_ENROLLEE_AGAIN
+
+           CLEAR  MEM_AIM
+           PACK   MEM_AIM1 WITH "01X",HLD_MEM_ESSN,BLANKS
+           PACK   MEM_AIM3 WITH "03X","01",BLANKS   
+           CALL   FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:         ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+
+           MOVE RESULT TO MEM_RESULT
+           IF (MEM_RESULT <> 1)
+               MOVE ERROR_2 TO ERR_REASON
+               CALL WRITE_ERROR_RECS 
+               GOTO READ_FOR_ENROLLEE_END  
+           ENDIF
+
+           IF (MEM_ESSN <> HLD_MEM_ESSN)
+               MOVE ERROR_2 TO ERR_REASON
+               CALL WRITE_ERROR_RECS 
+               GOTO READ_FOR_ENROLLEE_END  
+           ENDIF
+
+           MOVE MEM_ID1     TO VOHC_SBSCR_NBR
+           MOVE MEM_LNAME   TO VOHC_SBSCR_LNAME
+           MOVE MEM_FNAME   TO VOHC_SBSCR_FNAME
+           MOVE MEM_MINIT   TO VOHC_SBSCR_MINIT
+           MOVE MEM_ESSN    TO VOHC_SBSCR_SSN 
+           MOVE MEM_DOB     TO VOHC_SBSCR_BDTE
+           MOVE MEM_SEX     TO VOHC_SBSCR_SEX
+           MOVE MEM_ACCU    TO VOHC_SBSCR_ALTID
+
+READ_FOR_ENROLLEE_END  
+         RETURN
+
+.******************************************************************************
+WRITE_ERROR_RECS      
+.******************************************************************************
+ 
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING ERR_FILE:
+                            ERR_NAME:
+                            ERR_LIST
+
+    ADD 1 TO X_CNT4
+
+  RETURN
+ 
+.
+.******************************************************************************
+
+. -------------------------------------------------
+. ...Close output files      
+. -------------------------------------------------
+
+CLOSE_FILES       
+
+  CALL CLOSE_OGBFILE USING OUT_FILE
+
+     RETURN                                                   
+
+. -------------------------------
+. Quit 
+. -------------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+ 	          error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Process Complete.":
+                     text="-----------------"
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+. -------------------------------
+. Normal End-Of-Job Routine
+. -------------------------------
+
+NORMAL_EOJ
+
+
+...Return Control Back to Chain - End of Program
+
+        CALL X_DISPLAY_COUNTS
+
+        TRAPREST  TRAP_DATA
+        MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+      RETURN                                                   
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       CLMA.IO
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR
+       INC       POP.IO
+       INC       CMDPARAM.SR  
+
+.

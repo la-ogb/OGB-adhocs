@@ -1,0 +1,590 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++  Program Name : A1612211.PS
++   Description : Fixes erroneous term dates on dependents based on
++                 an error file from the LSU 834 process.
++
++                 Produces a file to update IMPACT and a CSV report of
++                 all changed records.
++ ......................................................................
++  apjwh - 12/21/2016 - DEV - Initial Version
++ .............................Revisions................................
++  apjwh - 05/17/2017 - MOD - consolidated includes into new UTILs
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++ -------------------------
++ Required Program Includes
++ -------------------------
+  INC  UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+
++ -------------------------
++ Program Specific Includes
++ -------------------------
+  INC  UTIL_MEMMEM.CB  ... OGB variables for updating Impact
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ File & Global Variable Declarations
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Input Files
+INPUT_FILE        FILE   VAR=68, TEXT  ... 834 error file
+INPUT_NAME        INIT   "/w/covl_err.txt"
+INPUT_LIST        LIST
+..............................
+INPUT_ID1         CHAR   8
+INPUT_NET         CHAR   5
+INPUT_PRD         CHAR   5
+INPUT_ERR         CHAR   50
+..............................
+                  LISTEND
+
+
+... Output Files
+IMPACT_FILE       FILE   VAR=4800, TEXT ... d_memmem update file
+IMPACT_NAME       INIT   "a1612211.txt"
+
+LOG_FILE          FILE   VAR=200, TEXT  ... update log
+LOG_NAME          INIT   "/w/lsu834_depd_errors.csv"
+LOG_LIST          LIST
+..............................
+LOG_REC           CHAR   200
+..............................
+                  LISTEND
+
+LOG_HDR_LIST      LIST
+..............................
+LOG_HDR           INIT   "Primary SSN,":
+                         "Depd Relation,":
+                         "Depd SSN,":
+                         "Depd First Name,":
+                         "Depd Last Name,":
+                         "Depd DOB,":
+                         "Network,":
+                         "Product,":
+                         "Plan,":
+                         "New Term Date"
+..............................
+                  LISTEND
+
+... Error File
+ERROR_FILE        FILE   VAR=80, TEXT
+ERROR_NAME        INIT   "/w/a1612211.err"
+ERROR_LIST        LIST
+..............................
+ERROR_REC         CHAR   80
+..............................
+                  LISTEND
+
+ERROR_HDR_LIST    LIST
+..............................
+ERROR_HDR         INIT   "Primary ID1,":
+                         "Depd ID1,":
+                         "Depd Rec ID,":
+                         "Error Type"
+..............................
+                  LISTEND
+
+
+... Input Errors
+ERROR_EE          INIT   "EE COV WITH ACTIVE DEP(S)"
+ERROR_ES          INIT   "ES COV WITHOUT CORRECT DEP"
+ERROR_EC          INIT   "EC COV WITHOUT CORRECT DEP"
+ERROR_FM          INIT   "FAM COV WITHOUT CORRECT DEPS"
+
+... Process variables
+UPDT_PROG         INIT   "834FIX"
+
+PROCESS_LIST      LIST
+..............................
+PRIMARY_SSN       CHAR   9
+PRIMARY_EFF       CHAR   8
+ARRAY_PRIM_RECS   CHAR   600[10]
+ARRAY_DEPD_RECS   CHAR   600[10]
+TERM_DATE         CHAR   8
+..............................
+                  LISTEND
+
+TRM_SPS           CHAR   1
+TRM_NONSPS        CHAR   1
+
+... Required DBC variables
+CAL_CLOCK         CHAR   21
+CURRDATE          CHAR   8
+
+PARAM_LIST        LIST WITH NAMES
+..............................
+PARAM_FILE        CHAR   12
+PARAM_FROM        CHAR   8
+PARAM_THRU        CHAR   8
+..............................
+                  LISTEND
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Begin Program
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Start here. If completed successfully, continue to the next program
+  CALL  RUN_NOW
+  CHAIN  C_NEXT
+
+... Scheduler routines. You cannot include both; use NP unless the
+... program requires Impact's printer functions
+...     WP - with printer
+...     NP - no printer
+
+  INC  SCHED_NP.SR
+
+.#######################################################################
+RUN_NOW
+.#######################################################################
+
+... Save return stack
+    RETCOUNT ORIG_RETURN
+
+... Check if the program was called from the command line
+    MOVE  "A1612211" TO C_PROG
+    MOVE  "Fix LSU834 Errors" TO C_OPER
+    IF (C_CMDPAR)
+        CALL  CMD_START USING C_PROG
+    ENDIF
+
+... Fill top of screen
+    MOVE  "MENU" TO C_NEXT
+    MOVE  BLANKS TO C_LABEL
+    MOVE  BLANKS TO C_FILE
+    MOVE  BLANKS TO C_KEYS
+    CLOCK  CALENDAR INTO CAL_CLOCK
+
+    IF (NOT C_CMDPAR)
+        CALL  X_BLANK_SCREEN
+    ENDIF
+
+... Set applicable traps
+    TRAPSAVE  TRAP_DATA
+    TRAPCLR  ALL
+    TRAP  QUIT NORESET IF F9
+
+... Get scheduler information
+    CALL  SCHED_PICK
+
+    IF ((RUN_MODE = "B") OR (RUN_MODE = "N"))
+        CALL  MAIN_PROCESS
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+MAIN_PROCESS
+.#######################################################################
+    debug
+    CALL  INITIALIZE
+    CALL  PREPARE_FILES
+    debug
+    CALL  PROCESS_PRIMARY_ERRORS
+    CALL  CLEAN_UP
+
+  RETURN
+
+.#######################################################################
+INITIALIZE
+.#######################################################################
+. -----------------------------------------------------------------
+... Initialize program time variables and draw the counters, unless
+... the program is invoked from the command line
+. -----------------------------------------------------------------
+    CLOCK  TIMESTAMP  INTO  CURRDATE
+
+... Display Counters
+    IF ((C_RMODE = "I") AND (NOT C_CMDPAR))
+        MOVE  "LSU 834 Errors" INTO X_CNTDESC1
+        MOVE  "Members Termed" INTO X_CNTDESC2
+        MOVE  "Process Errors" INTO X_CNTDESC3
+        MOVE  "Not Used"       INTO X_CNTDESC4
+        MOVE  "Not Used"       INTO X_CNTDESC5
+        MOVE  "Not Used"       INTO X_CNTDESC6
+
+        CALL  X_ZERO_COUNTS
+        CALL  X_DISPLAY_COUNTS
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+PROCESS_PRIMARY_ERRORS
+.#######################################################################
+. ---------------------------------------------------------------------
+... Loops through the error file from the LSU 834 and checks each
+... record for the error types that require depds to be termed.
+... * EE: Term all active dependents
+... * ES: Term all non-spouse dependents
+... * EC: Term all active spouse(s)
+... * FM: Ignore. This require plans to be created and will be a manual
+...       fix
+. ---------------------------------------------------------------------
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+
+    LOOP
+        MOVE  FALSE TO TRM_SPS, TRM_NONSPS
+        CLEAR  MEM_LIST, MEME_LIST, INM_LIST
+        CLEAR  PROCESS_LIST, INPUT_LIST, LOG_LIST
+
+... Get the next 834 error record
+        MOVE  INPUT_NAME TO C_FILE
+        CALL  READ_OGBFILE USING INPUT_FILE:
+                                 INPUT_NAME:
+                                 INPUT_LIST
+        BREAK IF (RESULT != 1)
+
+... Skip HRFEE rec (OneExchange Billing Rec) as it probably shouldn't
+.   be on this error file.
+        IF (INPUT_PRD = "HRFEE")
+            CONTINUE
+        ENDIF
+
+... Determine which dependents to term
+        CHOP  INPUT_ERR INTO INPUT_ERR
+        SWITCH  INPUT_ERR
+            CASE  ERROR_EE
+                MOVE  TRUE TO TRM_SPS, TRM_NONSPS
+            CASE  ERROR_ES
+                MOVE  TRUE TO TRM_NONSPS
+            CASE  ERROR_EC
+                MOVE  TRUE TO TRM_SPS
+            CASE  ERROR_FM
+                CONTINUE
+            DEFAULT
+                debug
+                CONTINUE
+        ENDSWITCH
+
+... Get demog data on the primary
+        CALL  UTIL_MEM_FIND USING INPUT_ID1
+        IF (NOT EQUAL)
+            debug
+        ENDIF
+
+        MOVE  MEM_ESSN TO PRIMARY_SSN
+
+... Get the current and future health and EGWP records
+        CALL  GET_VALID_PLANS USING MEM_ID1, ARRAY_PRIM_RECS
+
+        MOVE  1 TO C_NUM
+        MOVE  ARRAY_PRIM_RECS[C_NUM] TO MEME_REC
+
+        IF (SQUEEZE MEME_REC = "")
+.            CALL  WRITE_ERROR USING "No Plan Match: Primary"
+            CONTINUE
+        ENDIF
+
+        UNPACK  MEME_REC INTO MEME_LIST
+
+... Only process records created on 12/15/16 by LSU834
+        IF ((MEME_NEWBY != "LSU834") OR (MEME_NEWDT != "20161215"))
+            CONTINUE
+        ENDIF
+
+        debug
+
+... Only process records of members in agency 1901
+        IF (SQUEEZE MEME_LEV1 != "1901")
+            CONTINUE
+        ELSE IF ((SQUEEZE MEME_LEV2 != "00"):
+                AND (SQUEEZE MEME_LEV2 != "99"))
+
+            CONTINUE
+        ENDIF
+
+... The term date of the dependents' plan will be the new eff - 1
+        MOVE  MEME_EFF INTO PRIMARY_EFF
+        CALL  DATE_CALC USING PRIMARY_EFF, "SUB", "DAYS", 1, TERM_DATE
+
+... Term all the relevent dependents
+        CALL  PROCESS_DEPENDENTS
+
+        CALL  UTIL_XCOUNTER USING X_CNT1, 100
+
+    REPEAT
+
+  RETURN
+
+.#######################################################################
+GET_VALID_PLANS        ROUTINE RECENT_ID1, REC_ARRAY
+.#######################################################################
+. ----------------------------------------------------------------
+... Find the plan with the greatest EFF date and no term date that
+... matches the NET and PRD of the Input record
+. ----------------------------------------------------------------
+RECENT_ID1             CHAR   @
+REC_ARRAY              CHAR   @[]
+. -------------------------------
+    MOVE  1 TO C_NUM
+    CLEAR  MEME_REC, MEME_LIST, REC_ARRAY
+
+    LOOP
+
+... Get the next MEME rec
+        IF (SQUEEZE MEME_REC = "")
+            CALL  UTIL_MEME_FIND USING RECENT_ID1
+        ELSE
+            CALL  UTIL_MEME_NEXT
+        ENDIF
+        IF (NOT EQUAL)
+            BREAK
+        ENDIF
+
+... Skip non-health and non-EGWP records
+        IF ((SQUEEZE MEME_PRD = "LIFE"):    ... life record
+           OR (SQUEEZE MEME_PRD = "HRFEE"): ... OneExchange Billing Rec
+           OR (SQUEEZE MEME_PRD = "HSA"):   ... HSA Billing Rec
+           OR (SQUEEZE MEME_PRD = "LBLA"):  ... BCBS Wellness Record
+           OR (SQUEEZE MEME_PLAN = "HRA1"): ... HRA Billing Rec
+           OR (SQUEEZE MEME_RT = "01"))     ... Billing Record
+
+            CONTINUE
+        ENDIF
+
+... Skip voided or pending recs
+        IF ((SQUEEZE MEME_TRM != "") AND (MEME_TRM < MEME_EFF))
+            CONTINUE
+        ENDIF
+
+        IF (MEME_TLET = "V")
+            CONTINUE
+        ENDIF
+
+... Only checking for current or future records
+        IF ((SQUEEZE MEME_TRM = "") OR (MEME_TRM > CURRDATE))
+            IF (SQUEEZE REC_ARRAY[C_NUM] = "")
+                MOVE  MEME_REC TO REC_ARRAY[C_NUM]
+                MOVE  (C_NUM + 1) TO C_NUM
+            ELSE
+                debug
+            ENDIF
+        ENDIF
+    REPEAT
+
+  RETURN
+
+.#######################################################################
+PROCESS_DEPENDENTS
+.#######################################################################
+. -----------------------------------------------------------------
+... Read the MEM record for all dependents of the errored employee.
+... Term all active records.
+. -----------------------------------------------------------------
+DEPD_ID1        CHAR   8
+. ----------------------
+    CLEAR MEM_AIM, MEM_LIST, MEM_REC, DEPD_ID1
+
+... Find all dependents of the primary. Create term records if
+.   needed.
+    PACK  MEM_AIM1 WITH "01X", PRIMARY_SSN, BLANKS
+
+    LOOP
+        CLEAR  DEPD_ID1
+
+        IF (SQUEEZE MEM_REC = "")
+            CALL  UTIL_MEM_AIMFIND
+        ELSE
+            CALL  UTIL_MEM_AIMNEXT
+        ENDIF
+        IF (NOT EQUAL)
+            BREAK
+        ELSE
+            MOVE  MEM_ID1 TO DEPD_ID1
+        ENDIF
+
+        debug
+
+        SWITCH  MEM_REL
+            CASE  "01"
+                CONTINUE ... Is the primary
+            CASE "02"
+                IF (TRM_SPS = TRUE)
+                    CALL  TERM_RECS USING DEPD_ID1
+                ENDIF
+            DEFAULT
+                IF (TRM_NONSPS = TRUE)
+                    CALL  TERM_RECS USING DEPD_ID1
+                ENDIF
+        ENDSWITCH
+    REPEAT
+
+  RETURN
+
+.#######################################################################
+TERM_RECS         ROUTINE TERM_ID1
+.#######################################################################
+. ---------------------------------------------------------------------
+... Find the most recent plan matching thet Input member's plan for the
+... current dependent. Term that plan and record it on the csv log
+. ---------------------------------------------------------------------
+TERM_ID1        CHAR   @
+. ----------------------
+    CALL  GET_VALID_PLANS USING TERM_ID1, ARRAY_DEPD_RECS
+
+... There should be only one active health plan to term
+    IF (C_NUM > 2)
+        debug
+        CALL  WRITE_ERROR USING "Too many active plans!"
+        RETURN
+    ELSE
+        MOVE  1 TO C_NUM
+    ENDIF
+
+    MOVE  ARRAY_DEPD_RECS[C_NUM] TO MEME_REC
+    UNPACK  MEME_REC INTO MEME_LIST
+
+    IF (SQUEEZE MEME_REC != "")
+        CALL  WRITE_TERM_REC
+        CALL  UTIL_XCOUNTER USING X_CNT2, 100
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+WRITE_TERM_REC
+.#######################################################################
+. ----------------------------------------------------------
+... Create the INM records from the current MEM and MEME rec
+. ----------------------------------------------------------
+    CALL  WRITE_CSV
+
+... Term the invalid plan
+    PACKLEN  INM_REC WITH MEM_LIST, MEME_LIST
+    UNPACK  INM_REC INTO INM_LIST
+    MOVE  TERM_DATE TO INME_TRM
+
+... If MEME_EFF is 1/1/17, then this record is a void and "V" should
+.   be placed in MEME_TLET
+    debug
+    IF ((INME_EFF = "20170101") AND (TERM_DATE = "20161231"))
+        MOVE  "V" TO INME_TLET
+    ENDIF
+
+    MOVE  UPDT_PROG TO INME_CHGBY
+    MOVE  BLANKS TO INME_CHGDT
+
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+    MOVE  IMPACT_NAME TO C_FILE
+    CALL  WRITE_OGBREC USING IMPACT_FILE:
+                             IMPACT_NAME:
+                             INM_LIST
+
+  RETURN
+
+.#######################################################################
+WRITE_CSV
+.#######################################################################
+. ------------------------------------
+... Write the termed record to the CSV
+. ------------------------------------
+    PACK  LOG_REC WITH PRIMARY_SSN, COMMA:
+                       MEM_REL, COMMA:
+                       MEM_PSSN, COMMA:
+                       MEM_FNAME, COMMA:
+                       MEM_LNAME, COMMA:
+                       MEM_DOB, COMMA:
+                       MEME_NET, COMMA:
+                       MEME_PRD, COMMA:
+                       MEME_PLAN, COMMA:
+                       TERM_DATE
+
+    MOVE  LOG_NAME TO C_FILE
+    CALL  WRITE_OGBREC USING LOG_FILE:
+                             LOG_NAME:
+                             LOG_LIST
+
+  RETURN
+
+.#######################################################################
+WRITE_ERROR        ROUTINE OUT_ERR
+.#######################################################################
+. ------------------------
+... Write to the error log
+. ------------------------
+OUT_ERR        CHAR   @
+. ---------------------
+    PACK  ERROR_REC WITH INPUT_ID1, COMMA:
+                         MEME_ID1, COMMA:
+                         MEME_ID2, COMMA:
+                         OUT_ERR
+
+    CALL  WRITE_OGBREC USING ERROR_FILE:
+                             ERROR_NAME:
+                             ERROR_LIST
+
+    CALL  UTIL_XCOUNTER USING X_CNT3, 100
+
+  RETURN
+
+.#######################################################################
+PREPARE_FILES
+.#######################################################################
+. -------------------------------------------------
+... Open the input file and create the output files
+. -------------------------------------------------
+    MOVE  INPUT_NAME TO C_FILE
+    CALL  OPEN_OGBFILE USING INPUT_FILE:  ... 834 Error file
+                             INPUT_NAME
+
+    MOVE  IMPACT_NAME TO C_FILE
+    CALL  PREP_OGBFILE USING IMPACT_FILE:  ... Impact updt file
+                             IMPACT_NAME
+
+    MOVE  ERROR_NAME TO C_FILE
+    CALL  PREP_OGBFILE USING ERROR_FILE:  ... Error file
+                             ERROR_NAME
+
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+    CALL  WRITE_OGBREC USING ERROR_FILE:
+                             ERROR_NAME:
+                             ERROR_HDR_LIST
+
+    MOVE  LOG_NAME TO C_FILE
+    CALL  PREP_OGBFILE USING LOG_FILE:  ... Updt Log
+                             LOG_NAME
+
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+    CALL  WRITE_OGBREC USING LOG_FILE:
+                             LOG_NAME:
+                             LOG_HDR_LIST
+
+  RETURN
+
+.#######################################################################
+CLEAN_UP
+.#######################################################################
+. ------------------------------------
+... Close all files and return success
+. ------------------------------------
+    MOVE  INPUT_NAME TO C_FILE
+    CALL  CLOSE_OGBFILE USING INPUT_FILE:
+                              INPUT_NAME
+
+    MOVE  IMPACT_NAME TO C_FILE
+    CALL  CLOSE_OGBFILE USING IMPACT_FILE:
+                              IMPACT_NAME
+
+    MOVE  ERROR_NAME TO C_FILE
+    CALL  CLOSE_OGBFILE USING ERROR_FILE:
+                              ERROR_NAME
+
+    MOVE  LOG_NAME TO C_FILE
+    CALL  CLOSE_OGBFILE USING LOG_FILE:
+                              LOG_NAME
+    CALL  NORMAL_EOJ
+
+  RETURN
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Subroutines and Other Includes
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+    INC  UTIL_COMMON.SR   ... OGB Compilation of Standard UTIL routines
+    INC  UTIL_MEMMEM.SR   ... OGB Routines for D_MEMMEM work
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ End of A1612211.PS
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

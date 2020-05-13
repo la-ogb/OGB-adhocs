@@ -1,0 +1,498 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0405261.PS
++    Description    :  EXTRACT ALL RETIREES FROM THE 4 GIVEN FILES AND CREATE
++                   :  AN INDEXED FILE THAT CONTAINS THE SSN AND RETIRE DATE
++    Author         :  Lisa Spurlock
++    Date created   :  05/26/2004
++    Project No.    :  A0405261  
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                              Revisions
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...COMMON WORK AREA
+              INC       X_COMMON.CB          ...OGB COMMON WORK AREA
+              INC       X_OGBFILE.CB         ...OGB CUSTOM FILE HANDLER
+              INC       VALID.RL             ...VALID CODES
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       CLI.RL               ...CLIENT DEMOGRAPHICS
+              INC       MEM.RL               ...MEMBER DEMOGRAPHICS
+              INC       MEME.RL              ...MEMBER ENROLLMENT
+              INC       MEMO.RL              ...OTHER  ENROLLMENT INFO
+
+. ----------------------------
+. Output File Declarations
+. ----------------------------
+
+STATE_FILE       FILE      VAR=20,TEXT      
+STATE_NAME       INIT	   "/ogb/work/lasers.txt"
+ 	    	 
+STATE_LIST       LIST	   
+STATE_KEY1       DIM       9
+STATE_RETDTE     DIM       8
+STATE_FILL3      DIM       2
+STATE_DROP       DIM       1
+		 LISTEND 	 	    	 
+
+TEACH_FILE       FILE      VAR=52,TEXT      
+TEACH_NAME       INIT	   "/ogb/work/teachers.txt"
+ 	    	 
+TEACH_LIST       LIST	   
+TEACH_KEY1       DIM       9
+TEACH_MEM_NAME   DIM       26
+TEACH_DOB        DIM       8
+TEACH_RETDTE     DIM       8
+TEACH_DROP       DIM       1
+		 LISTEND 	 	    	 
+
+SCHOOL_FILE      FILE      VAR=56,TEXT      
+SCHOOL_NAME      INIT	   "/ogb/work/school.txt"
+ 	    	 
+SCHOOL_LIST      LIST	   
+SCHOOL_KEY1      DIM       9
+SCHOOL_FILL1     DIM       1
+SCHOOL_MEM_NAME  DIM       27
+SCHOOL_DOB       DIM       8
+SCHOOL_FILL2     DIM       1
+SCHOOL_RETDTE    DIM       8
+SCHOOL_FILL3     DIM       1
+SCHOOL_DROP      DIM       1
+		 LISTEND 	 	    	 
+
+POLICE_FILE      FILE      VAR=56,TEXT      
+POLICE_NAME      INIT	   "/ogb/work/stpoliceret.txt"
+ 	    	 
+POLICE_LIST      LIST	   
+POLICE_KEY1      DIM       9
+POLICE_FILL1     DIM       1 
+POLICE_MEM_NAME  DIM       27
+POLICE_DOB       DIM       8 
+POLICE_FILL2     DIM       1 
+POLICE_RETDTE    DIM       8
+POLICE_FILL3     DIM       1 
+POLICE_DROP      DIM       1
+		 LISTEND 	 	    	 
+
+OUTFIL_FILE      IFILE     VAR=17,KEYL=9,TEXT      
+OUTFIL_FILEX     FILE      VAR=17,TEXT      
+OUTFIL_NAMEX     INIT	   "/ogb/work/a0405261.txt"
+OUTFIL_NAME      INIT	   "/ogb/work/a0405261.ix1"
+ 	    	 
+
+OUTFIL_LIST      LIST	   
+OUT_SSN          DIM       9
+OUT_RETDTE       DIM       8
+		 LISTEND 	 	    	 
+
+SSN_KEY          DIM       9
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+.
+DISP1            DIM       1
+DISP2            DIM       2
+DISP3            DIM       3
+DISP4            DIM       4
+RECID            DIM       8
+WS_LEV1_1        DIM       1
+WS_LEV1_4        DIM       4 
+ACT_RESULT       FORM      1 
+STATE_RESULT     FORM      1 
+TEACH_RESULT     FORM      1 
+SCHOOL_RESULT    FORM      1 
+POLICE_RESULT    FORM      1 
+MEM_RESULT       FORM      1 
+MEME_RESULT      FORM      1 
+VAL_RESULT       FORM      1 
+FPTR             FORM      2
+LPTR             FORM      2
+RET_MM           DIM       2
+RET_DD           DIM       2
+RET_YY           DIM       4
+SLASH            INIT      "/"
+WS_DATE          DIM       8
+WRK_DATE         DIM       8
+WRK_RECID        DIM       8
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+TODAY            DIM       8
+BLANK8           INIT      "        "
+   
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Indexed  Ret. SSN & RETDTE" TO  C_OPER
+         MOVE      "A0405261"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+. ...Initialize
+         CALL      INITIALIZE
+	 
+. ...Open Files	
+         CALL      OPEN_FILES 
+         
+. ...Extract Data
+	 CALL      EXT_CURRELG
+         
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         DEBUG
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "State  Records Read: " TO X_CNTDESC1
+	 MOVE      "School Records Read: " TO X_CNTDESC2
+	 MOVE      "Teachers Recs. Read: " TO X_CNTDESC3
+	 MOVE      "Police Records Read: " TO X_CNTDESC4
+	 MOVE      "Output Recs. Written:"     TO X_CNTDESC5
+	 MOVE      "" TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         DEBUG
+	 MOVE      STATE_NAME TO C_FILE
+	 CALL 	   OPEN_OGBFILE USING STATE_FILE,STATE_NAME
+
+	 MOVE      TEACH_NAME TO C_FILE
+	 CALL 	   OPEN_OGBFILE USING TEACH_FILE,TEACH_NAME
+
+	 MOVE      SCHOOL_NAME TO C_FILE
+	 CALL 	   OPEN_OGBFILE USING SCHOOL_FILE,SCHOOL_NAME
+
+	 MOVE      POLICE_NAME TO C_FILE
+	 CALL 	   OPEN_OGBFILE USING POLICE_FILE,POLICE_NAME
+
+	 CALL 	   PREP_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME
+
+	 CALL 	   CLOSE_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME
+
+	 CALL 	   OPEN_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME
+
+    RETURN
+
+. ----------------------------
+. Extract Current File 
+. ----------------------------
+
+EXT_CURRELG
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING STATE_FILE,STATE_NAME,STATE_LIST
+        MOVE RESULT TO STATE_RESULT
+        IF (STATE_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        CLEAR SSN_KEY
+        PACKLEN SSN_KEY WITH STATE_KEY1   
+        CALL   READ_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME,SSN_KEY,OUTFIL_LIST
+        IF (RESULT = 1)
+            CONTINUE
+        ENDIF
+
+
+        MOVE SSN_KEY TO OUT_SSN
+        PACK OUT_RETDTE WITH STATE_RETDTE
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC_IX USING OUTFIL_FILE,OUTFIL_NAME:
+                                   OUT_SSN,OUTFIL_LIST
+        ADD       1 TO X_CNT5
+    REPEAT
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING SCHOOL_FILE,SCHOOL_NAME,SCHOOL_LIST
+        MOVE RESULT TO SCHOOL_RESULT
+        IF (SCHOOL_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT2
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        CLEAR SSN_KEY
+        PACKLEN SSN_KEY WITH SCHOOL_KEY1   
+        CALL   READ_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME,SSN_KEY,OUTFIL_LIST
+        IF (RESULT = 1)
+            CONTINUE
+        ENDIF
+
+
+        MOVE SSN_KEY TO OUT_SSN
+        UNPACK SCHOOL_RETDTE INTO RET_MM,RET_DD,RET_YY
+        PACK OUT_RETDTE WITH RET_YY,RET_MM,RET_DD
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC_IX USING OUTFIL_FILE,OUTFIL_NAME:
+                                   OUT_SSN,OUTFIL_LIST
+        ADD       1 TO X_CNT5
+    REPEAT
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING TEACH_FILE,TEACH_NAME,TEACH_LIST
+        MOVE RESULT TO TEACH_RESULT
+        IF (TEACH_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT3
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        CLEAR SSN_KEY
+        PACKLEN SSN_KEY WITH TEACH_KEY1   
+        CALL   READ_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME,SSN_KEY,OUTFIL_LIST
+        IF (RESULT = 1)
+            CONTINUE
+        ENDIF
+
+
+        MOVE SSN_KEY TO OUT_SSN
+        UNPACK TEACH_RETDTE INTO RET_YY,RET_MM,RET_DD
+        PACK OUT_RETDTE WITH TEACH_RETDTE
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC_IX USING OUTFIL_FILE,OUTFIL_NAME:
+                                   OUT_SSN,OUTFIL_LIST
+        ADD       1 TO X_CNT5
+    REPEAT
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING POLICE_FILE,POLICE_NAME,POLICE_LIST
+        MOVE RESULT TO POLICE_RESULT
+        IF (POLICE_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT4
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        CLEAR SSN_KEY
+        PACKLEN SSN_KEY WITH POLICE_KEY1   
+        CALL   READ_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME,SSN_KEY,OUTFIL_LIST
+        IF (RESULT = 1)
+            CONTINUE
+        ENDIF
+
+
+        MOVE SSN_KEY TO OUT_SSN
+        UNPACK POLICE_RETDTE INTO RET_MM,RET_DD,RET_YY
+        PACK OUT_RETDTE WITH RET_YY,RET_MM,RET_DD
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC_IX USING OUTFIL_FILE,OUTFIL_NAME:
+                                   OUT_SSN,OUTFIL_LIST
+        ADD       1 TO X_CNT5
+    REPEAT
+
+  RETURN
+
+. ----------------------------
+
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+    
+
+CLOSE_FILES
+
+	 CALL 	   CLOSE_OGBFILE USING STATE_FILE,STATE_NAME
+	 CALL 	   CLOSE_OGBFILE USING TEACH_FILE,TEACH_NAME
+	 CALL 	   CLOSE_OGBFILE USING SCHOOL_FILE,SCHOOL_NAME
+	 CALL 	   CLOSE_OGBFILE USING POLICE_FILE,POLICE_NAME
+	 CALL 	   CLOSE_OGBFILE_IX USING OUTFIL_FILE,OUTFIL_NAME
+
+    RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    A0405261 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+          INC       UTIL.SR      
+          INC       VALID.IO
+          INC       X_STANDARD.SR
+          INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+          INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0405261.PS
++++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,287 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  a0911171.ps   
++    Description    :  Compare ICD10 test file with table 503        
++                   :                                        
++    Author         :  Eileen Stark
++    Project #      :  A0911171
++    Date created   :  11/17/2009
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                             Revisions
++    apiii mm/dd/ccyy Ayymmdd# - Description               
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       VALID.RL 
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+ICD_FILE        FILE      VAR=350,TEXT
+ICD_NAME        INIT      "/w/amaicd10f.txt"
+ICD_LIST        LIST
+ICD_CODE        DIM       6
+ICD_FIL1        DIM       2  
+ICD_DESC1       DIM       24 
+ICD_REC         DIM       300
+                LISTEND
+
+
+TBL_FILE        IFILE     FIX=6,TEXT,KEYL=6
+TBL_NAME        INIT      "/w/tbl503.ix1"
+TBL_LIST        LIST
+TBL_CODE        DIM       6
+                LISTEND
+
+OUT_FILE        FILE      VAR=350,TEXT
+OUT_NAME        INIT      "/w/a0911171.txt"
+
+UPD_FILE        FILE      VAR=50,TEXT
+UPD_NAME        INIT      "valid.new"
+
+
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+DISP3           DIM       3
+DISP4           DIM       4
+LPTR            FORM      2
+WRK_DIM1        DIM       1
+WRK_DIM4        DIM       4
+DATE1           DIM       8
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+SPACES          DIM       8
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+VALID_DATE      DIM       1          
+YN_ANS          DIM       1          
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "ICD10 -> TBL 503  " TO  C_OPER
+         MOVE      "a0911171"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         MOVE "N" TO RUN_MODE
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         CALL      INITIALIZE
+         CALL      COMPARE_DATA 
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Records Read:    " TO X_CNTDESC1
+       	 MOVE      "Records Found:   " TO X_CNTDESC2
+       	 MOVE      BLANKS TO X_CNTDESC3
+       	 MOVE      BLANKS TO X_CNTDESC4
+       	 MOVE      BLANKS TO X_CNTDESC5
+       	 MOVE      BLANKS TO X_CNTDESC6
+	 
+       	 CALL      X_DISPLAY_COUNTS
+
+       	 MOVE      ICD_NAME TO C_FILE
+	 CALL  	   OPEN_OGBFILE USING ICD_FILE,ICD_NAME
+
+       	 MOVE      TBL_NAME TO C_FILE
+	 CALL  	   OPEN_OGBFILE_IX USING TBL_FILE,TBL_NAME
+
+       	 MOVE      OUT_NAME TO C_FILE
+	 CALL  	   PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+       	 MOVE      UPD_NAME TO C_FILE
+	 CALL  	   PREP_OGBFILE USING UPD_FILE,UPD_NAME
+
+         RETURN
+
+. ----------------------------
+. Read and compare data    
+. ----------------------------
+
+COMPARE_DATA     
+
+         debug
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING ICD_FILE,ICD_NAME,ICD_LIST
+            IF (RESULT <> 1)
+               BREAK   
+            ENDIF
+
+            ADD 1 TO X_CNT1
+            UNPACK X_CNT1 INTO DISP4,DISP3
+            IF (DISP3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF
+
+            CALL READ_OGBFILE_IX USING TBL_FILE,TBL_NAME,ICD_CODE,TBL_LIST
+
+            IF (RESULT = 1)
+                 CONTINUE    
+            ENDIF
+
+            CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,ICD_LIST
+            ADD 1 TO X_CNT2
+
+            CLEAR VAL_REC
+            PACK VAL_TYPE WITH "503",BLANKS
+            PACK VAL_CODE WITH ICD_CODE,BLANKS
+            PACK VAL_DESC WITH ICD_DESC1,BLANKS
+
+            CALL WRITE_OGBREC USING UPD_FILE,UPD_NAME,VAL_REC
+
+         REPEAT
+
+         RETURN
+
+    
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+       	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "    A0911171 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of A0911171.PS   
+.----------------------------------------------------------------------------

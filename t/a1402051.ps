@@ -1,0 +1,558 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   A1402051.PS 
++    Description    :   EGWP ERRS                         
++    APSJM 02/05/2014 A1309253 DEV - INITIAL VERSION                           
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              INC       CMDPARAM.CB
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       MEMU.RL          ...Physical Addresses    
+              INC       CLI.RL           ...Client Demographics
+              INC       MEDIMP_EWPELG.RL ...MedImact EGWP Eligibility
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+MEME_REF_FD         FILE       VAR=29,TEXT
+MEME_REF_NAME       INIT       "/w/a1402051_ref.txt"
+MEME_REF_LIST       LIST
+MEME_REF_ID1        DIM         8
+MEME_REF_ID2        DIM         4
+MEME_REF_EFF        DIM         8
+MEME_REF_TRM        DIM         8
+MEME_REF_TLET       DIM         1
+                   LISTEND
+.
+.Output Files
+.
+EWP_ERR_FD     FILE  VAR=106,TEXT
+EWP_ERR_NAME   INIT  "/w/pendewp_err.txt"
+EWP_ERR_LIST   LIST
+EWP_ERR_ID1    DIM   8
+EWP_ERR_ID2    DIM   4
+EWP_ERR_P_EFF  DIM   8
+EWP_ERR_P_TRM  DIM   8
+EWP_ERR_P_STAT DIM   1 
+EWP_ERR_A_EFF    DIM   8
+EWP_ERR_A_TRM    DIM   8
+               LISTEND
+.
+W_TERM_DATE   DIM      8
+W_HLDCLM      DIM      8
+CK_EFF        DIM      8
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+W_GRP         DIM       10
+DIM_5          DIM       5
+DIM51         DIM       5
+VAL_RESULT    FORM      001
+FOUR_THIRTY      INIT      "1630"
+ST_HHMM          DIM       4
+ST_SEC           DIM       2
+SAV_PADDR1   DIM  35
+W_EFF        DIM  8
+DIM_4        DIM  4
+W_TRM        DIM  8
+CR_HPHONE    DIM  10
+PR_HPHONE    DIM  10
+CR_HICN      DIM  12
+PR_HICN      DIM  12
+CR_BPID      DIM  20
+PR_BPID      DIM  20
+CR_PDIM111   DIM  111
+PR_PDIM111   DIM  111
+CR_MDIM111   DIM  111
+PR_MDIM111   DIM  111
+PR_GRP       DIM  10
+CR_GRP       DIM  10
+BLANK8         INIT "        "
+W              INIT "W"
+DIM_P111       DIM  111
+DIM_M111       DIM  111
+W_DIM1         DIM  1
+EGWP           INIT "EGWP "
+PIPE144        DIM 144
+LPTR           NUM 3
+W_H2EFF        DIM 8
+W_CCODE        DIM 02
+MEME_SAV3      DIM 600
+HRA_DEP_WRT_SW DIM 1
+G_LINK_TRM    DIM  8
+W_ACCU        DIM  8
+LOOP_CNT      FORM 1
+ACCU_ID1      DIM  8
+SVE_ACCU      DIM  8
+SEND_SW       DIM   1
+CR_CHG        DIM   314
+PR_CHG        DIM   314
+BK_PRMIEW_NAME  DIM       50
+BK_MIEW_NAME    DIM       50
+CR_KEY        DIM   8  
+PR_KEY        DIM   8  
+CR_RESULT     FORM  1
+PR_RESULT     FORM  1
+MIEW_SKY      INIT  "126-140 -T"
+W_CCYY        DIM     04
+WS_EFF        DIM     8
+MEMO_SAVA     DIM     700
+MEMO_SAVB     DIM     700
+MEMO_SAVA_R   DIM     700
+MEMO_SAVB_R   DIM     700
+MEMO_SAVA_D   DIM     700
+MEMO_SAVB_D   DIM     700
+CALC_DATE     DIM     8
+MEDA_SW       DIM     1
+MEDB_SW       DIM     1
+WS_01         INIT    "01"
+W_ZIP5        DIM     5
+W_ZIP9        DIM     9
+WRITE_FAM_SW  DIM     1
+FAM_CT        FORM    2
+W_65BDAY      DIM     8
+FIRST_READ    DIM  1
+ACT_SW        DIM  1
+START_DATE    INIT "20140101"
+N             INIT "N"
+SPACE_8       INIT "        " 
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "EWP Err" TO C_OPER
+         MOVE      "A1402051"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    PACK SCRATCH WITH "a1402051.bat"
+  ROLLOUT SCRATCH
+  IF OVER
+    IF (NOT C_CMDPAR)
+       ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="FAILED"
+       CHAIN "MENU"
+    ELSE
+       CALL CMD_ERROR USING " failed"
+       STOP
+    ENDIF
+  ENDIF
+    CALL OPEN_FILES
+    CALL PROCESS_REF_FILE
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_REF_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEME_REF_FD,MEME_REF_NAME,MEME_REF_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACK MEME_FK11 WITH MEME_REF_ID1,MEME_REF_ID2,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                           MEME_FN:  ...FILE NAME LIST
+                           MEME_FC:  ...TYPE OF INDEX
+.                                    ...(I)NDEX OR (A)IMDEX
+                           MEME_FV:  ...FILE KEY VARLISTS
+                           MEME_FK:  ...FILE KEY SIZES
+                           MEME_LIST:...FILE RECORD (FIELD LIST)
+                           MEME_REC: ...FILE RECORD (PACKED)
+                           MEME_OLD: ...FILE SAVED WHEN READ
+                           MEME_QTY: ...NUMBER OF FILES
+                           1         ...FILE NUMBER FOR THIS READ
+
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    PACK MEM_FK11 WITH MEME_ID1,BLANKS
+    CALL FILE_READ USING MEM_FD:            ...FILE DECLARATION LIST
+                   MEM_FN:            ...FILE NAME LIST
+                   MEM_FC:            ...TYPE OF INDEX
+.                                     ...(I)NDEX or (A)IMDEX
+                   MEM_FV:            ...FILE KEY VARLISTS
+                   MEM_FK:            ...FILE KEY SIZES
+                   MEM_LIST:          ...FILE RECORD (FIELD LIST)
+                   MEM_REC:           ...FILE RECORD (PACKED)
+                   MEM_OLD:           ...FILE SAVED WHEN READ
+                   MEM_QTY:           ...NUMBER OF FILES
+                   1                   ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    CALL GET_ACT_EWP
+    IF (SQUEEZE MEME_SAV <> "")
+         UNPACK MEME_SAV INTO MEME_LIST
+         MOVE MEME_REF_ID1 TO EWP_ERR_ID1
+         MOVE MEME_REF_ID2 TO EWP_ERR_ID2
+         MOVE MEME_REF_EFF TO EWP_ERR_P_EFF
+         MOVE MEME_REF_TRM TO EWP_ERR_P_TRM
+         MOVE MEME_REF_TLET TO EWP_ERR_P_STAT
+         MOVE MEME_EFF TO EWP_ERR_A_EFF
+         MOVE MEME_TRM TO EWP_ERR_A_TRM
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING EWP_ERR_FD,EWP_ERR_NAME,EWP_ERR_LIST
+         CLEAR EWP_ERR_LIST
+    ENDIF
+ REPEAT
+ RETURN
+
+GET_ACT_EWP      
+      CLEAR MEME_SAV          
+      PACK MEME_FK11 WITH MEME_REF_ID1,BLANKS     
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          IF  ((MEME_REF_ID1 <> MEME_ID1) OR (RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF (SQUEEZE MEME_NET <> "EGWP")
+              CONTINUE
+          ENDIF
+          IF (MEME_TLET = "W")
+             CONTINUE
+          ENDIF 
+          IF ((MEME_US08 = "08") OR (MEME_US08 = "61"))
+          ELSE
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_TRM <> "")
+             CONTINUE
+          ENDIF
+          IF (MEME_REF_EFF > MEME_EFF)
+          ELSE
+             CONTINUE
+          ENDIF
+          PACKLEN MEME_SAV WITH MEME_LIST
+      REPEAT 
+      RETURN
+.
+REFORMAT_MEME
+.-----------------------------------
+...Get only EGWP records
+.-----------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.miew":
+                      " -p112-116eq#"",EGWP,"#"":
+                      " -p104-111ne#"",BLANK8,"#"":
+                      " -p404-404eq#"",W,"#" 1-12 96-111 404-404 -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(meme.dbf)"
+        CHAIN "MENU"
+      ELSE
+        CALL CMD_ERROR USING "Reformat failed_1"
+        STOP
+      ENDIF
+    ENDIF
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.miew":
+                      " -p112-116eq#"",EGWP,"#"":
+                      " -p104-111eq#"",BLANK8,"#" 1-12 96-111 404-404 -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(meme.dbf)"
+        CHAIN "MENU"
+
+      ELSE
+        CALL CMD_ERROR USING "Reformat failed_1"
+        STOP
+
+      ENDIF
+    ENDIF
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.miew":
+                      " -p112-116eq#"",EGWP,"#"":
+                      " -p104-111gt#"",TODAY,"#"":
+                      " -p404-404ne#"",W,"#" 1-12 96-111 404-404 -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(meme.dbf)"
+        CHAIN "MENU"
+
+      ELSE
+        CALL CMD_ERROR USING "Reformat failed_1"
+        STOP
+
+      ENDIF
+    ENDIF
+    SORT     "/w/meme.miew /w/meme.miew 1-8 -u -t"
+    IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="SORT FAILED(meme.miew)"
+        CHAIN     "MENU"
+    ENDIF
+
+    RETURN
+
+
+ RETURN
+
+******************************************************************************
+UPDATE_VALTBL
+.******************************************************************************
+. --------------------------------
+. Update Valid Table with run date
+. --------------------------------
+
+  PACK VAL_TYPE WITH "155",BLANKS
+  PACK VAL_CODE WITH "DG3025",BLANKS
+  PACK VAL_DESC WITH "MEDIMPACT EGWP ELG",BLANKS
+  PACK VAL_OPT  WITH TODAY,BLANKS
+  PACK VAL_FILL WITH BLANKS
+  CALL VAL_WRITE
+
+  RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK TIMESTAMP INTO TIMESTAMP
+         UNPACK    TIMESTAMP   INTO  CURRDATE,ST_HHMM,ST_SEC
+.Subtracting 1 day from date when the program is run after midnight
+         IF (ST_HHMM < FOUR_THIRTY)
+            CALL DATE_CALC USING CURRDATE,"SUB","DAYS",1,TODAY
+         ELSE
+            MOVE CURRDATE TO TODAY
+         ENDIF
+
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+.---------------------------------
+. ...Get last date program was run
+.---------------------------------
+         PACK VAL_KEY1 WITH "155DG3025"
+         CALL VAL_READ1
+         MOVE RESULT TO VAL_RESULT
+         IF (VAL_RESULT = 1)
+           MOVE VAL_OPT TO PARAM_DATE
+         ELSE
+            ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF:
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="MEDIMPACT EGWP ELG"
+            CHAIN "MENU"
+         ENDIF
+         IF (TODAY <= PARAM_DATE)
+            error     HORZ="15",VERT="19":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="PROGRAM ALREADY RAN"
+                      CHAIN           "MENU"
+         ENDIF
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING MEME_REF_FD,MEME_REF_NAME
+         CALL      PREP_OGBFILE USING EWP_ERR_FD,EWP_ERR_NAME              
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       CMDPARAM.SR
+. +++++++++++++++++++++++++++++++++++++
+. /End of DRG3025.PS
+. +++++++++++++++++++++++++++++++++++++

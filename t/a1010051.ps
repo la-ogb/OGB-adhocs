@@ -1,0 +1,894 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  X_ORACLE
++    Description    :  EXT   - Extract Files for Oracle Inload
++    Author         :  Ken Hoel
++    Date created   :  3/14/2002
++ 
++ apajp 05/05/2004 A0405051 - MOD - Changed output directory.  
++                                 - Added a routine to delete from /yesterday
++                                   and move /impact_load/*.* to 
++                                   /yesterday.
++                                 - Added a routine to create a status.Z 
++                                   file on /mcsora/impact_load.
++ apajp 05/10/2004 A0405051 - MOD - Perform a chmod on each of these files
++                                   so that the external Oracle process can 
++                                   pick them up.
++ aptpy 06/03/2004 A0406031 - MOD - Perform rollout to script chmodora.sh
++                                   instead of chmod.
++ apeks 10/20/2004 A0410201 - MOD - Add MEMB to list of files to include 
++ apeks 06/27/2005 A0505313 - MOD - Add PROA to list of files to include 
++ apeks 10/27/2005 A0510272 - MOD - Add MEMCI to list of files to include 
++ apajp 03/08/2006	A0507062 - MOD - Rollout to x_oracle.mail upon completion.
++ apajp 05/10/2006 A0603224 - ENH - Set program up with various extract 
++                                   criteria dependent on the day of the week.
++ apajp 05/16/2006 E060511F - ENH - Replace moving *.* from /mcsora/impact_
++                                   load to /mcsora/yesterday with a Rollout
++                                   to script, "oramvlog.sh".   
++ apajp 05/17/2006 A0603224 - MOD - Extract "bild" Changes and Deletes in 
++                                   addition to a full extract.  We'll run in
++                                   parallel for a while. 
++ aptpy 05/30/2006 A0603224 - MOD - Extract "fund" and "eve" Changes and
++                                   Deletes as well as the full extracts.
++ apajp 06/09/2006 A0603224 - MOD - Commented out the Weekend Match.  Until  
++                                   parallel testing is completed, we will
++                                   extract both changes and full files every
++ apajp 06/12/2006 A0603224 - MOD - Extract clm, clms, clme, and clma records   
++                                   associated with any changed clm and/or clms 
++                                   record.  Extract any clm, clms, clme, or    
++                                   clma marked 'DELETED' on the history file.
++                           - ENH - Incorporate a Valid Code table to allow
++                                   the normal Weekend vs Non-weekend extract
++                                   criteria to be overridden.
++ apajp 06/15/2006 A0603224 - MOD - Create a different status.* (Z or W) 
++                                   depending on whether the extract is Full 
++                                   (weekend) or Incremental (weekday).  While
++                                   we are in parallel testing, the Weekend
++                                   run will output both status.Z and status.W.
++ apsjm 06/20/2006 A0603224 - MOD - Changed the cretion of the status.Z to
++                                   after the full load 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       CLM.RL
+              INC       CLMS.RL
+              INC       CLME.RL
+              INC       CLMA.RL
+
+.----------------------------------------------------------------------------
+
+. INPUT/OUTPUT FILES
+WORK_FILE     FILE   FIX=8,TEXT
+WORK_NME      INIT   "/w/x_oracle.wrk"
+WORK_SORT_KEY INIT   "1-8 -t -u"
+WORK_LIST     LIST
+..<BEGIN>...............
+WORK_ID       DIM    8
+..<END>.................
+              LISTEND
+
+. OUTPUT FILES
+CLM_ORA_FILE  FILE   FIX=3500,TEXT
+CLM_ORA_NME   INIT   "/mcsora/impact_load/clm_upd.ora"
+
+CLMS_ORA_FILE FILE   FIX=850,TEXT
+CLMS_ORA_NME  INIT   "/mcsora/impact_load/clms_upd.ora"
+
+CLMA_ORA_FILE FILE   FIX=150,TEXT
+CLMA_ORA_NME  INIT   "/mcsora/impact_load/clma_upd.ora"
+
+CLME_ORA_FILE FILE   FIX=165,TEXT
+CLME_ORA_NME  INIT   "/mcsora/impact_load/clme_upd.ora"
+
+.
+.
+.
+
+PARAM_LIST    LIST
+PARAM_DATE    INIT      "20020101"
+PARAM_THRU    INIT      "20020101"
+              LISTEND
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+FIRST_SW      FORM      1
+AAA           FORM      3
+SEQ           FORM      "-1"
+
+CAL_CLOCK     DIM       21
+DIM8          DIM       8
+DIM12         DIM       12
+WORK_DATE     DIM       8
+WORK_TIME     DIM       4
+CURR_DATE     DIM       8
+LAST_DATE     DIM       8
+FILE_LNGTH    FORM      4
+FILE_PREF     DIM       8
+CHGDT         DIM       11
+DAY_TEXT      DIM       9
+DAY_MONTH     DIM       9
+DIRECTORY     DIM       80
+FORM1         FORM      1
+HOW_RUN       INIT      "S"
+MONTH_TEXT    DIM       9
+HST_DLTSTART  FORM      "9"
+HST_DLTEND    FORM      4
+REC_END       DIM       4
+START_POS     INIT      "0009"
+END_POS       DIM       4
+STATUS_FILE   DIM       28
+WEEKEND       FORM      1
+.
+LAYOUT_FILE   FILE      VAR=200,TEXT
+LAYOUT_NAME   DIM       12
+
+LAYOUT_LIST   LIST
+LAYOUT_FIELD  DIM       11
+LAYOUT_STUFF  DIM       29
+LAYOUT_FROM   DIM       4
+LAYOUT_GAP    DIM       1
+LAYOUT_THRU   DIM       4
+LAYOUT_END    DIM       1
+              LISTEND
+
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+
+. ...Build this Table with an 8-byte file name plus a 4-byte primary key length.
+. ...The key length is used in the reformat of the history file to get just
+. ...position 65 (start of the regular record) thru the end of the primary key
+. ...thus creating a *_dlt.ora file containing just the primary keys to delete.
+CHANGE_LIST   LIST
+              INIT   "bild    0012"
+              INIT   "fund    0012"
+              INIT   "eve     0008"
+              INIT   "zzzzzzzz"
+              LISTEND
+
+NOCHG_LIST    LIST
+. ...Delete once moved to Parallel Testing Completed...
+. ...Also uncomment the "IF (WEEKEND) Match in the Procedure Area...
+              INIT   "bild"
+              INIT   "eve"
+              INIT   "fund"
+              INIT   "clm"       ---Won't move to Change List -->
+              INIT   "clms"      ---Uncomment Special Code for CLM* files
+              INIT   "clme"
+              INIT   "clma"
+. ......................................
+              INIT   "ana"
+              INIT   "art"
+              INIT   "bat"
+              INIT   "batt"
+              INIT   "bil"
+              INIT   "bilc"
+              INIT   "bile"
+              INIT   "bils"
+              INIT   "cli"
+              INIT   "clip"
+              INIT   "col"
+              INIT   "cold"
+              INIT   "dos"
+              INIT   "eve"
+              INIT   "evea"
+              INIT   "evep"
+              INIT   "fcat"
+              INIT   "fun"
+              INIT   "fund"
+              INIT   "mcat"
+              INIT   "mem"
+              INIT   "memb"
+              INIT   "meme"
+              INIT   "memo"
+              INIT   "mems"
+              INIT   "mema"
+              INIT   "memci"
+              INIT   "memh"
+              INIT   "mess"
+              INIT   "minwin"
+              INIT   "notes"
+              INIT   "plabl"
+              INIT   "plab"
+              INIT   "plan"
+              INIT   "pro"
+              INIT   "prop"
+              INIT   "ptx"
+              INIT   "ptxc"
+              INIT   "proa"
+              INIT   "prob"
+              INIT   "proc"
+              INIT   "proe"
+              INIT   "proh"
+              INIT   "proi"
+              INIT   "prol"
+              INIT   "pros"
+              INIT   "prou"
+              INIT   "ratef"
+              INIT   "ratex"
+              INIT   "ror"
+              INIT   "scat"
+              INIT   "seek"
+              INIT   "talk"
+              INIT   "valid"
+              INIT   "user"
+              INIT   "zzzzzzzz"
+              LISTEND
+
+FULLLOAD_LIST LIST
+              INIT   "bild"
+              LISTEND
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         debug
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+
+         IF (NOT WEEKEND)
+             PACK      VAL_KEY1 WITH "155ORACLE",BLANKS
+             CALL      VAL_READ1
+             IF (RESULT = 1)
+                MOVE      VAL_OPT TO LAST_DATE
+             ELSE
+                CLOCK     TIMESTAMP TO LAST_DATE
+             ENDIF
+
+             MOVE      LAST_DATE TO PARAM_DATE
+             CLOCK     TIMESTAMP TO PARAM_THRU
+
+ASK_OPTION
+             MOVE      BLANKS TO WCHAR
+             dialog    horz="20",vert="08":
+                       bgcol=C_DLGB,fgcol=C_DLGF:
+                       lncol=C_DLGL,shade="Y":
+                       text="This program creates xxxxxxxx.ora":
+                       text="text files for inload to Oracle.":
+                       text="All users must be off the system.":
+                       text="Ready to go (Y/N): ":
+                       field=WCHAR
+             GOTO      QUIT IF (WCHAR <> "Y")
+
+             dialog    horz="20",vert="08":
+                       bgcol=C_DLGB,fgcol=C_DLGF:
+                       lncol=C_DLGL,shade="Y":
+                       text="What period should this extract cover?":
+                       text="I'll pick up all effective changes .  ":
+                       text="Date From--> ":
+                       field=PARAM_DATE:
+                       text="Date Thru--> ":
+                       field=PARAM_THRU
+         ENDIF
+
+         MOVE      "M" TO HOW_RUN
+
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         GOTO      QUIT
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+
+         IF (HOW_RUN = "S")
+            PACK      VAL_KEY1 WITH "155ORACLE",BLANKS
+            CALL      VAL_READ1
+            IF (RESULT = 1)
+               MOVE      VAL_OPT TO LAST_DATE
+            ELSE
+               CLOCK     TIMESTAMP TO LAST_DATE
+            ENDIF
+
+            MOVE      LAST_DATE TO PARAM_DATE
+            CLOCK     TIMESTAMP TO PARAM_THRU
+         ENDIF
+
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+
+. Set the directory name where the user wants to store the .ORA files
+         SWITCH    C_CUSTNO
+            CASE      "OGB"
+               PACK      DIRECTORY WITH "/mcsora/impact_load/"
+            CASE      "BAN"
+               PACK      DIRECTORY WITH "/mcstest/oracle/"
+            DEFAULT
+               CLEAR     DIRECTORY
+         ENDSWITCH
+
+. Save the previous day's *.ora files to /mcsora/yesterday before extracting    
+. today's data.   Also empty the *.log files so that we get only tonight's load 
+. recorded.                                                                     
+         ROLLOUT "oramvlog.sh"                                                  
+.         IF OVER                                                               
+.             ERROR  HORZ="15",  VERT="19":                                     
+.                    BGCOL=C_ERRB, FGCOL=C_ERRF:                                
+.                    LNCOL=C_ERRL,SHADE="Y":                                    
+.                    TEXT="ORAMVLOG.SH ROLLOUT FAILED!"                         
+.             CHAIN  "MENU"                                                     
+.         ENDIF                                                                 
+
+
+******************************************************************************
+*UNCOMMENT THIS SECTION WHEN BOTH CHANGES AND FULLS AREN"T NEEDED ON WEEKENDS*
+******************************************************************************
+***         IF (WEEKEND)
+***             CALL FULL_LOAD
+***             PACK STATUS_FILE WITH "/mcsora/impact_load/status.W"
+***         ELSE
+***             CALL CHANGES_LOAD
+***             PACK STATUS_FILE WITH "/mcsora/impact_load/status.Z"
+***         ENDIF
+*****************************************************************************
+* DELETE THIS SECTION WHEN BOTH CHANGES AND FULLS AREN"T NEEDED ON WEEKENDS *
+*****************************************************************************
+*****************************************************************************
+*****************************************************************************
+
+. Update valid code table 155ORACLE and 155DISCVR
+         PACK      VAL_KEY1 WITH "155ORACLE",BLANKS
+         CALL      VAL_READ1
+         IF (RESULT = 1)
+            PACK      VAL_DESC WITH "NEXT ORACLE EXTRACT DATE",BLANKS
+            PACK      VAL_OPT WITH CURR_DATE,BLANKS
+         ELSE
+            PACK      VAL_TYPE WITH "155",BLANKS
+            PACK      VAL_CODE WITH "ORACLE",BLANKS
+            PACK      VAL_DESC WITH "NEXT ORACLE EXTRACT DATE",BLANKS
+            PACK      VAL_OPT  WITH CURR_DATE,BLANKS
+            PACK      VAL_FILL WITH BLANKS
+         ENDIF
+         CALL      VAL_WRITE
+.
+         PACK      VAL_KEY1 WITH "155DISCVR",BLANKS
+         CALL      VAL_READ1
+         IF (RESULT = 1)
+            PACK      VAL_OPT WITH "ASIS",BLANKS
+         ELSE
+            PACK      VAL_TYPE WITH "155",BLANKS
+            PACK      VAL_CODE WITH "DISCVR",BLANKS
+            PACK      VAL_DESC WITH "DISCOVERER EXTRACT CRITERIA",BLANKS
+            PACK      VAL_OPT  WITH "ASIS",BLANKS
+            PACK      VAL_FILL WITH BLANKS
+         ENDIF
+         CALL      VAL_WRITE
+
+. CHMOD on the files created by this program so that the outside Oracle 
+. refresh process can grab them. 
+          ROLLOUT "orachmod.sh" 
+          IF OVER
+               ERROR  HORZ="15",  VERT="19":
+                      BGCOL=C_ERRB, FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="ORACHMOD.SH ROLLOUT FAILED!"
+               CHAIN  "MENU"
+          ENDIF
+
+. Create the status.* file that signals to the Discover Load 'refresh' script 
+. that it is time to start.
+.        PACK SCRATCH WITH "touch ",STATUS_FILE,BLANKS
+.        ROLLOUT SCRATCH
+.           IF OVER
+.              ERROR  HORZ="15",  VERT="19":
+.                     BGCOL=C_ERRB, FGCOL=C_ERRF:
+.                     LNCOL=C_ERRL,SHADE="Y":
+.                     TEXT="CREATION OF STATUS FILE FAILED!"
+.              CHAIN  "MENU"
+.           ENDIF
+.
+.        PACK SCRATCH WITH "chmod -R 666 ",STATUS_FILE,BLANKS
+.        ROLLOUT SCRATCH
+.           IF OVER
+.              ERROR  HORZ="15",  VERT="19":
+.                     BGCOL=C_ERRB, FGCOL=C_ERRF:
+.                     LNCOL=C_ERRL,SHADE="Y":
+.                     TEXT="CHMOD OF Status File FAILED!"
+.              CHAIN  "MENU"
+.           ENDIF
+.
+*****************************************************************************
+* DELETE THIS SECTION WHEN BOTH CHANGES AND FULLS AREN"T NEEDED ON WEEKENDS *
+*****************************************************************************
+         IF (WEEKEND)
+             PACK STATUS_FILE WITH "/mcsora/impact_load/status.W"
+             PACK SCRATCH WITH "touch ",STATUS_FILE,BLANKS
+             ROLLOUT SCRATCH
+             IF OVER
+                   ERROR  HORZ="15",  VERT="19":
+                          BGCOL=C_ERRB, FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="CREATION OF STATUS FILE FAILED!"
+                   CHAIN  "MENU"
+             ENDIF
+
+             PACK SCRATCH WITH "chmod -R 666 ",STATUS_FILE,BLANKS
+             ROLLOUT SCRATCH
+             IF OVER
+                   ERROR  HORZ="15",  VERT="19":
+                          BGCOL=C_ERRB, FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="CHMOD OF Status File FAILED!"
+                   CHAIN  "MENU"
+             ENDIF
+         ENDIF
+****************************************************************************
+****************************************************************************
+  
+. Let Operations know when this program is finished so that they can start    
+. monitoring the Discoverer Load.
+         ROLLOUT "x_oracle.mail"
+            IF OVER
+               ERROR  HORZ="15",  VERT="19":
+                      BGCOL=C_ERRB, FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="X_ORACLE.MAIL FAILED!"
+               CHAIN  "MENU"
+            ENDIF
+
+. ****
+. NEOJ or Operator Hit F9
+. ****
+QUIT
+         IF (RUN_MODE = "B")
+             LOOP
+                 RETCOUNT  CURR_RETURN
+                 WHILE (CURR_RETURN > ORIG_RETURN)
+                 NORETURN
+             REPEAT
+             RETURN
+         ENDIF
+
+         CHAIN     C_NEXT
+
+
+
+. ***************************************************************************
+.                             CALL ROUTINES
+. ***************************************************************************
+. ---------------------------------------------------------------------------
+. Initialize program info
+. ---------------------------------------------------------------------------
+INITIAL
+         CLEAR     WEEKEND
+         CLOCK     TIMESTAMP TO SCRATCH
+         UNPACK    SCRATCH INTO WORK_DATE, WORK_TIME
+         MOVE      "menu"      TO C_NEXT
+         MOVE      "X_ORACLE"  TO C_PROG
+         MOVE      "ORACLE DATA EXTRACT " TO C_OPER
+         MOVE      1 TO C_LEVEL
+         MOVE      BLANKS TO C_LABEL
+         MOVE      BLANKS TO C_FILE
+         MOVE      BLANKS TO C_KEYS
+        
+         IF        (WORK_TIME < "1730")
+             CALL DATE_CALC USING WORK_DATE,"SUB","DAYS",1,CURR_DATE
+         ELSE
+             MOVE WORK_DATE TO CURR_DATE
+         ENDIF
+
+         CALL DAY_OF_WEEK USING CURR_DATE,DAY_TEXT,MONTH_TEXT
+         IF ((DAY_TEXT = "FRIDAY   ") OR (DAY_TEXT = "SATURDAY ") OR:
+            (DAY_TEXT = "SUNDAY   ")) 
+                SET WEEKEND
+         ENDIF
+            
+. Check Valid Code table, 155-DISCVR to see if the normal extract
+. criteria is to be overridden.                              
+         PACK      VAL_KEY1 WITH "155DISCVR",BLANKS
+         CALL      VAL_READ1
+         IF (RESULT = 1)
+             IF (SQUEEZE(VAL_OPT) = "FULL")
+                 SET WEEKEND
+             ELSE
+                 IF (SQUEEZE(VAL_OPT) = "PART")
+                     CLEAR WEEKEND
+                 ENDIF 
+             ENDIF
+         ENDIF
+
+         RETURN
+
+
+. -----------------------------------------------------------------------------
+. Weekday Load -- Full File Extract for Most Files
+.              -- Changes Only for Selected Files
+.              -- Some Files Excluded 
+. -----------------------------------------------------------------------------
+CHANGES_LOAD
+
+. We do full file refreshes for some files...
+         FOR       AAA FROM 1 TO 999
+            LOAD      FILE_PREF FROM AAA OF NOCHG_LIST
+            BREAK     IF (FILE_PREF = "zzzzzzzz")
+            PACK      SCRATCH WITH FILE_PREF,".dbf ":
+                                   DIRECTORY:
+                                   FILE_PREF,".ora -t -j"
+
+            REPLACE   MAKELOWER IN SCRATCH
+            IF (C_RMODE = "I")
+                message   horz="25",vert="10":
+                          bgcol=C_ERRB,fgcol=C_ERRF:
+                          lncol=C_ERRL,shade="Y":
+                          text="FULL FILE EXTRACT...":
+                          text=FILE_PREF
+            ENDIF
+
+            REFORMAT  SCRATCH
+            IF (C_RMODE = "I")
+               messageerase
+            ENDIF
+         REPEAT
+
+. Create the status.* file that signals to the Discover Load 'refresh' script 
+. that it is time to start.
+         PACK SCRATCH WITH "touch ",STATUS_FILE,BLANKS
+         ROLLOUT SCRATCH
+            IF OVER
+               ERROR  HORZ="15",  VERT="19":
+                      BGCOL=C_ERRB, FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="CREATION OF STATUS FILE FAILED!"
+               CHAIN  "MENU"
+            ENDIF
+ 
+         PACK SCRATCH WITH "chmod -R 666 ",STATUS_FILE,BLANKS
+         ROLLOUT SCRATCH
+            IF OVER
+               ERROR  HORZ="15",  VERT="19":
+                      BGCOL=C_ERRB, FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="CHMOD OF Status File FAILED!"
+               CHAIN  "MENU"
+            ENDIF
+ 
+*****************************************************************************
+. Other files have just the changes/deletes extracted...
+         IF (PARAM_DATE < "19400101")
+            PACK      PARAM_DATE,BLANKS
+         ENDIF
+
+         FOR       AAA FROM 1 TO 999
+            LOAD      DIM12 FROM AAA OF CHANGE_LIST
+            UNPACK    DIM12 INTO DIM8, FILE_LNGTH
+            CHOP      DIM8 INTO FILE_PREF 
+            BREAK     IF (FILE_PREF = "zzzzzzzz")
+            PACK      LAYOUT_NAME WITH FILE_PREF,".rl"
+            PACK      CHGDT WITH FILE_PREF,"_CHGDT"
+            REPLACE   MAKEUPPER IN CHGDT
+            TRAP      IGNORE IF IO
+            OPEN      LAYOUT_FILE,LAYOUT_NAME,READ
+            LOOP
+               READ      LAYOUT_FILE,SEQ;LAYOUT_LIST
+               WHILE     NOT OVER
+               MATCH     CHGDT TO LAYOUT_FIELD
+               CONTINUE  IF NOT EQUAL
+. 
+. ...Extract Changed Records
+               PACK      SCRATCH WITH FILE_PREF,".dbf ":
+                                      DIRECTORY:
+                                      FILE_PREF,"_upd.ora ":
+                                      "-p",LAYOUT_FROM,"-",LAYOUT_THRU:
+                                      "ge#"",PARAM_DATE,"#" ":
+                                      "-p",LAYOUT_FROM,"-",LAYOUT_THRU:
+                                      "le#"",PARAM_THRU,"#" -t -jr"
+               IF (C_RMODE = "I")
+                   message   horz="25",vert="10":
+                             bgcol=C_ERRB,fgcol=C_ERRF:
+                             lncol=C_ERRL,shade="Y":
+                             text="CHGS ONLY EXTRACT...":
+                             text=FILE_PREF
+               ENDIF
+               REFORMAT  SCRATCH
+.
+. ...Extract Deleted Records
+               MOVELPTR FILE_PREF TO FORM1  
+               ADD FORM1 TO HST_DLTSTART GIVING HST_DLTEND 
+               SUB 1 FROM HST_DLTEND
+               MOVE HST_DLTEND TO END_POS
+               REPLACE " 0" IN END_POS
+.
+               ADD 64 TO FILE_LNGTH 
+               MOVE FILE_LNGTH TO REC_END 
+               REPLACE " 0" IN REC_END
+               PACK      SCRATCH WITH "/mcshst/history.dbf ":
+*******TESTING************************             
+*               PACK      SCRATCH WITH "/nfsgb2/mcshst/history.dbf ":
+*******TESTING************************             
+                                      DIRECTORY:
+                                      FILE_PREF,"_dlt.ora ":
+                                      "-p",START_POS,"-",END_POS:  
+                                      "eq#"",FILE_PREF,"#" ":
+                                      "-p57-63eq#"DELETED#" ": 
+                                      "-p41-48ge#"",PARAM_DATE,"#" ":
+                                      "65-",REC_END," -t -jr"
+               REFORMAT  SCRATCH
+               IF (C_RMODE = "I")
+                  messageerase
+               ENDIF
+               BREAK
+            REPEAT
+            CLOSE     LAYOUT_FILE
+
+NEXT_FILE
+         REPEAT
+
+. CLAIM FILE CHANGES REQUIRE SPECIAL HANDLING...
+. Whenever a change is detected via the Repair date in the CLM file or the
+. Last Changed Date in the CLMS file, all CLM, CLMS, CLME, and CLMA records 
+. for those Claims are extracted.
+         CALL EXT_CLAIM_IDS            ---Returns /w/x_oracle.wrk
+         CALL EXT_CLAIM_DATA           ---CLM, CLMS, CLME, and CLMA records
+         CALL EXT_CLM_DELETES   
+.
+         RETURN
+
+
+. -----------------------------------------------------------------------------
+. Weekend Load -- Full Refresh of All Files
+. -----------------------------------------------------------------------------
+FULL_LOAD
+         FOR       AAA FROM 1 TO 999
+            LOAD      FILE_PREF FROM AAA OF FULLLOAD_LIST
+            BREAK     IF (FILE_PREF = "zzzzzzzz")
+            PACK      SCRATCH WITH FILE_PREF,".dbf ":
+                                   DIRECTORY:
+                                   FILE_PREF,".ora -t -j"
+
+            REPLACE   MAKELOWER IN SCRATCH
+            IF (C_RMODE = "I")
+                message   horz="25",vert="10":
+                          bgcol=C_ERRB,fgcol=C_ERRF:
+                          lncol=C_ERRL,shade="Y":
+                          text="FULL FILE EXTRACT...":
+                          text=FILE_PREF
+            ENDIF
+            REFORMAT  SCRATCH
+
+            IF (C_RMODE = "I")
+               messageerase
+            ENDIF
+         REPEAT
+         RETURN
+
+
+. -----------------------------------------------------------------------------
+. Get a Unique list of Claim Id's for Claims where the Header has changed
+. or a Service Line has changed.
+. -----------------------------------------------------------------------------
+EXT_CLAIM_IDS
+
+. ...CLM Layout
+. ...0001-0008 = Record Id
+. ...3121-3128 = Claim Repair Date
+         PACK      SCRATCH WITH "clm.dbf ",WORK_NME:
+                                " -p3121-3128ge#"",PARAM_DATE,"#" ":                  
+                                "-p3121-3128le#"",PARAM_THRU,"#" ":
+                                "1-8 -t -jr"             
+         IF (C_RMODE = "I")                                               
+              message   horz="25",vert="10":                               
+                        bgcol=C_ERRB,fgcol=C_ERRF:                         
+                        lncol=C_ERRL,shade="Y":                            
+                        text="CHGS ONLY EXTRACT...":                       
+                        text="CLAIM FILES"                                     
+         ENDIF                                                            
+         REFORMAT  SCRATCH 
+                                               
+. ...CLMS Layout
+. ...001-008 = Record Id
+. ...451-458 = Last Changed Date
+         PACK      SCRATCH WITH "clms.dbf ",WORK_NME:
+                                " -p451-458ge#"",PARAM_DATE,"#" ":                  
+                                "-p451-458le#"",PARAM_THRU,"#" ":
+                                "1-8 -t -jr -a"             
+         REFORMAT  SCRATCH                                                
+                                    
+. ...Create a Unique Listing of these claim id's
+         SORT WORK_NME,WORK_NME,WORK_SORT_KEY
+         IF OVER
+             ERROR   HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT FAILED(x_oracle.wrk)"
+             CHAIN   "MENU"
+         ENDIF
+.          
+         RETURN
+
+
+. ------------------------------------------------------------------------
+. For the list of Changed Claim Id's constructed, get the corresponding
+. CLM, CLMS, CLME, and CLMA records
+. ------------------------------------------------------------------------
+EXT_CLAIM_DATA
+         CALL OPEN_OGBFILE USING WORK_FILE, WORK_NME
+         CALL PREP_OGBFILE USING CLM_ORA_FILE, CLM_ORA_NME
+         CALL PREP_OGBFILE USING CLMS_ORA_FILE, CLMS_ORA_NME
+         CALL PREP_OGBFILE USING CLMA_ORA_FILE, CLMA_ORA_NME
+         CALL PREP_OGBFILE USING CLME_ORA_FILE, CLME_ORA_NME
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         LOOP
+            CALL READ_OGBFILE USING WORK_FILE,WORK_NME,WORK_LIST
+            IF (RESULT <> 1)
+                BREAK
+            ENDIF
+
+. ----
+. CLM
+. ----
+            PACK   CLM_FK11 WITH WORK_ID
+            CALL   FILE_READ USING CLM_FD:   ...File declaration list
+                                   CLM_FN:   ...File name list
+                                   CLM_FC:   ...(I)ndex or (A)imdex
+                                   CLM_FV:   ...File key varlists
+                                   CLM_FK:   ...File key sizes
+                                   CLM_LIST: ...File record (field list)
+                                   CLM_REC:  ...File record (packed)
+                                   CLM_OLD:  ...File saved when read
+                                   CLM_QTY:  ...Number of files
+                                   1         ...File number for this read
+            IF (RESULT <> 1)
+                CONTINUE
+            ENDIF
+
+            CALL WRITE_OGBREC USING CLM_ORA_FILE,CLM_ORA_NME,CLM_LIST
+. ----
+. CLMS
+. ----
+            PACK      CLMS_BASE WITH CLM_ID1,BLANKS
+            PACK      CLMS_KEY  WITH CLMS_BASE,BLANKS
+            CALL      SETPOP_CLMS
+            CALL      POP_READ
+   
+            LOOP
+                   CALL      POP_NEXT
+                   WHILE     (RESULT = 1)
+                   WHILE     (CLMS_ID = CLM_ID1)
+                   CALL WRITE_OGBREC USING CLMS_ORA_FILE,CLMS_ORA_NME:
+                                           CLMS_REC
+            REPEAT     ---CLMS Loop 
+
+. ----
+. CLME
+. ---- 
+            PACK CLME_KEY WITH CLM_ID1,BLANKS
+            CALL CLME_READ
+            LOOP
+                CALL  CLME_NEXT
+                WHILE (RESULT = 1)
+                WHILE (CLME_ID = CLM_ID1)                
+                CALL WRITE_OGBREC USING CLME_ORA_FILE,CLME_ORA_NME:
+                                        CLME_REC
+            REPEAT     ---CLME Loop
+
+. ----
+. CLMA
+. ---- 
+            PACK CLMA_KEY WITH CLM_ID1,BLANKS
+            CALL CLMA_READ
+            LOOP
+                CALL  CLMA_NEXT
+                WHILE (RESULT = 1)
+                WHILE (CLMA_ID = CLM_ID1)                
+                CALL WRITE_OGBREC USING CLMA_ORA_FILE,CLMA_ORA_NME:
+                                        CLMA_REC
+            REPEAT     --CLMA Loop
+         REPEAT     ---Read Loop
+.
+         CALL CLOSE_OGBFILE USING WORK_FILE, WORK_NME
+         CALL CLOSE_OGBFILE USING CLM_ORA_FILE, CLM_ORA_NME
+         CALL CLOSE_OGBFILE USING CLMS_ORA_FILE, CLMS_ORA_NME
+         CALL CLOSE_OGBFILE USING CLMA_ORA_FILE, CLMA_ORA_NME
+         CALL CLOSE_OGBFILE USING CLME_ORA_FILE, CLME_ORA_NME
+         RETURN
+
+.--------------------------------------------------------------------------
+.  Get the first 8 bytes of any claims that appear on History deleted 
+.  during the extract dates
+.--------------------------------------------------------------------------
+EXT_CLM_DELETES
+         PACK      SCRATCH WITH "/mcshst/history.dbf ":
+*******TESTING************************             
+*         PACK      SCRATCH WITH "/nfsgb2/mcshst/history.dbf ":
+*******TESTING************************             
+                                DIRECTORY:
+                                "clm_dlt.ora ":
+                                "-p9-11eq#"clm#" ":  
+                                "-p57-63eq#"DELETED#" ": 
+                                "-p41-48ge#"",PARAM_DATE,"#" ":
+                                "65-72 -t -jr"
+         REFORMAT  SCRATCH
+         IF (C_RMODE = "I")
+             messageerase
+         ENDIF
+         
+         RETURN     
+              
+
+. -------------------------------------------------------------------------
+. Set up POP read for CLMS file
+. -------------------------------------------------------------------------
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+
+    RETURN
+
+
+. ------------------------------------------------------------------------
+. Don't Abort Program if an Open Error occurs on a particular file. Return   
+. to read the next File Name in the Table.
+. ------------------------------------------------------------------------
+IGNORE
+         TRAPCLR   IO
+         NORETURN
+         GOTO      NEXT_FILE     ---(In CHANGES_LOAD routine)
+
+
+.---------------------------------------------------------------------------
+.
+         INC       UTIL.SR
+         INC       VALID.IO
+         INC       FILE.IO
+         INC       POP.IO
+         INC       X_OGBFILE.IO
+         INC       CLME.IO
+         INC       CLMA.IO
+.

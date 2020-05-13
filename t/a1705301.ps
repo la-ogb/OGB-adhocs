@@ -1,0 +1,917 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  INV0403 
++    Description    :  Extract Billing Admin File for BCBSLA for COBRA          
++    apsjm 05/-5/2017 dev 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       VALID.RL
+              INC       XALID.RL
+              INC       CMDPARAM.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       BIL.RL  
+              INC       BILD.RL  
+              INC       ASO_ADM_FEE.RL
+              INC       MEME.RL
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+.
+ASO_ADM_FD5   FILE      VAR=94,TEXT 
+ASO_ADM_NAME5 DIM       30              
+.
+BILSORT_FILE  FILE      VAR=1000,TEXT
+BILSORT_NAME  INIT      "/w/inv0403_billing.srt"   
+
+DTLWRK_FILE   FILE      VAR=1000,TEXT
+DTLWRK_NAME   INIT      "/w/inv0403_billing.tmp"   
+
+SURVWRK_FILE  FILE      VAR=8,TEXT
+SURVWRK_NAME  INIT      "/w/inv0403_billing.srv"   
+
+.----------------------------------------------------------------------------
+.Output File Lists                                 
+.----------------------------------------------------------------------------
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+BLUE_PLAN         DIM     06
+W_PLAN            DIM     10
+L_PLAN            DIM     10
+W_TRM             DIM     8
+FORM_42           FORM    4.2
+BLUE_ADM_FEE_REC  DIM     94
+DTLWRK_SKY        INIT    "632-636 457-464 453-456 254-269 -T"
+BILSORT_KEY       DIM     12
+SAVSORT_KEY       DIM     12
+INVOICE_DATE      DIM     8 
+INV_DATE          GCHAR   6 
+INV_DATE_MM       FORM    2 
+INV_DATE_CCYY     FORM    4 
+
+MY_CODE           DIM     13
+
+CC                DIM     2 
+YY                DIM     2 
+MM                DIM     2 
+DD                INIT    "01"
+NON               INIT    "NON"
+INV_CODE          DIM     1 
+OK_CODE           DIM     1 
+W_REIMB           FORM    7.2
+DISP3             DIM     3
+DISP4             DIM     4
+DTLWRK_REC        DIM     1000            
+SURVWRK_REC       DIM     8               
+LAST_SURV         DIM     8               
+SURV_RESULT       FORM    1 
+SORT_RESULT       FORM    1 
+SPMEMID_RESULT    FORM    1 
+BIL_RESULT        FORM    1 
+BILD_RESULT       FORM    1 
+LPTR              FORM    2
+TIMESTAMP         DIM     14
+CURRDATE          DIM     8
+SPACES            DIM     8
+TRAP_DATA         DIM     500
+CAL_CLOCK         DIM     21
+ORIG_RETURN       FORM    5
+CURR_RETURN       FORM    5
+TODAY             DIM     8
+BLANK8            INIT    "        "
+
+ERRMSG            INIT    "YOU HAVE ENTERED AN INVALID RESPONSE !"                
+FIRST_TIME        FORM    "1"
+FIRST_OUT         FORM    "1"
+RETIREE_BILL      FORM    1
+COBRA_BILL        FORM    1
+
+SEQ               FORM    "-1"
+END               FORM    "-3"
+BAK               FORM    "-4"
+
+HOLD_ID1          DIM     8
+HOLD_TRAN         DIM     3
+HOLD_LEV1         DIM     5
+HOLD_LEV2         DIM     5
+HOLD_NET          DIM     5
+HOLD_PRD          DIM     5
+HOLD_PLAN         DIM     4
+FIRST_READ        DIM     1
+WS_BILD_TRAN3     DIM     3
+WS_BILD_TRAN1     DIM     1
+WS_RECID          DIM     8
+WS_SSN            DIM     9
+WS_SPMEMID        DIM     8
+DIM2              DIM     2
+DIM2A             DIM     2
+DIM2B             DIM     2
+DIM3              DIM     3
+DIM4              DIM     4
+DIM4A             DIM     4
+DIM5              DIM     5
+DIM6              DIM     6
+DIM8              DIM     8
+DIM10             DIM     10
+DIM11             DIM     11
+DIM_X1            DIM     1
+DIM_X2            DIM     1
+DIM_X3            DIM     1
+DIM_X4            DIM     1
+DIM_X5            DIM     1
+DIM_X6            DIM     1
+ZEROES            INIT    "00000000.00"
+FORM10            FORM    10 
+FORM7.2           FORM    7.2
+FORM7.2A          FORM    7.2
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN "MENU"   
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "Ext BCBSLA COBRA Admin" TO  C_OPER
+         MOVE      "INV0403"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+.--------------------------------
+... Adding CMD_START for autosys
+.--------------------------------
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+. ...Initialize
+         CALL      INITIALIZE
+	 
+         DEBUG
+.---------------------------------
+. ...Get last date program was run
+.---------------------------------
+  PACK VAL_KEY1 WITH "155INV403"
+  CALL VAL_READ1
+  IF (RESULT = 1)
+      MOVE VAL_OPT TO PARAM_DATE
+  ELSE
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF:
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="COBRA INVOICE DATE NOT FOUND"
+      CHAIN "MENU"
+  ENDIF         
+  DEBUG
+  CALL    DATE_CALC USING PARAM_DATE,"ADD","MONTHS",1,INVOICE_DATE
+.        CALL      DATE_INFO 
+.        CALL      INVOICE_INFO
+         PACK DIM3 WITH "cbr"
+	 
+.        CALL      REVIEW_INFO
+
+.        CALL      RESPONSE_INFO
+	 
+. ...Open Files	
+         CALL      OPEN_FILES 
+         
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+    DISPLAY *ES
+. ...Screen Display
+         MOVE      "BCBSLA COBRA ADMIN" TO  C_OPER
+         MOVE      "INV0403"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+
+. ...Extract Invoice File
+	 CALL      EXT_ADMFEE_FILE
+         
+.... Update Valid Code Table with INVOICE DATE
+         CALL UPDATE_VALTBL
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+
+.         ROLLOUT "blue_admfee_cbr.ftp"
+.          IF OVER
+.              IF (NOT C_CMDPAR)
+.                 ERROR HORZ="15",VERT="19":
+.                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                 LNCOL=C_ERRL,SHADE="Y":
+.                 TEXT="BLUE_ADMFEE_CBR.FTP FAILED"
+.                 CHAIN "MENU"
+.              ELSE
+.                 IF (C_CMDPAR)
+.                    CALL CMD_ERROR USING "blue_admfee_cbr.ftp failed"
+.                    STOP
+.                 ENDIF
+.              ENDIF
+.          ENDIF
+.
+         IF (C_CMDPAR)
+            CALL CMD_END
+            STOP
+         ENDIF
+
+         MOVE SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN                                   
+                         
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Records Read:  " TO X_CNTDESC1
+	 MOVE      "billing.tmp - Recs. : " TO X_CNTDESC2
+	 MOVE      "billing.srv - Recs. : " TO X_CNTDESC3
+	 MOVE      "Records Written:  " TO X_CNTDESC4
+	 MOVE      "" TO X_CNTDESC5
+	 MOVE      "" TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+.
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+	 CALL PREP_OGBFILE USING DTLWRK_FILE,DTLWRK_NAME  
+	 CALL PREP_OGBFILE USING SURVWRK_FILE,SURVWRK_NAME
+
+    RETURN
+
+. ----------------------------
+. Extract File  Information
+. ----------------------------
+
+EXT_ADMFEE_FILE
+
+.   PACK      INVOICE_DATE WITH CC,YY,MM,DD
+    CLEAR     BIL_AIM
+    PACK      BIL_AIM6  WITH "06X",INVOICE_DATE,BLANKS
+
+    LOOP
+        IF (FIRST_TIME)
+            CALL      FILE_READ USING BIL_FD:    ...File declaration list
+                                      BIL_FN:    ...File name list
+                                      BIL_FC:    ...(I)ndex or (A)imdex
+                                      BIL_FV:    ...File key varlists
+                                      BIL_AIM:   ...File key sizes
+                                      BIL_LIST:  ...File record (field list)
+                                      BIL_REC:   ...File record (packed)
+                                      BIL_OLD:   ...File saved when read
+                                      BIL_QTY:   ...Number of files
+                                      2          ...File number for this read
+            CLEAR FIRST_TIME
+        ELSE
+            CALL      FILE_NEXT USING BIL_FD:    ...File declaration list
+                                      BIL_FN:    ...File name list
+                                      BIL_FC:    ...(I)ndex or (A)imdex
+                                      BIL_FV:    ...File key varlists
+                                      BIL_AIM:   ...File key sizes
+                                      BIL_LIST:  ...File record (field list)
+                                      BIL_REC:   ...File record (packed)
+                                      BIL_OLD:   ...File saved when read
+                                      BIL_QTY:   ...Number of files
+                                      2          ...File number for this read
+        ENDIF
+
+       BREAK IF (RESULT <> 1)
+
+       ADD 1 TO X_CNT1
+       UNPACK X_CNT1 INTO DISP4,DISP3
+       IF (DISP3 = "000")
+           CALL X_DISPLAY_COUNTS
+       ENDIF
+   
+       SWITCH BIL_STAT
+           CASE "POST" OR "PAID"
+.             ok to report on!
+           DEFAULT
+               CONTINUE
+       ENDSWITCH
+
+.Does this BIll  belong in the output file?
+       CLEAR COBRA_BILL
+
+       IF (SQUEEZE BIL_LEV1 = "5000") 
+           SET COBRA_BILL
+       ELSE
+           CONTINUE
+       ENDIF
+
+       FILL " " IN LAST_SURV
+       PACK BILD_FK11 WITH BIL_ID1,BLANKS
+       CALL FILE_READ USING BILD_FD:    ...File declaration list
+                      BILD_FN:          ...File name list
+                      BILD_FC:          ...(I)ndex or (A)imdex
+                      BILD_FV:          ...File key varlists
+                      BILD_FK:          ...File key sizes
+                      BILD_LIST:        ...File record (field list)
+                      BILD_REC:         ...File record (packed)
+                      BILD_OLD:         ...File saved when read
+                      BILD_QTY:         ...Number of files
+                      1                 ...File number for this read
+       LOOP
+          CALL      FILE_NEXT USING BILD_FD:
+                      BILD_FN:          ...File name list
+                      BILD_FC:          ...(I)ndex or (A)imdex
+                      BILD_FV:          ...File key varlists
+                      BILD_FK:          ...File key sizes
+                      BILD_LIST:        ...File record (field list)
+                      BILD_REC:         ...File record (packed)
+                      BILD_OLD:         ...File saved when read
+                      BILD_QTY:         ...Number of files
+                      1                 ...File number for this read
+          WHILE     (RESULT = 1 AND BILD_ID1 = BIL_ID1)
+
+          SWITCH BILD_NET
+              IF (SQUEEZE BILD_NET = "BLUE") 
+                 IF (SQUEEZE BILD_PLAN = "HRA1")
+                     CONTINUE
+                 ENDIF
+              ELSE
+                  CONTINUE
+              ENDIF
+          ENDSWITCH         
+          
+          SWITCH BILD_TYPE
+             CASE "PREM" 
+             DEFAULT	
+                 CONTINUE
+          ENDSWITCH
+          IF (BILD_COVGF < "20150101")
+                 CONTINUE
+          ENDIF
+          MOVE  BILD_REIMB TO W_REIMB
+          IF    (W_REIMB = 0)
+                      CONTINUE
+          ENDIF
+          PACK      BILD_REC WITH BILD_LIST
+          PACK      DTLWRK_REC WITH BILD_REC,BLANKS
+          WRITE     DTLWRK_FILE,END;DTLWRK_REC
+          ADD       1 TO X_CNT2
+          UNPACK    X_CNT2 INTO DISP4,DISP3
+          IF        (DISP3 = "000")
+                        CALL X_DISPLAY_COUNTS
+          ENDIF
+.         write a list of surviving spouses so we can read for
+.         their individual bills and add their data to this file
+          IF ((SQUEEZE BILD_LEV2 = "95") OR (SQUEEZE BILD_LEV2 = "90"))
+               IF (LAST_SURV <> BILD_MEM)
+                   PACK LAST_SURV WITH BILD_MEM,BLANKS
+                   PACK SURVWRK_REC WITH BILD_MEM,BLANKS
+                   WRITE SURVWRK_FILE,END;SURVWRK_REC
+                   ADD 1 TO X_CNT3
+               ENDIF
+          ENDIF
+       REPEAT
+    REPEAT
+
+    CALL CLOSE_OGBFILE SURVWRK_FILE,SURVWRK_NAME
+
+.This logic reads through a temp file of surviving spouse record Id's
+.and reads idividual billing data to add to the group data
+         PACK SCRATCH WITH    "1-8 -u -t",BLANKS
+         SORT SURVWRK_NAME,SURVWRK_NAME,SCRATCH
+
+         IF OVER
+            IF (NOT C_CMDPAR)
+                  ERROR  HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="SORT FAILED-SURWRK"
+            ELSE
+               IF (C_CMDPAR)
+                  CALL CMD_ERROR USING "Sort SURWRK failed"
+                  STOP
+               ENDIF
+            ENDIF
+         ENDIF
+
+         OPEN SURVWRK_FILE,SURVWRK_NAME
+         LOOP
+             READ   SURVWRK_FILE,SEQ;SURVWRK_REC
+             UNTIL  OVER
+             SET    FIRST_TIME
+             CLEAR  BIL_AIM
+             PACK   BIL_AIM6  WITH "06X",INVOICE_DATE,BLANKS
+             PACK   BIL_AIM11 WITH "11X",SURVWRK_REC,BLANKS
+             LOOP
+                 IF (FIRST_TIME)
+                     CALL FILE_READ USING BIL_FD:   ...File declaration list
+                                          BIL_FN:   ...File name list
+                                          BIL_FC:   ...(I)ndex or (A)imdex
+                                          BIL_FV:   ...File key varlists
+                                          BIL_AIM:  ...File key sizes
+                                          BIL_LIST: ...File record (field list)
+                                          BIL_REC:  ...File record (packed)
+                                          BIL_OLD:  ...File saved when read
+                                          BIL_QTY:  ...Number of files
+                                          2         ...File number for this read
+                     CLEAR FIRST_TIME
+                 ELSE
+                     CALL FILE_NEXT USING BIL_FD:   ...File declaration list
+                                          BIL_FN:   ...File name list
+                                          BIL_FC:   ...(I)ndex or (A)imdex
+                                          BIL_FV:   ...File key varlists
+                                          BIL_AIM:  ...File key sizes
+                                          BIL_LIST: ...File record (field list)
+                                          BIL_REC:  ...File record (packed)
+                                          BIL_OLD:  ...File saved when read
+                                          BIL_QTY:  ...Number of files
+                                          2         ...File number for this read
+                 ENDIF
+
+                 BREAK IF (RESULT <> 1)
+                 ADD 1 TO X_CNT1
+                 UNPACK X_CNT1 INTO DISP4,DISP3
+                 IF (DISP3 = "000")
+                    CALL X_DISPLAY_COUNTS
+                 ENDIF
+
+                 SWITCH BIL_STAT
+                     CASE "POST" OR "PAID"
+.                       ok to report on!
+                     DEFAULT
+                         CONTINUE
+                 ENDSWITCH
+
+                 PACK BILD_FK11 WITH BIL_ID1,BLANKS
+                 CALL FILE_READ USING BILD_FD:    ...File declaration list
+                                BILD_FN:          ...File name list
+                                BILD_FC:          ...(I)ndex or (A)imdex
+                                BILD_FV:          ...File key varlists
+                                BILD_FK:          ...File key sizes
+                                BILD_LIST:        ...File record (field list)
+                                BILD_REC:         ...File record (packed)
+                                BILD_OLD:         ...File saved when read
+                                BILD_QTY:         ...Number of files
+                                1                 ...File number for this read
+                 LOOP
+                    CALL FILE_NEXT USING BILD_FD: ...File declaration list
+                                BILD_FN:          ...File name list
+                                BILD_FC:          ...(I)ndex or (A)imdex
+                                BILD_FV:          ...File key varlists
+                                BILD_FK:          ...File key sizes
+                                BILD_LIST:        ...File record (field list)
+                                BILD_REC:         ...File record (packed)
+                                BILD_OLD:         ...File saved when read
+                                BILD_QTY:         ...Number of files
+                                1                 ...File number for this read
+                    WHILE     (RESULT = 1 AND BILD_ID1 = BIL_ID1)
+                    SWITCH BILD_NET
+                     IF (SQUEEZE BILD_NET = "BLUE")
+                           IF (SQUEEZE BILD_PLAN = "HRA1")
+                                CONTINUE
+                           ENDIF
+                     ELSE
+                               CONTINUE
+                     ENDIF
+                    ENDSWITCH
+                    MOVE  BILD_REIMB TO W_REIMB
+                    IF    (W_REIMB = 0)
+                          CONTINUE
+                    ENDIF
+                    IF (BILD_COVGF < "2050101")
+                        CONTINUE
+                    ENDIF
+                    PACK      BILD_REC WITH BILD_LIST
+                    PACK      DTLWRK_REC WITH BILD_REC,BLANKS
+                    WRITE     DTLWRK_FILE,END;DTLWRK_REC
+                    ADD       1 TO X_CNT2
+                 REPEAT
+             REPEAT
+         REPEAT
+
+         CALL CLOSE_OGBFILE SURVWRK_FILE,SURVWRK_NAME
+         CLOSE DTLWRK_FILE
+
+.-------------------------------
+. Reformat DTLWRK file
+.-------------------------------
+SORT_DTLWRK
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="SORTING FILE ... PLEASE WAIT";
+    
+         PACK SCRATCH WITH "368-372 -j -t -p453-455ne#"NON#"",BLANKS
+         SORT DTLWRK_NAME,BILSORT_NAME,SCRATCH
+
+         IF OVER
+            IF (NOT C_CMDPAR)
+                  ERROR  HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="SORT FAILED-DTLWRK"
+            ELSE
+               IF (C_CMDPAR)
+                  CALL CMD_ERROR USING "Sort DTLWRK failed"
+                  STOP
+               ENDIF
+            ENDIF
+         ENDIF
+
+.............................................................................
+.start producing the report
+
+    DEBUG
+         CALL OPEN_OGBFILE USING BILSORT_FILE,BILSORT_NAME
+         PACK ASO_ADM_NAME5 WITH "/w/blue_admfee_",DIM3,".txt",BLANKS
+.        CALL PREP_OGBFILE USING ASO_ADM_FD5,ASO_ADM_NAME5
+         CALL OPEN_OGBFILE USING ASO_ADM_FD5,ASO_ADM_NAME5
+         LOOP
+             READ BILSORT_FILE,SEQ;BILD_REC  
+             UNTIL OVER 
+             UNPACK BILD_REC INTO BILD_LIST
+             MOVE BIL_INVDT TO ASO_INV_DATE
+             MOVE BILD_ESSN TO ASO_SSN
+             MOVE BILD_LNAME TO ASO_LAST_NAME
+             MOVE BILD_FNAME TO ASO_FIRST_NAME
+             MOVE BILD_MINIT TO ASO_MI
+             MOVE BILD_DEPC TO ASO_COV_LEVEL
+             MOVE BILD_RT TO ASO_RATE
+             MOVE BILD_COVGF TO ASO_COV_FROM
+             MOVE  BILD_REIMB TO W_REIMB
+  debug
+         CLEAR MY_CODE
+         IF (BILD_COVGF < "20150301")
+            MOVE "ASO" TO BILD_PRD
+         ENDIF  
+         PACK MY_CODE WITH BILD_NET,BILD_PRD
+         PACKLEN XAL_KEY1 WITH "600",MY_CODE,BLANKS
+         CALL    XAL_READ1
+         LOOP
+             CALL    XAL_NEXT1
+             WHILE (RESULT = 1)
+             IF (SQUEEZE XAL_TRM = "")
+                 MOVE NINES TO XAL_TRM
+             ENDIF
+             WHILE (XAL_TYPE = "600")
+             WHILE (SQUEEZE XAL_CODE = SQUEEZE MY_CODE)
+             IF ((BILD_COVGF >= XAL_EFF) AND (BILD_COVGF <= XAL_TRM))
+                 MOVE (SQUEEZE XAL_DESC) TO ASO_ADM_FEE
+                 BREAK
+             ENDIF
+         REPEAT
+
+         IF (W_REIMB < 0)
+            MULTIPLY -1 BY ASO_ADM_FEE
+         ENDIF
+
+         SWITCH BILD_NET
+            CASE "BLUE "
+              IF (SQUEEZE BILD_PRD = "ASO")
+                 PACKLEN BLUE_PLAN WITH "HMO"
+              ELSE
+                 IF (SQUEEZE BILD_PRD = "PPO")
+                    PACKLEN BLUE_PLAN WITH "PPO"
+                 ELSE
+                   IF (SQUEEZE BILD_PRD = "CDHP")
+                      PACKLEN BLUE_PLAN WITH "CDHP" 
+                   ENDIF
+                 ENDIF
+              ENDIF
+              IF (SQUEEZE BILD_PRD = "MAGNO")
+                 IF (SQUEEZE BILD_PLAN = "OPEN")
+                     MOVE "OGBMOA" TO BLUE_PLAN
+                 ELSE
+                    IF (SQUEEZE BILD_PLAN = "LOCL")
+                      MOVE "OGBML" TO BLUE_PLAN
+                    ELSE
+                      IF (SQUEEZE BILD_PLAN = "PLUS")
+                         MOVE "OGBMLP" TO BLUE_PLAN
+                      ENDIF
+                    ENDIF
+                 ENDIF
+              ENDIF
+              IF (SQUEEZE BILD_PRD = "PELCN")
+                 IF (SQUEEZE BILD_PLAN = "HSA")
+                    MOVE "OGBHSA" TO BLUE_PLAN
+                 ELSE
+                    IF (SQUEEZE BILD_PLAN = "HRA")
+                      MOVE "OGBHRA" TO BLUE_PLAN
+                    ENDIF
+                 ENDIF
+               ENDIF
+              PACKLEN BLUE_ADM_FEE_REC WITH ASO_ADM_FEE_LIST,BILD_MEM,BLUE_PLAN
+              WRITE ASO_ADM_FD5,OGB_SEQ3;BLUE_ADM_FEE_REC
+.             WRITE ASO_ADM_FD5,OGB_SEQ1;BLUE_ADM_FEE_REC
+              CLEAR BLUE_ADM_FEE_REC
+            ENDSWITCH
+            ADD 1 TO X_CNT4
+         REPEAT
+    RETURN
+
+UPDATE_VALTBL
+         PACK VAL_TYPE WITH "155",BLANKS
+         PACK VAL_CODE WITH "INV403",BLANKS
+         PACK VAL_DESC WITH "BCBSLA COBRA INVOICE ":
+                             "DATE",BLANKS
+         PACK VAL_OPT  WITH INVOICE_DATE,BLANKS
+         PACK VAL_FILL WITH BLANKS
+         CALL VAL_WRITE
+         RETURN
+
+.............................................................................
+.##############################################################################
+. -----------------------------------------
+. Screen Displays for Operator Intervention
+. -----------------------------------------
+.............................................................................
+
+.##############################################################################
+DATE_INFO    
+.##############################################################################
+
+    DISPLAY *ES
+    LOOP
+        MOVE 00 TO INV_DATE_MM 
+        MOVE 0000 TO INV_DATE_CCYY 
+        KEYIN  *P=10:5, "ENTER INVOICE MONTH TO EXTRACT (EX. - MM) ":
+               INV_DATE_MM, *P=10:5, *EL
+        KEYIN  *P=10:6, "ENTER INVOICE YEAR TO EXTRACT (EX. - CCYY) ":
+               INV_DATE_CCYY, *P=10:6, *EL
+        PACK INV_DATE WITH INV_DATE_CCYY,INV_DATE_MM
+        REPLACE " 0" IN INV_DATE
+        UNPACK INV_DATE INTO CC,YY,MM
+        IF (CC = "20")
+            IF (MM >= "01") AND (MM <= "12")                   
+                BREAK
+            ELSE
+                DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                        *P=10:6, *EL    
+                CONTINUE
+            ENDIF
+        ELSE
+            DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                    *P=10:6, *EL    
+            CONTINUE
+        ENDIF
+    REPEAT
+   RETURN
+.............................................................................
+
+.##############################################################################
+INVOICE_INFO  
+.##############################################################################
+
+    DISPLAY *ES
+    LOOP
+        MOVE " " TO INV_CODE
+        DISPLAY *P=30:5, "A - ACTIVE": 
+                *P=30:6, "C - COBRA":
+                *P=30:7, "R - RETIREE"      
+        KEYIN   *P=20:9, "PLEASE SELECT TYPE OF INVOICE TO RUN:   ":    
+                *P=60:9, *UC, INV_CODE:
+                *P=1:5, *EL, *P=1:6, *EL:
+                *P=1:7, *EL, *P=1:9, *EL
+        IF (INV_CODE = "A")
+            PACK DIM3 WITH "all"
+            BREAK
+        ELSE
+            IF (INV_CODE = "C")
+                PACK DIM3 WITH "cbr"
+                BREAK
+            ELSE
+                IF (INV_CODE = "R")
+                    PACK DIM3 WITH "ret"
+                    BREAK
+                ELSE
+                    DISPLAY *P=20:11, *REVON, ERRMSG, *REVOFF, *W=5:
+                            *P=1:11, *EL    
+                    CONTINUE
+                ENDIF
+            ENDIF
+        ENDIF
+    REPEAT
+   RETURN
+
+.............................................................................
+
+.##############################################################################
+REVIEW_INFO  
+.##############################################################################
+
+    DISPLAY *ES
+    DISPLAY *P=20:2, "THE SELECTIONS YOU CHOSE ARE AS FOLLOWS:  "  
+  
+    DISPLAY *P=23:4, MM,"/",CC,YY, " - INVOICE DATE TO EXTRACT"    
+    IF (INV_CODE = "A")
+        DISPLAY *P=29:6, "EXTRACT ACTIVE INVOICE"                      
+    ELSE
+        IF (INV_CODE = "C")
+            DISPLAY *P=29:6, "EXTRACT COBRA INVOICE"                      
+        ELSE
+            IF (INV_CODE = "R")
+                DISPLAY *P=29:6, "EXTRACT RETIREE INVOICE"                 
+            ENDIF
+        ENDIF
+    ENDIF
+.   DISPLAY *W=10
+  RETURN
+.............................................................................
+
+.##############################################################################
+RESPONSE_INFO  
+.##############################################################################
+
+    LOOP
+        MOVE " " TO OK_CODE
+        KEYIN  *P=10:14, "WOULD YOU LIKE TO CHANGE ANYTHING?  (Y/N) ":
+               *UC, OK_CODE, *P=10:14, *EL
+        IF (OK_CODE = "Y")
+            CALL DATE_INFO
+            CALL INVOICE_INFO
+            CALL REVIEW_INFO
+            CONTINUE
+        ELSE
+            IF (OK_CODE = "N")
+                BREAK
+            ELSE
+                DISPLAY *P=20:16, *REVON, ERRMSG, *REVOFF, *W=5    
+                DISPLAY *P=1:16, *EL    
+                CONTINUE
+            ENDIF
+        ENDIF
+    REPEAT
+  RETURN
+..............................................................................
+
+.##############################################################################
+QUIT
+.##############################################################################
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+..............................................................................
+
+
+.##############################################################################
+CLOSE_FILES
+.##############################################################################
+. ----------------------------
+. Close Files
+. ----------------------------
+
+  CLOSE BILSORT_FILE,BILSORT_NAME
+  CALL CLOSE_OGBFILE USING ASO_ADM_FD5,ASO_ADM_NAME5
+
+  RETURN
+..............................................................................
+    
+
+.##############################################################################
+NORMAL_EOJ
+.##############################################################################
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "     INV0403 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       VALID.IO
+              INC       XALID.IO
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       CMDPARAM.SR
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of INV0403.PS          
+.----------------------------------------------------------------------------

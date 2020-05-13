@@ -1,0 +1,612 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : A0708221.ps
++    Description    : Retrieve 18 months of data for disease management.
++                   :
++    Author         : Loria Patterson
++    Date created   : 08/22/2006
++    Project Number : A0708221
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+            INC       CLM.RL             ...Claim Record Layout
+            INC       CLMS.RL            ...Claim Service Line Layout 
+            INC       CLAIM.RL           ...Clm Rec Layout for Disease Mgt.
+            INC       CLMSERVC.RL        ...Clm Ser Line Layout Disease Mgt. 
+            INC       MEMBER.RL          ...Member Demographics for Disease Mgt. 
+. ----------------------------
+. Input File Declarations
+. ----------------------------
+
+
+. ----------------------------
+. I-O File Declarations
+. ----------------------------
+DMCLA_FILE         FILE    VAR=284,TEXT
+DMCLA_NAME         INIT    "/w/dmg0711c.txt"
+.
+DIS_MAN_FD       IFILE   VAR=302,KEYL=8,DUP,TEXT
+DIS_MAN_IX_NME   INIT    "/w/dmg0600e.ix1"
+DIS_MAN_TX_NME   INIT    "/w/dmg0600e.txt"
+
+DIS_MAN_OPTS    INIT    "1-8  -D"
+DIS_MAN_KEY     DIM      8
+                 
+. ----------------------------
+. Output File Declarations
+. ----------------------------
+DMCLS_FILE         FILE    VAR=315,TEXT
+DMCLS_NAME         INIT    "/w/dmg0711s.txt"
+                 
+. -----------------------------------------------
+. Program Specific Variables & Working Storage
+. -----------------------------------------------
+WRK_ID1          DIM       8
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       6
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+CLM_RET_CODE     FORM      1
+CLMS_RET_CODE    FORM      1
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+ENDT             INIT      "20070630"
+BGDT             INIT      "20060101"
+RUNDATE          DIM       8
+FD_YYMM          DIM       2
+FTP_YYMM         DIM       4
+JUNK_CC          DIM       2
+JUNK_DD          DIM       2
+CLM_COMDLN       DIM       1000                                                   
+CLM_CCYYMM       FORM      6
+CLM_DD           DIM       2
+
+.~~Specific for reading the CLMS File
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+
+PARAM_LIST       LIST
+PARAM_XXX        DIM      10
+PARAM_YYY        DIM       5
+PARAM_DATE       DIM       8
+                 LISTEND
+.~~~~~~~~~~
+
+FY               DIM       4
+IP               DIM       2
+ONE              DIM       1
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. -----------------------------------
+. Start here if selected from menu   
+. -----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. -----------------------------------------
+. Start here if called by the Scheduler    
+. -----------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                 TO  C_NEXT
+         MOVE      "Disease Management  " TO  C_OPER  ...(20-bytes Max)
+         MOVE      "A0708221"             TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      BLANKS                 TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   debug
+. ...Initialize
+        CALL      INITIALIZE
+	 
+. ...Reformat the Claims File
+        CALL      REFORMAT_CLM_FILE
+
+        CALL INDEX_OGBFILE USING DIS_MAN_TX_NME,DIS_MAN_IX_NME,DIS_MAN_OPTS
+           IF OVER
+              ERROR     HORZ="15",VERT="19":
+                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+                        LNCOL=C_ERRL,SHADE="Y":
+                        TEXT="ELIGIBILTY INDEX FAILED"
+              CHAIN     "MENU"
+           ENDIF
+
+. ...Open Files	
+         CALL      OPEN_FILES 
+         
+. ...Extract Data
+         CALL      EXTRACT_DATA
+
+. ...Close Files
+         CALL      CLOSE_FILES
+         
+. ...Date Stamp Files
+.         CALL      DT_STAMP   
+
+. ...Roll out the FTP Script
+.         CALL      a0708221_FTP   
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Claim Recs Read : " TO X_CNTDESC1
+       	 MOVE      "ClaimS Recs Read: " TO X_CNTDESC2
+       	 MOVE      "Written Recs    : " TO X_CNTDESC3
+       	 MOVE      "                : " TO X_CNTDESC4
+       	 MOVE      "                : " TO X_CNTDESC5
+         MOVE      "                : " TO X_CNTDESC6
+	 
+       	 CALL      X_DISPLAY_COUNTS
+
+         CALL      SETPOP_CLMS
+
+ 
+         RETURN
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<END>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+...Input Files
+
+
+...I/O Files
+         MOVE DMCLA_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING DMCLA_FILE,DMCLA_NAME
+
+
+         MOVE DIS_MAN_IX_NME TO C_FILE
+         CALL OPEN_OGBFILE_IX USING DIS_MAN_FD,DIS_MAN_IX_NME
+
+...Output         
+         MOVE DMCLS_NAME TO C_FILE
+         CALL PREP_OGBFILE USING DMCLS_FILE,DMCLS_NAME
+
+         RETURN
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<END>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+. ----------------------------
+. Reformat the CLAIMS File 
+. ----------------------------
+
+REFORMAT_CLM_FILE
+
+.--------------------------------------------                                   
+...Display message to Operator to Please Wait                                   
+.--------------------------------------------                                   
+         MESSAGE HORZ="22",VERT="20":                                                  
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:                                            
+                 LNCOL=C_DLGL,SHADE="y":                                               
+                 TEXT="REFORMATTING FILE ... PLEASE WAIT";                             
+                                                                                
+.----------------------------------------------------------------------------                                  
+...Get all records for the prior month of the run date based on the paid date                                    
+.----------------------------------------------------------------------------                                  
+
+.         CALL DATE_CALC USING CURRDATE,"SUB","MONTHS",1,RUNDATE                      
+.         UNPACK RUNDATE INTO CLM_CCYYMM,CLM_DD 
+.         PACK FRDT WITH CLM_CCYYMM,"01" 
+
+         MOVE BLANKS TO SCRATCH                                                        
+         PACK SCRATCH WITH "clm.dbf ",DMCLA_NAME:                                 
+                           " 1-8 18-25 46-53 306-333 347-354 553-560":                
+                           " 784-791 794-795 798-799 1407-1448 1451-1463":                
+                           " 1466-1473 1616-1633 1664-1675 1807-1844":                
+                           " 2053-2065 2473-2482 2487-2491 2496-2512":                
+                           " 2519-2526 2917-2936 -T -J":
+                           " -p318-325ge",BGDT:
+                           " -p318-325le",ENDT
+
+                                                                                
+         REFORMAT SCRATCH                                                              
+
+         IF OVER                                                                       
+              ERROR HORZ="15",VERT="19":                                                
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:                                          
+                    LNCOL=C_ERRL,SHADE="Y":                                             
+                    TEXT="REFORMAT FAILED(clm.dbf)"                                    
+              CHAIN "MENU"                                                              
+         ENDIF                                                                         
+
+.-------------------------------------------------------                        
+...Display message to operator that reformat is complete                        
+.-------------------------------------------------------                        
+         MESSAGE HORZ="22",VERT="20":                                                
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:                                          
+                 LNCOL=C_DLGL,SHADE="y":                                             
+                 TEXT="     !!!!! REFORMAT COMPLETE !!!!!     ";                   
+
+     RETURN 
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>END>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+. ---------------------------------------------------------------------------
+. Writes claims for members on elig. file.
+. ---------------------------------------------------------------------------
+
+EXTRACT_DATA
+
+                                                                                
+         DISPLAY    *P22:20,*BGCOLOR=*CYAN,*EF
+     
+    LOOP
+...Reading the reformated Claims file
+         MOVE OGB_SEQ1 TO OGB_SEQ                                                  
+         CALL READ_OGBFILE USING DMCLA_FILE,DMCLA_NAME,CLA_LIST                   
+
+         MOVE RESULT TO CLM_RET_CODE            ...Check for EOF
+         IF (CLM_RET_CODE <> 1)
+             CALL X_DISPLAY_COUNTS                                                 
+             BREAK                                                                  
+         ENDIF
+                                                                                
+         ADD 1 TO X_CNT1                        ...Display Counters
+         UNPACK X_CNT1 INTO CNT1_4,CNT1_3                                          
+         IF (CNT1_3 = "000")                                                   
+             CALL X_DISPLAY_COUNTS                                             
+         ENDIF                                                                     
+...Read the elg. index file
+
+   MOVE CLA_12 TO DIS_MAN_KEY
+   CALL READ_OGBFILE_IX USING DIS_MAN_FD,DIS_MAN_IX_NME,DIS_MAN_KEY,MBR_LIST
+   IF (RESULT <> 1)
+           CONTINUE    
+   ENDIF
+         
+...Read CLMS for Line items
+   PACK CLMS_BASE WITH CLA_ID1,BLANKS   ...Set up for CLMS Read
+   PACK CLMS_KEY  WITH CLMS_BASE,"   "
+
+   CALL POP_READ
+             
+         LOOP                                 ...CLMS Read Loop
+             CALL POP_NEXT
+             ADD 1 TO X_CNT2                  ...Display Counters         
+
+             MOVE RESULT TO CLMS_RET_CODE
+             IF ((CLMS_RET_CODE <> 1) OR (CLMS_ID <> CLA_ID1))
+                 BREAK
+             ENDIF
+
+...Move all necessary fields from the claim lines 
+             MOVE CLMS_ID    TO CLS_ID   
+             MOVE CLMS_LINE  TO CLS_LINE 
+             MOVE CLMS_DUPC  TO CLS_DUPC 
+             MOVE CLMS_REV   TO CLS_REV  
+             MOVE CLMS_PROC  TO CLS_PROC 
+             MOVE CLMS_DRUG  TO CLS_DRUG 
+             MOVE CLMS_DESC  TO CLS_DESC 
+             MOVE CLMS_MOD1  TO CLS_MOD1 
+             MOVE CLMS_MOD2  TO CLS_MOD2 
+             MOVE CLMS_MOD3  TO CLS_MOD3 
+             MOVE CLMS_DAY   TO CLS_DAY  
+             MOVE CLMS_FROM  TO CLS_FROM 
+             MOVE CLMS_THRU  TO CLS_THRU 
+             MOVE CLMS_POS   TO CLS_POS  
+             MOVE CLMS_TOS   TO CLS_TOS  
+             MOVE CLMS_UNIT  TO CLS_UNIT 
+             MOVE CLMS_CHG   TO CLS_CHG  
+             MOVE CLMS_NON   TO CLS_NON  
+             MOVE CLMS_DIAG  TO CLS_DIAG 
+             MOVE CLMS_WC    TO CLS_WC   
+             MOVE CLMS_ALLOW TO CLS_ALLOW 
+             MOVE CLMS_ENC   TO CLS_ENC   
+             MOVE CLMS_WH    TO CLS_WH   
+             MOVE CLMS_PAYP  TO CLS_PAYP  
+             MOVE CLMS_PAYE  TO CLS_PAYE
+             MOVE CLMS_RES   TO CLS_RES 
+             MOVE CLMS_STAT  TO CLS_STAT
+             MOVE CLMS_DUPS  TO CLS_DUPS
+             MOVE CLMS_CAT   TO CLS_CAT 
+             MOVE CLMS_BEN   TO CLS_BEN 
+             MOVE CLMS_INOUT TO CLS_INOUT
+             MOVE CLMS_COPA  TO CLS_COPA  
+             MOVE CLMS_DEDU  TO CLS_DEDU 
+             MOVE CLMS_COIN  TO CLS_COIN
+             MOVE CLMS_EXCL  TO CLS_EXCL
+             MOVE CLMS_UAC   TO CLS_UAC 
+             MOVE CLMS_HCFA  TO CLS_HCFA
+             MOVE CLMS_ALTP  TO CLS_ALTP
+             MOVE CLMS_ACTN  TO CLS_ACTN
+             MOVE CLMS_COBA  TO CLS_COBA
+             MOVE CLMS_COBP  TO CLS_COBP  
+             MOVE CLMS_COBS  TO CLS_COBS  
+
+
+             MOVE OGB_SEQ1 TO OGB_SEQ                                            
+             CALL WRITE_OGBREC USING DMCLS_FILE:
+                                     DMCLS_NAME:
+                                     CLS_LIST
+
+             ADD 1 TO X_CNT3                     ...Add To Rec Written Count
+
+       REPEAT    
+    REPEAT    
+
+   RETURN         
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>END>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+
+         MOVE DMCLA_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING DMCLA_FILE,DMCLA_NAME
+
+
+         MOVE DMCLS_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING DMCLS_FILE,DMCLS_NAME
+
+
+       RETURN
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>END>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+. ---------------------------------------------------------------------------
+. This will Date Stamp both the Claim and the Claim Service Line files
+. with the from Date for each month.
+. ---------------------------------------------------------------------------
+
+DT_STAMP
+  debug
+.       UNPACK FRDT INTO JUNK_CC,FD_YYMM,JUNK_DD                                      
+                                                                                
+       MOVE BLANKS TO CLM_COMDLN                                                        
+       PACK CLM_COMDLN WITH "cp ",DMCLA_NAME," ",DMCLA_NAME,".",FD_YYMM   
+       ROLLOUT CLM_COMDLN                                                            
+       IF OVER                                                                       
+           ERROR HORZ="15",VERT="19":                                                
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:                                          
+                 LNCOL=C_ERRL,SHADE="Y":                                             
+                 TEXT="COPY OF THE CLA0600c.TXT FAILED"                               
+           CHAIN "MENU"                                                              
+       ENDIF                                                                         
+      MOVE BLANKS TO CLM_COMDLN                                                        
+       PACK CLM_COMDLN WITH "cp ",DMCLS_NAME," ",DMCLS_NAME,".",FD_YYMM   
+       ROLLOUT CLM_COMDLN                                                            
+       IF OVER                                                                       
+           ERROR HORZ="15",VERT="19":                                                
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:                                          
+                 LNCOL=C_ERRL,SHADE="Y":                                             
+                 TEXT="COPY OF THE CLA0600s.TXT FAILED"                               
+           CHAIN "MENU"                                                              
+       ENDIF                                                                         
+
+     RETURN         
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>END>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+................................<< BEGIN >>...................................  
+. This calls the FTP Scripts that FTP's the files to our Site dedicated to       
+. Disease Management in H:\Transfer\APS_Health. The file is later pushed        
+. to the Disease Management Site.                                               
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+                                                                                
+a0708221_FTP                                                                     
+                                                                                
+                                                                           
+                                                                                
+         DISPLAY    *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:                    
+                    *P30:21,"FTPING a0708221.TXT FILE...",*BOLDOFF               
+
+                                                                                
+         MOVE BLANKS TO CLM_COMDLN                                                        
+         PACK CLM_COMDLN WITH "a0708221.ftp 2>/dev/null"                    
+
+         ROLLOUT CLM_COMDLN                                                            
+
+                                                                       
+         IF OVER                                                                
+             IF (RUN_MODE = "N")                                                
+                 ERROR     HORZ="15",VERT="19":                                 
+                           BGCOL=C_ERRB,FGCOL=C_ERRF:                           
+                           LNCOL=C_ERRL,SHADE="Y":                              
+                           TEXT="a0708221.ftp FAILED":                           
+                           TEXT="Make a Note and Contact Applications"         
+             ENDIF                                                              
+             CHAIN "MENU"                                                       
+         ENDIF                                                                  
+         DISPLAY    *P30:21,*BGCOLOR=*BLACK,*EL                                 
+                                                                                
+         RETURN                                                                 
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>END>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+                                                                                
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         UNLOAD    "schema"
+         
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<END>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         IF (RUN_MODE = "N")              ---Manual Run; Not Scheduled          
+             CALL X_BLANK_SCREEN                                                
+             PACK      X_FINISH_STATUS WITH "   ", "NEOJ","   "                 
+	     MOVE      "a0708221 Completed   " TO X_PROG_FINISH
+             CALL    X_END_OF_JOB                                               
+         ENDIF                                                                  
+         
+         RETURN
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<END>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<END>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+. ---------------------------------
+. Subroutines and other includes
+. ---------------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       POP.IO
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++.
+.///////////////////////////// End of A0708221.PS \\\\\\\\\\\\\\\\\\\\\\\\\\\\\.
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++.
+

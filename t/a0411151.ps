@@ -1,0 +1,344 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0411151.ps
++    Description    :  This program reformats old drug claim files to the 
++                      layout needed to create the drug eob letters that
++                      will get posted to the website.  These old files
++                      need to be processed to create the EOB letters for
++                      the last 3 quarters.
++    Author         :  appnc
++    Date created   :  11/15/2004
++    Project Number :  a0411151
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++------------------------------------------------------------------------------
++   appnc  mm/dd/ccyy  A####### - TYP - Remarks                           
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demographics
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+INP_FILE         FILE   VAR=284,TEXT
+INP_NAME         INIT   "/mcsora/drugeobs/drg_eob.0703_0903.txt"
+
+INP_REC          LIST
+..<Begin>....................................................................
+INP_SERV_DATE    DIM     8
+INP_DRUG_NAME    DIM     30
+INP_ENR_SSN      DIM     9
+INP_MEM_LNAM     DIM     20
+INP_MEM_FNAM     DIM     15
+INP_MEM_INIT     DIM     1
+INP_ADDR1        DIM     35
+INP_ADDR2        DIM     35
+INP_CITY         DIM     30
+INP_STATE        DIM     2
+INP_ZIP          DIM     13
+INP_RECID        DIM     8
+INP_PAT_LNAM     DIM     20
+INP_PAT_FNAM     DIM     15
+INP_PAT_INIT     DIM     1
+INP_COPAY_AMT    DIM     10
+INP_BILL_AMT     DIM     10
+INP_PAID_AMT     DIM     10
+INP_QTR          DIM     12
+..<End>......................................................................
+                 LISTEND
+
+OUT_FILE         FILE   VAR=284,TEXT
+OUT_NAME         INIT   "/mcsora/drugeobs/drg_eob.0703_0903.new.txt"
+
+OUT_REC          LIST
+..<Begin>....................................................................
+OUT_SERV_DATE    DIM     8
+OUT_DRUG_NAME    DIM     30
+OUT_ENR_SSN      DIM     9
+OUT_MEM_LNAM     DIM     20
+OUT_MEM_FNAM     DIM     15
+OUT_MEM_INIT     DIM     1
+OUT_ADDR1        DIM     35
+OUT_ADDR2        DIM     35
+OUT_CITY         DIM     30
+OUT_STATE        DIM     2
+OUT_ZIP          DIM     13
+OUT_RECID        DIM     8
+OUT_PAT_LNAM     DIM     20
+OUT_PAT_FNAM     DIM     15
+OUT_PAT_INIT     DIM     1
+OUT_COPAY_AMT    DIM     10
+OUT_BILL_AMT     DIM     10
+OUT_PAID_AMT     DIM     10
+OUT_QTR          DIM     12
+..<End>......................................................................
+                 LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+WRITE_COUNT      FORM      8
+ERROR_COUNT      FORM      8
+TRAP_DATA        DIM       500
+TODAY            DIM       8
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+INP_RET_CODE     FORM      1
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+              
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "Reformat EOB Input " TO  C_OPER
+         MOVE      "a0411151"            TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         DEBUG
+         CALL      INITIALIZE
+         CALL      OPEN_FILES
+         CALL      PROCESS_INPUT
+         CALL      CLOSE_FILES
+
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="25",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="  PROGRAM COMPLETED NORMALLY  ":
+                          TEXT="------------------------------":
+                          TEXT="  Press any key to continue   ":
+                          FIELD=WCHAR         
+         ENDIF
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+      	 MOVE      "Input Recs Read : " TO X_CNTDESC1
+	 MOVE      "Recs Written    : " TO X_CNTDESC2
+	 MOVE      "Not Used        : " TO X_CNTDESC3
+	 MOVE      "Not Used        : " TO X_CNTDESC4
+	 MOVE      "Not Used        : " TO X_CNTDESC5
+	 MOVE      "Not Used        : " TO X_CNTDESC6
+
+         CALL X_DISPLAY_COUNTS
+
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         MOVE INP_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+         
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+. Process Input
+. ----------------------------
+
+PROCESS_INPUT
+
+         DEBUG
+         LOOP
+             MOVE INP_NAME TO C_FILE
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING INP_FILE,INP_NAME,INP_REC
+             MOVE RESULT TO INP_RET_CODE
+             IF (INP_RET_CODE <> 1)
+                 CALL X_DISPLAY_COUNTS
+                 BREAK
+             ENDIF       
+             
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF                      
+         
+             PACK OUT_SERV_DATE WITH INP_SERV_DATE,BLANKS
+             
+             IF (SQUEEZE INP_DRUG_NAME != "")
+                 PACK OUT_DRUG_NAME WITH INP_DRUG_NAME,BLANKS
+               ELSE
+                 PACK OUT_DRUG_NAME WITH "DRUG NAME NOT FOUND",BLANKS
+             ENDIF
+
+             PACK OUT_ENR_SSN    WITH INP_ENR_SSN,BLANKS
+             PACK OUT_MEM_LNAM   WITH INP_MEM_LNAM,BLANKS
+             PACK OUT_MEM_FNAM   WITH INP_MEM_FNAM,BLANKS
+             PACK OUT_MEM_INIT   WITH INP_MEM_INIT,BLANKS
+             PACK OUT_ADDR1      WITH INP_ADDR1,BLANKS
+             PACK OUT_ADDR2      WITH INP_ADDR2,BLANKS
+             PACK OUT_CITY       WITH INP_CITY,BLANKS
+             PACK OUT_STATE      WITH INP_STATE,BLANKS
+             PACK OUT_ZIP        WITH INP_ZIP,BLANKS
+             PACK OUT_RECID      WITH INP_RECID,BLANKS
+             PACK OUT_PAT_LNAM   WITH INP_PAT_LNAM,BLANKS
+             PACK OUT_PAT_FNAM   WITH INP_PAT_FNAM,BLANKS
+             PACK OUT_PAT_INIT   WITH INP_PAT_INIT,BLANKS
+             MOVE INP_COPAY_AMT  TO   OUT_COPAY_AMT
+             MOVE INP_BILL_AMT   TO   OUT_BILL_AMT
+             MOVE INP_PAID_AMT   TO   OUT_PAID_AMT  
+             MOVE INP_QTR        TO   OUT_QTR
+             
+             ADD 1 TO X_CNT2
+             MOVE OUT_NAME TO C_FILE
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_REC
+         
+         REPEAT
+
+         RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         MOVE INP_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING INP_FILE,INP_NAME
+         
+         MOVE OUT_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of a0411151.ps
+. +++++++++++++++++++++++++++++++++++++

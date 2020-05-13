@@ -1,0 +1,568 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ +    Program name   :  a0301281.ps
++    Description    :  PRINTS INVOICE LABELS FOR CLI_LEV2 = BILL
++                   :  This adhoc version of x_inv800.ps prints the labels
++                   :  in alpha order instead of by group.
++    Author         :  Tommy Ratcliff       
++    Date created   :  01/28/2003
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    *----------------------------------REVISIONS-----------------------------*
++    APXXX mm/dd/yy annnnnnn XXX -a
++    *------------------------------------------------------------------------*
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+  INC       COMMON.CB            ...Common work area
+  INC       X_COMMON.CB          ...OGB Common Work Area
+  INC       VALID.RL             ...Valid codes
+  INC       X_OGBFILE.CB         ...OGB Custom File Handler
+  INC       PRT.RL               ...Printer definition file
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+  INC       CLI.RL               ...Client Demographics  
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+INVLAB_FILE   FILE      VAR=190,TEXT
+INVLAB_NAME   INIT      "/ogb/work/x_inv800.lab"
+INVLAB_LIST   LIST      LIST
+INVLAB_GROUP  DIM       05
+INVLAB_PNAME  DIM       35
+INVLAB_ADDR1  DIM       35
+INVLAB_ADDR2  DIM       35
+INVLAB_CITY   DIM       30
+INVLAB_STATE  DIM       02
+INVLAB_ZIP    DIM       13
+INVLAB_CONT   DIM       35
+                        LISTEND
+
+. ---------------------------------------------
+. Program Specific Variables & Working Storage
+. ---------------------------------------------
+CNT_4         DIM       04
+CNT_3         DIM       03
+RESTART_SWT   DIM       01
+KEYIN_GPNO    DIM       05
+COR_ANS       DIM       01
+NUM_OF_COPIES FORM      02
+COPIES_PRINTED FORM     02   
+ENTER_JUNK    DIM       01
+FIRST_READ    DIM       01  
+FIRST_PAGE    DIM       01
+FIRST_TIME    DIM       01
+WRITE_COUNT   DIM       08
+WORK_COUNT    DIM       08
+FRONT         DIM       05
+BACK          DIM       03
+TIMESTAMP     DIM       14
+CURRDATE      DIM       08
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      05
+CURR_RETURN   FORM      05
+TODAY         DIM       08
+
+
+. ...Report Fields
+PAGE_NO       FORM     5
+LINE_NO       FORM     3
+LINE_MAX      FORM     "50"
+
+R_PAGE_NO     DIM      5
+R_DATE        DIM      10
+R_TIME        DIM      8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+DET1_REC      LIST
+DET1_FILLER_0 DIM      15
+DET1_FILLER_1 DIM      08
+DET1_GROUP_1  DIM      05
+DET1_FILLER_2 DIM      62
+DET1_GROUP_2  DIM      05
+              LISTEND
+
+DET2_REC      LIST
+DET2_FILLER_0 DIM      15
+DET2_PNAME_1  DIM      30
+DET2_FILLER_2 DIM      36
+DET2_PNAME_2  DIM      30
+              LISTEND
+
+DET3_REC      LIST    
+DET3_FILLER_0 DIM      15
+DET3_ADDR1_1  DIM      25
+DET3_FILLER_2 DIM      41
+DET3_ADDR1_2  DIM      25
+              LISTEND
+
+DET4_REC      LIST
+DET4_FILLER_0 DIM      15
+DET4_ADDR2_1  DIM      25
+DET4_FILLER_2 DIM      41
+DET4_ADDR2_2  DIM      25
+              LISTEND
+
+DET5_REC      LIST
+DET5_FILLER_0 DIM      15
+DET5_CITY_1   DIM      15
+DET5_FILLER_1 DIM      06
+DET5_STATE_1  DIM      02
+DET5_FILLER_2 DIM      01
+DET5_ZIP_1    DIM      05
+DET5_FILLER_3 DIM      37
+DET5_CITY_2   DIM      15
+DET5_FILLER_4 DIM      06
+DET5_STATE_2  DIM      02
+DET5_FILLER_5 DIM      01
+DET5_ZIP_2    DIM      05
+              LISTEND
+
+DET6_REC      LIST
+DET6_FILLER_0 DIM      15
+DET6_FILLER_2 INIT     "ATTN: "
+DET6_CONT_1   DIM      21
+DET6_FILLER_3 DIM      39
+DET6_FILLER_4 INIT     "ATTN: "
+DET6_CONT_2   DIM      15
+              LISTEND
+
+. ...Printing Controls
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+. ...Exit controls
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    INIT      "20020701"
+              LISTEND
+
+. ...Standard report headings
+SRH_LEFT1     INIT "Program name: "
+SRH_LEFT2     INIT "Date Printed: "
+SRH_TITLE1    INIT "   STATE OF LOUISIANA   "
+SRH_TITLE2    INIT "OFFICE OF GROUP BENEFITS"
+SRH_RIGHT1    INIT "Page Number: "
+SRH_RIGHT2    INIT "Report Time: "
+SRH_DASH      INIT "-"
+
+. --------------------------------
+. Start here if selected from menu   
+. --------------------------------
+         CALL      RUN_NOW
+         CHAIN     C_NEXT
+
+. -------------------------------------
+. Start here if called by the Scheduler    
+. -------------------------------------
+  INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+  RETCOUNT ORIG_RETURN
+
+. ...Screen Display
+  DISPLAY   *ES
+  MOVE      "menu"                TO  C_NEXT
+  MOVE      "Invoice Labels"      TO  C_OPER
+  MOVE      "a0301281"            TO  C_PROG
+  MOVE      BLANKS                TO  C_LABEL
+  MOVE      BLANKS                TO  C_FILE
+  MOVE      BLANKS                TO  C_KEYS
+  CLOCK     CALENDAR              INTO  CAL_CLOCK
+  CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+  TRAPSAVE  TRAP_DATA
+  TRAPCLR   ALL
+  TRAP      QUIT   NORESET  IF F9
+	
+.------------------
+. Get Printer Info 
+.------------------
+. CALL PRINT_PICK
+. RETURN IF (RESULT = 2)
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+  CALL SCHED_PICK
+  IF (RUN_MODE = "B" OR RUN_MODE = "N")
+     CALL MAIN_PROCESS
+  ENDIF
+  RETURN
+
+
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+  CALL INITIALIZE
+  CALL PREP_LABELS
+  CALL CHECK_FOR_RESTART
+  CALL GET_NUMBER_OF_COPIES
+  CALL OPEN_FILES
+  CALL CREATE_LABELS
+  CALL SORT_LABELS
+  DEBUG
+  CALL PRINT_LABELS 
+  CALL PRINT_DONE
+  TRAPREST TRAP_DATA
+  MOVE SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN    
+
+
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP   INTO  TIMESTAMP
+  CLOCK TIMESTAMP   INTO  CURRDATE
+  CLOCK TIMESTAMP     TO  TODAY
+
+  MOVE "Records Read: "   TO X_CNTDESC1
+  MOVE "Labels Created: " TO X_CNTDESC2
+  MOVE "Labels Printed: " TO X_CNTDESC3
+  CALL X_DISPLAY_COUNTS
+
+  MOVE 0 TO COPIES_PRINTED
+
+  RETURN
+
+
+
+.##############################################################################
+PREP_LABELS
+.##############################################################################
+  UNPACK TIMESTAMP INTO W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+  PACK R_DATE WITH W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+  PACK R_TIME WITH W_HH,":",W_MN,":",W_SS,BLANKS
+  MOVE 0 TO WRITE_COUNT
+
+. ...Set up font variables
+
+. ...This set of code is for printing landscape......................
+.
+. PACK NORM_10 WITH XCAPE,"&12a10",XCAPE,"(s p10.00h12.0v0s0b4099T"
+. PACK BOLD_10 WITH XCAPE,"&12a10",XCAPE,"(s p10.00h12.0v0s3b4099T"
+. PACK NORM_12 WITH XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+. PACK BOLD_12 WITH XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+. PACK NORM_16 WITH XCAPE,"&12a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+. PACK BOLD_16 WITH XCAPE,"&12a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+......................................................................
+
+
+. ...This set of code is for printing portrait..................... 
+  PACK NORM_10 WITH XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+  PACK BOLD_10 WITH XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+  PACK NORM_12 WITH XCAPE,"(12U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+  PACK BOLD_12 WITH XCAPE,"(12U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+  PACK NORM_16 WITH XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+  PACK BOLD_16 WITH XCAPE,"(11U",XCAPE,"(s0p16.67H8.5v0s3b0T"
+.................................................................
+  
+  MOVE "/ogb/work/x_inv800.prt" TO C_PRTFILE
+  CALL PRINT_PREP
+  
+  PRINT BOLD_16,*C
+  RETURN
+
+
+
+.##############################################################################
+CHECK_FOR_RESTART
+.##############################################################################
+  LOOP           
+    KEYIN *P25:16,"IS THIS A RESTART? (Y/N): ":
+          *UC, RESTART_SWT, *EL
+    IF ((RESTART_SWT <> "N") AND (RESTART_SWT <> "Y"))
+        CONTINUE
+    ENDIF
+    IF (RESTART_SWT = "N")
+        RETURN
+    ENDIF
+  UNTIL (RESTART_SWT = "Y")
+  REPEAT
+  
+  LOOP
+    KEYIN *P15:17,"ENTER GROUP NUMBER FROM LAST GOOD LABEL PRINTED: ":
+                          *UC, KEYIN_GPNO, *EL
+    KEYIN *P25:18,"IS THIS CORRECT? (Y/N): ":
+          *UC, COR_ANS, *EL
+  UNTIL (COR_ANS = "Y")
+  REPEAT
+
+  RETURN
+
+
+
+.##############################################################################
+GET_NUMBER_OF_COPIES
+.##############################################################################
+  IF (RESTART_SWT = "Y")
+      MOVE "01" TO NUM_OF_COPIES
+      DISPLAY *P15:21,"!!! NOTE !!! - ONLY ONE COPY WILL BE PRINTED"
+      DISPLAY *P15:22, "FOR ADDITIONAL COPIES YOU MUST RE-RUN PROGRAM"
+      KEYIN *P62:22, "<ENTER>":
+            *UC, ENTER_JUNK, *EL
+      RETURN
+  ENDIF
+
+  LOOP
+    KEYIN *P25:19,"HOW MANY COPIES WOULD YOU LIKE? (01-10): ":
+          *UC, NUM_OF_COPIES, *EL
+    BREAK IF (NUM_OF_COPIES <= 10) 
+  REPEAT
+  RETURN
+
+
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+  IF (RESTART_SWT = "Y")    ....If this is a restart then do not
+      RETURN                ....prep the output file as it will
+  ENDIF                     ....wipe out the data.
+
+  MOVE INVLAB_NAME TO C_FILE
+  CALL PREP_OGBFILE USING INVLAB_FILE,INVLAB_NAME
+
+  RETURN
+
+
+
+.##############################################################################
+CREATE_LABELS    
+.##############################################################################
+  IF (RESTART_SWT = "Y")     ....If this is a restart then do not
+      RETURN                 ....recreate the labels.     
+  ENDIF
+
+  PACK CLI_FK11 WITH BLANKS
+  CALL FILE_READ USING CLI_FD:   ...File declaration list
+                       CLI_FN:   ...File name list
+                       CLI_FC:   ...(I)ndex or (A)imdex
+                       CLI_FV:   ...File key varlists
+                       CLI_FK:   ...File key sizes
+                       CLI_LIST: ...File record (field list)
+                       CLI_REC:  ...File record (packed)
+                       CLI_OLD:  ...File saved when read
+                       CLI_QTY:  ...Number of files
+                       1         ...File number for this read
+
+  LOOP
+    CALL FILE_NEXT USING CLI_FD:   ...File declaration list
+                         CLI_FN:   ...File name list
+                         CLI_FC:   ...(I)ndex or (A)imdex
+                         CLI_FV:   ...File key varlists
+                         CLI_FK:   ...File key sizes
+                         CLI_LIST: ...File record (field list)
+                         CLI_REC:  ...File record (packed)
+                         CLI_OLD:  ...File saved when read
+                         CLI_QTY:  ...Number of files
+                         1         ...File number for this read
+
+  WHILE (RESULT = 1)
+
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    IF (SQUEEZE CLI_TRM <> "") 
+          CONTINUE IF (CLI_TRM < TODAY) 
+    ENDIF
+    
+    IF (SQUEEZE CLI_LEV2 <> "BILL")
+        CONTINUE
+    ENDIF
+
+    MOVE CLI_LEV1 TO INVLAB_GROUP
+    MOVE CLI_NAME TO INVLAB_PNAME
+    MOVE CLI_ADDR1 TO INVLAB_ADDR1
+    MOVE CLI_ADDR2 TO INVLAB_ADDR2
+    MOVE CLI_CITY TO INVLAB_CITY
+    MOVE CLI_STATE TO INVLAB_STATE
+    MOVE CLI_ZIP TO INVLAB_ZIP
+    MOVE CLI_CONT TO INVLAB_CONT
+    
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING INVLAB_FILE:
+                             INVLAB_NAME:   
+                             INVLAB_LIST
+    ADD 1 TO X_CNT2
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+  REPEAT 
+  RETURN
+
+
+
+.##############################################################################
+SORT_LABELS
+.##############################################################################
+  IF (RESTART_SWT = "Y")
+      RETURN
+  ENDIF
+
+  MOVE INVLAB_NAME TO C_FILE
+  CALL CLOSE_OGBFILE USING INVLAB_FILE,INVLAB_NAME
+
+  SORT "/ogb/work/x_inv800.lab /ogb/work/x_inv800.lab 6-42 -t"
+      IF OVER
+          ERROR HORZ="15",VERT="19":
+                BGCOL=C_ERRB,FGCOL=C_ERRF:
+                LNCOL=C_ERRL,SHADE="Y":
+                TEXT="SORT FAILED(x_mem.lab)"
+          CHAIN     "MENU"
+      ENDIF
+  RETURN
+
+
+
+.###############################################################################
+PRINT_LABELS
+.###############################################################################
+  LOOP
+    IF (COPIES_PRINTED > NUM_OF_COPIES)
+        RETURN
+    ELSE
+        MOVE INVLAB_NAME TO C_FILE
+        CALL OPEN_OGBFILE USING INVLAB_FILE,INVLAB_NAME
+    ENDIF
+
+    LOOP
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING INVLAB_FILE,INVLAB_NAME,INVLAB_LIST
+      IF (RESULT <> 1) 
+          CALL X_DISPLAY_COUNTS
+          BREAK
+      ELSE
+          IF ((RESTART_SWT = "Y") AND (SQUEEZE INVLAB_GROUP < KEYIN_GPNO))
+              CONTINUE
+          ENDIF
+      ENDIF
+
+      MOVE INVLAB_GROUP TO DET1_GROUP_1
+      MOVE INVLAB_PNAME TO DET2_PNAME_1
+      MOVE INVLAB_ADDR1 TO DET3_ADDR1_1
+      MOVE INVLAB_ADDR2 TO DET4_ADDR2_1
+      MOVE INVLAB_CITY  TO DET5_CITY_1
+      MOVE INVLAB_STATE TO DET5_STATE_1
+      MOVE INVLAB_ZIP   TO DET5_ZIP_1
+      MOVE INVLAB_CONT  TO DET6_CONT_1
+
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING INVLAB_FILE,INVLAB_NAME,INVLAB_LIST
+      IF (RESULT <> 1)
+          PACK DET1_GROUP_2 WITH BLANKS
+          PACK DET2_PNAME_2 WITH BLANKS
+          PACK DET3_ADDR1_2 WITH BLANKS
+          PACK DET4_ADDR2_2 WITH BLANKS
+          PACK DET5_CITY_2  WITH BLANKS
+          PACK DET5_STATE_2 WITH BLANKS
+          PACK DET5_ZIP_2   WITH BLANKS
+          PACK DET6_CONT_2  WITH BLANKS
+      ELSE
+          MOVE INVLAB_GROUP TO DET1_GROUP_2
+          MOVE INVLAB_PNAME TO DET2_PNAME_2
+          MOVE INVLAB_ADDR1 TO DET3_ADDR1_2
+          MOVE INVLAB_ADDR2 TO DET4_ADDR2_2
+          MOVE INVLAB_CITY  TO DET5_CITY_2
+          MOVE INVLAB_STATE TO DET5_STATE_2
+          MOVE INVLAB_ZIP   TO DET5_ZIP_2
+          MOVE INVLAB_CONT  TO DET6_CONT_2
+      ENDIF
+
+.     PRINT *N:
+      PRINT DET1_REC:
+            *N:
+            DET2_REC:
+            *N:
+            DET3_REC
+
+      IF ((SQUEEZE DET4_ADDR2_1 <> "") OR (SQUEEZE DET4_ADDR2_2 <> ""))
+          PRINT DET4_REC:
+          *N:
+          DET5_REC:
+          *N:
+          DET6_REC:
+          *N=2
+      ELSE
+          PRINT DET5_REC:
+                *N:
+                DET6_REC:
+                *N=3
+      ENDIF
+      ADD 1 TO X_CNT3
+      DEBUG
+    REPEAT
+    ADD 1 TO COPIES_PRINTED
+.   MOVE INVLAB_NAME TO C_FILE
+.   CALL CLOSE_OGBFILE USING INVLAB_FILE,INVLAB_NAME
+  REPEAT
+  RETURN
+        
+
+
+.##############################################################################
+QUIT
+.##############################################################################
+  IF (C_RMODE = "I")
+      error     horz="23",vert="19":
+                bgcol=C_ERRB,fgcol=C_ERRF:
+                lncol=C_ERRL,shade="Y":
+                text=" Process Aborted by Operator ":
+                text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+  RETURN
+
+.-----------------------
+. Required Includes
+.-----------------------
+  INC       UTIL.SR      
+  INC       VALID.IO
+  INC       X_STANDARD.SR
+  INC       FILE.IO
+  INC       PRINT.SR
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+  INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of a0301281.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,534 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  adm0300.ps    
++    Description    :  Extract emp/sp with MedA and MedB 
++ 
++    Author         :  Eileen Stark (from adm0100)
++    Project #      :  A0508161
++    Date created   :  07/24/2007
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                             Revisions
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       X_RGNXREF.WS
+              INC       VALID.RL
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL                Member Demographics File
+              INC       MEME.RL          
+              INC       MEMO.RL          
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+ACTLAB_FILE     FILE      VAR=100,TEXT      
+ACTLAB_NAME     INIT	  "/w/adm0300.inp"
+ 	    	 
+OUT_FILE     FILE      VAR=175,TEXT
+OUT_NAME     INIT      "/w/threeonmed.txt"
+ 	    	 
+.----------------------------------------------------------------------------
+.Output File Lists                                 
+.----------------------------------------------------------------------------
+
+ACTLAB_LIST     LIST	   
+ACTLAB_KEY1     DIM       8
+ACTLAB_EFF      DIM       8
+ACTLAB_TRM      DIM       8
+ACTLAB_NET      DIM       5
+ACTLAB_PRD      DIM       5
+ACTLAB_DEPC     DIM       2
+ACTLAB_RT       DIM       2
+         LISTEND
+
+OUT_LIST      LIST
+OUT_ESSN      DIM       9
+OUT_NET       DIM       5              
+OUT_PRD       DIM       5
+OUT_PLAN      DIM       4
+                LISTEND
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+FIRST_READ      DIM       1
+W_SP_ID         DIM       8
+EXTDATE         DIM       8
+DISP3           DIM       3
+DISP4           DIM       4
+ACT_RESULT      FORM      1 
+MEM_RESULT      FORM      1 
+MEME_RESULT     FORM      1 
+MEMO_RESULT     FORM      1 
+VAL_RESULT      FORM      1 
+LPTR            FORM      2
+WRK_DIM1        DIM       1
+WRK_DIM4        DIM       4
+DATE1           DIM       8
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+SPACES          DIM       8
+WS_MEME_ID1     DIM       8
+WS_MEME_ID2     DIM       4
+PREV_MEME_ID1   DIM       8
+PREV_MEME_PRD   DIM       5
+PREV_MEME_PLAN  DIM       4
+VALID_HEALTH_CODE  DIM    1        
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+VALID_DATE      DIM       1          
+YN_ANS          DIM       1          
+BLANK8          INIT      "        "
+SPACE1          INIT      " "
+SPACE30         DIM       30 
+LIFE            INIT      "LIFE "
+MEDA_CUR        FORM      1
+MEDB_CUR        FORM      1
+MEDD_ELG        FORM      1
+HOLD_ESSN       DIM       9
+HOLD_LNAME      DIM       20        .>enrollee last name
+HOLD_FNAME      DIM       15        .>enrollee first name
+HOLD_MINIT      DIM       1         .>enrollee middle initial 
+HOLD_ADDR1      DIM       35        .>address line 1           
+HOLD_ADDR2      DIM       35        .>address line 2           
+HOLD_CITY       DIM       30        .>city                     
+HOLD_STATE      DIM       2         .>state        
+HOLD_ZIP        DIM       13        .>zip code     
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "3 on med" TO  C_OPER
+         MOVE      "adm0300"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         MOVE "N" TO RUN_MODE
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         debug
+         CALL      INITIALIZE
+         CALL      REFORMAT_MEME
+         CALL      OPEN_FILES 
+       	 CALL      EXT_LABEL_FILES 
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+INITIALIZE
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Records Read:    " TO X_CNTDESC1
+       	 MOVE      "Records Found:   " TO X_CNTDESC2
+       	 MOVE      "" TO X_CNTDESC3
+       	 MOVE      "LABELS GENERATED:" TO X_CNTDESC4
+       	 MOVE      "" TO X_CNTDESC5
+       	 MOVE      "" TO X_CNTDESC6
+	 
+       	 CALL      X_DISPLAY_COUNTS
+
+. ...Prompt for Extract Effective Date
+         MOVE      TODAY TO EXTDATE
+         DIALOG    HORZ="24",VERT="17":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="Enter Extract Effecive Date (yyyymmdd):  ":
+                   FIELD=EXTDATE
+
+         RETURN
+
+
+.-------------------------------
+. Reformat MEME file for Members
+. currently active with non_Definity
+. Health
+.-------------------------------
+REFORMAT_MEME
+         MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+. ...Layout
+. ...096-103 Effective Date
+. ...104-111 Term Date
+. ...112-116 Network
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf ",ACTLAB_NAME: 
+                      " -p112-116ne#"LIFE#"":
+                      " -p96-103le#"",EXTDATE,"#"": 
+                      " -p104-111eq#"",BLANK8,"#"":
+                      " or":
+                      " -p112-116ne#"LIFE#"":
+                      " -p96-103le#"",EXTDATE,"#"": 
+                      " -p104-111ge#"",EXTDATE,"#"":
+                      " 1-8 96-103 104-121 132-133 130-131 -t -j"
+
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(meme.dbf)"
+             CHAIN "MENU"
+         ENDIF
+ 
+. ...Unique Sort (Eliminate duplicate enrollment records for 95's)
+         PACK SCRATCH WITH ACTLAB_NAME," ",ACTLAB_NAME:
+                           " 1-8 -u -t"
+         SORT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(x_meme.act)"
+               CHAIN     "MENU"
+         ENDIF
+
+         MESSAGE HORZ="22",VERT="20":
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:
+                 LNCOL=C_DLGL,SHADE="y": 
+                 TEXT="******* REFORMAT COMPLETE *******";
+ 
+         RETURN   
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+       	 MOVE      ACTLAB_NAME TO C_FILE
+	 CALL  	   OPEN_OGBFILE USING ACTLAB_FILE,ACTLAB_NAME
+
+       	 MOVE      OUT_NAME TO C_FILE
+	 CALL 	    PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+
+. ----------------------------
+. Extract Label Information
+. ----------------------------
+EXT_LABEL_FILES
+
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING ACTLAB_FILE,ACTLAB_NAME,ACTLAB_LIST
+            MOVE RESULT TO ACT_RESULT
+            IF (ACT_RESULT <> 1)
+                BREAK   
+            ENDIF
+
+            ADD 1 TO X_CNT1
+            UNPACK X_CNT1 INTO DISP4,DISP3
+            IF (DISP3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF
+
+            PACK MEM_FK11 WITH ACTLAB_KEY1
+            CALL FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+	 	                              MEM_FN:  ...FILE NAME LIST  
+		                               MEM_FC:  ...TYPE OF INDEX   
+.		                                       ...(I)NDEX OR (A)IMDEX
+		                               MEM_FV:  ...FILE KEY VARLISTS
+		                               MEM_FK:  ...FILE KEY SIZES  
+		                               MEM_LIST:...FILE RECORD (FIELD LIST)
+        	                        MEM_REC: ...FILE RECORD (PACKED)
+		                               MEM_OLD: ...FILE SAVED WHEN READ
+		                               MEM_QTY: ...NUMBER OF FILES 
+		                               1        ...FILE NUMBER FOR THIS READ
+
+            MOVE RESULT TO MEM_RESULT
+            IF ((ACTLAB_KEY1 <> MEM_ID1) OR (MEM_RESULT <> 1))
+                 CONTINUE    
+            ENDIF
+            IF (MEM_REL <> "01")
+                 CONTINUE
+            ENDIF
+            IF (SQUEEZE MEM_RETD = "")
+                 CONTINUE
+            ENDIF
+            IF (ACTLAB_DEPC = "FM") AND (ACTLAB_RT = "R2")
+               CALL GET_KIDS
+            ENDIF  
+         REPEAT  
+         RETURN
+    
+. -----------------------------------------------------------------------
+. This checks for MEDA and MEDB                               
+. -----------------------------------------------------------------------
+CHECK_MEMO 
+         CLEAR     MEDA_CUR 
+         CLEAR     MEDB_CUR 
+         CLEAR     MEMO_RESULT
+         PACK      MEMO_FK11 WITH MEM_ID1,BLANKS
+         CALL      FILE_READ USING MEMO_FD:     ...FILE DECLARATION LIST
+                                   MEMO_FN:     ...FILE NAME LIST  
+                                   MEMO_FC:     ...TYPE OF INDEX   
+.                                               ...(I)NDEX OR (A)IMDEX
+                                   MEMO_FV:     ...FILE KEY VARLISTS
+                                   MEMO_FK:     ...FILE KEY SIZES  
+                                   MEMO_LIST:   ...FILE RECORD (FIELD LIST)
+                                   MEMO_REC:    ...FILE RECORD (PACKED)
+                                   MEMO_OLD:    ...FILE SAVED WHEN READ
+                                   MEMO_QTY:    ...NUMBER OF FILES 
+                                   1            ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEMO_FD:     ...FILE DECLARATION LIST
+                                   MEMO_FN:     ...FILE NAME LIST  
+                                   MEMO_FC:     ...TYPE OF INDEX   
+.                                               ...(I)NDEX OR (A)IMDEX
+                                   MEMO_FV:     ...FILE KEY VARLISTS
+                                   MEMO_FK:     ...FILE KEY SIZES  
+                                   MEMO_LIST:   ...FILE RECORD (FIELD LIST)
+                                   MEMO_REC:    ...FILE RECORD (PACKED)
+                                   MEMO_OLD:    ...FILE SAVED WHEN READ
+                                   MEMO_QTY:    ...NUMBER OF FILES 
+                                   1            ...FILE NUMBER FOR THIS READ
+             MOVE RESULT TO MEMO_RESULT
+             IF ((MEM_ID1 <> MEMO_ID1) OR (MEMO_RESULT <> 1))
+                  BREAK           
+             ENDIF
+
+. Consider only MEDA and MEDB
+             IF (MEMO_TYPE <> "MEDA" AND MEMO_TYPE <> "MEDB")
+                CONTINUE
+             ENDIF
+
+. Exclude future effective dates
+             IF (MEMO_EFF1 > EXTDATE)
+                CONTINUE
+             ENDIF
+
+. Exclude records termed prior to extract date
+             IF (MEMO_TRM1 < EXTDATE AND SQUEEZE MEMO_TRM1 <> "")
+                CONTINUE
+             ENDIF
+
+. Include only verified records
+             IF (MEMO_VER <> "Y")
+                CONTINUE
+             ENDIF
+
+             IF (MEMO_TYPE = "MEDA")
+                SET MEDA_CUR            . MEDA record eff as of extract date
+             ELSE
+                SET MEDB_CUR            . MEDB record eff as of extract date
+             ENDIF
+
+         REPEAT
+
+         RETURN
+
+GET_KIDS    
+   CLEAR W_SP_ID
+   MOVE      "Y" TO FIRST_READ
+   CLEAR     MEM_AIM
+   PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+ LOOP
+  IF (FIRST_READ = "Y")
+      CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+      MOVE "N" TO FIRST_READ
+  ELSE
+     CALL      FILE_NEXT USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+  ENDIF
+  IF (RESULT <> 1)       
+    BREAK
+  ENDIF
+  SWITCH MEM_REL
+    CASE "01" OR "02"
+     CONTINUE
+  ENDSWITCH
+  IF ((SQUEEZE MEM_TRM <> "") AND (MEM_TRM < TODAY)))
+     CONTINUE                
+  ENDIF
+  CALL CHECK_MEMO
+  IF (MEDA_CUR AND MEDB_CUR)
+     CALL WRITE_OUTREC
+     BREAK
+  ENDIF
+ REPEAT
+ RETURN
+
+WRITE_OUTREC
+     MOVE MEM_ESSN TO OUT_ESSN
+     MOVE ACTLAB_NET TO OUT_NET
+     MOVE ACTLAB_PRD TO OUT_PRD
+     MOVE BLANKS TO OUT_PLAN
+     MOVE      OGB_SEQ1 TO OGB_SEQ
+     CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST 
+     ADD   1  TO X_CNT2
+     RETURN
+
+.............................................................................
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+
+CLOSE_FILES
+    RETURN
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+       	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	        MOVE      "    ADM0300 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       VALID.IO
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       X_RGNXREF.EX
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of ADM0300.PS    
+.----------------------------------------------------------------------------

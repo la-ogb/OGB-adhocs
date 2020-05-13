@@ -1,0 +1,658 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1505011  
++    Description    :  Creates agency files for JULY Open Enrollment 2015
++                     
++                      Reports all health plans effective 7/1/15
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL                                 
+              INC       MEME.RL                                 
+              INC       MEMO.RL                                 
+              INC       CLIP.RL                                 
+              INC       ART.RL                                  
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Work File
+WRK1_FD       FILE    VAR=42,TEXT
+WRK1_NAME     INIT    "A1505011wrk1.txt"
+WRK1_NAME1    DIM     30
+
+WRK1_LIST     LIST
+WRK1_ID1      DIM     8
+WRK1_ID2      DIM     4
+WRK1_EFF      DIM     8
+WRK1_TRM      DIM     8
+WRK1_NET      DIM     5
+WRK1_PRD      DIM     5
+WRK1_PLAN     DIM     4
+              LISTEND
+
+
+WRK2_FD       FILE    VAR=42,TEXT
+WRK2_NAME     INIT    "A1505011wrk2.txt"
+WRK2_NAME1    DIM     30
+
+WRK2_LIST     LIST
+WRK2_ID1      DIM     8
+WRK2_ID2      DIM     4
+WRK2_EFF      DIM     8
+WRK2_TRM      DIM     8
+WRK2_NET      DIM     5
+WRK2_PRD      DIM     5
+WRK2_PLAN     DIM     4
+              LISTEND
+
+
+.Input File
+REF_FILE     FILE    VAR=42,TEXT
+REF_NAME     INIT    "A1505011in.txt"
+REF_NAME1    DIM     30
+REF_SRTKEY   INIT    "1-8 39-42 -t"
+
+REF_LIST     LIST
+REF_ID1      DIM     8
+REF_ID2      DIM     4
+REF_EFF      DIM     8
+REF_TRM      DIM     8
+REF_NET      DIM     5
+REF_PRD      DIM     5
+REF_PLAN     DIM     4
+             LISTEND
+
+W_RATE       DIM     10
+
+.Output File  -->  This file is used to write the agency reports
+OUT_FILE     FILE    VAR=327,TEXT
+OUT_NAME     INIT    "A1505011out.txt"
+OUT_NAME1    DIM     30
+OUT_SRTKEY   INIT    "1-10 11-11 21-56 12-20 -t"
+
+OUT_LIST     LIST
+OUT_LEV1     DIM     5      001-005
+OUT_LEV2     DIM     5      006-010 
+OUT_CODE     DIM     1      011-011   .Y=choice, N=no choice,                  
+OUT_ESSN     DIM     9      012-020
+OUT_LNAME    DIM     20     021-040 
+OUT_FNAME    DIM     15     041-055
+OUT_MINIT    DIM     1      056-056
+OUT_ADDR1    DIM     35     057-091 
+OUT_ADDR2    DIM     35     092-126
+OUT_CITY     DIM     30     127-156
+OUT_STATE    DIM     2      157-158
+OUT_ZIP      DIM     13     159-171
+OUT_EDOB     DIM     8      172-179
+OUT_NET      DIM     5      180-184
+OUT_PRD      DIM     5      185-189
+OUT_PLAN     DIM     4      190-193
+OUT_DEPC     DIM     2      194-195
+OUT_RIDE     DIM     4      196-199
+OUT_EFF      DIM     8      200-207
+OUT_TRM      DIM     8      208-215 
+OUT_RATE     DIM     2      216-217
+OUT_EPREM    FORM    7.2    218-227
+OUT_SPREM    FORM    7.2    228-237
+OUT_HSAAMT   FORM    7.2    238-247
+OUT_FSAAMT   FORM    7.2    248-257
+OUT_DEPAMT   FORM    7.2    258-267
+OUT_CHGDT    DIM     10     268-277
+OUT_CHGBY    DIM     6      278-283
+OUT_MED      DIM     1      284-284 
+OUT_DPLAN    DIM     14     255-298
+OUT_DEFF     DIM     8      299-306
+OUT_DEPREM   DIM     10     307-316 
+OUT_DSPREM   DIM     10     317-326
+OUT_SWTRET   DIM     1      327-327
+             LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+COMMA            INIT      ","
+COV_SW DIM     1
+SCRATCH_400   DIM       400
+W_TRM         DIM       8
+W_EFF         DIM       8
+DIM_3         DIM       3
+DIM_10        DIM       10
+
+DHH           INIT      "DHH  "
+HRFEE         INIT      "HRFEE"
+HSA           INIT      "HSA  "
+EGWP          INIT      "EGWP "
+LIFE          INIT      "LIFE "
+NOCOV         INIT      "NOCOV"
+BLANK8        INIT      "        "
+
+...Keyins
+EFF_DATE      DIM       8
+ANS           DIM       1
+
+WS_EFF        DIM       8
+WS_TRM        DIM       8
+
+FORM_CCYY     FORM      4
+
+W_CCYY        DIM       4
+W_FYB         DIM       8           .Fiscal year begin date
+
+EFF_MAR       DIM       8
+EFF_JAN       DIM       8 
+
+STRING_HSA    DIM       14
+
+PRD_3         DIM       3
+PRD_2         DIM       2
+
+SWT_HLTH      DIM       1           .Y health during new fiscal year
+SWT_RET       DIM       1           .Y retired
+
+SWT_LIST      LIST
+SWT_MEDA      DIM       1           .Y if memo_type = MEDA
+SWT_MEDB      DIM       1           .Y if memo_type = MEDB 
+SWT_ENR       DIM       1           .Y if enrollee has MEDA & MEDB
+SWT_DEP       DIM       1           .Y if spouse has MEDA & MEDB
+              LISTEND
+
+HLD_ID1       DIM       8     ...used to loop through dep meme and memo recs
+HLD_DEPC      DIM       2
+
+WRK_1         DIM       1
+WRK_4         DIM       4
+
+CNT_4         DIM       4
+CNT_3         DIM       3
+
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+CAL_CLOCK     DIM       21
+TODAY         DIM       8
+
+
+TRAP_DATA     DIM       500
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+        CALL      RUN_NOW
+
+        CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+        INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "OE SELECTION RPTS" TO  C_OPER
+         MOVE      "A1505011"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+        CALL     SCHED_PICK
+
+        IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+        ENDIF
+        RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+RUN_RATECALC EXTERNAL
+RUN_CLIPCALC EXTERNAL
+
+    DEBUG
+    CALL      INITIALIZE
+
+    LOADMOD   "ratecalc.dbc"
+    LOADMOD   "clipcalc.dbc"   
+
+    CALL      REFORMAT_MEME
+    CALL      OPEN_FILES
+    CALL      PROCESS_FILE 
+    CALL      CLOSE_FILES 
+    CALL      SORT_OUTFILE
+
+    CALL      X_DISPLAY_COUNTS
+
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    
+    RETURN 
+                                                  
+. ----------------------------
+
+. End of Main Process
+. ----------------------------
+
+. ----------------------------
+INITIALIZE
+. ----------------------------
+        DISPLAY *P1:9,*ES
+        CALL X_BLANK_SCREEN
+        CLOCK     TIMESTAMP   INTO  TIMESTAMP
+        CLOCK     TIMESTAMP   INTO  CURRDATE
+        CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	MOVE      "Recs Read:     " TO X_CNTDESC1
+	MOVE      "Recs Written:  " TO X_CNTDESC2
+	MOVE      "               " TO X_CNTDESC3
+	MOVE      "               " TO X_CNTDESC4
+	MOVE      "               " TO X_CNTDESC5
+	MOVE      "               " TO X_CNTDESC6
+
+        CALL      X_DISPLAY_COUNTS
+
+        MOVE "20150701" to EFF_DATE
+
+        PACK WRK1_NAME1 WITH OGB_PATH,WRK1_NAME
+        PACK WRK2_NAME1 WITH OGB_PATH,WRK2_NAME
+        PACK REF_NAME1  WITH OGB_PATH,REF_NAME
+        PACK OUT_NAME1  WITH OGB_PATH,OUT_NAME
+    RETURN
+
+. ----------------------------
+. Getting the new coverage effective date if not January 1.
+. ----------------------------
+GET_COV_DATE
+
+        LOOP
+            DISPLAY *ES
+            CLEAR EFF_DATE
+            CLEAR ANS
+
+            KEYIN    *P=15:10, "ENTER COVERAGE EFFECTIVE DATE (CCYYMMDD): ":
+                     EFF_DATE, *P15:10, *EL
+            DISPLAY  *P15:10, EFF_DATE
+
+            KEYIN    *P20:10, "IS THIS CORRECT? (Y/N): ":
+                     *UC, ANS, *EL
+            IF (ANS = "Y")
+                BREAK
+            ELSE
+                CONTINUE
+            ENDIF
+
+        REPEAT
+
+    RETURN
+
+. ----------------------------
+..Reformatting MEME
+..ID, eff, trm, net, prd
+. ----------------------------
+REFORMAT_MEME
+
+...Network not NOCOV
+   DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+             *P30:21, "REFORMATTING MEME", *BOLDOFF
+   PACK     SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "meme.dbf ", WRK1_NAME1," 1-12 96-121 126-129":     
+                      " -p96-103eq#"",EFF_DATE,"#" -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(MEME.DBF)"
+        CHAIN     "MENU"
+    ENDIF
+
+...Network not LIFE
+   PACK     SCRATCH_400 WITH BLANKS
+   PACK SCRATCH_400 WITH WRK1_NAME1," ",REF_NAME1:     
+                      " -p29-33ne#"",LIFE,"#"":
+                      " -p29-33ne#"",EGWP,"#"":
+                      " -p29-33ne#"",NOCOV,"#"":
+                      " -p34-38ne#"",HRFEE,"#"":
+                      " -p29-33ne#"",DHH,"#"":
+                      " -p34-38ne#"",HSA,"#" -t -j"
+   REFORMAT SCRATCH_400
+    IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED (REF)" 
+        CHAIN     "MENU"
+    ENDIF
+
+...Sorting unique by ID
+   CALL SORT_OGBFILE USING REF_NAME1,REF_NAME1,REF_SRTKEY
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="SORT FAILED"
+      CHAIN     "MENU"
+    ENDIF
+
+    RETURN
+
+. ----------------------------
+OPEN_FILES
+. ----------------------------
+
+    CALL      PREP_OGBFILE USING OUT_FILE,OUT_NAME1
+    CALL      OPEN_OGBFILE USING REF_FILE,REF_NAME1 
+
+    RETURN
+
+. ----------------------------
+PROCESS_FILE
+. ----------------------------
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+
+    LOOP
+
+        CLEAR OUT_LIST
+        CLEAR HLD_ID1
+
+        CALL READ_OGBFILE USING REF_FILE,REF_NAME,REF_LIST
+
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_4,CNT_3
+        IF (CNT_3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+...Do not want voids
+        IF (SQUEEZE REF_TRM = "")
+            MOVE "99999999" TO REF_TRM
+        ENDIF
+        IF (REF_TRM < REF_EFF)
+            CONTINUE
+        ENDIF
+
+...Do not want HRA1 record
+        IF (SQUEEZE REF_PLAN = "HRA1")
+            CONTINUE
+        ENDIF        
+
+...Reading MEM for death date and relation code
+        PACK MEM_FK11 WITH REF_ID1
+        CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                             MEM_FN:              ...FILE NAME LIST
+                             MEM_FC:              ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                             MEM_FV:              ...FILE KEY VARLISTS
+                             MEM_FK:              ...FILE KEY SIZES
+                             MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                             MEM_REC:             ...FILE RECORD (PACKED)
+		             MEM_OLD:             ...FILE SAVED WHEN READ
+                             MEM_QTY:             ...NUMBER OF FIlES
+                             1                    ...FILE NUMBER FOR THIS READ
+        IF ((RESULT <> 1) OR (MEM_ID1 <> REF_ID1))
+          CONTINUE
+        ENDIF
+        
+        IF (SQUEEZE MEM_LNAME = "DELETE")
+           CONTINUE
+        ENDIF
+
+...Only enrollees are reported
+        IF (MEM_REL <> "01")
+            CONTINUE
+        ENDIF
+
+...Not dead
+        IF (SQUEEZE MEM_DOD <> "")
+            CONTINUE
+        ENDIF
+
+...Writing record
+        MOVE MEM_ID1 TO HLD_ID1
+        CALL PACK_OUTREC
+        CALL WRITE_REC
+    REPEAT
+
+    RETURN
+
+.-----------------------
+. Packing output record
+.-----------------------
+
+PACK_OUTREC
+        
+        MOVE MEM_ESSN  TO OUT_ESSN
+        MOVE MEM_LNAME TO OUT_LNAME
+        MOVE MEM_FNAME TO OUT_FNAME
+        MOVE MEM_MINIT TO OUT_MINIT
+        MOVE MEM_ADDR1 TO OUT_ADDR1
+        MOVE MEM_ADDR2 TO OUT_ADDR2
+        MOVE MEM_CITY  TO OUT_CITY 
+        MOVE MEM_STATE TO OUT_STATE
+        MOVE MEM_ZIP   TO OUT_ZIP  
+        MOVE MEM_DOB   TO OUT_EDOB
+
+
+    CLEAR MEME_FK11
+    PACK MEME_FK11 WITH REF_ID1,REF_ID2,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                           MEME_FN:  ...FILE NAME LIST
+                           MEME_FC:  ...TYPE OF INDEX
+.                                    ...(I)NDEX OR (A)IMDEX
+                           MEME_FV:  ...FILE KEY VARLISTS
+                           MEME_FK:  ...FILE KEY SIZES
+                           MEME_LIST:...FILE RECORD (FIELD LIST)
+                           MEME_REC: ...FILE RECORD (PACKED)
+                           MEME_OLD: ...FILE SAVED WHEN READ
+                           MEME_QTY: ...NUMBER OF FILES
+                           1         ...FILE NUMBER FOR THIS READ
+
+        IF (RESULT <> 1) 
+            RETURN
+        ENDIF
+
+        IF ((MEME_ID1 <> REF_ID1) OR (MEME_ID2 <> REF_ID2))
+            RETURN
+        ENDIF
+
+        UNPACK MEME_LEV1 INTO WRK_1, WRK_4
+        IF (WRK_1 = "R")
+            MOVE MEME_LEV1 TO OUT_LEV2
+            MOVE MEME_LEV2 TO OUT_LEV1
+        ELSE 
+            MOVE MEME_LEV1 TO OUT_LEV1
+            MOVE MEME_LEV2 TO OUT_LEV2
+        ENDIF
+
+        MOVE MEME_EFF TO OUT_EFF
+        MOVE MEME_TRM TO OUT_TRM
+        MOVE MEME_RT  TO OUT_RATE
+        MOVE MEME_DEPC TO OUT_DEPC
+        MOVE MEME_NET TO OUT_NET
+        MOVE MEME_PRD TO OUT_PRD
+        MOVE MEME_PLAN TO OUT_PLAN
+        MOVE MEME_EFF TO W_EFF
+        MOVE "Y"      TO OUT_CODE
+  
+        PACKLEN MEME_REC WITH MEME_LIST 
+        CALL RUN_CLIPCALC USING W_EFF:
+                                MEME_CLIR:
+                                MEME_NET:
+                                MEME_PRD:
+                                MEME_CARR:
+                                MEME_PLAN:
+                                MEME_RT:
+                                CLIP_REC
+        IF (SQUEEZE CLIP_REC = "")
+             MOVE "       .00" TO OUT_EPREM
+             MOVE "       .00" TO OUT_SPREM 
+        ELSE
+              FILL    " " IN ART_REC
+              IF (SQUEEZE MEME_LEV2 = "95")
+                MOVE "M" TO MEME_MODE
+                PACK MEME_REC WITH MEME_LIST
+              ENDIF
+              UNPACK MEME_REC INTO MEME_LIST
+              PACK MEME_REC WITH MEME_LIST 
+              CALL RUN_RATECALC USING W_EFF,MEM_REC,MEME_REC:
+                                      CLIP_REC,ART_REC
+              IF (SQUEEZE ART_REC = "")
+                    MOVE "       .00" TO OUT_EPREM
+                    MOVE "       .00" TO OUT_SPREM 
+              ELSE
+                    UNPACK ART_REC INTO ART_LIST
+                    MOVE ART_EEPOR TO OUT_EPREM 
+                    MOVE ART_EMPOR TO OUT_SPREM 
+              ENDIF
+        ENDIF
+         
+.        IF ((OUT_RIDE = "RET1") OR (OUT_RIDE = "RETS"))
+.           ADD "     39.00" TO OUT_EPREM
+.        ELSE
+.           IF (OUT_RIDE = "RET2")
+.             ADD "     78.00" TO OUT_EPREM
+.           ENDIF
+.        ENDIF
+        
+    RETURN
+._______________________
+.Writing output record
+._______________________
+WRITE_REC
+
+        CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST    
+        CLEAR OUT_LIST
+        ADD 1 TO X_CNT2
+        UNPACK X_CNT2 INTO CNT_4,CNT_3
+        IF (CNT_3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+    RETURN
+
+. ----------------------------
+CLOSE_FILES
+. ----------------------------
+       
+        CALL      CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+        CALL      CLOSE_OGBFILE USING REF_FILE,REF_NAME
+
+    RETURN
+
+. ----------------------------
+SORT_OUTFILE
+. ----------------------------
+     
+   CALL SORT_OGBFILE USING OUT_NAME1,OUT_NAME1,OUT_SRTKEY
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="OUTPUT SORT FAILED"
+      CHAIN     "MENU"
+    ENDIF
+    RETURN
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+ 
+. ----------------------------
+. Standard Includes
+. ----------------------------
+
+    INC       UTIL.SR      
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1505011.PS
+. +++++++++++++++++++++++++++++++++++++

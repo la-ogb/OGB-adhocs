@@ -1,0 +1,894 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: a0410261.ps                                         *
+.     *                                                                   *
+.     * DESCRIPTION: Counts the number of months any "01" or "02" member, *
+.     *              with Medicare Part A only, has either PPO, EPO, or   *
+.     *              MCO health coverage.  The counts are broken into     *
+.     *              Enrollee Only w/MedA, Spouse Only w/MedA, and        *
+.     *              Both w/MedA.  Within these 3 groups it is broken     *
+.     *              down into PPO, EPO, or MCO.                          *
+.     *                                                                   *
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APAJP 10/26/2004 A0410261 DEV - Initial Version.                  *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrolllment
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       CLI.RL           ...Client
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+.IN_FD        FILE    VAR=78, TEXT
+.IN_NAME      INIT    "/w/medabill.txt"
+.IN_LIST      LIST 
+.IN_MEDA_ID   DIM     8                  .Record Id of member who has MEDA
+.IN_LASTN     DIM     12                 .(Could be spouse or enrollee)
+.IN_REL       DIM     2
+.IN_FILL1     DIM     4
+.IN_ENR_ID    DIM     8                  .Enrollee record id.  (Only populated
+.IN_TERMDT    DIM     8                  .when above relation is 02).
+.IN_FILL2     DIM     2
+.IN_TYPE      DIM     4
+.IN_FILL3     DIM     21
+.IN_EFFDT     DIM     8                   .mm/dd/yy
+.             LISTEND
+
+IN_FD        FILE    VAR=19, TEXT
+IN_NAME      INIT    "/w/a0410261.ref"
+IN_LIST      LIST 
+IN_RECID     DIM     8
+IN_ESSN      DIM     9
+IN_REL       DIM     2
+             LISTEND
+
+MEDA_FD      FILE    VAR=27, TEXT
+MEDA_NAME    INIT    "/w/a0410261.meda"
+MEDA_LIST    LIST
+MEDA_ESSN    DIM     9
+MEDA_RECID   DIM     8
+MEDA_REL     DIM     2
+MEDA_EFF     DIM     8
+             LISTEND
+
+IO_FD        IFILE   VAR=29,TEXT,KEYLEN=15,NODUP
+IO_NAME      INIT    "/w/a0410261.ix1"
+IO_KEY       DIM     15
+IO_LIST      LIST
+IO_ESSN      DIM     9
+IO_MONTH     DIM     6          ---"ccyymm"
+IO_RT        DIM     2          ---Rate Table field from MEME
+IO_REL       DIM     2
+IO_MEMCNT    FORM    1
+IO_PPOCNT    FORM    3
+IO_EPOCNT    FORM    3
+IO_MCOCNT    FORM    3
+             LISTEND
+
+
+COUNT_FD      FILE    VAR=378,TEXT
+COUNT_NAME    INIT    "/w/a0410261.cnt"
+COUNT_LIST    LIST
+C_PPO_PM_AC   FORM    6
+C_PPO_PM_RN   FORM    6
+C_PPO_PM_R1   FORM    6
+C_PPO_PM_R2   FORM    6
+C_PPO_PM_CB   FORM    6
+C_PPO_PM_CP   FORM    6
+C_PPO_PM_CD   FORM    6
+C_PPO_SP_AC   FORM    6
+C_PPO_SP_RN   FORM    6
+C_PPO_SP_R1   FORM    6
+C_PPO_SP_R2   FORM    6
+C_PPO_SP_CB   FORM    6
+C_PPO_SP_CP   FORM    6
+C_PPO_SP_CD   FORM    6
+C_PPO_BOTH_AC FORM    6
+C_PPO_BOTH_RN FORM    6
+C_PPO_BOTH_R1 FORM    6
+C_PPO_BOTH_R2 FORM    6
+C_PPO_BOTH_CB FORM    6
+C_PPO_BOTH_CP FORM    6
+C_PPO_BOTH_CD FORM    6
+C_EPO_PM_AC   FORM    6
+C_EPO_PM_RN   FORM    6
+C_EPO_PM_R1   FORM    6
+C_EPO_PM_R2   FORM    6
+C_EPO_PM_CB   FORM    6
+C_EPO_PM_CP   FORM    6
+C_EPO_PM_CD   FORM    6
+C_EPO_SP_AC   FORM    6
+C_EPO_SP_RN   FORM    6
+C_EPO_SP_R1   FORM    6
+C_EPO_SP_R2   FORM    6
+C_EPO_SP_CB   FORM    6
+C_EPO_SP_CP   FORM    6
+C_EPO_SP_CD   FORM    6
+C_EPO_BOTH_AC FORM    6
+C_EPO_BOTH_RN FORM    6
+C_EPO_BOTH_R1 FORM    6
+C_EPO_BOTH_R2 FORM    6
+C_EPO_BOTH_CB FORM    6
+C_EPO_BOTH_CP FORM    6
+C_EPO_BOTH_CD FORM    6
+C_MCO_PM_AC   FORM    6
+C_MCO_PM_RN   FORM    6
+C_MCO_PM_R1   FORM    6
+C_MCO_PM_R2   FORM    6
+C_MCO_PM_CB   FORM    6
+C_MCO_PM_CP   FORM    6
+C_MCO_PM_CD   FORM    6
+C_MCO_SP_AC   FORM    6
+C_MCO_SP_RN   FORM    6
+C_MCO_SP_R1   FORM    6
+C_MCO_SP_R2   FORM    6
+C_MCO_SP_CB   FORM    6
+C_MCO_SP_CP   FORM    6
+C_MCO_SP_CD   FORM    6
+C_MCO_BOTH_AC FORM    6
+C_MCO_BOTH_RN FORM    6
+C_MCO_BOTH_R1 FORM    6
+C_MCO_BOTH_R2 FORM    6
+C_MCO_BOTH_CB FORM    6
+C_MCO_BOTH_CP FORM    6
+C_MCO_BOTH_CD FORM    6
+             LISTEND
+
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+.
+MEDA_SW        DIM  1
+MEDB_SW        DIM  1
+MEDA_SRTKEY    INIT "1-9 18-19 -t"
+MEDA_SRTNAME   INIT "/w/a0410261.srt"
+CNT1_2         DIM  2
+CNT1_3         DIM  3
+CNT1_4         DIM  4
+CNT1_5         DIM  5
+CURRDATE       DIM  8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+PARM_BEGDT    INIT      "20030701"
+PARM_ENDDT    INIT      "20040630"
+SRCH_BEGDT    DIM       8
+SRCH_ENDDT    DIM       8
+TIMESTAMP     DIM       14
+TODAY         DIM       8
+WSY           FORM      4
+WSM           FORM      2
+WSD           DIM       2
+WSLEAP        FORM      1
+WSMEMOEFF     DIM       8
+WSPPOCNT      FORM      3
+WSEPOCNT      FORM      3
+WSMCOCNT      FORM      3
+
+. ----------------------------
+. ----------------------------
+. Control Variables 
+. ----------------------------
+MCS@DIM1      DIM       @
+
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "MEDICARE PART-A ONLY"     TO  C_OPER
+         MOVE      "A041026" TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL REFORMAT_MEM
+   CALL OPEN_FILES
+   CALL FIND_MEDA_ONLY
+   CALL SORT_MEDA
+   CALL COUNT_MONTHS
+   CALL TOTAL_COUNTS
+   CALL CLOSE_FILES 
+   CALL X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+
+
+. ----------------------------------------------------------------------------
+INITIALIZE
+. ----------------------------------------------------------------------------
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "Input Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Output Recs Written:" TO X_CNTDESC2
+  MOVE      "Members Counted:" TO X_CNTDESC3
+  MOVE      "Totaling... " TO X_CNTDESC4
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+
+
+. -----------------------------------------------------------------------------
+. Reformat the MEM to get just the record id's of enrollees and spouses 
+. along with the enrollee ssn. 
+. -----------------------------------------------------------------------------
+REFORMAT_MEM
+   DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+             *P30:21, "REFORMATTING MEM", *BOLDOFF
+
+   PACK     SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "mem.dbf /w/a0410261.ref":
+                     " -p27-28le#"02#" 1-17 27-28 -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(a0410261.ref)"
+       CHAIN     "MENU"
+    ENDIF
+
+ RETURN
+
+
+. -----------------------------------------------------------------------------
+OPEN_FILES
+. -----------------------------------------------------------------------------
+         CALL      OPEN_OGBFILE USING IN_FD,IN_NAME
+         CALL      PREP_OGBFILE USING MEDA_FD,MEDA_NAME
+         CALL      PREP_OGBFILE_IX USING IO_FD,IO_NAME
+         CALL      PREP_OGBFILE USING COUNT_FD,COUNT_NAME
+         RETURN
+
+
+. ----------------------------------------------------------------------------
+. Write out a record for each enrollee or spouse that has Medicare Part A
+. only.
+. ----------------------------------------------------------------------------
+FIND_MEDA_ONLY
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  LOOP
+    CLEAR MEDA_LIST
+    CALL READ_OGBFILE USING IN_FD,IN_NAME,IN_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL CHECK_MEMO
+
+    IF ((MEDA_SW = "1") AND (MEDB_SW <> "1"))
+        MOVE IN_ESSN TO MEDA_ESSN
+        MOVE IN_RECID TO MEDA_RECID
+        MOVE IN_REL TO MEDA_REL
+        MOVE WSMEMOEFF TO MEDA_EFF
+        CALL WRITE_OGBREC USING MEDA_FD,MEDA_NAME,MEDA_LIST
+        ADD 1 TO X_CNT2
+    ENDIF
+
+  REPEAT
+.
+  RETURN
+
+
+. ----------------------------------------------------------------------------
+. Check MEMO File for Members with Medicare Part A only.
+. ----------------------------------------------------------------------------
+CHECK_MEMO
+  CLEAR MEDA_SW
+  CLEAR MEDB_SW
+  PACK MEMO_FK11 WITH IN_RECID,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> IN_RECID))
+           BREAK                  
+      ENDIF	
+
+      IF (SQUEEZE MEMO_EFF = "")
+          CONTINUE
+      ENDIF
+
+      IF (MEMO_EFF > PARM_ENDDT)
+          CONTINUE
+      ENDIF
+
+      IF ((SQUEEZE MEMO_TRM >"") AND (MEMO_TRM <= PARM_BEGDT))
+          CONTINUE
+      ENDIF
+
+      SWITCH MEMO_TYPE
+             CASE "MEDA"
+               MOVE "1" TO MEDA_SW
+               MOVE MEMO_EFF TO WSMEMOEFF
+             CASE "MEDB"
+               MOVE "1" TO MEDB_SW
+      ENDSWITCH
+
+  REPEAT
+  RETURN
+
+
+. ----------------------------------------------------------------------------
+. Sort .meda file by SSN and Relationship Code (so that the enrollee record
+. is the first one processed at each change in SSN).
+. ----------------------------------------------------------------------------
+SORT_MEDA
+  CALL       CLOSE_OGBFILE USING MEDA_FD,MEDA_NAME
+  CALL       SORT_OGBFILE  USING MEDA_NAME,MEDA_SRTNAME,MEDA_SRTKEY
+  IF OVER
+     ERROR     HORZ="22",VERT="19":
+               BGCOL=C_ERRB,FGCOL=C_ERRF:
+               LNCOL=C_ERRL,SHADE="Y":
+               TEXT="SORT FAILED"
+     CHAIN     "menu"
+  ELSE
+     DISPLAY   *P30:21,*BGCOLOR=*CYAN,*EL   
+  ENDIF
+
+  CALL       OPEN_OGBFILE USING MEDA_FD,MEDA_SRTNAME
+
+ RETURN
+
+
+. ---------------------------------------------------------------------------
+. For each member in the input/output "MEDA Only" file, count the number of
+. months during the report period they had health coverage and determine the
+. coverage type.
+. ---------------------------------------------------------------------------
+COUNT_MONTHS
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  MOVE 0 TO WSPPOCNT, WSEPOCNT, WSMCOCNT
+  LOOP
+    CALL READ_OGBFILE USING MEDA_FD,MEDA_SRTNAME,MEDA_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+
+    ADD 1 TO X_CNT3
+    UNPACK X_CNT3 INTO CNT1_5,CNT1_2
+    IF (CNT1_2 = "00")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    IF (MEDA_EFF > PARM_BEGDT)
+        PACK SRCH_BEGDT WITH MEDA_EFF
+    ELSE
+        PACK SRCH_BEGDT WITH PARM_BEGDT
+    ENDIF 
+
+
+. ...Loop thru each month in the reporting period reading for a MEME  
+. ...record in effect during the Search month.
+    LOOP
+        MOVE SRCH_BEGDT TO SRCH_ENDDT 
+        CALL LAST_DAY USING SRCH_ENDDT      ...RETURNS LAST DAY OF SRCH_BEGDT
+.                                           ...MONTH IN 'SRCH_ENDDT'
+        MOVE MEDA_RECID TO MEME_FK11
+        CALL FILE_READ USING MEME_FD:            ...FILE DECLARATION LIST
+                             MEME_FN:            ...FILE NAME LIST
+                             MEME_FC:            ...TYPE OF INDEX
+.                                                ...(I)NDEX or (A)IMDEX
+                             MEME_FV:            ...FILE KEY VARLISTS
+                             MEME_FK:            ...FILE KEY SIZES
+                             MEME_LIST:          ...FILE RECORD (FIELD LIST)
+                             MEME_REC:           ...FILE RECORD (PACKED)
+                             MEME_OLD:           ...FILE SAVED WHEN READ
+                             MEME_QTY:           ...NUMBER OF FILES
+                             1                   ...FILE NUMBER FOR THIS READ
+        LOOP
+            CALL FILE_NEXT USING MEME_FD:      ...FILE DECLARATION LIST
+                                 MEME_FN:      ...FILE NAME LIST
+                                 MEME_FC:      ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                                 MEME_FV:      ...FILE KEY VARLISTS
+                                 MEME_FK:      ...FILE KEY SIZES
+                                 MEME_LIST:    ...FILE RECORD (FIELD LIST)
+                                 MEME_REC:     ...FILE RECORD (PACKED)
+                                 MEME_OLD:     ...FILE SAVED WHEN READ
+                                 MEME_QTY:     ...NUMBER OF FILES
+                                 1             ...FILE NUMBER FOR THIS READ
+            IF ((RESULT <> 1) OR (MEME_ID1 <> MEDA_RECID))
+                 BREAK                  
+            ENDIF	
+
+            IF (MEME_PRD = "LIFE ")
+                CONTINUE
+            ENDIF
+
+            IF (MEME_EFF > SRCH_ENDDT)
+                CONTINUE
+            ENDIF
+
+            IF ((SQUEEZE MEME_TRM >"") AND (MEME_TRM <= SRCH_BEGDT))
+                CONTINUE
+            ENDIF
+
+            SWITCH MEME_PRD
+                CASE "PPO  "
+                    ADD 1 TO WSPPOCNT
+                    CALL WRITE_IX
+                    BREAK
+                CASE "EPO  "
+                    ADD 1 TO WSEPOCNT
+                    CALL WRITE_IX
+                    BREAK
+                CASE "MCO  "
+                    ADD 1 TO WSMCOCNT
+                    CALL WRITE_IX
+                    BREAK
+            ENDSWITCH
+
+        REPEAT  ...(MEME Loop)
+
+. ...Increment the Month and Repeat the Search
+        UNPACK SRCH_BEGDT INTO WSY,WSM,WSD
+        IF (WSM = 12)
+           ADD 1 TO WSY
+           MOVE "01" TO WSM
+           MOVE "01" TO WSD
+        ELSE
+           ADD 1 TO WSM
+           MOVE "01" TO WSD
+        ENDIF
+
+        PACK SRCH_BEGDT WITH WSY, WSM, WSD
+        REPLACE " 0" IN SRCH_BEGDT
+        IF (SRCH_BEGDT > PARM_ENDDT)
+            BREAK
+        ENDIF
+    REPEAT  ...(Search Loop)
+  REPEAT  ...(Read .meda File Loop)
+.
+RETURN
+ 
+
+. -----------------------------------------------------------------------------
+. Maintain an indexed file of family ssns.  Accumulate the total number
+. of family members that make up the effective month count and accumulate the 
+. number of months the family had health coverage.
+. -----------------------------------------------------------------------------
+WRITE_IX
+         CLEAR IO_LIST
+         UNPACK SRCH_BEGDT INTO WSY,WSM,WSD
+         PACK IO_MONTH WITH WSY,WSM
+         REPLACE " 0" IN IO_MONTH
+         PACK IO_KEY WITH MEDA_ESSN,IO_MONTH
+         MOVE MEDA_ESSN TO IO_ESSN
+         CALL READ_OGBFILE_IX USING IO_FD,IO_NAME,IO_KEY,IO_LIST
+         IF (RESULT = 1)                
+             ADD 1 TO IO_MEMCNT            ---SSN on File Already
+             ADD WSPPOCNT TO IO_PPOCNT
+             ADD WSEPOCNT TO IO_EPOCNT
+             ADD WSMCOCNT TO IO_MCOCNT
+             CALL UPDATE_OGBREC_IX USING IO_FD,IO_LIST
+         ELSE
+             MOVE 1 TO IO_MEMCNT            ---SSN Not on File Yet
+             MOVE MEDA_REL TO IO_REL
+             ADD WSPPOCNT TO IO_PPOCNT
+             ADD WSEPOCNT TO IO_EPOCNT
+             ADD WSMCOCNT TO IO_MCOCNT
+             IF (SQUEEZE(MEME_RT) = "")    ---Rate Table field Only
+                 CALL GET_PM_RATETBL          populated on Enrollee Record.
+             ELSE                             "IO_RT" populated in here.
+                 MOVE MEME_RT TO IO_RT
+             ENDIF                          
+             CALL WRITE_OGBREC_IX USING IO_FD,IO_NAME,IO_KEY,IO_LIST
+         ENDIF 
+         MOVE 0 TO WSPPOCNT, WSEPOCNT, WSMCOCNT
+.
+ RETURN
+
+
+. -----------------------------------------------------------------------------
+. Read the indexed ssn file and add to the final counts:
+.  -- C_*_PM_* if family member count is one and relation is "01"
+.  -- C_*SP if family member count is one and relation is not "01"
+.  -- C_*BOTH if family member count is greater than one.
+. 
+.     --Within each of the above categories, break it down further based on 
+.       the Rate Type.
+. -----------------------------------------------------------------------------
+TOTAL_COUNTS
+         CALL CLOSE_OGBFILE_IX USING IO_FD,IO_NAME
+         CALL OPEN_OGBFILE_IX USING IO_FD,IO_NAME
+         PACK IO_KEY WITH BLANKS
+
+         LOOP
+           CALL READKS_OGBFILE_IX USING IO_FD,IO_NAME,IO_LIST
+           IF (RESULT <> 1)                
+               BREAK
+           ENDIF
+
+           ADD 1 TO X_CNT4
+           UNPACK X_CNT4 INTO CNT1_5,CNT1_2
+           IF (CNT1_2 = "00")
+               CALL X_DISPLAY_COUNTS
+           ENDIF
+
+           IF (IO_MEMCNT > 1)
+               SWITCH IO_RT
+                 CASE "AC"
+                   ADD IO_PPOCNT TO C_PPO_BOTH_AC
+                   ADD IO_EPOCNT TO C_EPO_BOTH_AC
+                   ADD IO_MCOCNT TO C_MCO_BOTH_AC
+                 CASE "RN"
+                   ADD IO_PPOCNT TO C_PPO_BOTH_RN
+                   ADD IO_EPOCNT TO C_EPO_BOTH_RN
+                   ADD IO_MCOCNT TO C_MCO_BOTH_RN
+                 CASE "R1"
+                   ADD IO_PPOCNT TO C_PPO_BOTH_R1
+                   ADD IO_EPOCNT TO C_EPO_BOTH_R1
+                   ADD IO_MCOCNT TO C_MCO_BOTH_R1
+                 CASE "R2"
+                   ADD IO_PPOCNT TO C_PPO_BOTH_R2
+                   ADD IO_EPOCNT TO C_EPO_BOTH_R2
+                   ADD IO_MCOCNT TO C_MCO_BOTH_R2
+                 CASE "CB"
+                   ADD IO_PPOCNT TO C_PPO_BOTH_CB
+                   ADD IO_EPOCNT TO C_EPO_BOTH_CB
+                   ADD IO_MCOCNT TO C_MCO_BOTH_CB
+                 CASE "CP"
+                   ADD IO_PPOCNT TO C_PPO_BOTH_CP
+                   ADD IO_EPOCNT TO C_EPO_BOTH_CP
+                   ADD IO_MCOCNT TO C_MCO_BOTH_CP
+                 CASE "CD"
+                   ADD IO_PPOCNT TO C_PPO_BOTH_CD
+                   ADD IO_EPOCNT TO C_EPO_BOTH_CD
+                   ADD IO_MCOCNT TO C_MCO_BOTH_CD
+               ENDSWITCH
+           ENDIF
+
+           IF (IO_MEMCNT = 1)
+               IF (IO_REL = "01")
+                   SWITCH IO_RT
+                     CASE "AC"
+                       ADD IO_PPOCNT TO C_PPO_PM_AC
+                       ADD IO_EPOCNT TO C_EPO_PM_AC
+                       ADD IO_MCOCNT TO C_MCO_PM_AC
+                     CASE "RN"
+                       ADD IO_PPOCNT TO C_PPO_PM_RN
+                       ADD IO_EPOCNT TO C_EPO_PM_RN
+                       ADD IO_MCOCNT TO C_MCO_PM_RN
+                     CASE "R1"
+                       ADD IO_PPOCNT TO C_PPO_PM_R1
+                       ADD IO_EPOCNT TO C_EPO_PM_R1
+                       ADD IO_MCOCNT TO C_MCO_PM_R1
+                     CASE "R2"
+                       ADD IO_PPOCNT TO C_PPO_PM_R2
+                       ADD IO_EPOCNT TO C_EPO_PM_R2
+                       ADD IO_MCOCNT TO C_MCO_PM_R2
+                     CASE "CB"
+                       ADD IO_PPOCNT TO C_PPO_PM_CB
+                       ADD IO_EPOCNT TO C_EPO_PM_CB
+                       ADD IO_MCOCNT TO C_MCO_PM_CB
+                     CASE "CP"
+                       ADD IO_PPOCNT TO C_PPO_PM_CP
+                       ADD IO_EPOCNT TO C_EPO_PM_CP
+                       ADD IO_MCOCNT TO C_MCO_PM_CP
+                     CASE "CD"
+                       ADD IO_PPOCNT TO C_PPO_PM_CD
+                       ADD IO_EPOCNT TO C_EPO_PM_CD
+                       ADD IO_MCOCNT TO C_MCO_PM_CD
+                   ENDSWITCH
+               ELSE
+                   SWITCH IO_RT
+                     CASE "AC"
+                       ADD IO_PPOCNT TO C_PPO_SP_AC
+                       ADD IO_EPOCNT TO C_EPO_SP_AC
+                       ADD IO_MCOCNT TO C_MCO_SP_AC
+                     CASE "RN"
+                       ADD IO_PPOCNT TO C_PPO_SP_RN
+                       ADD IO_EPOCNT TO C_EPO_SP_RN
+                       ADD IO_MCOCNT TO C_MCO_SP_RN
+                     CASE "R1"
+                       ADD IO_PPOCNT TO C_PPO_SP_R1
+                       ADD IO_EPOCNT TO C_EPO_SP_R1
+                       ADD IO_MCOCNT TO C_MCO_SP_R1
+                     CASE "R2"
+                       ADD IO_PPOCNT TO C_PPO_SP_R2
+                       ADD IO_EPOCNT TO C_EPO_SP_R2
+                       ADD IO_MCOCNT TO C_MCO_SP_R2
+                     CASE "CB"
+                       ADD IO_PPOCNT TO C_PPO_SP_CB
+                       ADD IO_EPOCNT TO C_EPO_SP_CB
+                       ADD IO_MCOCNT TO C_MCO_SP_CB
+                     CASE "CP"
+                       ADD IO_PPOCNT TO C_PPO_SP_CP
+                       ADD IO_EPOCNT TO C_EPO_SP_CP
+                       ADD IO_MCOCNT TO C_MCO_SP_CP
+                     CASE "CD"
+                       ADD IO_PPOCNT TO C_PPO_SP_CD
+                       ADD IO_EPOCNT TO C_EPO_SP_CD
+                       ADD IO_MCOCNT TO C_MCO_SP_CD
+                   ENDSWITCH
+               ENDIF
+           ENDIF
+
+         REPEAT
+.
+ RETURN
+
+
+. --------------------------------------------------------------------------
+.  For families where only the spouse has MedA-Only coverage, the program
+.  is unable to determine the Coverage Type by reading the spouse MEME 
+.  record.  The Rate Table field is only available on the enrollee MEME
+.  record.    
+. --------------------------------------------------------------------------
+GET_PM_RATETBL  
+    CLEAR IO_RT
+
+. ...Get Enrollee Record ID off of MEM file.   
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",MEDA_ESSN,BLANKS
+    PACK      MEM_AIM3 WITH "03X","01",BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                  MEM_FN:          ...FILE NAME LIST
+                  MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                  MEM_FV:          ...FILE KEY VARLISTS
+                  MEM_AIM:          ...FILE KEY SIZES
+                  MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                  MEM_REC:         ...FILE RECORD (PACKED)
+                  MEM_OLD:         ...FILE SAVED WHEN READ
+                  MEM_QTY:         ...NUMBER OF FILES
+                  2                 ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+        GOTO GET_PM_RATETBL_RETURN
+    ENDIF
+
+    IF (MEM_ESSN <> MEDA_ESSN)
+        GOTO GET_PM_RATETBL_RETURN
+    ENDIF
+
+. ...Find MEME record in effect for this Search Month and retrieve the 
+. ...Rate Table.
+
+    MOVE MEM_ID1 TO MEME_FK11
+    CALL FILE_READ USING MEME_FD:            ...FILE DECLARATION LIST
+                         MEME_FN:            ...FILE NAME LIST
+                         MEME_FC:            ...TYPE OF INDEX
+.                                                ...(I)NDEX or (A)IMDEX
+                         MEME_FV:            ...FILE KEY VARLISTS
+                         MEME_FK:            ...FILE KEY SIZES
+                         MEME_LIST:          ...FILE RECORD (FIELD LIST)
+                         MEME_REC:           ...FILE RECORD (PACKED)
+                         MEME_OLD:           ...FILE SAVED WHEN READ
+                         MEME_QTY:           ...NUMBER OF FILES
+                         1                   ...FILE NUMBER FOR THIS READ
+    LOOP
+           CALL FILE_NEXT USING MEME_FD:      ...FILE DECLARATION LIST
+                                MEME_FN:      ...FILE NAME LIST
+                                MEME_FC:      ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                                MEME_FV:      ...FILE KEY VARLISTS
+                                MEME_FK:      ...FILE KEY SIZES
+                                MEME_LIST:    ...FILE RECORD (FIELD LIST)
+                                MEME_REC:     ...FILE RECORD (PACKED)
+                                MEME_OLD:     ...FILE SAVED WHEN READ
+                                MEME_QTY:     ...NUMBER OF FILES
+                                1             ...FILE NUMBER FOR THIS READ
+           IF ((RESULT <> 1) OR (MEME_ID1 <> MEM_ID1))
+                BREAK                  
+           ENDIF	
+           IF (MEME_PRD = "LIFE ")
+               CONTINUE
+           ENDIF
+           IF (MEME_EFF > SRCH_ENDDT)
+               CONTINUE
+           ENDIF
+           IF ((SQUEEZE MEME_TRM >"") AND (MEME_TRM <= SRCH_BEGDT))
+               CONTINUE
+           ENDIF
+             
+           MOVE MEME_RT TO IO_RT
+           BREAK
+
+    REPEAT
+    
+GET_PM_RATETBL_RETURN
+ RETURN
+
+
+. --------------------------------------------------------------------------
+.  Calculate last day of month    
+. --------------------------------------------------------------------------
+LAST_DAY ROUTINE MCS@DIM1
+
+         UNPACK MCS@DIM1 INTO WSY, WSM, WSD
+
+         IF (WSM = 04 OR WSM = 06)
+            MOVE 30 TO WSD
+            GOTO LAST_DAY_RETURN
+         ENDIF 
+
+         IF (WSM = 09 OR WSM = 11)
+            MOVE 30 TO WSD  
+            GOTO LAST_DAY_RETURN
+         ENDIF
+
+         IF (WSM = 02)
+            MOD 4 TO WSY GIVING WSLEAP
+            IF (WSLEAP = 0)
+               MOVE 29 TO WSD 
+            ELSE
+               MOVE 28 TO WSD  
+            ENDIF
+            GOTO LAST_DAY_RETURN
+         ENDIF
+
+         MOVE 31 TO WSD  
+
+LAST_DAY_RETURN
+         PACK MCS@DIM1 WITH WSY, WSM, WSD
+         REPLACE " 0" IN MCS@DIM1
+           
+         RETURN
+
+
+. -----------------------------------------------------------------------------
+. Write the final Counts out to the 'counts' file and close all program files.
+. -----------------------------------------------------------------------------
+CLOSE_FILES
+         CALL      WRITE_OGBREC USING COUNT_FD,COUNT_NAME,COUNT_LIST
+         CALL      CLOSE_OGBFILE USING IN_FD,IN_NAME
+         CALL      CLOSE_OGBFILE USING MEDA_FD,MEDA_SRTNAME
+         CALL      CLOSE_OGBFILE_IX USING IO_FD,IO_NAME
+         CALL      CLOSE_OGBFILE USING COUNT_FD,COUNT_NAME
+         RETURN
+
+
+. ----------------------------------------------------------------------------
+. Operator pressed F9
+. ----------------------------------------------------------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+
+. -----------------------------------------------------------------------------
+. Program Specific Includes
+. -----------------------------------------------------------------------------
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. /End of A0410261.PS
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

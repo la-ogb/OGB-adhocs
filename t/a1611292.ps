@@ -1,0 +1,498 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++  Program Name : A1611292
++   Description : Fixes records created by A1611291.PS where the new
++                 record was created but there was a future plan, so
++                 that those records have two health plans with no
++                 term dates.
++ ......................................................................
++  apjwh - 11/29/2016 - DEV - Initial Version
++ .............................Revisions................................
++  apjwh - 05/17/2017 - MOD - consolidated includes into new UTILs
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++ -------------------------
++ Required Program Includes
++ -------------------------
+    INC  UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+
++ -------------------------
++ Program Specific Includes
++ -------------------------
+    INC  UTIL_MEMMEM.CB  ... OGB Common variables for UTIL routine
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ File & Global Variable Declarations
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Work Files
+INPUT_FILE        FILE   VAR=4800, TEXT ... Update file from a1611291
+INPUT_NAME        INIT   "a1611291.txt" ... uses the INM_LIST vars
+
+... Output Files
+UPDT_IMP_FILE     FILE   VAR=4800, TEXT ... Error CSV
+UPDT_IMP_NAME     INIT   "a1611292.txt"
+
+UPDT_CSV_FILE     FILE   VAR=200, TEXT ... Report of Changed Records
+UPDT_CSV_NAME     INIT   "/w/a1611292.csv"
+
+ERR_FILE          FILE   VAR=200, TEXT ... Report of IDs that need fixin
+ERR_NAME          INIT   "/w/a1611292.err"
+ERR_LIST          LIST
+..............................
+ERR_REC           CHAR   200
+..............................
+                  LISTEND
+
+... Test output for discovery of scope of issue
+CSV_LIST          LIST
+..............................
+CSV_REC           CHAR   200
+..............................
+                  LISTEND
+
+CSV_HDR_LIST      LIST
+..............................
+CSV_HDR           INIT   "Member ID,":
+                         "Future Record ID,":
+                         "Future Network,":
+                         "Future Product,":
+                         "Future Plan,":
+                         "Future EFF,":
+                         "Future TRM,":
+                         "Error Network,":
+                         "Error Product,":
+                         "Error Plan"
+..............................
+                  LISTEND
+
+... Useful Program Variables
+IS_LIFE           CHAR   1
+ODD_REC_FOUND     CHAR   1
+ODD_MEME_SAVE     CHAR   600
+TERM_NEEDED       CHAR   1
+TERM_DATE         CHAR   8
+
+... Required DBC variables
+CAL_CLOCK         CHAR   21
+CURRDATE          CHAR   8
+
+PARAM_LIST        LIST WITH NAMES
+..............................
+PARAM_FILE        CHAR   12
+PARAM_FROM        CHAR   8
+PARAM_THRU        CHAR   8
+..............................
+                  LISTEND
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Begin Program
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Start here. If completed successfully, continue to the next program
+    CALL  RUN_NOW
+    CHAIN C_NEXT
+
+... Scheduler routines. You cannot include both; use NP unless the
+... program requires Impact's printer functions
+...     WP - with printer
+...     NP - no printer
+
+    INC  SCHED_NP.SR
+
+.#######################################################################
+RUN_NOW
+.#######################################################################
+
+... Save return stack
+    RETCOUNT ORIG_RETURN
+
+... Check if the program was called from the command line
+    MOVE  "A1611292" TO C_PROG
+    MOVE  "FIX A1611291 ERROR" TO C_OPER
+    IF (C_CMDPAR)
+        CALL  CMD_START USING C_PROG
+    ENDIF
+
+... Fill top of screen
+
+    MOVE  "MENU" TO C_NEXT
+    MOVE  BLANKS TO C_LABEL
+    MOVE  BLANKS TO C_FILE
+    MOVE  BLANKS TO C_KEYS
+    CLOCK CALENDAR INTO CAL_CLOCK
+
+    IF (NOT C_CMDPAR)
+        CALL  X_BLANK_SCREEN
+    ENDIF
+
+... Set applicable traps
+    TRAPSAVE  TRAP_DATA
+    TRAPCLR   ALL
+    TRAP      QUIT NORESET IF F9
+
+... Get scheduler information
+    CALL  SCHED_PICK
+
+    IF ((RUN_MODE = "B") OR (RUN_MODE = "N"))
+        CALL  MAIN_PROCESS
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+MAIN_PROCESS
+.#######################################################################
+    debug
+    CALL  INITIALIZE
+    CALL  PROCESS_RECS
+    CALL  CLEANUP
+    CALL  NORMAL_EOJ
+
+  RETURN
+
+.#######################################################################
+INITIALIZE
+.#######################################################################
+. -----------------------------------------------------------------
+... Initialize program time variables and draw the counters, unless
+... the program is invoked from the command line
+. -----------------------------------------------------------------
+
+    CLOCK  TIMESTAMP  INTO  CURRDATE
+
+... Display Counters
+    IF ((C_RMODE = "I") AND (NOT C_CMDPAR))
+        MOVE  "Changed Members:"     TO X_CNTDESC1
+        MOVE  "Fixed Records:"       TO X_CNTDESC2
+        MOVE  "Errors Found"         TO X_CNTDESC3
+        MOVE  "Not Used"             TO X_CNTDESC4
+        MOVE  "Not Used"             TO X_CNTDESC5
+        MOVE  "Not Used"             TO X_CNTDESC6
+
+        CALL  X_ZERO_COUNTS
+        CALL  X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL  PREPARE_FILES
+
+  RETURN
+
+.#######################################################################
+PROCESS_RECS
+.#######################################################################
+. ---------------------------------------------------------------------
+... For each record in the A1611291 update file, look for MEME records
+... that have EFF dates in the future of the same type (Health or Life)
+... but were not created by A1611291 (LGOV17 in NEWBY field).
+...
+... If any are found, term the plan created by A1611291 so that
+... coverage is continuous between the old plan and the new.
+. ---------------------------------------------------------------------
+
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+
+    LOOP
+        MOVE  NO TO TERM_NEEDED, ODD_REC_FOUND, IS_LIFE
+
+        MOVE  INPUT_NAME TO C_FILE
+        CALL  READ_OGBFILE USING INPUT_FILE:
+                                 INPUT_NAME:
+                                 INM_LIST
+        IF  (RESULT != 1)
+            BREAK
+        ENDIF
+
+... Each member will have two records. Skip the record that terms the
+.   old rec, working from the new record.
+        IF (SQUEEZE INME_TRM != "")
+            CONTINUE
+        ENDIF
+
+        CALL  UTIL_XCOUNTER USING X_CNT1, 1000
+
+        IF (SQUEEZE INME_NET = "LIFE")
+            MOVE  YES TO IS_LIFE
+        ENDIF
+
+... Search for the odd future MEME rec
+        CALL  FIND_ODD_MEME USING INM_ID1
+
+        IF (ODD_REC_FOUND = NO)
+            CONTINUE
+        ENDIF
+
+... Find the record ID created by the LGOV17 process. If it's already
+.   been voided, ignore it.
+        CALL  FIND_MATCHING_MEME USING INM_ID1
+
+        IF (TERM_NEEDED = YES)
+            CALL  WRITE_UPDT_REC
+        ENDIF
+    REPEAT
+
+  RETURN
+
+.#######################################################################
+FIND_ODD_MEME        ROUTINE FT_ID1
+.#######################################################################
+. ------------------------------------------------------------------
+... Cycle through all MEME records of the member and isolate the one
+... that matches the type of plan created in the INPUT rec where the
+... term date is blank and it was NOT created by LGOV17.
+. ------------------------------------------------------------------
+FT_ID1        CHAR   @
+. --------------------
+
+    CLEAR  MEME_LIST, MEME_REC, ODD_MEME_SAVE
+
+    LOOP
+        IF (SQUEEZE MEME_REC = "")
+            CALL  UTIL_MEME_FIND USING FT_ID1
+        ELSE
+            CALL  UTIL_MEME_NEXT
+        ENDIF
+        IF (NOT EQUAL)
+            BREAK
+        ENDIF
+
+... Skip if it has a term date
+        IF (SQUEEZE MEME_TRM != "")
+            CONTINUE
+        ENDIF
+
+... Skip if it's neither a Health or Life plan
+        IF ((MEME_NET = "NOCOV"):           ... waived coverage
+           OR (SQUEEZE MEME_PRD = "EGWP"):  ... Medicare record
+           OR (MEME_PRD = "HRFEE"):         ... OneExchange Billing Rec
+           OR (SQUEEZE MEME_PRD = "HSA"):   ... HSA Billing Rec
+           OR (SQUEEZE MEME_PRD = "LBLA"):  ... BCBS Wellness Record
+           OR (SQUEEZE MEME_PRD = "FMOPP"): ... Family Med Opportunity
+           OR (MEME_PLAN = "HRA1"):         ... HRA Billing Rec
+           OR (MEME_RT = "01"))             ... Billing Record
+
+            CONTINUE
+        ENDIF
+
+... Pick between life or health
+        IF (IS_LIFE = NO)
+            IF (SQUEEZE MEME_NET = "LIFE")
+                CONTINUE
+            ENDIF
+        ELSE
+            IF (SQUEEZE MEME_NET != "LIFE")
+                CONTINUE
+            ENDIF
+        ENDIF
+
+... Is this the new rec created by A1611291?
+        IF (MEME_NEWBY = "LGOV17")
+            CONTINUE
+        ENDIF
+
+... These records are likely those fixed manually but now don't have
+.   1/1/17 records for LAGOV. Manual fix required.
+        IF (MEME_EFF < "20170101")
+.            debug
+            PACK  ERR_REC WITH MEME_ID1, COMMA:
+                               MEME_EFF, COMMA:
+                               MEME_TRM, COMMA:
+                               MEME_NET, MEME_PRD, MEME_PLAN
+
+            MOVE  ERR_NAME INTO C_FILE
+            CALL  WRITE_OGBREC USING ERR_FILE:
+                                     ERR_NAME:
+                                     ERR_LIST
+
+            CALL  UTIL_XCOUNTER USING X_CNT3, 100
+            BREAK
+        ENDIF
+
+... If this point is reached, this MEME rec is a future Health/Life rec
+.   that is the canon choice for future coverage. Use the EFF date of
+.   this plan (minus 1) to term the record created by LGOV17.
+        CALL  DATE_CALC USING MEME_EFF, "SUB", "DAYS", 1, TERM_DATE
+
+        PACK  ODD_MEME_SAVE WITH MEME_LIST
+        MOVE  YES TO ODD_REC_FOUND
+
+        BREAK
+    REPEAT
+
+  RETURN
+
+.#######################################################################
+FIND_MATCHING_MEME        ROUTINE MT_ID1
+.#######################################################################
+. -------------------------------------------------------------
+... Find the MEME record matching the INM new record. If it has
+... been voided, it can be ignored.
+. -------------------------------------------------------------
+MT_ID1        CHAR   @
+. --------------------
+    CLEAR  MEME_LIST, MEME_REC
+
+    LOOP
+        IF (SQUEEZE MEME_REC = "")
+            CALL  UTIL_MEME_FIND USING MT_ID1
+        ELSE
+            CALL  UTIL_MEME_NEXT
+        ENDIF
+        IF (NOT EQUAL)
+            IF (SQUEEZE MEME_REC = "")
+.                debug
+            ENDIF
+            CLEAR  MEME_LIST, MEME_REC
+            BREAK
+        ENDIF
+
+... Does the current plan match the new record?
+        IF (SQUEEZE MEME_NEWBY != INME_NEWBY)
+            CONTINUE
+        ENDIF
+
+        IF ((SQUEEZE MEME_NET != INME_NET):
+            AND (SQUEEZE MEME_PRD != INME_PRD):
+            AND (SQUEEZE MEME_PLAN != INME_PLAN))
+
+            CONTINUE
+       ENDIF
+
+... Match found. Now check if it's already been termed. If it has
+.   been termed already, it should have been voided as well if the
+.   new date is 20161231.
+.        debug
+        IF (SQUEEZE MEME_TRM != "")
+            IF ((MEME_TRM = "20161231") and (MEME_TLET != "V"))
+.                debug
+            ENDIF
+            BREAK  ... It's already been termed
+        ENDIF
+
+        MOVE  YES INTO TERM_NEEDED
+        BREAK
+    REPEAT
+
+    IF (SQUEEZE MEME_REC = "") ... No matches found
+.         debug
+         PACK  ERR_REC WITH MEME_ID1, COMMA:
+                            MEME_EFF, COMMA:
+                            MEME_TRM, COMMA:
+                            MEME_NET, MEME_PRD, MEME_PLAN
+
+         MOVE  ERR_NAME INTO C_FILE
+         CALL  WRITE_OGBREC USING ERR_FILE:
+                                  ERR_NAME:
+                                  ERR_LIST
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+WRITE_UPDT_REC
+.#######################################################################
+. ----------------------------------------------------------
+... Create the d_memmem update record and the update log csv
+. ----------------------------------------------------------
+... Create the Update Log CSV
+    MOVE  MEME_ID2 INTO INME_ID2
+    UNPACK  ODD_MEME_SAVE INTO MEME_LIST
+
+    debug
+    PACK CSV_REC WITH MEME_ID1, COMMA:
+                      MEME_ID2, COMMA:
+                      MEME_NET, COMMA:
+                      MEME_PRD, COMMA:
+                      MEME_PLAN, COMMA:
+                      MEME_EFF, COMMA:
+                      MEME_TRM, COMMA:
+                      INME_NET, COMMA:
+                      INME_PRD, COMMA:
+                      INME_PLAN, COMMA
+
+    MOVE  UPDT_CSV_NAME TO C_FILE
+    CALL  WRITE_OGBREC USING UPDT_CSV_FILE:
+                             UPDT_CSV_NAME:
+                             CSV_LIST
+
+... Create the Update File
+    IF (TERM_DATE < INME_EFF)
+        MOVE  "V" TO INME_TLET ... Void the record
+    ENDIF
+
+    MOVE  TERM_DATE TO INME_TRM
+    MOVE  "LGOV17" TO INME_CHGBY
+    MOVE  BLANKS TO INME_CHGDT
+
+    MOVE  UPDT_IMP_NAME TO C_FILE
+    CALL  WRITE_OGBREC USING UPDT_IMP_FILE:
+                             UPDT_IMP_NAME:
+                             INM_LIST
+
+    CALL  UTIL_XCOUNTER USING X_CNT2, 1000
+
+  RETURN
+
+.#######################################################################
+PREPARE_FILES
+.#######################################################################
+. ------------------------------------
+... Prepare all work and output files.
+. ------------------------------------
+
+    MOVE  INPUT_NAME INTO C_FILE
+    CALL  OPEN_OGBFILE USING INPUT_FILE:
+                             INPUT_NAME
+
+    MOVE  UPDT_IMP_NAME INTO C_FILE
+    CALL  PREP_OGBFILE USING UPDT_IMP_FILE:
+                             UPDT_IMP_NAME
+
+    MOVE  ERR_NAME INTO C_FILE
+    CALL  PREP_OGBFILE USING ERR_FILE:
+                             ERR_NAME
+
+    MOVE  UPDT_CSV_NAME INTO C_FILE
+    CALL  PREP_OGBFILE USING UPDT_CSV_FILE:
+                             UPDT_CSV_NAME
+
+... Write the CSV header
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+    CALL  WRITE_OGBREC USING UPDT_CSV_FILE:
+                             UPDT_CSV_NAME:
+                             CSV_HDR_LIST
+
+  RETURN
+
+.#######################################################################
+CLEANUP
+.#######################################################################
+. -----------------
+... Close all files
+. -----------------
+
+    CALL  CLOSE_OGBFILE USING INPUT_FILE:
+                              INPUT_NAME
+
+    CALL  CLOSE_OGBFILE USING UPDT_IMP_FILE:
+                              UPDT_IMP_NAME
+
+    CALL  CLOSE_OGBFILE USING ERR_FILE:
+                              ERR_NAME
+
+    CALL  CLOSE_OGBFILE USING UPDT_CSV_FILE:
+                              UPDT_CSV_NAME
+
+  RETURN
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Subroutines and Other Includes
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+./* MCSI includes found in /nfsgb2/mcsprd/i
+. * OGB includes found in /mcsapl/i
+. */
+    INC  UTIL_COMMON.SR   ... OGB Compilation of Standard UTIL routines
+    INC  UTIL_MEMMEM.SR
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ End of A1611292.PS
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

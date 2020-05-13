@@ -1,0 +1,337 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1301041.ps
++    Description    :  Create Label TXT file from given list of SSNs
++                      (/w/flex_ssn.txt) that is in the same format of that
++                      created in elg0150.ps.  Input from Alisa - 22,192 recs.
++    Author         :  appnc
++    Date created   :  01/04/2013
++    Project Number :  A1301041  ADH - INITIAL VERSION 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++------------------------------------------------------------------------------
++   apiii  mm/dd/ccyy  A####### - TYP - Comments
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       CMDPARAM.CB          ...Command line variables      
+       
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demographics File
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+IN_FILE    FILE    VAR=9,TEXT
+IN_NAME    INIT    "/w/flex_ssn.txt"
+
+IN_REC     LIST
+IN_SSN     DIM  009
+           LISTEND
+           
+OUT_FILE   FILE    VAR=151,TEXT
+OUT_NAME   INIT    "/w/a1301041.txt"
+
+OUT_REC       LIST
+OUT_LNAME     DIM       20        .>enrollee last name
+OUT_FNAME     DIM       15        .>enrollee first name
+OUT_MINIT     DIM       1         .>enrollee middle initial 
+OUT_ADDRESS1  DIM       35        .>address line 1           
+OUT_ADDRESS2  DIM       35        .>address line 2           
+OUT_CITY      DIM       30        .>city                     
+OUT_STATE     DIM       2         .>state        
+OUT_ZIP       DIM       13        .>zip code     
+              LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+TRAP_DATA     DIM       500
+TODAY         DIM       8
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+FIRST_READ    INIT      "Y"
+DISP4         DIM       4
+DISP3         DIM       3
+
+PARAM_LIST    	LIST      WITH NAMES
+PARAM_FROM      DIM        8
+PARAM_THRU      DIM        8
+              	LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+         MOVE "A1301041"   TO C_PROG
+         IF (C_CMDPAR)
+             CALL CMD_START USING C_PROG
+         ENDIF
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "< ADHOC LABEL FL  >" TO  C_OPER
+         MOVE      "a1301041"             TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         DEBUG
+         CALL      INITIALIZE
+         CALL      OPEN_FILES
+         CALL      PROCESS_INP
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="25",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="  PROGRAM COMPLETED NORMALLY  ":
+                          TEXT="------------------------------":
+                          TEXT="  Press any key to continue   ":
+                          FIELD=WCHAR 
+         ENDIF
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         
+         IF (NOT C_CMDPAR)
+             MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+           ELSE
+             CALL CMD_END
+             STOP
+         ENDIF
+         
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+
+. ...Display Counters
+         MOVE "Input rec read     " TO X_CNTDESC1
+         MOVE "Output recs written" TO X_CNTDESC2
+         MOVE "                   " TO X_CNTDESC3
+         MOVE "                   " TO X_CNTDESC4
+         MOVE "                   " TO X_CNTDESC5
+         MOVE "                   " TO X_CNTDESC6
+         
+         CALL X_DISPLAY_COUNTS
+         
+         RETURN
+         
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         MOVE IN_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING IN_FILE,IN_NAME
+         
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME         
+
+         RETURN
+
+. ----------------------------
+. Process Input
+. ----------------------------
+
+PROCESS_INP
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+...Read inp
+         LOOP
+             CALL READ_OGBFILE USING IN_FILE,IN_NAME,IN_REC
+             IF (RESULT != 1)
+                 CALL X_DISPLAY_COUNTS             
+                 BREAK
+             ENDIF
+             
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO DISP4,DISP3
+             IF (DISP3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF               
+
+...Read MEM
+             CLEAR     MEM_AIM
+             PACK      MEM_AIM1 WITH "01X",IN_SSN,BLANKS
+             PACK      MEM_AIM3 WITH "03X","01",BLANKS
+             CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                                 MEM_FN:          ...FILE NAME LIST
+                                 MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                                 MEM_FV:          ...FILE KEY VARLISTS
+                                 MEM_AIM:          ...FILE KEY SIZES
+                                 MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                                 MEM_REC:         ...FILE RECORD (PACKED)
+                                 MEM_OLD:         ...FILE SAVED WHEN READ
+                                 MEM_QTY:         ...NUMBER OF FILES
+                                 2    
+             IF ((RESULT != 1) OR (IN_SSN <> MEM_ESSN))
+                 CONTINUE
+             ENDIF
+             
+             IF (MEM_REL != "01")
+                 CONTINUE
+             ENDIF
+             
+             CLEAR OUT_REC
+             MOVE MEM_LNAME    TO    OUT_LNAME
+             REPLACE ", "      IN    OUT_LNAME
+             MOVE MEM_FNAME    TO    OUT_FNAME
+             REPLACE ", "      IN    OUT_FNAME             
+             MOVE MEM_MINIT    TO    OUT_MINIT
+             REPLACE ", "      IN    OUT_MINIT             
+             MOVE MEM_ADDR1    TO    OUT_ADDRESS1    
+             REPLACE ", "      IN    OUT_ADDRESS1              
+             MOVE MEM_ADDR2    TO    OUT_ADDRESS2
+             REPLACE ", "      IN    OUT_ADDRESS2             
+             MOVE MEM_CITY     TO    OUT_CITY
+             REPLACE ", "      IN    OUT_CITY             
+             MOVE MEM_STATE    TO    OUT_STATE
+             REPLACE ", "      IN    OUT_STATE             
+             MOVE MEM_ZIP      TO    OUT_ZIP
+             REPLACE ", "      IN    OUT_ZIP             
+             
+             ADD 1 TO X_CNT2
+             CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_REC
+         
+         REPEAT
+         
+         RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         MOVE IN_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING IN_FILE,IN_NAME
+         
+         MOVE OUT_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME         
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       CMDPARAM.SR              
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1301041.PS
+. +++++++++++++++++++++++++++++++++++++

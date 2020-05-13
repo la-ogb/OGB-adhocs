@@ -1,0 +1,334 @@
+./* ====================================================================
+. *          Name : a1711021.ps
+. *   Description : Fixes dependent MEME records created by the 834LAG
+. *         process where the verification date (MEME_LCT) was dropped
+. *         when creating new enrollment records.
+. * ....................................................................
+. *  apjwh - 11/02/2017 - DEV - Initial Version
+. * ...........................CHANGE LOG...............................
+. *  apiii - mm/dd/ccyy - TYP -
+. */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC MEM.RL ...demographic
+    INC MEME.RL ...enrollment
+    INC D_MEMMEM.CB ...Impact update record
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+WORK_FD         FILE VAR=600,TEXT ...filled with MEME_LIST
+WORK_FILE       INIT "/w/a1711021.wrk"
+
+LOG_FD          FILE VAR=100,TEXT
+LOG_FILE        INIT "/w/a1711021.log"
+LOG_LIST        LIST
+LOG_REC         CHAR 100
+                LISTEND
+
+IMP_UPDT_FD     FILE VAR=X_INM_SIZE,TEXT ...update rec. Filled with INM_LIST
+IMP_UPDT_FILE   INIT "a1711021.txt"
+
+UPDT            EQU  0
+ERROR           EQU  1
+TODAY           CHAR 8
+
+PARAM_LIST          LIST WITH NAMES
+.// add parameter variables here
+                    LISTEND
+
+./* =============
+. * Begin Program
+. * ============= */
+
+.// Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+.// Scheduler begins here
+.//    inc  SCHED_WP.SR // for use with the printer
+    INC SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW ROUTINE
+
+... Check return stack
+    RETCOUNT  ORIG_RETURN
+
+.   // Set runtime variables
+    MOVE "a1711021" TO C_PROG
+    MOVE "Repop Verify Dates" TO C_OPER
+    MOVE "menu" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG // signal start TO Autosys
+    ELSE
+        CALL X_BLANK_SCREEN // draw the standard screen
+    ENDIF
+
+.   // Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.   // Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+MAIN_PROCESS ROUTINE
+    debug
+    CALL DRAW_COUNTERS
+    CALL GET_BASE_DATA
+    CALL IO_PREP
+    CALL PROCESS_DATA
+    CALL IO_CLEAN
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+DRAW_COUNTERS ROUTINE
+    RETURN IF (C_CMDPAR)
+
+    MOVE "834 LAGOV MEMEs" TO X_CNTDESC1
+    MOVE "Recs Missing LCT" TO X_CNTDESC2
+    MOVE "Updated Records" TO X_CNTDESC3
+    MOVE "Errors" TO X_CNTDESC4
+    MOVE "Not Used" TO X_CNTDESC5
+    MOVE "Not Used" TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    CALL X_DISPLAY_COUNTS
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+GET_BASE_DATA ROUTINE
+./* We need a base of data to work from. Any MEME records created by
+.   process 834LAG with no MEME_LCT (verification date).
+.
+.   From that, only dependents. Load those records into the MEME_RECS array.
+. */
+POS_MEME_PLAN       INIT "126-129"
+POS_MEME_LCT        INIT "204-211"
+POS_MEME_NEWBY      INIT "220-225"
+NODATE              INIT "        "
+
+    CALL UTIL_XMESSAGE USING "Reformatting MEME for Stuff & Things",20
+
+    MOVE ("meme.dbf "+WORK_FILE+" -p"+POS_MEME_PLAN+"ne#"UVDP#" -p"+POS_MEME_LCT+"eq#""+NODATE+"#" -p"+POS_MEME_NEWBY+"eq#"834LAG#" -t -j") TO SCRATCH
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Reformat Failed","GET_BASE_DATA"
+    ENDIF
+
+.   /* Sort by member ID */
+    MOVE (WORK_FILE+" "+WORK_FILE+" 1-8 -t") TO SCRATCH
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort Failed","GET_BASE_DATA"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_PREP ROUTINE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL PREP_OGBFILE USING IMP_UPDT_FD,IMP_UPDT_FILE
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+PROCESS_DATA ROUTINE
+./* Load an array with all the records found. Skip those of 01s. Otherwise
+.   find a MEME record with a MEME_LCT value and insert that into each
+.   MEME record for that member.
+. */
+IS_ERROR            NUM  1
+VERIFIED_DATE       CHAR 8
+THIS_MEME           CHAR 600
+LAST_ID1            CHAR 8
+...
+
+    CALL UTIL_XMESSAGE USING "Making Important Decisions...Please Wait...",20
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CLEAR IS_ERROR
+    FILL " " IN MEM_LIST,MEME_LIST,VERIFIED_DATE,THIS_MEME,LAST_ID1
+
+    LOOP
+        CALL READ_OGBFILE USING WORK_FD,WORK_FILE,MEME_LIST
+        BREAK IF (RESULT != 1) ...all done
+        CALL UTIL_XCOUNTER USING X_CNT1,10
+
+        PACK THIS_MEME WITH MEME_LIST
+
+        IF (SQUEEZE MEME_LCT)
+            CALL UTIL_ERRORMSG USING ("Reformat is broken. LCT Found on "+MEME_ID1),"PROCESS_DATA"
+        ENDIF
+
+        IF (SQUEEZE LAST_ID1 != MEME_ID1)
+            FILL " " IN VERIFIED_DATE
+            FILL " " IN MEM_LIST
+            CLEAR IS_ERROR,MEM_LIST,VERIFIED_DATE
+
+            MOVE MEME_ID1 TO LAST_ID1
+            CALL UTIL_MEM_FIND USING MEME_ID1
+            IF (NOT EQUAL)
+                debug
+                SET IS_ERROR
+                CALL WRITE_LOG USING ERROR,("No MEM Found for "+MEME_ID1)
+                CONTINUE
+            ENDIF
+        ELSE IF (IS_ERROR)
+            CALL UTIL_XCOUNTER USING X_CNT4,10
+            CONTINUE
+        ELSE
+            debug
+        ENDIF
+
+./* We have a person and a health record. Skip the employee.
+. * They won't ever have a verification date.
+. */
+        CONTINUE IF (MEM_REL = "01")
+        debug
+
+        CALL UTIL_XCOUNTER USING X_CNT2,10 ...bad MEME found
+
+        IF (NOT SQUEEZE VERIFIED_DATE)
+
+            CALL FIND_MEME_LCT USING MEM_ID1,VERIFIED_DATE
+
+            IF (NOT SQUEEZE VERIFIED_DATE)
+                SET IS_ERROR
+                CALL WRITE_LOG USING ERROR,("No Verification Date Found for "+MEM_ID1)
+                CONTINUE
+            ENDIF
+        ENDIF
+
+... MEME is now complete. Let's update!
+        UNPACK THIS_MEME INTO MEME_LIST
+        MOVE VERIFIED_DATE TO MEME_LCT
+        MOVE "FIXLCT" TO MEME_CHGBY
+        MOVE TODAY TO MEME_CHGDT
+
+... Write an update record
+        CALL WRITE_LOG USING UPDT
+        PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+        UNPACK INM_REC INTO INM_LIST
+        CALL WRITE_OGBREC USING IMP_UPDT_FD,IMP_UPDT_FILE,INM_LIST
+    REPEAT
+
+    IF (X_CNT1 = 0)
+        CALL UTIL_ERRORMSG USING "No Bad MEME Recs Found. Some Error Occurred","PROCESS_DATA"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+FIND_MEME_LCT ROUTINE ID1@,VERIFIED_DATE@
+./* Find a verification date for this dependents
+. */
+ID1@                CHAR @
+VERIFIED_DATE@      CHAR @
+ISVALID             CHAR 1
+...
+    FILL " " IN MEME_LIST,MEME_REC,ISVALID
+    CLEAR MEME_LIST,MEME_REC,ISVALID
+
+    LOOP
+        CLEAR ISVALID
+        IF (NOT SQUEEZE MEME_ID2)
+            CALL UTIL_MEME_FIND USING ID1@
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        BREAK IF (NOT EQUAL)
+        CONTINUE IF (NOT SQUEEZE MEME_LCT)
+
+        CALL VALID_DATE USING MEME_LCT,ISVALID
+        IF (NOT OVER)
+            MOVE MEME_LCT TO VERIFIED_DATE@
+            BREAK
+        ENDIF
+    REPEAT
+
+    FILL " " IN MEME_LIST
+    CLEAR MEME_LIST
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+WRITE_LOG ROUTINE ERROR@,ERRORMSG@
+./* Let's keep track of what was touched */
+ERROR@      NUM  @
+ERRORMSG@   CHAR @
+STATUS      CHAR 10
+ENDOFMSG    CHAR 50
+...
+    FILL " " IN ENDOFMSG
+    IF (ERROR@)
+        MOVE "Error" TO STATUS
+        CALL UTIL_XCOUNTER USING X_CNT4,10
+        MOVE (PIPE+ERRORMSG@) TO ENDOFMSG
+    ELSE
+        MOVE "Update" TO STATUS
+        CALL UTIL_XCOUNTER USING X_CNT3,10
+        CLEAR ENDOFMSG
+    ENDIF
+
+    MOVE (">>"+MEME_ID1+PIPE+STATUS+ENDOFMSG) TO LOG_REC
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_CLEAN ROUTINE
+...
+    MESSAGEERASE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+    CALL CLOSE_OGBFILE USING IMP_UPDT_FD,IMP_UPDT_FILE
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    ERASE WORK_FILE
+    IF (OVER)
+        debug
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+
+    INC UTIL_MEM.SR     // MEM read routines
+    INC UTIL_MEME.SR    // MEME read routines
+    INC UTIL_COMMON.SR  // OGB Compilation of Standard UTIL routines
+
+./* ==============
+. * End of program
+. * ============== */

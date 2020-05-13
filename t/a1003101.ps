@@ -1,0 +1,346 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1003101  
++    Description    :  Forces out MEME records from input file of SSN's      
++    Author         :  Steve McDonald   
++    Date created   :  03/10/2010
++    Project #      :  A1003101
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                              REVISIONS                                      +
++                                                                             + 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       CLI.RL               ...Client Demographic Record
+    INC       D_MEMMEM.CB          ...Member Import Layout
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+INP_SSN_FD FILE   VAR=9,TEXT
+INP_SSN_NAME INIT "/w/forceout.inp"
+INP_SSN_LIST LIST
+INP_SSN_SSN  DIM  9
+             LISTEND
+.
+.~~~~~~~~~~OUTPUT FILES
+FORCEOUT_FD       FILE      VAR=3100,TEXT
+FORCEOUT_NAME     INIT      "force.txt"
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+BLANKDT           INIT  "        "
+
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+RUNDATE                 DIM      4
+TODAY           	DIM      8
+TODAY_CCYY           	DIM      4
+TODAY_CCYY1           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+PROC_KEY                DIM      08
+BLANK8                  INIT     "        "
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+
+
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 			    chains to back to the menu
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "menu"                     TO    C_NEXT
+      MOVE      "FORCE MEME" TO    C_OPER
+      MOVE      "a1003101"                  TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+  DEBUG
+  CALL      INITIALIZE
+  CALL      OPEN_FILES
+  CALL      PROCESS_INP
+  CALL      CLOSE_FILES
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "menu"                     TO    C_NEXT
+  MOVE      "FORCE MEME" TO    C_OPER
+  MOVE      "a1003101"                 TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Records Read:      " TO X_CNTDESC1
+  MOVE "Records Written:   " TO X_CNTDESC2
+
+  RETURN
+
+OPEN_FILES
+    CALL OPEN_OGBFILE USING INP_SSN_FD,INP_SSN_NAME
+    CALL PREP_OGBFILE USING FORCEOUT_FD,FORCEOUT_NAME
+
+    RETURN
+
+PROCESS_INP             
+  LOOP
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL READ_OGBFILE USING INP_SSN_FD,INP_SSN_NAME,INP_SSN_LIST
+        IF (RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the MEM file for member    
+   CLEAR MEM_AIM
+   PACK  MEM_AIM1 WITH "01X",INP_SSN_SSN,BLANKS
+   PACK  MEM_AIM3 WITH "03X","01",BLANKS
+   CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                            MEM_FN:        ...FILE NAME LIST
+                            MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:        ...FILE KEY VARLISTS
+                            MEM_AIM:       ...FILE KEY SIZES
+                            MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                            MEM_REC:       ...FILE RECORD (PACKED)
+                            MEM_OLD:       ...FILE SAVED WHEN READ
+                            MEM_QTY:       ...NUMBER OF FILES
+                            2              ...FILE NUMBER FOR THIS READ
+
+   IF (RESULT <> 1)
+      CONTINUE
+   ENDIF
+   PACK MEME_FK11 WITH MEM_ID1,BLANKS
+   CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                        MEME_FN:             ...FILE NAME LIST
+                        MEME_FC:             ...TYPE OF INDEX
+.                                            ...(I)NDEX or (A)IMDEX
+                        MEME_FV:             ...FILE KEY VARLIST
+                        MEME_FK:             ...FILE KEY SIZES
+                        MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                        MEME_REC:            ...FILE RECORD (PACKED)
+                        MEME_OLD:            ...FILE SAVED WHEN READ
+                        MEME_QTY:            ...NUMBER OF FILES
+                        1                    ...FILE NUMBER FOR THIS READ
+        LOOP
+           CALL FILE_NEXT USING MEME_FD:             ...FILE DECLARATION LIST
+                                MEME_FN:             ...FILE NAME LIST
+                                MEME_FC:             ...TYPE OF INDEX
+.                                                    ...(I)NDEX or (A)IMDEX
+                                MEME_FV:             ...FILE KEY VARLIST
+                                MEME_FK:             ...FILE KEY SIZES
+                                MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                                MEME_REC:            ...FILE RECORD (PACKED)
+                                MEME_OLD:            ...FILE SAVED WHEN READ
+                                MEME_QTY:            ...NUMBER OF FILES
+                                1                   ...FILE NUMBER FOR THIS READ
+              IF ((RESULT <> 1) OR (MEM_ID1 <> MEME_ID1))
+                     BREAK
+              ENDIF
+              IF ((SQUEEZE MEME_LEV2 = "95") OR (SQUEEZE MEME_LEV2 = "94"))
+                 CONTINUE
+              ENDIF
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_EFF > MEME_TRM))
+                  CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_LEV2 = "93")
+                 CONTINUE
+              ENDIF
+              IF ((SQUEEZE MEME_LEV2 = "92") AND (SQUEEZE MEME_RETPY <> "Y"))
+                         CONTINUE
+              ENDIF
+              PACK CLI_AIM1 WITH "01X",MEME_LEV1
+              PACK CLI_AIM2 WITH "02X",MEME_LEV2
+              CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                             CLI_FN:      ...File Name List
+                             CLI_FC:      ...(I)ndex Or (A)imdex
+                             CLI_FV:      ...File Key Varlists
+                             CLI_AIM:     ...File Key Sizes
+                             CLI_LIST:    ...File Record (Field List)
+                             CLI_REC:     ...File Record (Packed)
+                             CLI_OLD:     ...File Saved When Read
+                             CLI_QTY:     ...Number Of Files
+                             2            ...File Number For This Read
+              IF (CLI_US02 <> "U")
+                  CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_NET = "DEFIN")
+                 CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_NET = "LSUSH")
+                 CONTINUE
+              ENDIF
+              IF (MEME_CHGDT < "20100226")
+                 CONTINUE
+              ENDIF
+              CALL WRITE_FORCEOUT            
+        REPEAT
+
+  REPEAT
+  RETURN
+.##############################################################################
+WRITE_FORCEOUT    
+.##############################################################################
+.---------------
+...Write records
+.---------------
+
+    PACKLEN INM_REC WITH MEM_REC,MEME_REC
+    UNPACK INM_REC INTO INM_LIST
+    CLEAR INM_CHGBY
+    CLEAR INME_CHGBY
+    MOVE "Y" TO INME_FORCE      
+    CALL WRITE_OGBREC USING FORCEOUT_FD:
+                            FORCEOUT_NAME:
+                            INM_LIST     
+
+        ADD 1 TO X_CNT2
+        UNPACK X_CNT2 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+  RETURN
+ 
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+
+  RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+        IF (RUN_MODE = "N")
+            MOVE      "        NEOJ        " TO X_FINISH_STATUS
+            MOVE      "    a1003101 Completed   " TO X_PROG_FINISH
+            CALL      X_END_OF_JOB
+        ENDIF 
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO
+
+
+
+
+...End a1003101  

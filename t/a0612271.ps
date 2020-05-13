@@ -1,0 +1,944 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  ELG0730.PS
++    Description    :  Gets Eligibliity info for COB CONTRACTOR          
++    apsjm 01/13/2003 a0503072 dev - initial version                      
++    apsjm 04/27/2006 a0510061 mod - rewrite for COBA                     
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL              ...Mem. Enr/Elig Record
+    INC       MEMO.RL              ...Member Other Coverage Record
+
+
+
+.------------------
+. File Declarations
+.------------------
+MEDELG_FD                 FILE      VAR=200,TEXT
+MEDELG_NAME               DIM       20                    
+
+MEDELG_CURR_FD            FILE      VAR=200,TEXT
+MEDELG_CURR_NAME          INIT      "/w/coba_elg_curr.txt"
+
+MEDELG_PR_FD              FILE      VAR=200,TEXT
+MEDELG_PR_NAME            INIT      "/w/coba_elg_pr.txt"
+.
+MEDELG_OUT_FD             FILE      VAR=200,TEXT
+MEDELG_OUT_NAME           DIM       40                              
+
+MEDELG_CNT_FD             FILE      VAR=100,TEXT 
+MEDELG_CNT_NME            INIT      "/w/coba_elg_cnt.txt"
+MEDELG_CNT_LIST           LIST
+MEDELG_CNT_CNT            DIM       60
+                          LISTEND
+
+MEMO_WRK_FD         FILE      VAR=51,TEXT
+MEMO_WRK_NAME       INIT      "/w/elg0730.memo.wrk3"
+MEMO_WRK_LIST       LIST   
+MEMO_WRK_KEY1       DIM       008
+MEMO_WRK_TYPE       DIM       004
+MEMO_WRK_TERM       DIM       008
+MEMO_WRK_HIC        DIM       030
+MEMO_WRK_VERI       DIM       001
+                    LISTEND
+
+MEME_WRK_FD         FILE      VAR=16,TEXT
+MEME_WRK_NAME       INIT      "/w/elg0730.meme.wrk"
+MEME_WRK_LIST       LIST   
+MEME_WRK_EFF        DIM       008
+MEME_WRK_TRM        DIM       008
+                    LISTEND
+
+MEME_WRK_FD_2       FILE      VAR=61,TEXT
+MEME_WRK_NAME_2     INIT      "/w/elg0730.meme.wrk2"
+MEME_WRK_LIST_2     LIST
+MEME_WRK_EFF_2      DIM       8
+MEME_WRK_TRM_2      DIM       8
+MEME_WRK_ESSN_2     DIM       20
+MEME_WRK_ID1_2      DIM       25
+                    LISTEND
+.
+HDR_LIST               LIST
+HDR_RECID              INIT      "E00"
+HDR_INSID              INIT      "00215    "
+HDR_TODAY              DIM       008
+HDR_BENE_STAT          INIT      "LA"
+HDR_FILE_STATUS        INIT      "1"  
+HDR_FILLER             DIM       177
+                       LISTEND
+
+BEN_REC                DIM       200
+BEN_LIST               LIST      
+BEN_RECID              DIM       3        
+BEN_INSID              DIM       9               
+BEN_EFFDT              DIM       008
+BEN_UPDATE_IND         DIM       1   
+BEN_LNAME              DIM       020
+BEN_FNAME              DIM       012
+BEN_MINIT              DIM       001
+BEN_DOB                DIM       008
+BEN_SEX                DIM       001
+BEN_HIC                DIM       012
+BEN_SUPP_ID            DIM       025
+BEN_GRP_NUM            DIM       020
+BEN_FROM_DATE_1        DIM       008
+BEN_THRU_DATE_1        DIM       008
+BEN_FROM_DATE_2        DIM       008
+BEN_THRU_DATE_2        DIM       008
+BEN_FROM_DATE_3        DIM       008
+BEN_THRU_DATE_3        DIM       008
+BEN_FROM_DATE_4        DIM       008
+BEN_THRU_DATE_4        DIM       008
+BEN_FROM_DATE_5        DIM       008
+BEN_THRU_DATE_5        DIM       008
+                       LISTEND
+
+TRL_LIST               LIST
+TRL_RECID              INIT      "E99"
+TRL_NUM_RECS           DIM       007
+TRL_FILLER             DIM       190
+                       LISTEND
+
+VAL_RESULT  	   FORM      1
+
+BEN_LIST_2         LIST
+W_DIM200           DIM       200
+                   LISTEND
+.
+DIM_21        DIM      21
+DIM_179       DIM      179
+W_EFFDT       DIM      8
+DIM_42        DIM      42
+MEDELG_CR_REC DIM      179
+MEDELG_PR_REC DIM      179
+CURR_KEY      DIM      12
+PR_KEY        DIM      12
+CURR_RESULT   FORM     1
+PR_RESULT     FORM     1
+W_CNT1        DIM      1
+W_CNT8        DIM      8
+W_CNT7        DIM      7
+F_CNT7        FORM     7
+W_GRP_NUM     DIM      20
+W_SUPP_ID     DIM      25
+W_FROM_DATE   DIM      8
+W_THRU_DATE   DIM      8
+MEDELG_SAV_A1 DIM      75
+MEDELG_SAV_A2 DIM      64
+W_DIM_61      DIM      61
+NUM_OF_DAYS   FORM     001
+SAVE_TRM      DIM       8
+EARLIEST_EFF_DATE  DIM  8
+DATE1         DIM       8
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+MONEY1        FORM      7.2
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+WORK_TEXT     INIT      "JUNK"
+ACTION        DIM       10          
+PARAM_LIST    LIST
+PARAM_XXX     DIM       10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+
+.---------------------------
+. Program Specific variables
+.---------------------------
+SAV_HIC       DIM   12
+MEMO_WRK_SKY  INIT  "1-8 -U -T"
+MEME_WRK_SKY  INIT  "1-8 -U -T"
+MEDELG_SKY  INIT  "64-75 -T"
+MEDA          INIT     "MEDA"
+MEDB          INIT     "MEDB"
+Y             INIT     "Y"
+BLANK8        INIT     "        "
+BLANK12       INIT     "            "
+WRK_DATE      DIM      008
+JUNK4         DIM      004
+TRAP_DATA     DIM      500
+TODAY         DIM      008
+CAL_CLOCK     DIM      021
+CHG_RET_CODE  FORM     001
+LAST_KEY1     DIM      008
+PLAN_LIST     LIST
+PLAN_BYTE1    DIM      001
+PLAN_REST     DIM      003
+ORIG_RETURN   FORM     005
+CURR_RETURN   FORM     005
+DISP_3        DIM      003
+DISP_4        DIM      004
+FORM_08       FORM     008
+DIM49         DIM      049
+WRK_DIM1      DIM      001
+WRK_DIM4      DIM      004
+              LISTEND
+
+.....> START HERE
+         CALL RUN_NOW
+         CHAIN C_NEXT 			    chains to back to the menu
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "menu"                 TO  C_NEXT
+      MOVE      "MED EXTRACT"     TO  C_OPER
+      MOVE      "elg0730"             TO  C_PROG
+      MOVE      BLANKS                 TO  C_LABEL
+      MOVE      BLANKS                 TO  C_FILE
+      MOVE      BLANKS                 TO  C_KEYS
+      CLOCK     CALENDAR               INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+
+
+. ==============
+.   Main Process
+. ==============
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL REFORMAT_MEMO
+    CALL SORT_FILE
+    CALL OPEN_FILES
+    CALL GET_ELIG_INFO
+    MOVE TODAY TO HDR_TODAY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL CLOSE_OGBFILE USING MEDELG_FD,MEDELG_NAME
+    CALL SORT_OGBFILE USING MEDELG_NAME,MEDELG_NAME,MEDELG_SKY 
+     IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORT FAILED(medelg_wrk.txt)"
+        CHAIN "MENU"
+     ENDIF
+    CALL OPEN_OGBFILE USING MEDELG_FD,MEDELG_NAME
+    CALL PREP_OGBFILE USING MEME_WRK_FD_2,MEME_WRK_NAME_2
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEDELG_FD,MEDELG_NAME,BEN_LIST
+    REPLACE MAKEUPPER IN BEN_HIC
+    PACK BEN_REC WITH BEN_LIST
+    UNPACK BEN_REC INTO MEDELG_SAV_A1,W_DIM_61,MEDELG_SAV_A2
+    MOVE BEN_HIC TO SAV_HIC
+    CALL COMBINE_HIC
+    CALL CLOSE_OGBFILE USING MEDELG_CURR_FD,MEDELG_CURR_NAME
+    CALL SORT_OGBFILE USING MEDELG_CURR_NAME,MEDELG_CURR_NAME,MEDELG_SKY 
+     IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORT FAILED(coba_elg_curr.txt)"
+        CHAIN "MENU"
+     ENDIF
+    CALL SORT_OGBFILE USING MEDELG_PR_NAME,MEDELG_PR_NAME,MEDELG_SKY 
+     IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORT FAILED(coba_elg_pr.txt)"
+        CHAIN "MENU"
+     ENDIF
+    CALL OPEN_OGBFILE USING MEDELG_CURR_FD,MEDELG_CURR_NAME
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING MEDELG_OUT_FD,MEDELG_OUT_NAME,HDR_LIST
+    CALL READ_PR
+    CALL READ_CURR
+    CALL MTCH_FILES
+    CALL WRITE_TRAIL_REC
+    CALL COPY_CUR_TO_PRI
+    CALL CLOSE_FILES
+    PACK SCRATCH WITH BLANKS
+    PACK SCRATCH WITH "elg0730.ftp"
+    ROLLOUT SCRATCH
+         IF OVER
+            ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="FTP FAILED(ALAN)"
+            CHAIN     "MENU"
+         ENDIF   
+    PACK SCRATCH WITH BLANKS
+.   PACK SCRATCH WITH "elg0730.mail"
+.   ROLLOUT SCRATCH
+.        IF OVER
+.           ERROR     HORZ="22",VERT="20":
+.                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                     LNCOL=C_ERRL,SHADE="Y":
+..                    TEXT="FTP FAILED(mail)"
+.           CHAIN     "MENU"
+.        ENDIF   
+    TRAPREST TRAP_DATA
+    MOVE SCH_RTSUCC TO SCH@RTCODE
+    RETURN
+
+COPY_CUR_TO_PRI
+.---------------------------------
+...Copy Current file to prior file
+.---------------------------------
+  CALL COPY_OGBFILE USING MEDELG_CURR_NAME,MEDELG_PR_NAME
+  IF OVER
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF: 
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="COPY CR TO PR FAILED"
+      CHAIN "MENU"
+  ENDIF
+  RETURN
+
+MTCH_FILES
+         LOOP
+            IF ((CURR_RESULT <> 1) AND (PR_RESULT <> 1))
+               BREAK
+            ELSE
+              IF (CURR_RESULT <> 1)
+                 CALL ON_PR  
+                 CALL READ_PR  
+              ELSE
+                IF (PR_RESULT <> 1)
+                   CALL ON_CURR                
+                   CALL READ_CURR
+                ELSE
+                  IF (CURR_KEY < PR_KEY)
+                     CALL ON_CURR    
+                     CALL READ_CURR 
+                  ELSE
+                     IF (PR_KEY < CURR_KEY)
+                        CALL ON_PR        
+                        CALL READ_PR 
+                     ELSE
+                        CALL ON_BOTH
+                        CALL READ_CURR
+                        CALL READ_PR  
+                     ENDIF
+                  ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+         REPEAT
+         RETURN
+
+READ_CURR
+    READ MEDELG_CURR_FD,OGB_SEQ1;*TAB=22,MEDELG_CR_REC  
+    IF OVER
+       MOVE 2 TO CURR_RESULT
+    ELSE
+       MOVE 1 TO CURR_RESULT
+    ENDIF
+    IF (CURR_RESULT <> 2)
+       UNPACK MEDELG_CR_REC INTO DIM_42,CURR_KEY
+    ENDIF 
+    RETURN
+
+READ_PR
+    READ MEDELG_PR_FD,OGB_SEQ1;*TAB=22,MEDELG_PR_REC  
+    IF OVER
+       MOVE 2 TO PR_RESULT
+    ELSE
+       MOVE 1 TO PR_RESULT
+    ENDIF
+    IF (PR_RESULT <> 2)
+       UNPACK MEDELG_PR_REC INTO DIM_42,PR_KEY
+    ENDIF 
+    RETURN
+  
+ON_CURR
+         PACKLEN BEN_REC WITH "E01","00215    ",W_EFFDT,"A":
+                           MEDELG_CR_REC
+         UNPACK BEN_REC INTO BEN_LIST
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING MEDELG_OUT_FD,MEDELG_OUT_NAME,BEN_LIST
+         RETURN
+
+ON_PR 
+         PACKLEN BEN_REC WITH "E01","00215    ",W_EFFDT,"D":
+                           MEDELG_PR_REC
+         UNPACK BEN_REC INTO BEN_LIST
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING MEDELG_OUT_FD,MEDELG_OUT_NAME,BEN_LIST
+         RETURN
+
+ON_BOTH
+         IF (MEDELG_CR_REC <> MEDELG_PR_REC)
+            PACKLEN BEN_REC WITH "E01","00215    ",W_EFFDT,"C":
+                              MEDELG_CR_REC
+            UNPACK BEN_REC INTO BEN_LIST
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL WRITE_OGBREC USING MEDELG_OUT_FD,MEDELG_OUT_NAME,BEN_LIST
+         ENDIF    
+         RETURN
+
+COMBINE_HIC
+    MOVE OGB_SEQ1 TO OGB_SEQ
+  LOOP  
+    IF (RESULT <> 1)
+       CALL COMBINE_DATES
+       BREAK
+    ENDIF
+    IF (SAV_HIC <> BEN_HIC)
+       CALL COMBINE_DATES
+       PACKLEN BEN_REC WITH BEN_LIST
+       UNPACK BEN_REC INTO MEDELG_SAV_A1,W_DIM_61,MEDELG_SAV_A2
+       CALL PREP_OGBFILE USING MEME_WRK_FD_2,MEME_WRK_NAME_2
+       MOVE BEN_FROM_DATE_1 TO MEME_WRK_EFF_2
+       MOVE BEN_THRU_DATE_1 TO MEME_WRK_TRM_2
+       MOVE BEN_SUPP_ID TO MEME_WRK_ID1_2
+       MOVE BEN_GRP_NUM TO MEME_WRK_ESSN_2
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING MEME_WRK_FD_2,MEME_WRK_NAME_2:
+                               MEME_WRK_LIST_2
+       CLEAR MEME_WRK_LIST_2
+       MOVE BEN_HIC TO SAV_HIC
+    ELSE
+       MOVE BEN_FROM_DATE_1 TO MEME_WRK_EFF_2
+       MOVE BEN_THRU_DATE_1 TO MEME_WRK_TRM_2
+       MOVE BEN_SUPP_ID TO MEME_WRK_ID1_2
+       MOVE BEN_GRP_NUM TO MEME_WRK_ESSN_2
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING MEME_WRK_FD_2,MEME_WRK_NAME_2:
+                               MEME_WRK_LIST_2
+       CLEAR MEME_WRK_LIST_2
+    ENDIF
+    CALL READ_OGBFILE USING MEDELG_FD,MEDELG_NAME,BEN_LIST
+    REPLACE MAKEUPPER IN BEN_HIC
+  REPEAT
+  RETURN
+.
+COMBINE_DATES
+    MOVE MEME_WRK_NAME_2 TO C_FILE
+    CALL CLOSE_OGBFILE USING MEME_WRK_FD_2,MEME_WRK_NAME_2
+    CALL SORT_OGBFILE USING MEME_WRK_NAME_2,MEME_WRK_NAME_2,MEME_WRK_SKY 
+     IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORK FAILED(elg0703.meme.wrk2)"
+        CHAIN "MENU"
+     ENDIF
+
+.-----------------------------
+...Get earliest effective date
+.-----------------------------
+      DEBUG
+      CALL OPEN_OGBFILE USING MEME_WRK_FD_2,MEME_WRK_NAME_2
+      CLEAR EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      CLEAR W_FROM_DATE
+      CLEAR W_THRU_DATE
+      CLEAR W_GRP_NUM
+      CLEAR W_SUPP_ID
+      MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+      CALL READ_OGBFILE USING MEME_WRK_FD_2,MEME_WRK_NAME_2,MEME_WRK_LIST_2
+      IF (RESULT <> 1)
+        BREAK
+      ENDIF
+      MOVE MEME_WRK_TRM_2 TO W_THRU_DATE
+      MOVE MEME_WRK_ESSN_2 TO W_GRP_NUM
+      MOVE MEME_WRK_ID1_2 TO W_SUPP_ID
+      IF (SQUEEZE EARLIEST_EFF_DATE = "")
+         MOVE MEME_WRK_EFF_2 TO EARLIEST_EFF_DATE
+         MOVE MEME_WRK_TRM_2 TO SAVE_TRM
+      ELSE
+        CLEAR NUM_OF_DAYS
+        IF (SAVE_TRM <> "99999999")
+          CALL DELTA_DAYS USING MEME_WRK_EFF_2,SAVE_TRM,NUM_OF_DAYS
+          IF (NUM_OF_DAYS > 1)
+             MOVE MEME_WRK_EFF_2 TO EARLIEST_EFF_DATE
+          ENDIF
+          MOVE MEME_WRK_TRM_2 TO SAVE_TRM
+        ENDIF
+      ENDIF 
+ REPEAT 
+    IF (SQUEEZE EARLIEST_EFF_DATE <> "")
+         MOVE EARLIEST_EFF_DATE TO W_FROM_DATE            
+    ELSE
+         CLEAR W_FROM_DATE     
+    ENDIF
+    IF (W_THRU_DATE = "99999999")
+         MOVE "00000000" TO W_THRU_DATE 
+    ENDIF
+    PACKLEN BEN_REC WITH MEDELG_SAV_A1,W_SUPP_ID,W_GRP_NUM:
+                         W_FROM_DATE,W_THRU_DATE:
+                         MEDELG_SAV_A2
+    UNPACK BEN_REC INTO DIM_21,DIM_179
+    PACKLEN BEN_REC WITH "E01","00215    ",W_EFFDT," ",DIM_179
+    UNPACK BEN_REC INTO BEN_LIST_2
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING MEDELG_CURR_FD:
+                            MEDELG_CURR_NAME:
+                            BEN_LIST_2
+    ADD 1 TO X_CNT3
+    UNPACK X_CNT3 INTO DISP_4,DISP_3
+    IF (DISP_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    CLEAR BEN_LIST_2
+ RETURN 
+
+.====================
+. Operator pressed F9
+.====================
+QUIT
+    IF (C_RMODE = "I")
+        error     horz="23",vert="19":
+                  bgcol=C_ERRB,fgcol=C_ERRF:
+                  lncol=C_ERRL,shade="Y":
+                  text=" Process Aborted by Operator ":
+                  text="-----------------------------"
+        messageerase
+    ENDIF
+    CLEAR C_NOHIST
+    TRAPREST  TRAP_DATA
+    IF (RUN_MODE = "B")
+        LOOP
+        RETCOUNT CURR_RETURN
+        WHILE (CURR_RETURN > ORIG_RETURN)
+        NORETURN
+        REPEAT
+        MOVE SCH_RTABRT TO SCH@RTCODE
+        RETURN
+    ENDIF
+    CHAIN "MENU"
+
+    
+
+.=============
+.   Initialize
+.============= 
+INITIALIZE
+    CLOCK TIMESTAMP INTO TIMESTAMP
+    CLOCK TIMESTAMP INTO CURRDATE
+    CLOCK TIMESTAMP TO TODAY	
+    CALL X_BLANK_SCREEN
+.------------------
+...Display Counters
+.------------------
+    MOVE "Records Read: " TO X_CNTDESC1
+    MOVE "Wrk Records Written: " TO X_CNTDESC2
+    MOVE "Out Records Written: " TO X_CNTDESC3
+    CALL X_DISPLAY_COUNTS
+    CALL DATE_CALC USING CURRDATE,"SUB","DAYS",90,WRK_DATE
+
+    MOVE ZEROS TO BEN_FROM_DATE_1,BEN_THRU_DATE_1:
+                  BEN_FROM_DATE_2,BEN_THRU_DATE_2:   
+                  BEN_FROM_DATE_3,BEN_THRU_DATE_3:   
+                  BEN_FROM_DATE_4,BEN_THRU_DATE_4:   
+                  BEN_FROM_DATE_5,BEN_THRU_DATE_5    
+    RETURN
+
+.===========
+. Open Files
+.==========
+OPEN_FILES
+    UNPACK CURRDATE INTO JUNK4,W_DATE 
+    PACK MEDELG_NAME WITH "/w/","MEDELG_WRK",".TXT"
+    MOVE MEDELG_NAME TO C_FILE
+    CALL PREP_OGBFILE USING MEDELG_FD:
+                            MEDELG_NAME
+    PACK MEDELG_OUT_NAME WITH "/w/","alan757.none.cob.w.cb00215.future.p"
+    MOVE MEDELG_OUT_NAME TO C_FILE
+    CALL PREP_OGBFILE USING MEDELG_OUT_FD:
+                            MEDELG_OUT_NAME
+    MOVE MEMO_WRK_NAME TO C_FILE
+    CALL OPEN_OGBFILE USING MEMO_WRK_FD:
+                            MEMO_WRK_NAME
+    MOVE MEDELG_CURR_NAME TO C_FILE
+    CALL PREP_OGBFILE USING MEDELG_CURR_FD,MEDELG_CURR_NAME
+    MOVE MEDELG_PR_NAME TO C_FILE
+    CALL OPEN_OGBFILE USING MEDELG_PR_FD,MEDELG_PR_NAME
+    RETURN
+
+.===================
+. Reformat MEMO file
+.===================
+REFORMAT_MEMO
+
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+.--------------------------------------
+...Get active members with MEDB
+.--------------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "memo.dbf /w/elg0730.memo.wrk1 ": 
+                      " -p013-016eq#"",MEDB,"#"":
+                      " 1-8 13-16 25-32 291-320 321 -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(memo.dbf-MEDB)"
+        CHAIN "MENU"
+    ENDIF
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "memo.dbf /w/elg0730.memo.wrk1 ": 
+                      " -p013-016eq#"",MEDA,"#"":
+                      " 1-8 13-16 25-32 291-320 321 -a -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(memo.dbf-MEDA)"
+        CHAIN "MENU"
+    ENDIF
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/w/elg0730.memo.wrk1 /w/elg0730.memo.wrk2 ": 
+                      " -p13-20eq#"",BLANK8,"#"":
+                      " 1-51 -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(elg0730.memo.wrk1-1)"
+        CHAIN "MENU"
+    ENDIF
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/w/elg0730.memo.wrk1 /w/elg0730.memo.wrk2 ":
+                      " -p13-20gt#"",TODAY,"#"":
+                      " 1-51 -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(elg0730.memo.wrk1-2)"
+        CHAIN "MENU"
+    ENDIF
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/w/elg0730.memo.wrk2 /w/elg0730.memo.wrk3 ": 
+                      " -p51eq#"",Y,"#"":
+                      " 1-51 -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(elg0730.memo.wrk2)"
+        CHAIN "MENU"
+    ENDIF
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="        REFORMAT COMPLETE        ";
+    
+    RETURN
+
+.=========================
+...Sort x_memo.bluark file
+.=========================
+SORT_FILE
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="SORTING FILE ........ PLEASE WAIT";
+    
+    MOVE MEMO_WRK_NAME TO C_FILE
+    CALL OPEN_OGBFILE USING MEMO_WRK_FD,MEMO_WRK_NAME
+    CALL SORT_OGBFILE USING MEMO_WRK_NAME,MEMO_WRK_NAME,MEMO_WRK_SKY
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORT FAILED(elg0730.wrk3)"
+        CHAIN "MENU"
+    ENDIF
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="           SORT COMPLETE         ";
+    
+    RETURN 
+
+
+
+.============================
+. Get eligibility information          
+.============================
+GET_ELIG_INFO
+ LOOP      
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEMO_WRK_FD:
+                            MEMO_WRK_NAME:
+                            MEMO_WRK_LIST
+    IF (RESULT <> 1)
+        CALL X_DISPLAY_COUNTS
+        BREAK 
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO DISP_4,DISP_3
+    IF (DISP_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    IF (SQUEEZE MEMO_WRK_HIC = "")
+      CONTINUE
+    ENDIF
+.-------------------------
+...Get info from MEME_FILE
+.-------------------------
+    CLEAR MEME_SAV
+    CALL PREP_OGBFILE USING MEME_WRK_FD,MEME_WRK_NAME
+    PACK MEME_FK11 WITH MEMO_WRK_KEY1,BLANKS   
+    CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                         MEME_FN:             ...FILE NAME LIST
+                         MEME_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEME_FV:             ...FILE KEY VARLIST
+                         MEME_FK:             ...FILE KEY SIZES
+                         MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEME_REC:            ...FILE RECORD (PACKED)
+                         MEME_OLD:            ...FILE SAVED WHEN READ
+                         MEME_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+
+    LOOP
+      CALL FILE_NEXT USING MEME_FD:             ...FILE DECLARATION LIST
+
+                           MEME_FN:             ...FILE NAME LIST
+                           MEME_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                           MEME_FV:             ...FILE KEY VARLIST
+                           MEME_FK:             ...FILE KEY SIZES
+                           MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                           MEME_REC:            ...FILE RECORD (PACKED)
+                           MEME_OLD:            ...FILE SAVED WHEN READ
+                           MEME_QTY:            ...NUMBER OF FILES
+                           1                    ...FILE NUMBER FOR THIS READ
+      IF (RESULT <> 1)
+         BREAK
+      ENDIF
+      IF (MEME_ID1 <> MEMO_WRK_KEY1)
+         BREAK
+      ENDIF
+      IF (SQUEEZE MEME_NET <> "OGB")
+         CONTINUE
+      ENDIF
+      IF (MEME_EFF > TODAY)
+         CONTINUE
+      ENDIF
+      IF (SQUEEZE MEME_TRM = "")
+         MOVE "99999999" TO MEME_TRM
+      ENDIF
+      IF (MEME_TRM < MEME_EFF)
+         CONTINUE
+      ENDIF
+      MOVE MEME_EFF TO MEME_WRK_EFF
+      MOVE MEME_TRM TO MEME_WRK_TRM
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      MOVE MEME_WRK_NAME TO C_FILE
+      CALL WRITE_OGBREC USING MEME_WRK_FD,MEME_WRK_NAME,MEME_WRK_LIST
+      CLEAR MEME_WRK_LIST
+    REPEAT  
+    MOVE MEME_WRK_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING MEME_WRK_FD,MEME_WRK_NAME
+    CALL SORT_OGBFILE USING MEME_WRK_NAME,MEME_WRK_NAME,MEME_WRK_SKY 
+     IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="SORK FAILED(elg0703.meme.wrk)"
+        CHAIN "MENU"
+     ENDIF
+
+.-----------------------------
+...Get earliest effective date
+.-----------------------------
+      DEBUG
+      CALL OPEN_OGBFILE USING MEME_WRK_FD,MEME_WRK_NAME
+      CLEAR EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+      MOVE MEME_WRK_NAME TO C_FILE
+      CALL READ_OGBFILE USING MEME_WRK_FD,MEME_WRK_NAME,MEME_WRK_LIST
+      IF (RESULT <> 1)
+        BREAK
+      ENDIF
+      MOVE MEME_WRK_TRM TO BEN_THRU_DATE_1
+      IF (SQUEEZE EARLIEST_EFF_DATE = "")
+         MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+         MOVE MEME_WRK_TRM TO SAVE_TRM
+      ELSE
+        CLEAR NUM_OF_DAYS
+        IF (SAVE_TRM <> "99999999")
+          CALL DELTA_DAYS USING MEME_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+          IF (NUM_OF_DAYS > 1)
+             MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+          ENDIF
+          MOVE MEME_WRK_TRM TO SAVE_TRM
+        ENDIF
+      ENDIF 
+    REPEAT 
+    IF (SQUEEZE EARLIEST_EFF_DATE <> "")
+      IF (BEN_THRU_DATE_1 <= WRK_DATE)
+         CONTINUE
+      ELSE
+         MOVE EARLIEST_EFF_DATE TO BEN_FROM_DATE_1        
+      ENDIF
+    ELSE
+         CONTINUE
+    ENDIF
+    MOVE MEMO_WRK_HIC TO BEN_HIC
+    MOVE TODAY TO W_EFFDT
+.------------------------         
+...Get info from MEM-FILE
+.------------------------
+    PACK MEM_FK11 WITH MEMO_WRK_KEY1,BLANKS
+    CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                         MEM_FN:              ...FILE NAME LIST
+                         MEM_FC:              ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:              ...FILE KEY VARLISTS
+                         MEM_FK:              ...FILE KEY SIZES
+                         MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                         MEM_REC:             ...FILE RECORD (PACKED)
+                         MEM_OLD:             ...FILE SAVED WHEN READ
+                         MEM_QTY:             ...NUMBER OF FIlES
+                         1                    ...FILE NUMBER FOR THIS READ
+
+    IF (RESULT <> 1)
+       BREAK 
+    ENDIF
+    MOVE MEM_ESSN TO BEN_GRP_NUM
+    MOVE MEM_ID1 TO BEN_SUPP_ID
+    MOVE MEM_LNAME TO BEN_LNAME
+    MOVE MEM_FNAME TO BEN_FNAME
+    MOVE MEM_MINIT TO BEN_MINIT
+    MOVE MEM_DOB TO BEN_DOB
+    MOVE MEM_SEX TO BEN_SEX
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING MEDELG_FD:
+                            MEDELG_NAME:
+                            BEN_LIST
+    ADD 1 TO X_CNT2
+    UNPACK X_CNT2 INTO DISP_4,DISP_3
+    IF (DISP_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+ REPEAT
+ RETURN 
+
+.--------------------
+...Write Trail Record
+.-------------------- 
+WRITE_TRAIL_REC
+.Getting the count of records for the trailer record                
+         MOVE      BLANKS TO SCRATCH   
+         PACK      SCRATCH WITH "wc ",MEDELG_OUT_NAME," > ",MEDELG_CNT_NME
+         ROLLOUT   SCRATCH
+         IF OVER                                                               
+             ERROR     HORZ="15",VERT="19":                                     
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:                               
+                       LNCOL=C_ERRL,SHADE="Y":                                  
+                       TEXT="WC of MEDELG_OUT ROLLOUT FAILED"
+         CHAIN     "MENU"                                                      
+         ENDIF
+...Opening the count file
+         MOVE MEDELG_CNT_NME TO C_FILE
+         CALL OPEN_OGBFILE USING MEDELG_CNT_FD,MEDELG_CNT_NME
+...Reading the Record Count file
+         MOVE OGB_SEQ1 TO OGB_SEQ                                          
+         CALL READ_OGBFILE USING MEDELG_CNT_FD,MEDELG_CNT_NME,MEDELG_CNT_LIST
+         UNPACK MEDELG_CNT_CNT INTO W_CNT8   
+         UNPACK W_CNT8 INTO W_CNT1,W_CNT7
+         MOVE W_CNT7 TO F_CNT7
+         SUB 1 FROM F_CNT7
+         MOVE F_CNT7 TO W_CNT7
+         REPLACE " 0",W_CNT7
+         MOVE W_CNT7 TO TRL_NUM_RECS
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING MEDELG_OUT_FD:
+                            MEDELG_OUT_NAME:
+                            TRL_LIST
+         RETURN
+
+.===========
+.Close Files
+.===========
+CLOSE_FILES 
+    MOVE MEDELG_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING MEDELG_FD:
+                            MEDELG_NAME
+    MOVE MEDELG_OUT_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING MEDELG_OUT_FD:
+                            MEDELG_OUT_NAME
+
+    MOVE MEMO_WRK_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING MEMO_WRK_FD:
+                             MEMO_WRK_NAME
+
+    MOVE MEME_WRK_NAME_2 TO C_FILE
+    CALL CLOSE_OGBFILE USING MEME_WRK_FD_2:
+                             MEME_WRK_NAME_2
+    MOVE MEDELG_CURR_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING MEDELG_CURR_FD,MEDELG_CURR_NAME
+    MOVE MEDELG_PR_NAME TO C_FILE
+    CALL CLOSE_OGBFILE USING MEDELG_PR_FD,MEDELG_PR_NAME
+    RETURN
+
+
+.------------------
+. Required Includes
+.------------------
+    INC         UTIL.SR
+    INC         VALID.IO
+    INC         X_STANDARD.SR
+    INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC        X_OGBFILE.IO

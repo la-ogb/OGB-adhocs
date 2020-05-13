@@ -1,0 +1,887 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  INV0495.PS (REWRITTEN FROM X_INV495)
++    Description    :  CUS - UPS Deductions Exceptions                 
++    Author         :  Stephen J. McDonald
++    APSJM 04/30/2003 A0304302 DEV - INITIAL VERSION
++
++    REVISIONS
++
++    APDLM 05/17/06 A0603151 - add location to output file
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+	      INC       INVOICE.RL       ..Invoice File Definition
+              INC       CLI.RL           ...Client File Definition
+              INC       DEDUCT.RL        ... DEDUCTIONS FILE DEF
+              INC       INVDEDEXC.RL     ... DEDUCTIONS FILE DEF
+              INC       X_DEDSRC.RL      ... GROUP/SOURCE FILE
+              INC       INVDEDFYTD.RL    ... FISACL YEAR TO DATE TOTALS
+              INC       MEM.RL
+              INC       MEME.RL
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+.
+DEDUCT_FD      FILE     VAR=175,TEXT
+DEDUCT_NME     INIT     "/ogb/work/deot04_0607.txt"
+
+INVDED_FD      FILE     VAR=496,TEXT
+INVDED_NME     INIT     "/ogb/work/ivde04.TXT"
+.
+DEDSRC_FD      IFILE    VAR=6,KEYL=4,NODUP,TEXT
+DEDSRC_NME     INIT     "/ogb/work/desrc04.ix1"
+.
+INVDEDFYTD_FD  IFILE    VAR=86,KEYL=26,NODUP,TEXT
+INVDEDFYTD_NME INIT     "/ogb/work/invdedfytd.ix1"
+.
+INVDEDFYTD_KEY DIM      26
+CMP_INV_FILE     FILE     VAR=333,TEXT
+CMP_INV_NAME     INIT     "/w/invoice_0708.txt"
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+DIM_7           DIM      7
+DIM_2           DIM      2
+FORM_HSAEE      FORM     5.2
+FORM_HSAEO      FORM     5.2
+FORM_TOTHLTH    FORM     5.2
+FORM_ENRTOTHLTH    FORM     5.2
+SVE_HSAEE       DIM      8
+SVE_HSAEO       DIM      8
+CURR_INV_DATE    DIM      6
+PR_INV_DATE      DIM      6
+.
+FORM_42       FORM      4.2 
+FORM_32       FORM      3.2
+FORM_52       FORM      5.2
+FORM_MM       FORM      2
+FORM_CCYY     FORM      4
+.
+SAVE_INV_DATE DIM       8
+SSN_CNT       FORM      2
+ZERO_62       FORM      6.2
+SVE_AGENCYNO  DIM       6
+SVE_RETIRECD  DIM       1
+SVE_HLTHRTTBL DIM       2
+SVE_FYTD_PART_KEY  DIM  19  
+FYTD_PART_KEY DIM       19
+SAVE_DED_KEY  DIM       13
+SAVE_INV_KEY  DIM       13
+ISIS_KEY      DIM       13
+INV_KEY       DIM       13
+SAVE_DED_SSN  DIM       9
+SAVE_INV_SSN  DIM       9
+INDEX_OPTS    INIT      "29-32 -J"
+SAVE_DEDDT    DIM       8
+X_COPY_NME    DIM       35 
+WRK_COPY_DATE DIM       6
+DESC_HLTH     DIM       1
+DESC_STAT     DIM       2
+INVDEDFYTD_RESULT FORM  1
+ISISWT_RESULT FORM      1
+INV_RESULT    FORM      1
+ISIS_RESULT   FORM      1
+VAL_RESULT    FORM      1
+UPS_RESULT    FORM      1
+DEDUCT_RESULT FORM      1
+CLI_RESULT    FORM      1
+DISP3         DIM       3
+DISP4         DIM       4
+DEDUCT_SKY    INIT      "40-47 151-154 31-39 -T"
+ISISSRT_SKY   INIT      "7-10 11-19 -T"
+INVCFL_SKY2   INIT      "4-7 37-45 -T"
+INVDED_SKY    INIT      "001-012 013-042 -T"
+DESC_DASH     INIT      "-"
+DESC_LIST     LIST
+DESC_MED      DIM       1
+DESC_COV      DIM       1
+DESC_LIFE     DIM       1
+DESC_DLF      DIM       2
+              LISTEND
+WRK_LIST      LIST
+WRK_DIM       DIM       8
+WRK_DIM8      DIM       8
+WRK_DIM9      DIM       9
+WRK_FORM6     FORM      6
+WRK_FORM8     FORM      8
+WRK_DIM6      DIM       6
+WRK_DIM2      DIM       2
+WRK_FORM62    FORM      6.2
+WRK_FORM2     FORM      2
+WRK_DIM1      DIM       1
+WRK_DIM3      DIM       3
+WRK_DIM4      DIM       4
+WRK_DIM5      DIM       5
+              LISTEND
+WRK_INVLIST   LIST
+WRK_MEDEMO    FORM      9.2
+WRK_LFEEMO    FORM      9.2
+WRK_MEDEME    FORM      9.2
+WRK_LFEEME    FORM      9.2
+WRK_EEPOR     FORM      9.2
+WRK_RET100    FORM      9.2
+WRK_PSYCH     FORM      9.2
+WRK_ADMIN     FORM      9.2
+WRK_LIFE      FORM      9.2
+WRK_DEPL      FORM      9.2
+WRK_EE_OPLFE  FORM      9.2
+WRK_SP_OPLFE  FORM      9.2
+WRK_CH_OPLFE  FORM      9.2
+WRK_PERACC    FORM      9.2
+WRK_HEALTH    FORM      9.2
+WRK_OPLEME    FORM      9.2
+WRK_HSAEMO    FORM      9.2
+WRK_HSAEME    FORM      9.2
+              LISTEND
+WRK_DEDKEY    DIM       13
+WRK_INVKEY    DIM       13
+ACC_LIST      LIST
+ACC_BIL_MEDEO FORM      9.2
+ACC_BIL_LFEEO FORM      9.2
+ACC_BIL_MEDEE FORM      9.2
+ACC_BIL_LFEEE FORM      9.2
+ACC_BIL_OPLEE FORM      9.2
+ACC_DED_MEDEO FORM      9.2
+ACC_DED_LFEEO FORM      9.2
+ACC_DED_MEDEE FORM      9.2
+ACC_DED_LFEEE FORM      9.2
+ACC_DED_OPLEE FORM      9.2
+              LISTEND
+WRK_CCYY      DIM       4
+WRK_MM        DIM       2
+WS_FORM0      FORM      "      .00"
+BLANK3        INIT      "   "
+ADJ           INIT      "ADJ"
+DATE1         DIM       8
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+KEEP_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+WRK_PLAN      DIM       1
+WRK_COV       DIM       1
+WRK_RIDER     DIM       1
+WRK_DED_DATE  DIM       6
+WRK_INV_DATE  DIM       6
+WRK_DATE      DIM       6
+WS_DATE       DIM       6
+FIRST_DAY     INIT      "01"
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+FORM2         FORM      2
+              LISTEND
+
+HLD_LOC       DIM       4
+SPACE4        DIM       4
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "INV0496"              TO  C_NEXT
+         MOVE      "UPS DEDUCT EXCEPT EXTRACT" TO  C_OPER
+         MOVE      "A100811"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+MAIN_PROCESS
+         DEBUG
+         CALL      INITIALIZE
+         CALL      SORT_OGBFILE   USING  CMP_INV_NAME,CMP_INV_NAME:
+                                                  INVCFL_SKY2
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="INVOICE SORT BY AGENCY/SSN FAILED"
+         ENDIF
+         CALL      SORT_OGBFILE   USING  DEDUCT_NME,DEDUCT_NME:
+                                                  DEDUCT_SKY
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="UPS SORT BY AGENCY/SSN FAILED"
+         ENDIF
+         CALL      OPEN_FILES
+         CALL      INDEX_SRC
+         CALL      READ_INV  
+         CALL      READ_DED 
+         IF        ((INV_RESULT <> 1) AND (DEDUCT_RESULT <> 1))
+              ERROR    HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="MATCH FILES ARE EMPTY"
+              CHAIN    "MENU"
+         ENDIF
+         CALL      MTCH_FILES
+         DISPLAY    *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                    *P30:21,"SORTING FILE...",*BOLDOFF
+         CALL      CLOSE_OGBFILE USING INVDED_FD,INVDED_NME 
+         CALL      SORT_OGBFILE  USING INVDED_NME,INVDED_NME:
+                                       INVDED_SKY
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="EXCEPTIONS FILE SORT FAILED"
+               CHAIN     "MENU"
+         ENDIF
+          
+          
+         CALL      UPDATE_VALTBL
+. ...Close Files
+         CALL      CLOSE_FILES 
+.        ERASE     "x_invc04.srt"
+
+         CALL X_DISPLAY_COUNTS
+         DEBUG
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+MTCH_FILES
+         LOOP
+            IF ((INV_RESULT <> 1) AND (DEDUCT_RESULT <> 1))
+               BREAK
+            ELSE
+              IF (INV_RESULT <> 1)
+                 CALL ON_DED 
+                 CALL READ_DED
+              ELSE
+                IF (DEDUCT_RESULT <> 1)
+                   CALL ON_INV                 
+                   CALL READ_INV 
+                ELSE
+                  IF (WRK_INVKEY < WRK_DEDKEY)
+                     CALL ON_INV    
+                     CALL READ_INV 
+                  ELSE
+                     IF (WRK_DEDKEY < WRK_INVKEY)
+                        CALL ON_DED       
+                        CALL READ_DED
+                     ELSE
+                        CALL ON_BOTH
+                        CALL READ_INV 
+                        CALL READ_DED
+                     ENDIF
+                  ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+         REPEAT
+         RETURN
+
+READ_INV
+  LOOP
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      READ_OGBFILE USING CMP_INV_FILE,CMP_INV_NAME,INVOICE_LIST  
+         MOVE      RESULT TO INV_RESULT
+         IF        (INV_RESULT = 1)
+                   ADD       1 TO X_CNT1        
+                   UNPACK    X_CNT1 INTO DISP4,DISP3
+                   IF (DISP3 = "000")
+                         CALL      X_DISPLAY_COUNTS
+                   ENDIF
+         ELSE
+                   BREAK                
+         ENDIF
+         MOVE      CLIENTLEV1 TO X_DEDSRC_CLI
+         CALL      READ_OGBFILE_IX USING DEDSRC_FD,DEDSRC_NME:
+                                       X_DEDSRC_CLI,X_DEDSRC_LIST
+         IF        (X_DEDSRC_SRC <> "04")
+                   CONTINUE 
+         ENDIF
+         IF        (RETIRECD = "2")
+                    CONTINUE
+        ENDIF
+        UNPACK    AGENCYNO INTO WRK_DIM4,WRK_DIM2
+        IF        (SQUEEZE WRK_DIM2 = "95")
+                     CONTINUE
+        ENDIF
+        SWITCH     HLTHRTTBL
+          CASE "R1" OR "R2" OR "RN"
+             CONTINUE
+        ENDSWITCH
+         MOVE      ENR_TOTHEALTH TO WRK_EEPOR 
+         MOVE      RET100AMT TO WRK_RET100 
+         MOVE      PSYRIDERAMT TO WRK_PSYCH 
+         MOVE      ADMREVFEE TO WRK_ADMIN
+         MOVE      TOTHEALTH TO WRK_HEALTH
+         MOVE      INV_HSAEE TO WRK_HSAEME
+         MOVE      INV_HSAEO TO WRK_HSAEMO
+         MOVE      (WRK_EEPOR + WRK_RET100 + WRK_PSYCH) TO WRK_MEDEME
+         MOVE      ((WRK_HEALTH + WRK_ADMIN) - WRK_MEDEME) TO WRK_MEDEMO
+         MOVE      ENR_LIFEAMT TO WRK_LIFE
+         MOVE      ACCIDENTPREM TO WRK_PERACC
+         MOVE      SPS_OPTLFPREM TO WRK_SP_OPLFE
+         MOVE      ENR_OPTLFPREM TO WRK_EE_OPLFE
+         MOVE      CHD_OPTLFPREM TO WRK_CH_OPLFE
+         MOVE      DEP_LIFEAMT TO WRK_DEPL
+         MOVE      ((0.5 * WRK_LIFE) + WRK_DEPL) TO WRK_LFEEME
+         MOVE      (0.5 * WRK_LIFE) TO WRK_LFEEMO
+         MOVE      (WRK_PERACC + WRK_SP_OPLFE + WRK_EE_OPLFE: 
+                    + WRK_CH_OPLFE) TO WRK_OPLEME
+         UNPACK    AGENCYNO INTO WRK_DIM4       
+         PACK      WRK_INVKEY WITH WRK_DIM4,ENR_SSN 
+         BREAK                        
+  REPEAT
+  RETURN
+
+READ_DED
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL READ_OGBFILE USING  DEDUCT_FD,DEDUCT_NME,DED_LIST
+         MOVE      RESULT TO DEDUCT_RESULT 
+         IF        (DEDUCT_RESULT = 1)
+                   ADD       1 TO X_CNT2  
+                   UNPACK    X_CNT2 INTO DISP4,DISP3
+                   IF (DISP3 = "000")
+                          CALL      X_DISPLAY_COUNTS
+                   ENDIF
+                   UNPACK DED_CLI INTO WRK_DIM4
+                   PACK WRK_DEDKEY WITH WRK_DIM4,DED_SSN
+         ENDIF
+         RETURN
+  
+ON_INV
+         UNPACK AGENCYNO INTO WRK_DIM4
+	 MOVE WRK_DIM4 TO INVDED_CLI
+         MOVE CLIENTLEV2 TO INVDED_LOC
+         PACK INVDED_NAME WITH ENR_LNAME,",",ENR_FNAME," ",ENR_MINIT
+         MOVE "3" TO INVDED_TYPE
+         MOVE ENR_SSN TO INVDED_SSN
+         PACK INVDED_INV_DATE WITH INVOICE_YEAR,INVOICE_MM,FIRST_DAY
+         MOVE SAVE_DEDDT TO INVDED_TAPE_DATE
+         MOVE WRK_MEDEMO TO INVDED_MEDEO_BL_MTD
+         MOVE WRK_MEDEME TO INVDED_MEDEE_BL_MTD
+         MOVE WRK_LFEEMO TO INVDED_LFEEO_BL_MTD
+         MOVE WRK_LFEEME TO INVDED_LFEEE_BL_MTD
+         MOVE WRK_OPLEME TO INVDED_OPLEE_BL_MTD
+         MOVE WRK_HSAEMO TO INVDED_HSAEO_BL_MTD
+         MOVE WRK_HSAEME TO INVDED_HSAEE_BL_MTD
+         IF ((INVDED_MEDEO_BL_MTD = 0) AND (INVDED_MEDEE_BL_MTD = 0) AND:
+            (INVDED_LFEEO_BL_MTD = 0) AND (INVDED_LFEEE_BL_MTD = 0))     
+             RETURN
+         ENDIF
+         MOVE "04" TO INVDED_SRC_DSG
+         CLEAR INVDEDFYTD_KEY
+         PACK INVDEDFYTD_KEY WITH INVDED_SRC_DSG,WRK_DIM4:
+                   INVDED_SSN,INVDEDFYTD_PLAN_YEAR,BLANKS 
+         MOVE  INVDEDFYTD_KEY TO SVE_FYTD_PART_KEY
+         CLEAR ACC_LIST
+         CALL      READKS_FYTD                                             
+         MOVE ACC_BIL_MEDEO TO INVDED_MEDEO_BL_FYTD
+         MOVE ACC_BIL_MEDEE TO INVDED_MEDEE_BL_FYTD
+         MOVE ACC_BIL_LFEEO TO INVDED_LFEEO_BL_FYTD
+         MOVE ACC_BIL_LFEEE TO INVDED_LFEEE_BL_FYTD
+         MOVE ACC_BIL_OPLEE TO INVDED_OPLEE_BL_FYTD
+         MOVE ACC_DED_MEDEO TO INVDED_MEDEO_DU_FYTD
+         MOVE ACC_DED_MEDEE TO INVDED_MEDEE_DU_FYTD
+         MOVE ACC_DED_LFEEO TO INVDED_LFEEO_DU_FYTD
+         MOVE ACC_DED_LFEEE TO INVDED_LFEEE_DU_FYTD
+         MOVE ACC_DED_OPLEE TO INVDED_OPLEE_DU_FYTD
+         CALL MAKE_BIL_DESC
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING INVDED_FD,INVDED_NME:
+                                             INVDED_LIST 
+         ADD       1 TO X_CNT3  
+         UNPACK    X_CNT3 INTO DISP4,DISP3
+         IF (DISP3 = "000")
+              CALL      X_DISPLAY_COUNTS
+         ENDIF
+         CLEAR INVDED_LIST
+         RETURN
+
+ON_DED
+         MOVE DED_CLI TO INVDED_CLI
+         IF (SQUEEZE DED_LOC = "")
+             CALL READ_MEME
+             MOVE HLD_LOC TO INVDED_LOC
+         ELSE
+             MOVE DED_LOC TO INVDED_LOC
+         ENDIF
+
+         MOVE DED_NAME TO INVDED_NAME
+         MOVE "4" TO INVDED_TYPE
+         MOVE DED_SSN TO INVDED_SSN
+         MOVE SAVE_INV_DATE TO INVDED_INV_DATE
+         MOVE SAVE_DEDDT TO INVDED_TAPE_DATE
+         MOVE DED_MED_EMO TO INVDED_MEDEO_DU_MTD
+         MOVE DED_MED_EME TO INVDED_MEDEE_DU_MTD
+         MOVE DED_LFE_EMO TO INVDED_LFEEO_DU_MTD
+         MOVE DED_LFE_EME TO INVDED_LFEEE_DU_MTD
+         MOVE DED_OPL_EME TO INVDED_OPLEE_DU_MTD
+         MOVE DED_HSA_EME TO INVDED_HSAEE_DU_MTD
+         MOVE DED_HSA_EMO TO INVDED_HSAEO_DU_MTD
+         IF ((INVDED_MEDEO_DU_MTD = 0) AND (INVDED_MEDEE_DU_MTD = 0) AND:
+            (INVDED_LFEEO_DU_MTD = 0) AND (INVDED_LFEEE_DU_MTD = 0))     
+             RETURN
+         ENDIF
+         MOVE "04" TO INVDED_SRC_DSG
+         MOVE DED_SRCDSG TO INVDED_DED_DSC
+         UNPACK INVDED_CLI INTO WRK_DIM4
+         CLEAR INVDEDFYTD_KEY
+         PACK INVDEDFYTD_KEY WITH INVDED_SRC_DSG,WRK_DIM4:
+                   INVDED_SSN,INVDEDFYTD_PLAN_YEAR,BLANKS 
+         MOVE  INVDEDFYTD_KEY TO SVE_FYTD_PART_KEY
+         CLEAR ACC_LIST
+         CALL      READKS_FYTD                                             
+         MOVE ACC_BIL_MEDEO TO INVDED_MEDEO_BL_FYTD
+         MOVE ACC_BIL_MEDEE TO INVDED_MEDEE_BL_FYTD
+         MOVE ACC_BIL_LFEEO TO INVDED_LFEEO_BL_FYTD
+         MOVE ACC_BIL_LFEEE TO INVDED_LFEEE_BL_FYTD
+         MOVE ACC_BIL_OPLEE TO INVDED_OPLEE_BL_FYTD
+         MOVE ACC_DED_MEDEO TO INVDED_MEDEO_DU_FYTD
+         MOVE ACC_DED_MEDEE TO INVDED_MEDEE_DU_FYTD
+         MOVE ACC_DED_LFEEO TO INVDED_LFEEO_DU_FYTD
+         MOVE ACC_DED_LFEEE TO INVDED_LFEEE_DU_FYTD
+         MOVE ACC_DED_OPLEE TO INVDED_OPLEE_DU_FYTD
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING INVDED_FD,INVDED_NME:
+                                          INVDED_LIST 
+         ADD       1 TO X_CNT3  
+         UNPACK    X_CNT3 INTO DISP4,DISP3
+         IF (DISP3 = "000")
+              CALL      X_DISPLAY_COUNTS
+         ENDIF
+         CLEAR INVDED_LIST
+         RETURN
+
+ON_BOTH
+         UNPACK AGENCYNO INTO WRK_DIM4
+	 MOVE WRK_DIM4 TO INVDED_CLI
+         CLEAR INVDEDFYTD_KEY
+         PACK INVDEDFYTD_KEY WITH "04",WRK_DIM4:
+                   ENR_SSN,INVDEDFYTD_PLAN_YEAR,BLANKS 
+         MOVE  INVDEDFYTD_KEY TO SVE_FYTD_PART_KEY
+         CLEAR ACC_LIST
+         CALL      READKS_FYTD                                             
+         MOVE ACC_BIL_MEDEO TO INVDED_MEDEO_BL_FYTD
+         MOVE ACC_BIL_MEDEE TO INVDED_MEDEE_BL_FYTD
+         MOVE ACC_BIL_LFEEO TO INVDED_LFEEO_BL_FYTD
+         MOVE ACC_BIL_LFEEE TO INVDED_LFEEE_BL_FYTD
+         MOVE ACC_BIL_OPLEE TO INVDED_OPLEE_BL_FYTD
+         MOVE ACC_DED_MEDEO TO INVDED_MEDEO_DU_FYTD
+         MOVE ACC_DED_MEDEE TO INVDED_MEDEE_DU_FYTD
+         MOVE ACC_DED_LFEEO TO INVDED_LFEEO_DU_FYTD
+         MOVE ACC_DED_LFEEE TO INVDED_LFEEE_DU_FYTD
+         MOVE ACC_DED_OPLEE TO INVDED_OPLEE_DU_FYTD
+         IF ((DED_MED_EMO = WRK_MEDEMO) AND:               
+            (DED_LFE_EMO = WRK_LFEEMO) AND:
+              (DED_MED_EME = WRK_MEDEME) AND:
+                (DED_LFE_EME = WRK_LFEEME) AND:
+                (DED_OPL_EME = WRK_OPLEME) AND:
+                  (DED_HSA_EME = WRK_HSAEME) AND:
+                    (DED_HSA_EMO = WRK_HSAEMO))
+                   MOVE "1" TO INVDED_TYPE
+         ELSE
+                   MOVE "2" TO INVDED_TYPE
+         ENDIF
+	 MOVE WRK_DIM4 TO INVDED_CLI
+...changed from "move blanks"
+         MOVE CLIENTLEV2 TO INVDED_LOC
+         PACK INVDED_NAME WITH ENR_LNAME,",",ENR_FNAME," ",ENR_MINIT
+         MOVE ENR_SSN TO INVDED_SSN
+         MOVE SAVE_DEDDT TO INVDED_TAPE_DATE
+         PACK INVDED_INV_DATE WITH INVOICE_YEAR,INVOICE_MM,"01"
+         MOVE DED_MED_EMO TO INVDED_MEDEO_DU_MTD
+         MOVE DED_MED_EME TO INVDED_MEDEE_DU_MTD
+         MOVE DED_OPL_EME TO INVDED_OPLEE_DU_MTD
+         MOVE DED_LFE_EMO TO INVDED_LFEEO_DU_MTD
+         MOVE DED_LFE_EME TO INVDED_LFEEE_DU_MTD
+         MOVE DED_HSA_EMO TO INVDED_HSAEO_DU_MTD
+         MOVE DED_HSA_EME TO INVDED_HSAEE_DU_MTD
+
+         MOVE WRK_MEDEMO TO INVDED_MEDEO_BL_MTD
+         MOVE WRK_MEDEME TO INVDED_MEDEE_BL_MTD
+         MOVE WRK_LFEEMO TO INVDED_LFEEO_BL_MTD
+         MOVE WRK_LFEEME TO INVDED_LFEEE_BL_MTD
+         MOVE WRK_OPLEME TO INVDED_OPLEE_BL_MTD
+         MOVE WRK_HSAEMO TO INVDED_HSAEO_BL_MTD
+         MOVE WRK_HSAEME TO INVDED_HSAEE_BL_MTD
+         IF ((INVDED_MEDEO_DU_MTD = 0) AND (INVDED_MEDEE_DU_MTD = 0) AND:
+            (INVDED_LFEEO_DU_MTD = 0) AND (INVDED_LFEEE_DU_MTD = 0) AND:
+            (INVDED_LFEEO_BL_MTD = 0) AND (INVDED_LFEEE_BL_MTD = 0) AND:
+            (INVDED_MEDEO_BL_MTD = 0) AND (INVDED_MEDEE_BL_MTD = 0)) AND:
+             RETURN
+         ENDIF
+         MOVE "04" TO INVDED_SRC_DSG
+         MOVE DED_DSC TO INVDED_DED_DSC
+         CALL MAKE_BIL_DESC
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING INVDED_FD,INVDED_NME:
+                                             INVDED_LIST 
+         ADD       1 TO X_CNT3  
+         UNPACK    X_CNT3 INTO DISP4,DISP3
+         IF (DISP3 = "000")
+              CALL      X_DISPLAY_COUNTS
+         ENDIF
+         CLEAR INVDED_LIST
+         RETURN
+
+ADD_DATE
+         ADD       01 TO FORM_MM
+         IF        (FORM_MM = 13)
+                   ADD 1 TO FORM_CCYY
+                   MOVE 01 TO FORM_MM
+         ENDIF
+         PACK      WS_DATE WITH FORM_CCYY,FORM_MM
+         REPLACE   " 0" IN WS_DATE
+         RETURN
+                   
+READKS_FYTD
+         CALL      READ_OGBFILE_IX USING INVDEDFYTD_FD,INVDEDFYTD_NME:
+                                         INVDEDFYTD_KEY,INVDEDFYTD_LIST
+   LOOP
+       CALL      READKS_OGBFILE_IX USING INVDEDFYTD_FD,INVDEDFYTD_NME:
+                                         INVDEDFYTD_LIST
+       MOVE      RESULT TO INVDEDFYTD_RESULT
+       IF        (INVDEDFYTD_RESULT <> 1)
+                 BREAK
+       ENDIF
+       PACK FYTD_PART_KEY WITH INVDEDFYTD_SRC_DSG,INVDEDFYTD_CLI,INVDEDFYTD_SSN:
+                               INVDEDFYTD_PLAN_YEAR
+       IF (FYTD_PART_KEY <> SVE_FYTD_PART_KEY)
+          BREAK
+       ENDIF
+       IF (INVDEDFYTD_SW = "B")
+          ADD INVDEDFYTD_MEDEO TO ACC_BIL_MEDEO
+          ADD INVDEDFYTD_MEDEE TO ACC_BIL_MEDEE
+          ADD INVDEDFYTD_LFEEO TO ACC_BIL_LFEEO
+          ADD INVDEDFYTD_LFEEE TO ACC_BIL_LFEEE
+          ADD INVDEDFYTD_OPLEE TO ACC_BIL_OPLEE
+       ELSE
+          ADD INVDEDFYTD_MEDEO TO ACC_DED_MEDEO
+          ADD INVDEDFYTD_MEDEE TO ACC_DED_MEDEE
+          ADD INVDEDFYTD_LFEEO TO ACC_DED_LFEEO
+          ADD INVDEDFYTD_LFEEE TO ACC_DED_LFEEE
+          ADD INVDEDFYTD_OPLEE TO ACC_DED_OPLEE
+       ENDIF
+   REPEAT 
+
+READKS_FYTD_RET
+         RETURN
+
+MAKE_BIL_DESC
+         IF (SQUEEZE HLTHRTTBL <> "")
+            APPEND HLTHRTTBL TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE DEPCOVERAGE <> "")
+            APPEND DEPCOVERAGE TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE HLTHNETWRK <> "")
+            APPEND HLTHNETWRK TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE HLTHPROD <> "")
+            APPEND HLTHPROD TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE HLTHPLAN <> "")
+            APPEND HLTHPLAN TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE PSYCHRIDER <> "")
+            APPEND PSYCHRIDER TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE RET100RIDER <> "")
+            APPEND RET100RIDER TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         APPEND "   " TO INVDED_BIL_DSC
+         IF (SQUEEZE LIFEPLAN <> "")
+            APPEND LIFEPLAN TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (ENR_LIFE <> "00")
+            APPEND ENR_LIFE TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE DEPLIFRIDER <> "")
+            APPEND DEPLIFRIDER TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE ENR_OPTLFRIDER <> "")
+            APPEND ENR_OPTLFRIDER TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE SPS_OPTLFRIDER <> "")
+            APPEND SPS_OPTLFRIDER TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE CHD_OPTLFRIDER <> "")
+            APPEND CHD_OPTLFRIDER TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         IF (SQUEEZE PER_ACCDTRIDER <> "")
+            APPEND PER_ACCDTRIDER TO INVDED_BIL_DSC
+            APPEND "_" TO INVDED_BIL_DSC
+         ENDIF
+         RETURN
+
+.-----------------------
+.Loop through meme to get the location
+.-----------------------
+READ_MEME
+
+    CLEAR     HLD_LOC
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",DED_SSN,BLANKS
+    PACK      MEM_AIM3 WITH "03X","01",BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                               MEM_FN:          ...FILE NAME LIST
+                               MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                               MEM_FV:          ...FILE KEY VARLISTS
+                               MEM_AIM:          ...FILE KEY SIZES
+                               MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                               MEM_REC:         ...FILE RECORD (PACKED)
+                               MEM_OLD:         ...FILE SAVED WHEN READ
+                               MEM_QTY:         ...NUMBER OF FILES
+                               2                 ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+        MOVE SPACE4 TO HLD_LOC
+        RETURN 
+    ENDIF
+..Read the meme file by key 11 (member id)
+    PACK      MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL      FILE_READ USING MEME_FD:    ...File declaration list
+               MEME_FN:  ...File name list
+               MEME_FC:  ...(I)ndex or (A)imdex
+               MEME_FV:  ...File key varlists
+               MEME_FK:  ...File key sizes
+               MEME_LIST: ...File record (field list)
+               MEME_REC: ...File record (packed)
+               MEME_OLD: ...File saved when read
+               MEME_QTY: ...Number of files
+               1         ...File number for this read
+..Loops to read all meme records
+            LOOP
+               CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                  MEME_FN:  ...File name list
+                  MEME_FC:  ...(I)ndex or (A)imdex
+                  MEME_FV:  ...File key varlists
+                  MEME_FK:  ...File key sizes
+                  MEME_LIST: ...File record (field list)
+                  MEME_REC: ...File record (packed)
+                  MEME_OLD: ...File saved when read
+                  MEME_QTY: ...Number of files
+                  1         ...File number for this read
+               WHILE     (MEM_ID1 = MEME_ID1 AND RESULT = 1)
+
+               IF (SQUEEZE MEME_TRM = "")
+                   MOVE MEME_LEV2 TO HLD_LOC
+               ENDIF
+  
+             REPEAT
+
+      RETURN
+
+
+INITIALIZE
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Inv Recs Read: " TO X_CNTDESC1
+	 MOVE      "Ded Recs Read: " TO X_CNTDESC2
+	 MOVE      "Records Written: " TO X_CNTDESC3
+
+	 CALL      X_DISPLAY_COUNTS
+         MOVE      "SPC" TO SAVE_DEDDT
+         MOVE      "SPC" TO SAVE_INV_DATE
+         RETURN        
+
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING CMP_INV_FILE,CMP_INV_NAME
+         CALL      OPEN_OGBFILE USING DEDUCT_FD,DEDUCT_NME 
+         CALL      PREP_OGBFILE USING INVDED_FD,INVDED_NME 
+         CALL      PREP_OGBFILE_IX USING DEDSRC_FD,DEDSRC_NME
+         CALL      OPEN_OGBFILE_IX USING INVDEDFYTD_FD,INVDEDFYTD_NME
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+INDEX_SRC
+         CLEAR CLI_AIM
+         PACK CLI_AIM2 WITH "02X","BILL",BLANKS
+         CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                                  CLI_FN:      ...File Name List
+                                  CLI_FC:      ...(I)ndex Or (A)imdex
+                                  CLI_FV:      ...File Key Varlists
+                                  CLI_AIM:     ...File Key Sizes
+                                  CLI_LIST:    ...File Record (Field List)
+                                  CLI_REC:     ...File Record (Packed)
+                                  CLI_OLD:     ...File Saved When Read
+                                  CLI_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+         MOVE RESULT TO CLI_RESULT
+         IF (CLI_RESULT <> 1)
+             GOTO INDEX_SRC_RET
+         ENDIF
+         UNPACK CLI_LEV1 INTO WRK_DIM4,WRK_DIM1
+         MOVE WRK_DIM4 TO X_DEDSRC_CLI
+         MOVE CLI_US01 TO X_DEDSRC_SRC
+         CALL WRITE_OGBREC_IX USING DEDSRC_FD,DEDSRC_NME:
+                                       X_DEDSRC_CLI,X_DEDSRC_LIST
+         LOOP 
+            CALL     FILE_NEXT USING CLI_FD:      ...File Declaration List
+                                     CLI_FN:      ...File Name List
+                                     CLI_FC:      ...(I)ndex Or (A)imdex
+                                     CLI_FV:      ...File Key Varlists
+                                     CLI_AIM:     ...File Key Sizes
+                                     CLI_LIST:    ...File Record (Field List)
+                                     CLI_REC:     ...File Record (Packed)
+                                     CLI_OLD:     ...File Saved When Read
+                                     CLI_QTY:     ...Number Of Files
+                                     2            ...File Number For This Read
+         
+            MOVE RESULT TO CLI_RESULT
+            IF (CLI_RESULT <> 1)
+               BREAK 
+            ENDIF
+            UNPACK CLI_LEV1 INTO WRK_DIM4,WRK_DIM1
+            MOVE WRK_DIM4 TO X_DEDSRC_CLI
+            MOVE CLI_US01 TO X_DEDSRC_SRC
+            CALL WRITE_OGBREC_IX USING DEDSRC_FD,DEDSRC_NME:
+                                       X_DEDSRC_CLI,X_DEDSRC_LIST
+         REPEAT                   
+
+INDEX_SRC_RET
+         RETURN
+. ----------------------------
+. Update Valid Table with run date
+. ----------------------------
+
+UPDATE_VALTBL
+         RETURN
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of INV0495.PS
+. +++++++++++++++++++++++++++++++++++++

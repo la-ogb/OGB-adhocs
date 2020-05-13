@@ -1,0 +1,360 @@
++    Program Name   :  a0707262.ps 
++    Description    :  Extracts libility file for actuary               
++    apsjm 07/26/2007 a0707262 adh - initial version                      
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEMO.RL              Member Enrollment/Elig File
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+.
+GASB_IN_FD     FILE     VAR=118,TEXT          
+GASB_IN_NAME   INIT      "/w/gasb_new.txt"  
+GASB_IN_LIST   LIST
+GASB_IN_ESSN   DIM      9
+GASB_IN_DIM87  DIM      87
+GASB_IN_SP_DOB DIM      8 
+GASB_IN_DIM14  DIM      14
+.
+GASB_IN_REC    DIM      118
+               LISTEND
+GASB_OUT_FD    FILE     VAR=182,TEXT
+GASB_OUT_NAME  INIT     "/w/mercer_gasb45.txt"
+GASB_OUT_LIST  LIST
+GASB_OUT_REC   DIM      182
+               LISTEND
+.----------------------------------------------------------------------------
+.Work File Declaration...this file is created by reformatting meme for eff cov
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+...Work file variables
+W_ENR_MEDA     DIM      8
+W_ENR_MEDB     DIM      8
+W_ENR_MEDA_PRM DIM      8
+W_ENR_MEDB_PRM DIM      8
+W_SP_MEDA     DIM      8
+W_SP_MEDB     DIM      8
+W_SP_MEDA_PRM DIM      8
+W_SP_MEDB_PRM DIM      8
+DIM_1         DIM       1
+DIM_3         DIM       3
+FIRST_READ    DIM       1
+SP_DOB        DIM        8
+SP_SEX        DIM        1
+EXT_DATE      INIT       "20070701"
+W_R           DIM  40
+MYMEME_SRTKEY  INIT      "1-8 -t -u"
+FIRST_TIME     FORM      "1"
+
+BLANK8         INIT      "        "
+
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+DIM_2          DIM       2
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+SP_44          DIM       44
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+SWT_UPS        DIM       1
+SWT_REL        DIM       2
+SVE_MEMEKEY    DIM       12
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<EXTRACT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+         CALL MAIN_PROCESS
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+         DEBUG
+         CALL OPEN_FILES
+         CALL READ_GASB   
+         CALL CLOSE_FILES
+         RETURN
+
+READ_GASB      
+    LOOP
+        MOVE GASB_IN_NAME TO C_FILE
+        CALL READ_OGBFILE USING GASB_IN_FD,GASB_IN_NAME,GASB_IN_LIST     
+
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+        PACKLEN GASB_IN_REC WITH GASB_IN_LIST
+        CALL GET_ENR_ID
+        IF (RESULT <> 1)
+            CONTINUE
+        ENDIF
+        CLEAR W_ENR_MEDA
+        CLEAR W_ENR_MEDB
+        CLEAR W_ENR_MEDA_PRM
+        CLEAR W_ENR_MEDB_PRM
+        CLEAR W_SP_MEDA
+        CLEAR W_SP_MEDB
+        CLEAR W_SP_MEDA_PRM
+        CLEAR W_SP_MEDB_PRM
+        CALL GET_MED   
+        IF (SQUEEZE GASB_IN_SP_DOB <> "")
+             CALL GET_SP_ID
+          IF (RESULT = 1)
+            CALL GET_MED
+          ENDIF
+        ENDIF
+        PACKLEN GASB_OUT_REC WITH GASB_IN_REC,W_ENR_MEDA,W_ENR_MEDB:    
+                                 W_ENR_MEDA_PRM,W_ENR_MEDB_PRM:
+                                W_SP_MEDA,W_SP_MEDB,W_SP_MEDA_PRM,W_SP_MEDB_PRM
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING GASB_OUT_FD,GASB_OUT_NAME,GASB_OUT_LIST 
+        CLEAR GASB_OUT_LIST
+      REPEAT
+    RETURN
+
+GET_ENR_ID
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",GASB_IN_ESSN,BLANKS
+    PACK      MEM_AIM3 WITH "03X","01",BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+    RETURN           
+
+GET_SP_ID
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",GASB_IN_ESSN,BLANKS
+    PACK      MEM_AIM3 WITH "03X","02",BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+    RETURN           
+
+GET_MED
+  PACK MEMO_FK11 WITH MEM_ID1,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> MEM_ID1))
+          BREAK                  
+      ENDIF	
+
+      IF ((SQUEEZE MEMO_TRM > "") AND (MEMO_TRM <= EXT_DATE))
+          CONTINUE
+      ENDIF
+
+      SWITCH MEMO_TYPE
+             CASE "MEDA"
+               IF (MEM_REL = "01")
+                  PACKLEN W_ENR_MEDA WITH MEMO_EFF1,BLANKS 
+                  PACKLEN W_ENR_MEDA_PRM WITH MEMO_EFF,BLANKS 
+               ELSE
+                  PACKLEN W_SP_MEDA WITH MEMO_EFF1,BLANKS 
+                  PACKLEN W_SP_MEDA_PRM WITH MEMO_EFF,BLANKS 
+               ENDIF
+           CASE "MEDB"
+               IF (MEM_REL = "01")
+                  PACKLEN W_ENR_MEDB WITH MEMO_EFF1,BLANKS 
+                  PACKLEN W_ENR_MEDB_PRM WITH MEMO_EFF,BLANKS 
+               ELSE
+                  PACKLEN W_SP_MEDB WITH MEMO_EFF1,BLANKS 
+                  PACKLEN W_SP_MEDB_PRM WITH MEMO_EFF,BLANKS 
+               ENDIF
+      ENDSWITCH
+  REPEAT
+
+  RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+    CALL OPEN_OGBFILE USING GASB_IN_FD,GASB_IN_NAME             
+    CALL PREP_OGBFILE USING GASB_OUT_FD,GASB_OUT_NAME             
+    RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       CLOCK     TIMESTAMP INTO CURRDATE
+       MOVE      "menu"         TO C_NEXT
+       MOVE      "a0707263"  TO C_PROG
+       MOVE      "ACT LIB" TO C_OPER
+       MOVE      1 TO C_LEVEL
+       MOVE      BLANKS TO C_LABEL
+       MOVE      BLANKS TO C_FILE
+       MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	 MOVE      "Records Read:     " TO X_CNTDESC1
+	 MOVE      "Records Written:  " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+	 
+       RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

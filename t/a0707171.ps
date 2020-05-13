@@ -1,0 +1,214 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0707171.ps
++    Description    :  This program reads for ISIS data files, decrypts,
++                      and ftp's them back to NT.
++    apsjm 10/31/2005 a0707171 adh - initial version                      
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+IN_FILE           FILE         VAR=100,TEXT
+IN_NAME           INIT         "/w/a0707171.txt"
+
+IN_REC            LIST
+IN_PATH           DIM 17
+IN_FILENAME       DIM 45
+                  LISTEND
+.
+DEC_FILE_FD       FILE      VAR=323,TEXT
+DEC_NAME          INIT      "salincr_eedata.txt"
+DEC_LIST          LIST         
+DIM_323           DIM       323
+                  LISTEND
+DEC_FILE          DIM       50
+DEC_FILE_DT       DIM       8
+DIM_6             DIM       6
+ERR_FD            FILE      VAR=276,TEXT
+ERR_NAME          INIT      "/w/salincr.err"
+CAL_CLOCK         DIM       21
+CURR_RETURN       FORM      5
+CURRDATE          DIM       8
+CURRTIME          DIM       6
+ENC_FILE          DIM       62
+FTP_NAME          DIM       41
+GPG_EXT           DIM       4
+NONE_FOUND        FORM      1
+OGBWRK            INIT      "/w/recfiles/"   
+ORIG_RETURN       FORM      5
+PASSES            FORM      1
+PGP_EXT           INIT ".pgp"
+SRC_PATH          INIT "/w/recon/decrypt/"
+TIMESTAMP         DIM       14
+TRAP_DATA         DIM       500
+DIM12             DIM       12 
+FTP_OPT           DIM       12
+ERRMSG            INIT      "THERE ARE NO FILES TO PROCESS !"           
+.
+PARAM_LIST        LIST
+PARAM_DATE        DIM       8
+                  LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+START
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "Decrypt SAL REC"  TO  C_OPER
+         MOVE      "A0707171"             TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+.
+         CALL X_BLANK_SCREEN
+
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+         
+. ...Clean up & get encrypted file from NT
+.        PACK SCRATCH WITH "a0707171.ftp", BLANKS                         
+.        ROLLOUT SCRATCH                                             
+.        IF OVER                                                         
+.              ERROR     HORZ="22",VERT="20":
+.                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                        LNCOL=C_ERRL,SHADE="Y":
+.                        TEXT="SCRIPT FAILED(a0707171.ftp)"
+.              CHAIN     "MENU"
+.        ENDIF   
+
+         CALL MAIN_PROCESS
+         CALL PREP_OGBFILE USING ERR_FD,ERR_NAME
+
+         CHAIN     "MENU"
+
+         SHUTDOWN
+
+	
+. -------------------------------------------------------------------------
+. Main Process
+. -------------------------------------------------------------------------
+MAIN_PROCESS
+         DEBUG
+         
+     SET NONE_FOUND
+     MOVE 0 TO PASSES
+     PACK SCRATCH WITH BLANKS        
+     PACK SCRATCH WITH "ls -1 /w/recon/decrypt/*.pgp > ":
+                       IN_NAME," 2>/dev/null"
+     ROLLOUT SCRATCH
+.
+. ...Open Input File of FSA  filenames
+     MOVE IN_NAME TO C_FILE
+     CALL OPEN_OGBFILE USING IN_FILE,IN_NAME
+         
+..Read for filenames to pass to scripts
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     LOOP
+         CALL READ_OGBFILE USING IN_FILE, IN_NAME, IN_REC
+         IF ((RESULT <> 1) AND (NONE_FOUND))
+             MOVE IN_NAME TO C_FILE
+             CALL CLOSE_OGBFILE USING IN_FILE,IN_NAME
+             DISPLAY *P=20:10, *REVON, ERRMSG, *REVOFF
+             PAUSE 30
+             BREAK
+         ELSE
+             IF (RESULT <> 1)
+                 ADD 1 TO PASSES
+                 BREAK
+             ENDIF
+         ENDIF
+ 
+.....Make (short term) backup of encrypted files under /w/recfiles
+         UNPACK IN_FILENAME INTO FTP_NAME, GPG_EXT
+         PACK ENC_FILE WITH SRC_PATH, FTP_NAME, PGP_EXT
+       
+         CLEAR NONE_FOUND
+
+. ...Decrypt (Output file ends up on /w/recfiles) 
+         PACK DEC_FILE WITH OGBWRK, DEC_NAME
+         PACK SCRATCH WITH BLANKS
+         PACK SCRATCH WITH "decrypt.pgp ",ENC_FILE, " ", DEC_FILE 
+         ROLLOUT SCRATCH
+         IF OVER
+               ERROR     HORZ="22",VERT="20":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SCRIPT FAILED(decrypt.pgp)"
+               CHAIN     "MENU"
+         ENDIF   
+
+      EXIST DEC_FILE
+         IF OVER
+               ERROR     HORZ="22",VERT="20":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="(decrypted file does not exist)"
+               CHAIN     "MENU"
+         ENDIF
+
+. ...Repeat Steps for the Next file
+     REPEAT         --IN_FILE Read Loop
+
+  RETURN
+
+******************************* CALL ROUTINES *******************************
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+***            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0707171.PS
+. +++++++++++++++++++++++++++++++++++++

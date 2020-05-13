@@ -1,0 +1,514 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1705021.PS 
++    Description    :  FIXES MEDGEN DATA                       
++
++    APSJM 05/02/2017- INITIAL VERSION                           
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              INC       CMDPARAM.CB
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       MEMU.RL          ...Physical Addresses    
+              INC       CLI.RL           ...Client Demographics
+              INC       MEDIMP_EWPELG.RL ...MedImact EGWP Eligibility
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+MEME_REF_FD         FILE       VAR=16,TEXT
+MEME_REF_NAME       INIT       "/w/err2.txt"
+MEME_REF_LIST       LIST
+MEME_REF_ID1        DIM         8
+MEME_REF_EFF        DIM         8
+                   LISTEND
+.
+.Output File
+MIEW_CORR_TRM_FD      FILE       VAR=1000,TEXT
+MIEW_CORR_TRM_NAME    INIT        "/w/mgapp_corr_trm.txt"
+MIEW_CORR_TRM_REC       DIM   1000
+.
+. I/O files 
+MIEW_TER_FD         FILE      VAR=1000,TEXT
+MIEW_TER_NAME       INIT      "/w/mgapp_ter.txt"
+MIEW_TER_LIST      LIST
+MIEW_TER_REC       DIM   1000
+                   LISTEND
+.
+.
+GOT_IT        DIM       1
+FTP_OPT       DIM       13
+MEME_WRK_FD   FILE      VAR=16,TEXT
+MEME_WRK_NME  INIT      "/w/drg3025.meme.wrk"
+MEME_WRK_LIST LIST
+MEME_WRK_EFF  DIM       8
+MEME_WRK_TRM  DIM       8
+              LISTEND
+MEME_WRK_SRTKEY INIT "1-8 -T"
+.
+MB_EFF        DIM      08
+MB_TRM        DIM      08
+MB_NEW_TRM        DIM      08
+REST          DIM      997
+CR_MGS        DIM      05
+PR_MGS        DIM      05
+CR_MB         DIM      02
+PR_MB         DIM      02
+CR_DIV        DIM      10
+PR_DIV        DIM      10
+L_TLET        DIM      1
+L_TRM         DIM      8
+NEW_DATE      DIM      8
+PLAN_EFF      DIM      8
+W_EID         DIM      20
+W_MEM_ID1     DIM      8
+NEW_EFF       DIM      8
+SAV_TRM       DIM      8
+DIFF_DAYS     FORM     5
+G_TRM         DIM      8
+H_TRM         DIM      8
+W_TERM_DATE   DIM      8
+W_HLDCLM      DIM      8
+CK_EFF        DIM      8
+EARLIEST_EFF_DATE DIM  8
+SAVE_TRM      DIM      8
+NUM_OF_DAYS   FORM     5
+DIM3          DIM      3
+DISP3           DIM       3
+DISP4           DIM       4
+FUT_PEND        DIM       1
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+PR_DIM5       DIM      5
+CR_DIM5       DIM      5
+CHK_RETD      DIM      8
+W_SPRET       DIM      8
+W_RETD        DIM      8
+W_DIM5        DIM      5
+TOT_CNT       FORM     2
+SP_CNT        FORM     1
+CLD_CNT       FORM     2
+ENR_CNT       FORM     1
+TRM_SW        DIM       1 
+PR_LNAME      DIM       30
+CR_LNAME      DIM       30
+PR_EFF        DIM       08
+CR_EFF        DIM       08
+W_GRP         DIM       10
+DIM_5          DIM       5
+DIM51         DIM       5
+VAL_RESULT    FORM      001
+FOUR_THIRTY      INIT      "1630"
+ST_HHMM          DIM       4
+ST_SEC           DIM       2
+SAV_PADDR1   DIM  35
+W_EFF        DIM  8
+DIM_4        DIM  4
+W_TRM        DIM  8
+CR_HPHONE    DIM  10
+PR_HPHONE    DIM  10
+CR_HICN      DIM  12
+PR_HICN      DIM  12
+CR_BPID      DIM  20
+PR_BPID      DIM  20
+CR_PDIM111   DIM  111
+PR_PDIM111   DIM  111
+CR_MDIM111   DIM  111
+PR_MDIM111   DIM  111
+PR_GRP       DIM  10
+CR_GRP       DIM  10
+BLANK8         INIT "        "
+SCAN_IT        DIM  10
+W              INIT "W"
+DIM_P111       DIM  111
+DIM_M111       DIM  111
+W_DIM1         DIM  1
+EGWP           INIT "EGWP "
+PIPE144        DIM 144
+LPTR           NUM 3
+W_H2EFF        DIM 8
+W_CCODE        DIM 02
+MEME_SAV3      DIM 600
+HRA_DEP_WRT_SW DIM 1
+G_LINK_TRM    DIM  8
+W_ACCU        DIM  8
+LOOP_CNT      FORM 1
+ACCU_ID1      DIM  8
+SVE_ACCU      DIM  8
+SEND_SW       DIM   1
+CR_CHG        DIM   322
+PR_CHG        DIM   322
+BK_PRMIEW_NAME  DIM       50
+BK_MIEW_NAME    DIM       50
+CR_KEY        DIM   8  
+PR_KEY        DIM   8  
+CR_RESULT     FORM  1
+PR_RESULT     FORM  1
+MIEW_SKY      INIT  "126-140 -T"
+W_CCYY        DIM     04
+WS_EFF        DIM     8
+MEMO_SAVA     DIM     700
+MEMO_SAVB     DIM     700
+MEMO_SAVA_R   DIM     700
+MEMO_SAVB_R   DIM     700
+MEMO_SAVA_D   DIM     700
+MEMO_SAVB_D   DIM     700
+CALC_DATE     DIM     8
+MEDA_SW       DIM     1
+MEDB_SW       DIM     1
+WS_01         INIT    "01"
+W_ZIP5        DIM     5
+W_ZIP9        DIM     9
+WRITE_FAM_SW  DIM     1
+FAM_CT        FORM    2
+W_65BDAY      DIM     8
+FIRST_READ    DIM  1
+ACT_SW        DIM  1
+TER_FPTR      FORM 4
+START_DATE    INIT "20140101"
+N             INIT "N"
+SPACE_8       INIT "        " 
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "MEDGEN DATA FIX" TO C_OPER
+         MOVE      "a1705021"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_REF_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_REF_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEME_REF_FD,MEME_REF_NAME,MEME_REF_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    CALL READ_FUT_PEND
+    IF (FUT_PEND = "Y")
+       CONTINUE
+    ENDIF
+    CALL READ_MIEW_TRM
+    IF (GOT_IT = "N")
+      DEBUG
+      CALL READ_MIEW_PASS_2
+      IF (GOT_IT = "N")
+            DEBUG
+      ENDIF
+    ENDIF
+ REPEAT
+ RETURN
+.
+READ_FUT_PEND
+    MOVE "N" TO FUT_PEND
+    PACK MEME_FK11 WITH MEME_REF_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    LOOP 
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST
+                                   MEME_FC:  ...TYPE OF INDEX
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES
+                                   1         ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> MEME_REF_ID1) OR (RESULT <> 1))
+                  BREAK
+            ENDIF
+            IF (SQUEEZE MEME_NET <> "EGWP")
+               CONTINUE
+            ENDIF
+            IF (SQUEEZE MEME_TLET = "W")
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                  IF (MEME_EFF > MEME_REF_EFF)
+                    MOVE "Y" TO FUT_PEND
+                  ENDIF
+                ENDIF
+            ENDIF
+    REPEAT
+    RETURN
+.
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         MOVE CURRDATE TO TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING MIEW_CORR_TRM_FD,MIEW_CORR_TRM_NAME
+         CALL      OPEN_OGBFILE USING MEME_REF_FD,MEME_REF_NAME
+         RETURN
+
+CLOSE_FILES
+         RETURN
+.
+READ_MIEW_TRM
+    MOVE "N" TO GOT_IT
+    CALL OPEN_OGBFILE USING MIEW_TER_FD,MIEW_TER_NAME
+    LOOP
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL READ_OGBFILE USING MIEW_TER_FD,MIEW_TER_NAME,MIEW_TER_LIST
+          IF (RESULT <> 1)
+            BREAK   
+          ENDIF
+          ADD 1 TO X_CNT1
+          UNPACK X_CNT1 INTO DISP4,DISP3
+          IF (DISP3 = "000")
+             CALL X_DISPLAY_COUNTS
+          ENDIF
+          PACKLEN SCAN_IT WITH "|",MEME_REF_ID1,"|"
+          SCAN SCAN_IT IN MIEW_TER_REC
+          RESET MIEW_TER_REC
+          IF EQUAL
+            MOVELPTR MIEW_TER_REC TO TER_FPTR
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            MOVE BLANKS TO REST
+            UNPACK MIEW_TER_REC INTO DIM3,REST
+            SWITCH DIM3
+                CASE "CAN" OR "TER"
+                    PACKLEN MIEW_CORR_TRM_REC WITH "TER",REST
+                    SETLPTR MIEW_CORR_TRM_REC TO TER_FPTR
+                    WRITE MIEW_CORR_TRM_FD,OGB_SEQ1;*LL,MIEW_CORR_TRM_REC
+                    CLEAR MIEW_CORR_TRM_REC 
+                    MOVE "Y" TO GOT_IT
+                    DEBUG
+                    GOTO READ_MIEW_TRM_RET
+            ENDSWITCH    
+          ENDIF  
+    REPEAT
+READ_MIEW_TRM_RET
+    CALL CLOSE_OGBFILE USING MIEW_TER_FD,MIEW_TER_NAME
+    RETURN
+
+READ_MIEW_PASS_2
+    MOVE "N" TO GOT_IT
+    CALL OPEN_OGBFILE USING MIEW_TER_FD,MIEW_TER_NAME
+    LOOP
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL READ_OGBFILE USING MIEW_TER_FD,MIEW_TER_NAME,MIEW_TER_LIST
+          IF (RESULT <> 1)
+            BREAK   
+          ENDIF
+          ADD 1 TO X_CNT1
+          UNPACK X_CNT1 INTO DISP4,DISP3
+          IF (DISP3 = "000")
+             CALL X_DISPLAY_COUNTS
+          ENDIF
+          PACKLEN SCAN_IT WITH "|",MEME_REF_ID1,"|"
+          SCAN SCAN_IT IN MIEW_TER_REC
+          RESET MIEW_TER_REC
+          IF EQUAL
+            MOVELPTR MIEW_TER_REC TO TER_FPTR
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            MOVE BLANKS TO REST
+            UNPACK MIEW_TER_REC INTO DIM3,REST
+            SWITCH DIM3
+                 CASE "NEW"                 
+                   PACKLEN MIEW_CORR_TRM_REC WITH "TER",REST
+                   SETLPTR MIEW_CORR_TRM_REC TO TER_FPTR
+                   WRITE MIEW_CORR_TRM_FD,OGB_SEQ1;*LL,MIEW_CORR_TRM_REC
+                   CLEAR MIEW_CORR_TRM_REC 
+                   MOVE "Y" TO GOT_IT
+                   DEBUG
+                   GOTO READ_MIEW_PASS_2_RET 
+            ENDSWITCH
+          ENDIF  
+    REPEAT
+READ_MIEW_PASS_2_RET   
+    CALL CLOSE_OGBFILE USING MIEW_TER_FD,MIEW_TER_NAME
+    RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       CMDPARAM.SR
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1705021.PS
+. +++++++++++++++++++++++++++++++++++++

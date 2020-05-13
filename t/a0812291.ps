@@ -1,0 +1,693 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  A0812291
++    Description    :  Extract all school board enrollees for Office of
++                      State Inspector General.
++ 
++    Author         :  Peter Constan
++    Date created   :  12/29/2008
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             Revisions
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL                                          
+              INC       MEME.RL          
+              INC       CLI.RL          
+
+. ---------------------------------------------------------------------------
+. Input File Declaration
+. ---------------------------------------------------------------------------
+
+INP_FD          FILE  VAR=48,TEXT
+INP_NM          INIT  "/w/a0812291.inp"
+
+INP_REC         LIST
+INP_MEMID       DIM     008     ...001-008
+INP_NET         DIM     005     ...009-013
+INP_PRD         DIM     005     ...014-018
+INP_COVLEV      DIM     002     ...019-020
+INP_RATE        DIM     002     ...021-022
+INP_EFF         DIM     008     ...023-030
+INP_TRM         DIM     008     ...031-038
+INP_LEV1        DIM     005     ...039-043
+INP_LEV2        DIM     005     ...044-048
+                LISTEND
+
+. ---------------------------------------------------------------------------
+. I/O File Declaration
+. ---------------------------------------------------------------------------
+
+WRK_FD          IFILE  VAR=600,KEYL=8,DUP,TEXT
+WRK_NM          INIT   "/w/wrk_meme.ix1"
+
+WRK_KEY         DIM  008
+
+. ^uses meme.rl for LIST
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+OUTFILE_FD      FILE VAR=115,TEXT
+OUTFILE_NM      INIT "/w/a0812291.txt"
+
+OUTFILE_REC     LIST
+OUTFILE_LNAME   DIM   020
+OUTFILE_FNAME   DIM   015
+OUTFILE_MINIT   DIM   001
+OUTFILE_SSN     DIM   009
+OUTFILE_DOB     DIM   008
+OUTFILE_VEST    DIM   001
+OUTFILE_NET     DIM   005
+OUTFILE_PRD     DIM   005
+OUTFILE_RATE    DIM   002
+OUTFILE_COVLEV  DIM   002
+OUTFILE_AGYNO   DIM   004
+OUTFILE_AGYNAME DIM   035
+OUTFILE_EFF     DIM   008
+	        LISTEND 	 	    	 
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+CNT1_3          DIM       3
+CNT1_4          DIM       4
+INP_RET_CODE    FORM      1
+WRK_RET_CODE    FORM      1 
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+BLANK8          INIT      "        "
+BLANK2          INIT      "  "
+BLANK1          INIT      " "
+TWO             INIT      "2"
+LIFE            INIT      "LIFE"
+JUNK4           DIM       4
+JUNK1_2         DIM       2
+JUNK2_2         DIM       2
+JUNK1           DIM       1
+LEV1_1          DIM       1
+LEV2_1          DIM       1
+HOLD_EFF        DIM       8
+INP_AGYNO       DIM       5
+WRK_AGYNO       DIM       5
+DIFF_DAYS       FORM      3
+    
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "SchBrd Aud Xtract" TO  C_OPER
+         MOVE      "A0812291"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+. ...Initialize
+         CALL INITIALIZE
+	 
+         debug
+         CALL REFORMAT1
+         
+         CALL REFORMAT2
+
+         CALL OPEN_FILES          
+         
+         CALL EXTRACT_OUT
+ 
+         CALL CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         DEBUG
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Records Read:   "   TO X_CNTDESC1
+	 MOVE      "Records Found:  "   TO X_CNTDESC2
+	 MOVE      "Inp ID not on wrk:" TO X_CNTDESC3
+	 MOVE      "Inp eff <> meme:"   TO X_CNTDESC4
+	 MOVE      "MEM Rec Not Found:" TO X_CNTDESC5
+	 MOVE      "Not Enrollee"       TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+. ---------------------------------
+. Reformat MEME for Input
+. ---------------------------------
+
+REFORMAT1
+
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="17",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="BUILDING & SORTING GB RECORDS...please wait";
+                   
+...Get MEME Recs
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf /w/a0812291.cur.ref -t -j":
+                           " -p104-111gt#"",TODAY,"#""
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - meme.dbf to a0812291.cur.ref"
+             CHAIN     "menu"
+         ENDIF 
+         
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf /w/a0812291.blk.ref -t -j":
+                           " -p104-111eq#"",BLANK8,"#""
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - meme.dbf to a0812291.blk.ref"
+             CHAIN     "menu"
+         ENDIF 
+         
+...Build and Append to 1 file
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/a0812291.cur.ref /w/a0812291.ref -t -j"
+         REFORMAT SCRATCH
+             
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - a0812291.cur.ref to ":
+                       TEXT="a0812291.ref"
+             CHAIN     "menu"
+         ENDIF         
+         
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/a0812291.blk.ref /w/a0812291.ref -a -t -j"
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - append a0812291.blk.ref to a0812291.ref"
+             CHAIN     "menu"
+         ENDIF          
+          
+...Get only ENROLLEES
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/a0812291.ref /w/a0812291.txt -t -j":
+                           " -p130-131ne#"",BLANK2,"#"":
+                           " -p96-103lt#"",TODAY,"#"":
+                           " -p134eq#"",BLANK1,"#"":
+                           " -p112-115ne#"",LIFE,"#""
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - a0812291.ref to a0812291.txt"
+             CHAIN     "menu"
+         ENDIF 
+         
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/a0812291.txt /w/a0812291.inp -t -j":
+                           " -p21eq#"",TWO,"#"":
+                           " or -p26eq#"",TWO,"#"":
+                           " 1-8 112-116 117-121 132-133 130-131 96-103 104-111":
+                           " 21-25 26-30"
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - a0812291.txt to a0812291.inp"
+             CHAIN     "menu"
+         ENDIF                                       
+         
+         ERASE "/w/a0812291.cur.ref"
+         ERASE "/w/a0812291.blk.ref"
+         ERASE "/w/a0812291.ref"
+         ERASE "/w/a0812291.txt"
+
+         RETURN
+
+. ---------------------------------
+. Reformat MEME for Workfile
+. ---------------------------------
+
+REFORMAT2
+
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf /w/wrk_meme.ref -t -j":
+                           " -p96-103lt#"",TODAY,"#"":
+                           " -p130-131ne#"",BLANK2,"#"":
+                           " -p134eq#"",BLANK1,"#"":                           
+                           " -p112-115ne#"",LIFE,"#""                           
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - meme.dbf to wrk_meme.ref"
+             CHAIN     "menu"
+         ENDIF 
+
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/wrk_meme.ref /w/wrk_meme.inp -t -j":
+                           " -p21eq#"",TWO,"#"":
+                           " or -p26eq#"",TWO,"#""
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - wrk_meme.ref to wrk_meme.inp"
+             CHAIN     "menu"
+         ENDIF 
+         
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/wrk_meme.inp /w/wrk_meme.srt -t":
+                           " -j 1-8 96-103d"
+         SORT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="SORT FAILED - wrk_meme.inp to wrk_meme.srt"
+             CHAIN     "menu"
+         ENDIF   
+         
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "index /w/wrk_meme.srt /w/wrk_meme.ix1 ":
+                           "1-8 -d"
+         ROLLOUT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="INDEX FAILED - wrk_meme.srt to wrk_meme.ix1"
+             CHAIN     "menu"
+         ENDIF      
+         
+         ERASE "/w/wrk_meme.ref"
+         ERASE "/w/wrk_meme.inp"   
+         
+         DISPLAY        *P17:20,*BGCOLOR=*CYAN,*EL:
+                        *P17:21,*BGCOLOR=*CYAN,*EL:
+                        *P17:22,*BGCOLOR=*CYAN,*EL:
+                        *P17:23,*BGCOLOR=*CYAN,*EL                
+
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         DEBUG
+         
+         MOVE INP_NM TO C_FILE
+         CALL OPEN_OGBFILE USING INP_FD,INP_NM
+         
+         MOVE WRK_NM TO C_FILE
+         CALL OPEN_OGBFILE_IX USING WRK_FD,WRK_NM
+         
+         MOVE OUTFILE_NM TO C_FILE
+         CALL PREP_OGBFILE USING OUTFILE_FD,OUTFILE_NM
+
+         RETURN
+
+. ----------------------------
+. Extract Label Information
+. ----------------------------
+
+EXTRACT_OUT
+
+         LOOP
+             CLEAR HOLD_EFF
+             MOVE INP_NM TO C_FILE
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING INP_FD,INP_NM,INP_REC
+             MOVE RESULT TO INP_RET_CODE
+             IF (INP_RET_CODE != 1)
+                 CALL X_DISPLAY_COUNTS
+                 BREAK
+             ENDIF
+         
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF              
+             
+             MOVE INP_EFF TO HOLD_EFF             
+         
+             UNPACK INP_LEV1 INTO LEV1_1,JUNK1,JUNK1_2
+             UNPACK INP_LEV2 INTO LEV2_1,JUNK1,JUNK2_2
+             
+...eliminate invalid agy numbers(i.e, MEME_LEV1 = "28   ")
+             IF ((LEV1_1 = "2") AND (SQUEEZE JUNK1_2 = ""))
+                 CONTINUE
+             ENDIF
+             
+             IF ((LEV2_1 = "2") AND (SQUEEZE JUNK2_2 = ""))
+                 CONTINUE
+             ENDIF
+             
+...eliminate survivng spouses
+             IF (LEV1_1 = "2")
+                 IF (SQUEEZE INP_LEV2 = "95")
+                     CONTINUE
+                 ENDIF
+               ELSE
+                 SCAN "SV" IN INP_LEV1
+                 IF EQUAL
+                     CONTINUE
+                 ENDIF
+             ENDIF
+
+...prep input agy number
+             UNPACK INP_LEV1 INTO LEV1_1,JUNK4
+             IF (LEV1_1 = "2")
+                 MOVE INP_LEV1 TO INP_AGYNO
+               ELSE
+                 MOVE INP_LEV2 TO INP_AGYNO
+             ENDIF              
+            
+...read workfile(meme)
+
+             CLEAR WRK_KEY
+             PACK WRK_KEY WITH INP_MEMID
+             MOVE WRK_NM TO C_FILE
+             CALL READ_OGBFILE_IX USING WRK_FD,WRK_NM,WRK_KEY,MEME_LIST
+             MOVE RESULT TO WRK_RET_CODE
+             IF ((WRK_RET_CODE != 1) OR (MEME_ID1 != INP_MEMID))
+                 ADD 1 TO X_CNT3
+                 CONTINUE
+             ENDIF
+             
+             LOOP
+                 CALL READKS_OGBFILE_IX USING WRK_FD,WRK_NM,MEME_LIST
+                 MOVE RESULT TO WRK_RET_CODE
+                 IF ((WRK_RET_CODE != 1) OR (MEME_ID1 != INP_MEMID))
+                     BREAK
+                 ENDIF
+                 
+                 IF ((MEME_EFF > MEME_TRM) AND (SQUEEZE MEME_TRM != ""))
+                     CONTINUE          
+                 ENDIF 
+
+                 UNPACK INP_LEV1 INTO LEV1_1,JUNK4
+                 IF (LEV1_1 = "2")
+                     MOVE INP_LEV1 TO INP_AGYNO
+                   ELSE
+                     MOVE INP_LEV2 TO INP_AGYNO
+                 ENDIF
+                 
+                 UNPACK MEME_LEV1 INTO LEV1_1,JUNK4
+                 IF (LEV1_1 = "2")
+                     MOVE MEME_LEV1 INTO WRK_AGYNO
+                   ELSE
+                     MOVE MEME_LEV2 INTO WRK_AGYNO
+                 ENDIF
+                 
+                 IF ((INP_NET = MEME_NET)     AND:
+                     (INP_PRD = MEME_PRD)     AND:
+                     (INP_COVLEV = MEME_DEPC) AND:
+                     (INP_RATE = MEME_RT)     AND:
+                     (INP_AGYNO = WRK_AGYNO))
+                     MOVE 0 TO DIFF_DAYS
+                     CALL DELTA_DAYS USING HOLD_EFF,MEME_TRM,DIFF_DAYS
+                     IF (DIFF_DAYS = 1)
+                         MOVE MEME_EFF TO HOLD_EFF
+                         CONTINUE
+                       ELSE
+                         BREAK
+                     ENDIF
+                   ELSE
+                     BREAK
+                 ENDIF
+                 
+             REPEAT
+             
+         PACK MEM_FK11 WITH INP_MEMID,BLANKS
+         CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                   MEM_FN:  ...File name list
+                   MEM_FC:  ...(I)ndex or (A)imdex
+                   MEM_FV:  ...File key varlists
+                   MEM_FK:  ...File key sizes
+                   MEM_LIST: ...File record (field list)
+                   MEM_REC: ...File record (packed)
+                   MEM_OLD: ...File saved when read
+                   MEM_QTY: ...Number of files
+                   1         ...File number for this read
+
+         IF (RESULT <> 1)
+             ADD 1 TO X_CNT5
+             CONTINUE
+         ENDIF                          
+
+         IF (MEM_REL != "01")
+             ADD 1 TO X_CNT6
+         ENDIF
+         
+         PACK OUTFILE_LNAME  WITH MEM_LNAME
+         PACK OUTFILE_FNAME  WITH MEM_FNAME
+         PACK OUTFILE_MINIT  WITH MEM_MINIT
+         PACK OUTFILE_SSN    WITH MEM_ESSN
+         PACK OUTFILE_DOB    WITH MEM_DOB
+         IF (MEM_US01 = " ")
+             PACK OUTFILE_VEST WITH "4"
+           ELSE
+             PACK OUTFILE_VEST WITH MEM_US01
+         ENDIF
+         PACK OUTFILE_NET    WITH INP_NET
+         PACK OUTFILE_PRD    WITH INP_PRD
+         PACK OUTFILE_RATE   WITH INP_RATE
+         PACK OUTFILE_COVLEV WITH INP_COVLEV
+         PACK OUTFILE_AGYNO  WITH INP_AGYNO
+         PACK OUTFILE_EFF    WITH HOLD_EFF
+
+         CALL GET_AGY_NAME
+
+         ADD 1 TO X_CNT2
+         MOVE OUTFILE_NM TO C_FILE
+         CALL WRITE_OGBREC USING OUTFILE_FD,OUTFILE_NM,OUTFILE_REC
+         
+         REPEAT
+
+         RETURN
+
+. ----------------------------
+. Get Agency Name
+. ----------------------------
+
+GET_AGY_NAME
+
+         CLEAR CLI_AIM
+         PACK  CLI_AIM1 WITH "01X",INP_AGYNO,BLANKS
+         CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                                  CLI_FN:      ...File Name List
+                                  CLI_FC:      ...(I)ndex Or (A)imdex
+                                  CLI_FV:      ...File Key Varlists
+                                  CLI_AIM:     ...File Key Sizes
+                                  CLI_LIST:    ...File Record (Field List)
+                                  CLI_REC:     ...File Record (Packed)
+                                  CLI_OLD:     ...File Saved When Read
+                                  CLI_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+         IF (RESULT = 1)
+             MOVE CLI_NAME TO OUTFILE_AGYNAME
+           ELSE
+             MOVE BLANKS TO OUTFILE_AGYNAME
+         ENDIF  
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         DEBUG
+         
+         MOVE INP_NM TO C_FILE
+         CALL CLOSE_OGBFILE USING INP_FD,INP_NM
+         
+         MOVE WRK_NM TO C_FILE
+         CALL CLOSE_OGBFILE_IX USING WRK_FD,WRK_NM
+         
+         MOVE OUTFILE_NM TO C_FILE
+         CALL CLOSE_OGBFILE USING OUTFILE_FD,OUTFILE_NM
+
+         RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    A0812291 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+         RETURN
+         
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of A0812291.PS          
+.----------------------------------------------------------------------------

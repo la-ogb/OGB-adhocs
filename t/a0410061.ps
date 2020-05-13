@@ -1,0 +1,511 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0410061.ps
++    Description    :  This program reformats old drug claim files to the 
++                      layout needed to create the drug eob letters that
++                      will get posted to the website.  These old files
++                      need to be processed to create the EOB letters for
++                      the last 3 quarters.
++    Author         :  appnc
++    Date created   :  10/06/2004
++    Project Number :  A0410061
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++------------------------------------------------------------------------------
++   appnc  mm/dd/ccyy  A####### - TYP - Remarks                           
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demographics
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+INP_FILE         FILE    VAR=264,TEXT
+INP_NAME         INIT    "/w/abf0300.0104_0304.txt"
+
+INP_REC          LIST
+..<Begin>....................................................................
+INP_SERV_DATE    DIM     8
+INP_DRUG_NAME    DIM     30
+INP_MEMBER_ID    DIM     20
+INP_MEM_LNAM     DIM     15
+INP_MEM_FNAM     DIM     11
+INP_MEM_INIT     DIM     1
+INP_ADDR1        DIM     35
+INP_ADDR2        DIM     35
+INP_CITY         DIM     30
+INP_STATE        DIM     2
+INP_ZIP          DIM     13
+INP_RECID        DIM     14
+INP_PAT_LNAM     DIM     11
+INP_PAT_FNAM     DIM     11
+INP_PAT_INIT     DIM     1
+INP_COPAY_AMT    DIM     9
+INP_BILL_AMT     DIM     9
+INP_PAID_AMT     DIM     9
+..<End>......................................................................
+                 LISTEND
+
+OUT_FILE         FILE   VAR=284,TEXT
+OUT_NAME         INIT   "/w/drg_eob.0104_0304.txt"
+
+OUT_REC          LIST
+..<Begin>....................................................................
+OUT_SERV_DATE    DIM     8
+OUT_DRUG_NAME    DIM     30
+OUT_ENR_SSN      DIM     9
+OUT_MEM_LNAM     DIM     20
+OUT_MEM_FNAM     DIM     15
+OUT_MEM_INIT     DIM     1
+OUT_ADDR1        DIM     35
+OUT_ADDR2        DIM     35
+OUT_CITY         DIM     30
+OUT_STATE        DIM     2
+OUT_ZIP          DIM     13
+OUT_RECID        DIM     8
+OUT_PAT_LNAM     DIM     20
+OUT_PAT_FNAM     DIM     15
+OUT_PAT_INIT     DIM     1
+OUT_COPAY_AMT    DIM     10
+OUT_BILL_AMT     DIM     10
+OUT_PAID_AMT     DIM     10
+OUT_QTR          INIT    "200401200403"
+..<End>......................................................................
+                 LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+WRITE_COUNT      FORM      8
+ERROR_COUNT      FORM      8
+TRAP_DATA        DIM       500
+TODAY            DIM       8
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+INP_RET_CODE     FORM      1
+MEM_RET_CODE     FORM      1
+WS_AMT_TO_CONV   DIM       9
+WS_AMT1          DIM       1
+WS_AMT6          DIM       6
+WS_AMT_TENTH     DIM       1
+WS_AMT_HUNDRTH   DIM       1
+WS_SIGN          DIM       1
+WS_DOLLARS       DIM       6
+WS_DECIMAL       INIT     "."
+WS_OUT_HUNDRTH   DIM       1
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+WRITE_SWT        INIT     "Y"
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+              
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "Reformat EOB Input " TO  C_OPER
+         MOVE      "a0410061"            TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         DEBUG
+         CALL      INITIALIZE
+         CALL      OPEN_FILES
+         CALL      PROCESS_INPUT
+         CALL      CLOSE_FILES
+
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="25",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="  PROGRAM COMPLETED NORMALLY  ":
+                          TEXT="------------------------------":
+                          TEXT="  Press any key to continue   ":
+                          FIELD=WCHAR         
+         ENDIF
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+      	 MOVE      "Input Recs Read : " TO X_CNTDESC1
+	 MOVE      "Recs Written    : " TO X_CNTDESC2
+	 MOVE      "Not Used        : " TO X_CNTDESC3
+	 MOVE      "Not Used        : " TO X_CNTDESC4
+	 MOVE      "Not Used        : " TO X_CNTDESC5
+	 MOVE      "Not Used        : " TO X_CNTDESC6
+
+         CALL X_DISPLAY_COUNTS
+
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         MOVE INP_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+         
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+. Process Input
+. ----------------------------
+
+PROCESS_INPUT
+
+         DEBUG
+         LOOP
+             MOVE INP_NAME TO C_FILE
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING INP_FILE,INP_NAME,INP_REC
+             MOVE RESULT TO INP_RET_CODE
+             IF (INP_RET_CODE <> 1)
+                 CALL X_DISPLAY_COUNTS
+                 BREAK
+             ENDIF       
+             
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF                      
+         
+             MOVE "Y" TO WRITE_SWT
+             
+             MOVE INP_SERV_DATE TO OUT_SERV_DATE
+             MOVE INP_DRUG_NAME TO OUT_DRUG_NAME
+             MOVE INP_RECID     TO OUT_RECID
+             
+             MOVE INP_COPAY_AMT TO WS_AMT_TO_CONV
+             CALL GET_AMTS
+             PACK OUT_COPAY_AMT WITH WS_SIGN:
+                                     WS_DOLLARS:
+                                     WS_DECIMAL:
+                                     WS_AMT_TENTH:
+                                     WS_OUT_HUNDRTH 
+             
+             MOVE INP_BILL_AMT  TO WS_AMT_TO_CONV
+             CALL GET_AMTS
+             PACK OUT_BILL_AMT WITH  WS_SIGN:
+                                     WS_DOLLARS:
+                                     WS_DECIMAL:
+                                     WS_AMT_TENTH:
+                                     WS_OUT_HUNDRTH              
+             
+             MOVE INP_PAID_AMT  TO WS_AMT_TO_CONV
+             CALL GET_AMTS
+             PACK OUT_PAID_AMT WITH WS_SIGN:
+                                     WS_DOLLARS:
+                                     WS_DECIMAL:
+                                     WS_AMT_TENTH:
+                                     WS_OUT_HUNDRTH              
+             
+             CALL GET_MEM_INFO
+             
+             IF (WRITE_SWT = "Y")
+                 ADD 1 TO X_CNT2
+                 MOVE OUT_NAME TO C_FILE
+                 MOVE OGB_SEQ1 TO OGB_SEQ
+                 CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_REC
+             ENDIF
+         
+         REPEAT
+
+         RETURN
+
+. ----------------------------
+. FORMAT AMOUNTS
+. ----------------------------
+
+GET_AMTS
+
+         UNPACK WS_AMT_TO_CONV INTO WS_AMT1,WS_AMT6,WS_AMT_TENTH,WS_AMT_HUNDRTH
+         
+         MOVE " "            TO WS_SIGN
+         MOVE WS_AMT6        TO WS_DOLLARS
+         MOVE WS_AMT_HUNDRTH TO WS_OUT_HUNDRTH
+         
+         IF (WS_AMT1 != "0")
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="Amount Other than 0 in AMT_FIELD":
+                       TEXT=INP_RECID
+             CHAIN     "menu"
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "p")
+             MOVE "-" TO WS_SIGN
+             MOVE "0" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "q")
+             MOVE "-" TO WS_SIGN
+             MOVE "1" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "r")
+             MOVE "-" TO WS_SIGN
+             MOVE "2" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "s")
+             MOVE "-" TO WS_SIGN
+             MOVE "3" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "t")
+             MOVE "-" TO WS_SIGN
+             MOVE "4" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "u")
+             MOVE "-" TO WS_SIGN
+             MOVE "5" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "v")
+             MOVE "-" TO WS_SIGN
+             MOVE "6" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "w")
+             MOVE "-" TO WS_SIGN
+             MOVE "7" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "x")
+             MOVE "-" TO WS_SIGN
+             MOVE "8" TO WS_OUT_HUNDRTH
+         ENDIF
+         
+         IF (WS_AMT_HUNDRTH = "y")
+             MOVE "-" TO WS_SIGN
+             MOVE "9" TO WS_OUT_HUNDRTH
+         ENDIF
+
+         RETURN
+         
+. ----------------------------
+. GET DEMOGRAPHICS FROM MEM
+. ----------------------------
+
+GET_MEM_INFO
+
+         PACK      MEM_FK11 WITH OUT_RECID,BLANKS                               
+         CALL      FILE_READ USING MEM_FD:    ...File declaration list          
+                                   MEM_FN:    ...File name list                                   
+                                   MEM_FC:    ...(I)ndex or (A)imdex                              
+                                   MEM_FV:    ...File key varlists                                
+                                   MEM_FK:    ...File key sizes                                   
+                                   MEM_LIST:  ...File record (field list)                        
+                                   MEM_REC:   ...File record (packed)                             
+                                   MEM_OLD:   ...File saved when read                             
+                                   MEM_QTY:   ...Number of files                                  
+                                   1          ...File number for this read   
+                                   
+         MOVE RESULT TO MEM_RET_CODE
+         IF (MEM_RET_CODE <> 1)
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="Patient Rec ID Not Found on MEM":
+                       TEXT=OUT_RECID
+             CHAIN     "menu"             
+         ENDIF     
+         
+         PACK OUT_PAT_LNAM     WITH  MEM_LNAME,BLANKS
+         PACK OUT_PAT_FNAM     WITH  MEM_FNAME,BLANKS
+         PACK OUT_PAT_INIT     WITH  MEM_MINIT,BLANKS
+         PACK OUT_ENR_SSN      WITH  MEM_ESSN,BLANKS
+         
+         IF (MEM_REL = "01")
+             PACK OUT_MEM_LNAM WITH  MEM_LNAME,BLANKS
+             PACK OUT_MEM_FNAM WITH  MEM_FNAME,BLANKS
+             PACK OUT_MEM_INIT WITH  MEM_MINIT,BLANKS
+             PACK OUT_ADDR1    WITH  MEM_ADDR1,BLANKS
+             PACK OUT_ADDR2    WITH  MEM_ADDR2,BLANKS
+             PACK OUT_CITY     WITH  MEM_CITY,BLANKS
+             PACK OUT_STATE    WITH  MEM_STATE,BLANKS
+             PACK OUT_ZIP      WITH  MEM_ZIP,BLANKS
+             RETURN
+         ENDIF
+         
+         CLEAR     MEM_AIM                                                      
+         PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS                          
+         PACK      MEM_AIM3 WITH "03X","01",BLANKS                              
+         CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST          
+                                   MEM_FN:    ...FILE NAME LIST                       
+                                   MEM_FC:    ...(I)NDEX OR (A)IMDEX                  
+                                   MEM_FV:    ...FILE KEY VARLISTS                    
+                                   MEM_AIM:   ...FILE KEY SIZES                      
+                                   MEM_LIST:  ...FILE RECORD (FIELD LIST)             
+                                   MEM_REC:   ...FILE RECORD (PACKED)                 
+                                   MEM_OLD:   ...FILE SAVED WHEN READ                 
+                                   MEM_QTY:   ...NUMBER OF FILES                      
+                                   2          ...FILE NUMBER FOR THIS READ   
+                                   
+         MOVE RESULT TO MEM_RET_CODE
+         IF (MEM_RET_CODE <> 1)
+             MOVE "N" TO WRITE_SWT
+             RETURN
+         ENDIF                
+         
+         PACK OUT_MEM_LNAM WITH  MEM_LNAME,BLANKS
+         PACK OUT_MEM_FNAM WITH  MEM_FNAME,BLANKS
+         PACK OUT_MEM_INIT WITH  MEM_MINIT,BLANKS
+         PACK OUT_ADDR1    WITH  MEM_ADDR1,BLANKS
+         PACK OUT_ADDR2    WITH  MEM_ADDR2,BLANKS
+         PACK OUT_CITY     WITH  MEM_CITY,BLANKS
+         PACK OUT_STATE    WITH  MEM_STATE,BLANKS
+         PACK OUT_ZIP      WITH  MEM_ZIP,BLANKS         
+
+         RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         MOVE INP_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING INP_FILE,INP_NAME
+         
+         MOVE OUT_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of a0410061.ps
+. +++++++++++++++++++++++++++++++++++++

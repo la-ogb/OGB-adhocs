@@ -1,0 +1,1029 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0407131.PS
++    apsjm 07/13/2004 A0407131 - WHERE THE MONEY GOES                 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demo         
+              INC       MEME.RL          ...Member Enrollment   
+              INC       CLMS.RL          ...Claims Service Lines
+              INC       MEMX.RL          ...Third Party Claims
+              INC       SEEK.RL
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+WTMG_FD          FILE     VAR=500,TEXT
+WTMG_NAME        INIT     "/w/wtmg.txt"
+.
+WTMG_LIST       LIST
+WTMG_P1_F       INIT    "20030701"
+WTMG_P1_T       INIT    "20040331"
+WTMG_P2_F       INIT    "20020701"
+WTMG_P2_T       INIT    "20030331"
+WTMG_CP_P1      FORM    8    
+WTMG_CP_P2      FORM    8    
+WTMG_CS_P1      FORM    10.2
+WTMG_CS_P2      FORM    10.2
+WTMG_NP_P1      FORM    10.2
+WTMG_NP_P2      FORM    10.2
+WTMG_IND        DIM     2      01=Place of Service Ambulance        
+.                              02=Ambulatory Surgical Center        
+.                              03=Emergency Room - Hospital 
+.                              04=End-Stage Renal Disease Facility
+.                              05=Independent Laboratory
+.                              06=Inpatient Hospital
+.                              07=Nursing Facility
+.                              08=Office
+.                              09=Outpatient Hospital
+.                              10=Patient Home
+.                              11=Pharmacy
+.                              12=Skilled Nursing Facility
+.                              13=All Other
+.
+.
+                LISTEND
+.
+CLM_WRK_FD     FILE     VAR=500,TEXT
+CLM_WRK_NAME   INIT    "/w/clm.a0407131.wrk"
+CLM_WRK_LIST   LIST
+CLM_WRK_ID1    DIM     8
+CLM_WRK_SPC    DIM     3
+CLM_WRK_DRG    DIM     3
+CLM_WRK_STAT   DIM     1
+CLM_WRK_TCHG   FORM    7.2
+CLM_WRK_PROD   DIM     5
+CLM_WRK_FORM   DIM     1
+CLM_WRK_DOUT   DIM     8
+CLM_WRK_INOUT  DIM     1
+CLM_WRK_ADJTO  DIM     8
+               LISTEND                                      
+.                                                         
+MEMX_WRK_FD    FILE     VAR=500,TEXT
+MEMX_WRK_NAME  INIT    "/w/memx.a0407131.wrk"
+MEMX_WRK_LIST  LIST
+MEMX_WRK_ID    DIM     8
+MEMX_WRK_ACCU  DIM     4
+MEMX_WRK_AMT   FORM    7.2
+MEMX_WRK_PAYD  DIM     8
+MEMX_WRK_TCHG  DIM     10  
+               LISTEND
+... Accumulator Fields
+ACC_CP_P1_01    FORM    8    
+ACC_CP_P2_01    FORM    8    
+ACC_CS_P1_01    FORM    10.2
+ACC_CS_P2_01    FORM    10.2
+ACC_NP_P1_01    FORM    10.2
+ACC_NP_P2_01    FORM    10.2
+ACC_CP_P1_02    FORM    8    
+ACC_CP_P2_02    FORM    8    
+ACC_CS_P1_02    FORM    10.2
+ACC_CS_P2_02    FORM    10.2
+ACC_NP_P1_02    FORM    10.2
+ACC_NP_P2_02    FORM    10.2
+ACC_CP_P1_03    FORM    8    
+ACC_CP_P2_03    FORM    8    
+ACC_CS_P1_03    FORM    10.2
+ACC_CS_P2_03    FORM    10.2
+ACC_NP_P1_03    FORM    10.2
+ACC_NP_P2_03    FORM    10.2
+ACC_CP_P1_04    FORM    8    
+ACC_CP_P2_04    FORM    8    
+ACC_CS_P1_04    FORM    10.2
+ACC_CS_P2_04    FORM    10.2
+ACC_NP_P1_04    FORM    10.2
+ACC_NP_P2_04    FORM    10.2
+ACC_CP_P1_05    FORM    8    
+ACC_CP_P2_05    FORM    8    
+ACC_CS_P1_05    FORM    10.2
+ACC_CS_P2_05    FORM    10.2
+ACC_NP_P1_05    FORM    10.2
+ACC_NP_P2_05    FORM    10.2
+ACC_CP_P1_06    FORM    8    
+ACC_CP_P2_06    FORM    8    
+ACC_CS_P1_06    FORM    10.2
+ACC_CS_P2_06    FORM    10.2
+ACC_NP_P1_06    FORM    10.2
+ACC_NP_P2_06    FORM    10.2
+ACC_CP_P1_07    FORM    8    
+ACC_CP_P2_07    FORM    8    
+ACC_CS_P1_07    FORM    10.2
+ACC_CS_P2_07    FORM    10.2
+ACC_NP_P1_07    FORM    10.2
+ACC_NP_P2_07    FORM    10.2
+ACC_CP_P1_08    FORM    8    
+ACC_CP_P2_08    FORM    8    
+ACC_CS_P1_08    FORM    10.2
+ACC_CS_P2_08    FORM    10.2
+ACC_NP_P1_08    FORM    10.2
+ACC_NP_P2_08    FORM    10.2
+ACC_CP_P1_09    FORM    8    
+ACC_CP_P2_09    FORM    8    
+ACC_CS_P1_09    FORM    10.2
+ACC_CS_P2_09    FORM    10.2
+ACC_NP_P1_09    FORM    10.2
+ACC_NP_P2_09    FORM    10.2
+ACC_CP_P1_10    FORM    8    
+ACC_CP_P2_10    FORM    8    
+ACC_CS_P1_10    FORM    10.2
+ACC_CS_P2_10    FORM    10.2
+ACC_NP_P1_10    FORM    10.2
+ACC_NP_P2_10    FORM    10.2
+ACC_CP_P1_11    FORM    8    
+ACC_CP_P2_11    FORM    8    
+ACC_CS_P1_11    FORM    10.2
+ACC_CS_P2_11    FORM    10.2
+ACC_NP_P1_11    FORM    10.2
+ACC_NP_P2_11    FORM    10.2
+ACC_CP_P1_12    FORM    8    
+ACC_CP_P2_12    FORM    8    
+ACC_CS_P1_12    FORM    10.2
+ACC_CS_P2_12    FORM    10.2
+ACC_NP_P1_12    FORM    10.2
+ACC_NP_P2_12    FORM    10.2
+ACC_CP_P1_13    FORM    8    
+ACC_CP_P2_13    FORM    8    
+ACC_CS_P1_13    FORM    10.2
+ACC_CS_P2_13    FORM    10.2
+ACC_NP_P1_13    FORM    10.2
+ACC_NP_P2_13    FORM    10.2
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+.
+ZERO          FORM "      0.00"
+W_IND         DIM  2
+W_PERIOD      DIM  1
+CLMHIST_SRTKEY INIT "1-19 311-311 -T"   
+DRUG          INIT "DRUG"
+SIX           INIT "6"
+PAID_FROM     DIM  6        
+PAID_THRU     DIM  6        
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FORM_72       FORM 7.2
+W_CCYY        DIM  4
+W_DIM1        DIM  1
+W_DIM3        DIM  3
+W_DIM2        DIM  2
+W_DIM4        DIM  4
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+INC_DATE      DIM       8
+DATE_CCYY     DIM       6
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "a040713a"           TO  C_NEXT
+         MOVE      "Where Money Goes" TO  C_OPER
+         MOVE      "A0407131"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL REFORMAT_FILES
+   CALL OPEN_FILES
+   CALL PROCESS_CLM_WRK
+   CALL PROCESS_MEMX_WRK
+   MOVE ACC_CP_P1_01 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_01 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_01 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_01 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_01 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_01 TO WTMG_NP_P2
+   MOVE "01" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_02 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_02 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_02 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_02 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_02 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_02 TO WTMG_NP_P2
+   MOVE "02" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_03 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_03 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_03 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_03 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_03 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_03 TO WTMG_NP_P2
+   MOVE "03" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_04 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_04 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_04 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_04 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_04 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_04 TO WTMG_NP_P2
+   MOVE "04" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_05 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_05 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_05 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_05 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_05 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_05 TO WTMG_NP_P2
+   MOVE "05" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_06 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_06 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_06 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_06 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_06 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_06 TO WTMG_NP_P2
+   MOVE "06" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_07 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_07 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_07 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_07 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_07 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_07 TO WTMG_NP_P2
+   MOVE "07" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_08 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_08 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_08 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_08 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_08 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_08 TO WTMG_NP_P2
+   MOVE "08" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_09 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_09 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_09 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_09 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_09 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_09 TO WTMG_NP_P2
+   MOVE "09" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_10 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_10 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_10 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_10 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_10 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_10 TO WTMG_NP_P2
+   MOVE "10" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_11 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_11 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_11 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_11 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_11 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_11 TO WTMG_NP_P2
+   MOVE "11" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_12 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_12 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_12 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_12 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_12 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_12 TO WTMG_NP_P2
+   MOVE "12" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   MOVE ACC_CP_P1_13 TO WTMG_CP_P1
+   MOVE ACC_CP_P2_13 TO WTMG_CP_P2
+   MOVE ACC_CS_P1_13 TO WTMG_CS_P1
+   MOVE ACC_CS_P2_13 TO WTMG_CS_P2
+   MOVE ACC_NP_P1_13 TO WTMG_NP_P1
+   MOVE ACC_NP_P2_13 TO WTMG_NP_P2
+   MOVE "13" TO WTMG_IND
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING WTMG_FD,WTMG_NAME,WTMG_LIST
+   DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+.
+PROCESS_CLM_WRK
+   LOOP
+      MOVE CLM_WRK_NAME TO  C_FILE
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME,CLM_WRK_LIST
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+      IF (CNT1_3 = "000")
+         CALL X_DISPLAY_COUNTS
+      ENDIF
+      SWITCH CLM_WRK_FORM
+        CASE "H" OR "U"
+        DEFAULT
+           CONTINUE
+      ENDSWITCH
+      SWITCH CLM_WRK_PROD
+         CASE "EPO  " OR "PPO  "
+         DEFAULT
+            CONTINUE
+      ENDSWITCH
+      IF (CLM_WRK_STAT = "D")
+         CONTINUE
+      ENDIF     
+      IF (SQUEEZE CLM_WRK_ADJTO <> "")
+          CONTINUE
+      ENDIF
+      CLEAR W_IND
+      SWITCH CLM_WRK_SPC
+          CASE "ASC"
+             MOVE "02" TO W_IND
+          CASE "DIA"
+             MOVE "04" TO W_IND
+          CASE "SKN"
+             MOVE "12" TO W_IND
+      ENDSWITCH
+      IF (SQUEEZE W_IND = "")
+        IF (CLM_WRK_FORM = "U")
+           IF (SQUEEZE CLM_WRK_DRG <> "")
+              MOVE "06" TO W_IND
+           ELSE
+              MOVE "09" TO W_IND
+           ENDIF
+        ENDIF
+      ENDIF
+
+..Read the clms file by key 11 (claim #)   
+      PACK CLMS_BASE WITH CLM_WRK_ID1,BLANKS
+      PACK CLMS_KEY  WITH CLMS_BASE,"   " 
+      CALL POP_READ
+      LOOP
+         CALL POP_NEXT
+         IF ((RESULT <> 1) OR (CLMS_ID <> CLM_WRK_ID1))
+               BREAK
+         ENDIF                  
+         ADD 1 TO X_CNT2
+         UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+         IF (CNT1_3 = "000")
+            CALL X_DISPLAY_COUNTS
+         ENDIF
+         IF (CLM_WRK_SPC = "AMB")
+             MOVE "01" TO W_IND
+         ENDIF
+         SWITCH CLM_WRK_SPC
+            CASE "HOS"
+              IF ((CLMS_REV >= "540") AND (CLMS_REV <= "549"))
+                MOVE "01" TO W_IND
+              ENDIF
+         ENDSWITCH 
+         IF ((CLM_WRK_FORM = "U") AND (SQUEEZE CLM_WRK_DRG = ""))
+           IF ((CLMS_REV >= "450") AND (CLMS_REV <= "459"))
+             MOVE "03" TO W_IND
+           ENDIF
+         ENDIF
+         SWITCH CLM_WRK_FORM
+            CASE "H"
+              IF ((CLMS_PROC >= "80000") AND (CLMS_PROC <= "89999"))
+                 MOVE "05" TO W_IND
+              ELSE
+                 IF (CLMS_POS = "11")
+                    MOVE "08" TO W_IND
+                 ELSE
+                   IF (CLMS_POS = "12")
+                      MOVE "10" TO W_IND
+                   ENDIF
+                 ENDIF
+              ENDIF
+         ENDSWITCH
+         IF (SQUEEZE W_IND = "")
+           MOVE "13" TO W_IND
+         ENDIF
+         IF ((CLM_WRK_DOUT >= WTMG_P1_F) AND (CLM_WRK_DOUT <= WTMG_P1_T))
+           MOVE "1" TO W_PERIOD
+         ELSE
+           MOVE "2" TO W_PERIOD
+         ENDIF
+         SWITCH W_IND
+             CASE "01"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_01
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_01
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_01
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_01
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_01
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_01
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_01
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_01
+               ENDSWITCH            
+             CASE "02"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_02
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_02
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_02
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_02
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_02
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_02
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_02
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_02
+               ENDSWITCH            
+             CASE "03"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_03
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_03
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_03
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_03
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_03
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_03
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_03
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_03
+               ENDSWITCH            
+             CASE "04"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_04
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_04
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_04
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_04
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_04
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_04
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_04
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_04
+               ENDSWITCH            
+             CASE "05"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_05
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_05
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_05
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_05
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_05
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_05
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_05
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_05
+               ENDSWITCH            
+             CASE "06"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_06
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_06
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_06
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_06
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_06
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_06
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_06
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_06
+               ENDSWITCH            
+             CASE "07"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_07
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_07
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_07
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_07
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_07
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_07
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_07
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_07
+               ENDSWITCH            
+             CASE "08"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_08
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_08
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_08
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_08
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_08
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_08
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_08
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_08
+               ENDSWITCH            
+             CASE "09"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_09
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_09
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_09
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_09
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_09
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_09
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_09
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_09
+               ENDSWITCH            
+             CASE "10"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_10
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_10
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_10
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_10
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_10
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_10
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_10
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_10
+               ENDSWITCH            
+             CASE "11"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_11
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_11
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_11
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_11
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_11
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_11
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_11
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_11
+               ENDSWITCH            
+             CASE "12"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_12
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_12
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_12
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_12
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_12
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_12
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_12
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_12
+               ENDSWITCH            
+             CASE "13"
+               SWITCH W_PERIOD
+                  CASE "1"
+                    ADD 1 TO ACC_CP_P1_13
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P1_13
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_13
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P1_13
+                  DEFAULT
+                    ADD 1 TO ACC_CP_P2_13
+                    CLEAR FORM_72
+                    MOVE CLMS_CHG TO FORM_72
+                    ADD FORM_72 TO ACC_CS_P2_13
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYP TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_13
+                    CLEAR FORM_72  
+                    MOVE CLMS_PAYE TO FORM_72 
+                    ADD FORM_72 TO ACC_NP_P2_13
+               ENDSWITCH            
+         ENDSWITCH    
+      REPEAT
+   REPEAT
+   RETURN
+
+PROCESS_MEMX_WRK
+   LOOP
+      MOVE MEMX_WRK_NAME TO  C_FILE
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING MEMX_WRK_FD,MEMX_WRK_NAME,MEMX_WRK_LIST
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+      ADD 1 TO X_CNT3
+      UNPACK X_CNT3 INTO CNT1_4,CNT1_3
+      IF (CNT1_3 = "000")
+         CALL X_DISPLAY_COUNTS
+      ENDIF
+      CLEAR FORM_72
+      MOVE MEMX_WRK_TCHG TO FORM_72
+      IF (FORM_72 < ZERO)
+         CONTINUE
+      ENDIF
+      IF ((MEMX_WRK_PAYD >= WTMG_P1_F) AND (MEMX_WRK_PAYD <= WTMG_P1_T))
+           MOVE "1" TO W_PERIOD
+      ELSE
+           MOVE "2" TO W_PERIOD
+      ENDIF
+      SWITCH W_PERIOD
+        CASE "1"
+           ADD 1 TO ACC_CP_P1_11
+           ADD FORM_72 TO ACC_CS_P1_11
+           ADD MEMX_WRK_AMT TO ACC_NP_P1_11
+        DEFAULT  
+           ADD 1 TO ACC_CP_P2_11
+           ADD FORM_72 TO ACC_CS_P2_11
+           ADD MEMX_WRK_AMT TO ACC_NP_P2_11
+      ENDSWITCH
+   REPEAT
+   RETURN
+.
+REFORMAT_FILES
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:21, "REFORMATTING FILES", *BOLDOFF
+ CLEAR SCRATCH
+ PACK SCRATCH WITH "clm.dbf"," ","/w/clm.a0407131.wrk":
+ " -p2496-2503ge",WTMG_P1_F:
+ " -p2496-2503le",WTMG_P1_T:
+ " 1-8 283-285 2053-2055 2353-2353 2359-2368 2478-2482 2491-2491": 
+ " 2496-2503 2504-2504 2519-2526 -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED P1(CLM.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ CLEAR SCRATCH
+ PACK SCRATCH WITH "clm.dbf"," ","/w/clm.a0407131.wrk":
+ " -p2496-2503ge",WTMG_P2_F:
+ " -p2496-2503le",WTMG_P2_T:
+ " 1-8 283-285 2053-2055 2353-2353 2359-2368 2478-2482 2491-2491": 
+ " 2496-2503 2504-2504 2519-2526 -a -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED P2(CLM.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ CLEAR SCRATCH
+ PACK SCRATCH WITH "memx.dbf"," ","/w/memx.a0407131.wrk":
+ " -p86-86eq",SIX: 
+ " -p117-124ge",WTMG_P1_F:
+ " -p117-124le",WTMG_P1_T:
+ " 1-8 33-36 60-69 117-124 160-169 -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED P1(MEMX.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ CLEAR SCRATCH
+ PACK SCRATCH WITH "memx.dbf"," ","/w/memx.a0407131.wrk":
+ " -p86-86eq",SIX: 
+ " -p117-124ge",WTMG_P2_F:
+ " -p117-124le",WTMG_P2_T:
+ " 1-8 33-36 60-69 117-124 160-169 -a -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED P2(MEMX.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ RETURN
+.
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "CLM  Recs Read:    " TO X_CNTDESC1
+	 MOVE      "CLMS Recs Read:    " TO X_CNTDESC2
+	 MOVE      "MEMX Recs Read:    " TO X_CNTDESC3
+	 MOVE      "Recs Written  :    " TO X_CNTDESC4
+
+	 CALL      X_DISPLAY_COUNTS
+
+         CALL      SETPOP_CLMS
+
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING WTMG_FD,WTMG_NAME
+         CALL      OPEN_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME  
+         CALL      OPEN_OGBFILE USING MEMX_WRK_FD,MEMX_WRK_NAME  
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING WTMG_FD,WTMG_NAME
+         CALL      CLOSE_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME  
+         CALL      CLOSE_OGBFILE USING MEMX_WRK_FD,MEMX_WRK_NAME  
+         RETURN
+
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       POP.IO
+    INC       SEEK.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of DRG0150.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,375 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1001284.PS
++    Description    :  ADH - Converts Flex Spilts                       
++                      Qualifying Reason = 'N'- Meme Records>=Split Date
++                                          'Y'- Meme Records eff >= 07/01/2009
++                                                            trm < Split Date 
++                            MEME RECORDS.
++    APSJM A1001284 02/01/2010 - INITIAL VERSION                                
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+FLX_SPL_FD         FILE       VAR=26,TEXT
+FLX_SPL_NAME       INIT       "/w/flex_splits.txt"
+
+FLX_SPL_LIST       LIST
+FLX_SPL_ID1        DIM         8
+FLE_SPL_C          DIM         1
+FLX_SPL_EFF        DIM         8 
+FLE_SPL_C2         DIM         1
+FLX_SPL_TRM        DIM         8
+                   LISTEND
+.
+.Output Files
+U_FLXS_FD     FILE     VAR=3100,TEXT
+U_FLXS_NAME    INIT    "a1001284.txt"      
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+DIM_2         DIM  2
+DIM_3         DIM  3
+Y             INIT "Y"
+CMP_TRM       DIM  8
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "CNV FLEX SPLITS" TO  C_OPER
+         MOVE      "A1001284"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+   ROLLOUT   "a1001284.ftp"
+         IF OVER
+              ERROR     HORZ="15",VERT="19":
+                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+                        LNCOL=C_ERRL,SHADE="Y":
+                        TEXT="ROLLOUT FAILED-a1001284.ftp"
+              CHAIN     "MENU"
+         ENDIF
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_FLX_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_FLX_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING FLX_SPL_FD,FLX_SPL_NAME,FLX_SPL_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    PACK MEM_FK11 WITH FLX_SPL_ID1,BLANKS
+    CALL  FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+        	           MEM_FN:  ...FILE NAME LIST  
+		           MEM_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEM_FV:  ...FILE KEY VARLISTS
+		           MEM_FK:  ...FILE KEY SIZES  
+		           MEM_LIST:...FILE RECORD (FIELD LIST)
+		           MEM_REC: ...FILE RECORD (PACKED)
+		           MEM_OLD: ...FILE SAVED WHEN READ
+		           MEM_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    CLEAR MEME_SAV
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    LOOP 
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST
+                                   MEME_FC:  ...TYPE OF INDEX
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES
+                                   1         ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                BREAK
+            ENDIF
+            IF (SQUEEZE MEME_TRM <> "")
+               IF (MEME_TRM < MEME_EFF)
+                    CONTINUE
+               ENDIF
+            ENDIF
+            IF ((SQUEEZE MEME_LEV2 = "95") OR (SQUEEZE MEME_LEV2 = "93"):
+                  OR (SQUEEZE MEME_LEV2 = "99"):
+                  OR (SQUEEZE MEME_LEV2 = "94"))
+                 CONTINUE
+            ENDIF
+            IF ((SQUEEZE MEME_LEV2 = "92") AND (MEME_RETPY <> "Y"))
+                  CONTINUE
+            ENDIF
+            UNPACK MEME_LEV1 INTO DIM1
+            IF (DIM1 = "R")
+                  CONTINUE
+            ENDIF
+            IF (SQUEEZE MEME_LEV1 = "5000")
+                  CONTINUE
+            ENDIF
+            IF (SQUEEZE MEME_LEV2 = "90")
+                  CONTINUE
+            ENDIF 
+            SWITCH MEME_LEV1
+               CASE "5005" OR "5006" OR "5007"
+                  CONTINUE
+            ENDSWITCH
+            IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < "20090701"))
+                  CONTINUE
+            ENDIF
+            CLEAR CMP_TRM
+            IF (SQUEEZE MEME_TRM = "")
+               FILL "9" IN CMP_TRM
+            ELSE
+               MOVE MEME_TRM TO CMP_TRM
+            ENDIF
+            IF (MEME_EFF >= FLX_SPL_EFF)
+                  CLEAR INM_REC
+                  PACKLEN MEME_REC WITH MEME_LIST
+                  PACKLEN INM_REC WITH MEM_REC,MEME_REC
+                  UNPACK INM_REC INTO INM_LIST
+                  MOVE "N" TO INME_ERSA
+                  CLEAR INME_CHGBY
+                  CLEAR INME_NEWBY
+                  CLEAR INM_CHGBY
+                  MOVE OGB_SEQ1 TO OGB_SEQ
+                  CALL WRITE_OGBREC USING U_FLXS_FD,U_FLXS_NAME,INM_LIST
+                  CLEAR INM_LIST
+                  CONTINUE
+            ENDIF
+            IF (("20090701" >= MEME_EFF) AND ("20090701" < MEME_TRM))
+               IF (MEME_TRM < FLX_SPL_EFF)
+                  CLEAR INM_REC
+                  PACKLEN MEME_REC WITH MEME_LIST
+                  PACKLEN INM_REC WITH MEM_REC,MEME_REC
+                  UNPACK INM_REC INTO INM_LIST
+                  MOVE "Y" TO INME_ERSA
+                  CLEAR INME_CHGBY
+                  CLEAR INME_NEWBY
+                  CLEAR INM_CHGBY
+                  MOVE OGB_SEQ1 TO OGB_SEQ
+                  CALL WRITE_OGBREC USING U_FLXS_FD,U_FLXS_NAME,INM_LIST
+                  CLEAR INM_LIST
+                  CONTINUE
+               ENDIF
+            ENDIF
+    REPEAT
+ REPEAT
+ RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING FLX_SPL_FD,FLX_SPL_NAME
+         CALL      PREP_OGBFILE USING U_FLXS_FD,U_FLXS_NAME   
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1001284.PS
+. +++++++++++++++++++++++++++++++++++++

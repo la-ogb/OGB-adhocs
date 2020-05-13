@@ -1,0 +1,1059 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0903231
++    Description    :  MEMBER TERM LETTER LETTER EXTRACT
++                      Modified version of d_ogbcob.ps to get the following:
++                      Enrollees & Deps who lost covereage from 9/1/08-2/28/09
++                      Termed with a T or L
++                      Does not have coverage as of 3/1/09
++                      No Definity or Life people
++                      No LEV1 5000, 5005, 5006 or 5007
++    Author         :  Deborah Mohammad
++    Date created   :  04/21/2009
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB            ...Common work area
+              INC       MEM.RL               ...Member record
+              INC       MEME.RL              ...Member Enrollment record
+              INC       CLIP.RL
+              INC       CLM.RL               ...Claim record
+              INC       CLMS.RL              ...Service record
+              INC       VALID.RL             ...Valid codes
+              INC       PRT.RL               ...Printer Definition File
+              INC       ART.RL               ...Rates
+              INC       CMDPARAM.CB          ...Common line variables
+
+.----------------------------------------------------------------------------
+.          Constants and data definition work areas
+.          Add any data areas/constants unique to this program here.
+.----------------------------------------------------------------------------
+.
+OLD_RET       FORM      3
+NEW_RET       FORM      3
+.
+PRINT_STATE   DIM        1
+MYSTATE       DIM       456
+CAL_CLOCK     DIM       21
+ACTION        DIM       10
+PREX_CAT      DIM       6
+PREX_LOOK     DIM       8
+SAVE_CLIR     DIM       8
+SERIES        DIM       2
+SAVESCRN      DIM       16000
+SAVETRAP      DIM       500
+SAVEOPER      DIM       20
+SAVEPROG      DIM       12
+SAVENEXT      DIM       12
+HELPFILE      DIM       8
+WORKAIM       DIM       300
+SAVE_MODE     DIM       1
+SAVE_INQ      DIM       1
+SAVE_ESSN     DIM       9
+NEW_DATE      DIM       10
+WRK_DATE      DIM       10
+CHG_DATE      DIM       10
+HOW_SEARCH    DIM       10
+TODAY         DIM       8
+DO_WHAT       DIM       50
+LATEST        DIM       8
+CURRDATE      DIM       8
+TRMDATE       DIM       8
+.
+BASE_DATE     DIM       8
+DIMBEG        DIM       10
+DIMEND        DIM       10
+CLAIMANT      DIM       15
+.
+END           FORM      "-3"
+SEQ           FORM      "-1"
+FIRST_PAGE    FORM      1
+SAVELEVEL     FORM      1
+CNT_WORK      FORM      7
+CNT_LET       FORM      7
+FUD           FORM      2
+FUL           FORM      2
+LAG           FORM      2
+READ_COUNT    FORM      5
+WRITE_COUNT   FORM      5
+HAS_DEP       FORM      1
+HAS_ELG       FORM      1
+
+SAVE_ID1      DIM       8
+SAVE_EFF      DIM       8
+SAVE_TRM      DIM       8
+
+DIM8          DIM       8
+FULLTIME      DIM       20
+HR            DIM       2
+MN            DIM       2
+PREV_SSN      DIM       9
+
+. Log File
+
+OUTF_LOG      FILE      FIX=41,TEXT
+OUTN_LOG      INIT      "d_ogbcob.log"
+OUTF_REC      DIM       41
+
+TMP_LIST LIST
+TMP_SSN       DIM      9
+TMP_REL       DIM      2
+TMP_ID1       DIM      8
+TMP_ID2       DIM      4
+         LISTEND
+
+TMP_FILE     FILE      FIX=23,TEXT
+TMP_NAME     INIT      "ogbcob.tmp"
+
+TMP_KEY      DIM       12        1-12
+
+
+
+
+. Key File
+
+KEY_FILE     FILE      VAR=12,COMP
+KEY_NAME     INIT      "meme.key"
+
+KEY_KEY      DIM       12        1-12
+
+WORK_FILE     FILE     FIX=381,TEXT
+WORK_NAME     INIT     "a0903231.txt"
+WORK_DATA     DIM      12
+WORK_REC      DIM      381
+
+. NOODBC
+COB_LIST LIST
+.
+..<BEGIN>---------------------------------------------------------------------
+.
+COB_RECID  DIM 008                      0001 0008               Impact ID
+COB_FNAME  DIM 015                      0009 0023               First Name
+COB_LNAME  DIM 020                      0024 0043               Last Name
+COB_MINIT  DIM 001                      0044 0044               Mid Init
+COB_ADDR1  DIM 035                      0045 0079               Address 1
+COB_ADDR2  DIM 035                      0080 0114               Address 2
+COB_CITY   DIM 030                      0115 0144               City
+COB_STATE  DIM 002                      0145 0146               State
+COB_ZIP    DIM 013                      0147 0159               Zip
+COB_SERIES DIM 002                      0160 0161               Letter series
+COB_TRMDT  DIM 008                      0162 0169               Termination Date
+COB_DUEDT  DIM 008                      0170 0177               Due date (60 days after date run)
+COB_DESC   DIM 030                      0178 0207               Term description
+COB_EMPRT  DIM 010                      0208 0217               Employee rate
+COB_SPSRT  DIM 010                      0218 0227               Emp + Spouse rate
+COB_CHDRT  DIM 010                      0228 0237               Emp + child  rate
+COB_FAMRT  DIM 010                      0238 0247               Family rate
+COB_BEGDT  DIM 008                      0248 0255               Cobra Begin Date
+COB_ENDDT  DIM 008                      0256 0263               Cobra End Date
+COB_NET    DIM 005                      0264 0268               Network
+COB_PRD    DIM 005                      0269 0273               Product
+COB_NETDSC DIM 025                      0274 0298               Net Desc
+COB_NET2   DIM 005                      0299 0303               Network
+COB_PRD2   DIM 005                      0304 0308               Product
+COB_NETDS2 DIM 025                      0309 0333               Net Desc
+COB_SUBEE  DIM 010                      0334 0343               Sub Rate
+COB_SUBES  DIM 010                      0344 0353               Sub + Spouse Rate
+COB_SUBEC  DIM 010                      0354 0363               Sub + Child rate
+COB_SUBFM  DIM 010                      0364 0373               Sub + Family rate
+COB_SUBTRM DIM 008                      0374 0381               Term Date
+.
+..<END>------------------------------------------------------------------
+         LISTEND
+
+FORM10        FORM      7.2
+FORM7         FORM      7.2
+WORK10        FORM      7.2
+FEE_AMT       FORM      7.2
+
+
+FIRST_NOTE    FORM      1
+NOTE_CHECK    INIT      "-----"
+NUM_DATE      FORM      "2"
+DATE_COUNT    FORM      2
+SORT_TYPE     DIM       1
+SORT_NAME     DIM       8
+SORT_CLAIMANT INIT      "C"
+SORT_PROV     INIT      "P"
+
+PRINT@DETAIL  DIM       @
+
+LAST@NAME     DIM       @
+FIRST@NAME    DIM       @
+MIDDLE@INIT   DIM       @
+FULL@NAME     DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+
+RUN_RATECALC    EXTERNAL
+RUN_CLIPCALC    EXTERNAL
+
+.컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+.   Scheduler Fields
+.컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+
+PARAM_LIST    LIST       WITH NAMES
+PARAM_DATE    DIM        8
+PARAM_SER1    DIM        2
+PARAM_SER2    DIM        2
+PARAM_SER3    DIM        2
+PARAM_SER4    DIM        2
+PARAM_SER5    DIM        2
+PARAM_NOW     DIM        2
+              LISTEND
+.
++ ---------------------------------------------------------�---------------
++   Begin Program
++ ---------------------------------------------------------�---------------�
+
+START_MEMLT1
+
+         IF (C_CMDPAR)
+            CALL CMD_START USING "d_ogbcob"
+         ENDIF
+
+         UNPACK    C_OPTN INTO PARAM_SER1,WCHAR:
+                               PARAM_SER2,WCHAR:
+                               PARAM_SER3,WCHAR:
+                               PARAM_SER4,WCHAR:
+                               PARAM_SER5
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+         MOVE      C_OPTN TO C_OPTO
+         SCRNSAVE  SAVESCRN
+         TRAPSAVE  SAVETRAP
+         MOVE      C_PROG  TO SAVEPROG
+         MOVE      C_OPER  TO SAVEOPER
+         MOVE      C_NEXT  TO SAVENEXT
+         MOVE      C_LEVEL TO SAVELEVEL
+         MOVE      C_MODE  TO C_SAVE
+         MOVE      C_INQ   TO C_SAVINQ
+  debug
+         CLOCK     TIMESTAMP TO CURRDATE
+
+         TRAPCLR   ALL
+
+. Where to go when the program quits
+. The name of this program
+. The description of this program (20 chars max)
+
+         MOVE      "menu"     TO C_NEXT                         <==
+         MOVE      "D_OGBCOB" TO C_PROG                         <==
+         MOVE      "MEMBER TERM EXTRACT" TO C_OPER               <==
+         MOVE       1 TO C_LEVEL                                <==
+
+         RETCOUNT  OLD_RET
+         CLOCK     CALENDAR  TO  CAL_CLOCK
+         CLOCK     TIMESTAMP TO  TODAY
+
+         MOVE      BLANKS TO C_LABEL
+         MOVE      BLANKS TO C_FILE
+         MOVE      BLANKS TO C_KEYS
+
+. -------------------------------------------------
+.   Put all externals used in F/M programs here
+. -------------------------------------------------
+RUN_UNILET      EXTERNAL
+RUN_RATECALC    EXTERNAL
+RUN_CLIPCALC    EXTERNAL
+
+. ------------------------------
+.   Fill top of screen
+. ------------------------------
+FILLTOP
+         GOTO      NO_FILL IF (C_RMODE <> "I")
+         STATESAVE MYSTATE
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_DATB,*COLOR=C_DATL,*+:
+                   *P1:2,*RPTCHAR *HLN:80,*COLOR=C_DATF:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<",ACTION,">"
+
+. Function line for TIP
+.-----------------------------------------------------------------------------
+.1-Help  2-Srch  3-Prev  4-Next  5-New   6-Tick  7-Code  8-Note  9-Quit 10-More
+........--------........--------........--------........--------........--------
+.  F1      F2      F3      F4      F5      F6      F7      F8      F9     F10
+.-----------------------------------------------------------------------------
+.�<Fri Feb 28 1997 09:20>컴�<PROGRAM DESCRIPTION >컴�<PROGNAME>컴<ACTION....>컴�
+.-----------------------------------------------------------------------------
+
+         DISPLAY   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        "
+
+. Standard bottom line
+.컴<12/12/1998>컴<userxx>컴<12/12/1998>컴<userxx>컴<id1.....>컴<id2.>컴<id3.>컴�
+.    date orig     by        date chgd     by
+.컴<12/12/1998>컴<userxx>컴<12/12/1998>컴<userxx>컴<id1.....>컴<how_search>컴컴
+.                                                               if level 1
+
+         UNPACK    MEM_NEWDT TO  W_YEAR,W_MM,W_DD
+         PACK      NEW_DATE WITH W_MM,"/",W_DD,"/",W_YEAR
+         UNPACK    MEM_CHGDT TO  W_YEAR,W_MM,W_DD
+         PACK      CHG_DATE WITH W_MM,"/",W_DD,"/",W_YEAR
+         DISPLAY   *BGCOLOR=C_BOTB,*COLOR=C_BOTL,*+:
+                   *P1:C_WIND25,*RPTCHAR *HLN:80,*COLOR=C_BOTF:
+                   *P4:C_WIND25,"<",NEW_DATE,">",*P18:C_WIND25,"<",*+,MEM_NEWBY,">":
+                   *P28:C_WIND25,"<",CHG_DATE,">",*P42:C_WIND25,"<",*+,MEM_CHGBY,">":
+                   *P52:C_WIND25,"<",MEM_ID1,">",*P64:C_WIND25,"<",HOW_SEARCH,">"
+
+. Reset window
+         STATEREST MYSTATE
+NO_FILL
+
+         PACK VAL_KEY1 WITH "155OGBCOB"
+         CALL      VAL_READ1
+         IF (RESULT = 1)
+            MOVE VAL_OPT TO PARAM_DATE
+         ENDIF
+         IF (SQUEEZE RUN_MODE = "" AND C_RMODE = "I")
+
+            message   horz="18",vert="06":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="Member Term Letter Process.":
+                      text="Print Terms from this date:":
+                      text="---> "
+
+            DISPLAY   *RESETSW,*BGCOLOR=C_DLGB,*COLOR=C_DLGF:
+                      *P28:09,PARAM_DATE
+
+            MOVE      28          TO  KEY_COL
+            MOVE      09          TO  KEY_ROW
+            MOVE      8           TO  KEY_SIZ
+            MOVE      0           TO  KEY_DEC
+            MOVE      "D"         TO  KEY_TYP
+            MOVE      "L"         TO  KEY_JUS
+            MOVE      "O"         TO  KEY_REQ
+            DISPLAY   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+            CALL      KEY_IN   USING  PARAM_DATE
+
+            RETURN    IF (SQUEEZE PARAM_DATE   = "")
+         ENDIF
+
+. Get scheduler information
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+             CALL      MAIN_PROCESS
+             CLOSE     WORK_FILE
+         ENDIF
+
+.Write out current date to valid table for next run
+         CLOCK     TIMESTAMP INTO FULLTIME
+         UNPACK    FULLTIME INTO DIM8,HR,MN
+         IF ((HR >= "00") AND (HR <= "16"))
+            CALL    DATE_CALC USING CURRDATE,"SUB","DAYS",1,NEW_DATE
+         ELSE
+            PACK NEW_DATE WITH CURRDATE
+         ENDIF
+         PACK VAL_TYPE WITH "155",BLANKS
+         PACK VAL_CODE WITH "OGBCOB",BLANKS
+         PACK VAL_DESC WITH "LAST EXTRACT DATE FOR OGBCOB",BLANKS
+         PACK VAL_OPT  WITH NEW_DATE,BLANKS
+         PACK VAL_FILL WITH BLANKS
+         CALL VAL_WRITE
+
+         IF (C_RMODE = "I")
+            IF (RUN_MODE = "N")
+               MOVE BLANKS TO WCHAR
+               dialog    horz="19",vert="19":
+                         bgcol=C_DLGB,fgcol=C_DLGF:
+                         lncol=C_DLGL,shade="Y":
+                         text="Member COB Extract Complete  ":
+                         text="The file name is ogbcob.txt. ":
+                         field=WCHAR
+            ENDIF
+         ENDIF
+         MOVE      BLANKS TO C_CLOSED
+
+         IF (C_CMDPAR)
+            CALL CMD_END
+            STOP
+         ELSE
+            MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         ENDIF
+
+         RETURN
+
+. ---------------------------------------
+.  Main process
+. ---------------------------------------
+MAIN_PROCESS
+
+         MOVE      "loadmod"     TO C_KEYS
+         MOVE      "u_unilet"    TO C_FILE
+         LOADMOD   "u_unilet"
+
+         debug
+. Create the report control work file
+         CREATE    KEY_NAME
+
+         IF (C_RMODE = "I")
+            message   horz="16",vert="13":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="Extracting MEME Records for Letters.":
+                      text="------------------------------------":
+                      text="Records Selected:          "
+         ENDIF
+
+. Build file of keys that fit the conditions
+. Key file is in format KEY_LIST above
+    debug
+         PACK PARAM_DATE WITH "20080901",BLANKS
+         PACK TRMDATE WITH "20090228",BLANKS
+         PACK      SCRATCH WITH "meme.dbf meme.key ":
+                   " -p104-111ge#"",PARAM_DATE,"#" ":
+                   " -p104-111le#"",TRMDATE,"#" 1-12 -t -j -c"
+
+         REFORMAT  SCRATCH
+. Unique sort to remove dups
+
+         PACK      SCRATCH WITH "meme.key meme.key 1-12 -c -u "
+         SORT      SCRATCH
+
+         PREP      WORK_FILE,WORK_NAME
+         OPEN      WORK_FILE,WORK_NAME
+
+         LOADMOD   "ratecalc.dbc"
+         LOADMOD   "clipcalc.dbc"
+
+. Now read Key file and get MEME records
+         OPEN      KEY_FILE,KEY_NAME
+         LOOP
+            READ      KEY_FILE,SEQ;KEY_KEY
+            WHILE     NOT OVER
+
+            PACK      MEME_FK11 WITH KEY_KEY,BLANKS
+            CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                      MEME_FN:  ...File name list
+                      MEME_FC:  ...(I)ndex or (A)imdex
+                      MEME_FV:  ...File key varlists
+                      MEME_FK:  ...File key sizes
+                      MEME_LIST: ...File record (field list)
+                      MEME_REC: ...File record (packed)
+                      MEME_OLD: ...File saved when read
+                      MEME_QTY: ...Number of files
+                      1         ...File number for this read
+
+. ISC 24657 - Added LSUSH and 5005, 5006, 5007 to list of continues below
+            CONTINUE IF (SQUEEZE MEME_PRD = "LIFE")
+            CONTINUE IF (SQUEEZE MEME_NET = "DEFIN")
+            CONTINUE IF (SQUEEZE MEME_NET = "LSUSH")
+            CONTINUE IF (SQUEEZE MEME_LEV1 = "5000")
+            CONTINUE IF (SQUEEZE MEME_LEV1 = "5005")
+            CONTINUE IF (SQUEEZE MEME_LEV1 = "5006")
+            CONTINUE IF (SQUEEZE MEME_LEV1 = "5007")
+.During open enrollment, person will be assigned a future eff date
+.and may cancel his enrollment before that date. OGB puts in a term
+.date that is less than the eff date.
+            IF (SQUEEZE MEME_TRM <> "")
+               CONTINUE IF (SQUEEZE MEME_TRM < MEME_EFF)
+            ENDIF
+
+            PACK      MEM_FK11 WITH MEME_ID1
+            CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                                MEM_FN:          ...File name list
+                                MEM_FC:          ...(I)ndex or (A)imdex
+                                MEM_FV:          ...File key varlists
+                                MEM_FK:          ...File key sizes
+                                MEM_LIST:        ...File record (field list)
+                                MEM_REC:         ...File record (packed)
+                                MEM_OLD:         ...File saved when read
+                                MEM_QTY:         ...Number of files
+                                1                ...File number for this read
+. If employee only record and tlet = E for death...dont offer cobra.
+. assuming dependents will be found in sort and will be processed later.
+            IF (SQUEEZE MEM_REL = "01" AND SQUEEZE MEME_TLET = "E")
+               CONTINUE
+            ENDIF
+
+...Don't want anyone who has current insurance through OGB
+            MOVE MEME_REC TO MEME_SAV
+            PACK SAVE_EFF WITH MEME_EFF,BLANKS
+            PACK SAVE_TRM WITH MEME_TRM,BLANKS
+            CLEAR HAS_ELG
+            CALL CHECK_ELIGIBILITY
+            IF (HAS_ELG)
+               CONTINUE
+            ENDIF
+            MOVE MEME_SAV TO MEME_REC
+            UNPACK MEME_REC INTO MEME_LIST
+
+
+            IF ((SQUEEZE MEME_TLET <> "T") AND (SQUEEZE MEME_TLET <> "L"))
+                CONTINUE
+            ENDIF
+
+            PACK COB_RECID  WITH MEME_ID1,BLANKS
+            PACK COB_FNAME  WITH MEM_FNAME,BLANKS
+            PACK COB_LNAME  WITH MEM_LNAME,BLANKS
+            PACK COB_MINIT  WITH MEM_MINIT,BLANKS
+            PACK COB_ADDR1  WITH MEM_ADDR1,BLANKS
+            PACK COB_ADDR2  WITH MEM_ADDR2,BLANKS
+            PACK COB_CITY   WITH MEM_CITY,BLANKS
+            PACK COB_STATE  WITH MEM_STATE,BLANKS
+            PACK COB_ZIP    WITH MEM_ZIP,BLANKS
+
+...APDLM meme_tlet "L" will behave like a "T"
+            IF (SQUEEZE MEM_REL = "01")
+.               IF (SQUEEZE MEME_TLET = "T")
+               IF ((SQUEEZE MEME_TLET = "T") OR (SQUEEZE MEME_TLET = "L"))
+                  PACK COB_SERIES WITH "T1"
+               ENDIF
+            ENDIF
+            IF (SQUEEZE MEM_REL = "02")
+.               IF (SQUEEZE MEME_TLET = "T")
+               IF ((SQUEEZE MEME_TLET = "T") OR (SQUEEZE MEME_TLET = "L"))
+                  PACK COB_SERIES WITH "T2"
+               ENDIF
+               IF (SQUEEZE MEME_TLET = "D" OR SQUEEZE MEME_TLET = "E")
+                  PACK COB_SERIES WITH "T4"
+               ENDIF
+            ENDIF
+            IF (SQUEEZE MEM_REL <> "01" AND SQUEEZE MEM_REL <> "02")
+.               IF (SQUEEZE MEME_TLET = "T")
+               IF ((SQUEEZE MEME_TLET = "T") OR (SQUEEZE MEME_TLET = "L"))
+                  PACK COB_SERIES WITH "T3"
+               ENDIF
+               IF (SQUEEZE MEME_TLET = "E")
+                  PACK COB_SERIES WITH "T5"
+               ENDIF
+               IF (SQUEEZE MEME_TLET = "O")
+                  PACK COB_SERIES WITH "T6"
+               ENDIF
+            ENDIF
+.            IF (SQUEEZE MEME_TLET = "L")
+.               PACK COB_SERIES WITH "T1"
+.            ENDIF
+
+            SWITCH MEME_TLET
+               CASE "T"
+                  PACK COB_DESC WITH "END OF FULL-TIME EMPLOYMENT"
+               CASE "E"
+                  PACK COB_DESC WITH "DEATH OF THE EMPLOYEE"
+               CASE "D"
+                  PACK COB_DESC WITH "YOUR DIVORCE"
+               CASE "O"
+                  PACK COB_DESC WITH "LOSS OF DEPENDENT STATUS"
+               CASE "L"
+                  PACK COB_DESC WITH "END OF FULL-TIME EMPLOYMENT"
+...APDLM as per Brad L will be handled same as T reason
+.                  PACK COB_DESC WITH "INVOLUNTARY TERMINATION"
+               DEFAULT
+                  CONTINUE
+            ENDSWITCH
+
+
+            PACK COB_TRMDT  WITH MEME_TRM,BLANKS
+
+. Due Date
+            MOVE BLANKS TO NEW_DATE
+            CALL DATE_CALC  USING CURRDATE,"ADD","DAYS",60,NEW_DATE
+
+            MOVE BLANKS TO WRK_DATE
+            CALL DATE_CALC  USING MEME_TRM,"ADD","DAYS",60,WRK_DATE
+
+            IF (WRK_DATE > NEW_DATE)
+               PACK COB_DUEDT  WITH  WRK_DATE,BLANKS
+            ELSE
+               PACK COB_DUEDT  WITH  NEW_DATE,BLANKS
+            ENDIF
+
+. COBRA begin date
+            MOVE BLANKS TO NEW_DATE
+            CALL DATE_CALC  USING MEME_TRM,"ADD","DAYS",1,NEW_DATE
+            PACK COB_BEGDT  WITH  NEW_DATE,BLANKS
+
+. Per Deb M. use the new time frame to calculate.
+            MOVE COB_BEGDT TO MEME_EFF
+
+
+. Cobra end date
+. Per Brad, for series T1, T2, and T3 add 18 months to term date
+. for T4, T5, and T6 add 36 months
+            MOVE BLANKS TO NEW_DATE
+            IF (COB_SERIES = "T1" OR COB_SERIES = "T2" OR COB_SERIES = "T3")
+               CALL DATE_CALC  USING MEME_TRM,"ADD","MONTHS",18,NEW_DATE
+               PACK COB_ENDDT  WITH  NEW_DATE,BLANKS
+            ENDIF
+
+            MOVE BLANKS TO NEW_DATE
+            IF (COB_SERIES = "T4" OR COB_SERIES = "T5" OR COB_SERIES = "T6")
+               CALL DATE_CALC  USING MEME_TRM,"ADD","MONTHS",36,NEW_DATE
+               PACK COB_ENDDT  WITH  NEW_DATE,BLANKS
+            ENDIF
+...APDLM not using T7 yet
+.            MOVE BLANKS TO NEW_DATE
+.            IF (COB_SERIES = "T7")
+.               CALL DATE_CALC  USING MEME_TRM,"ADD","MONTHS",9,NEW_DATE
+.               PACK COB_ENDDT  WITH  NEW_DATE,BLANKS
+.            ENDIF
+            IF (SQUEEZE MEME_TLET = "L" OR SQUEEZE MEME_TLET = "T")
+                CALL DATE_CALC  USING MEME_TRM,"ADD","MONTHS",9,NEW_DATE
+                PACK COB_SUBTRM  WITH  NEW_DATE,BLANKS
+            ENDIF
+
+            MOVE COB_ENDDT TO MEME_TRM
+
+            MOVE    "00001385" TO MEME_CLIR
+            PACK    MEME_REC WITH MEME_LIST
+            MOVE    "01" TO MEM_REL
+            PACK    MEM_REC WITH MEM_LIST
+
+            FILL    " "               IN   CLIP_REC
+            CALL    RUN_CLIPCALC   USING   COB_BEGDT:
+                                           MEME_CLIR:
+                                           MEME_NET:
+                                           MEME_PRD:
+                                           MEME_CARR:
+                                           MEME_PLAN:
+                                           "CB":
+                                           CLIP_REC
+
+            UNPACK CLIP_REC INTO CLIP_LIST
+            IF (SQUEEZE CLIP_TRM = "")
+              FILL "9" IN CLIP_TRM
+            ENDIF
+            IF ((CLIP_TRM < COB_BEGDT) OR (SQUEEZE CLIP_REC = ""))
+. Check for good clip_rec....
+               PACK COB_NET2 WITH MEME_NET
+               PACK COB_PRD2 WITH MEME_PRD
+               PACK MEME_NET WITH "OGB", BLANKS
+               PACK MEME_PRD WITH "PPO",BLANKS
+               PACK MEME_PLAN WITH "PPO",BLANKS
+               CALL    RUN_CLIPCALC   USING   COB_BEGDT:
+                                              MEME_CLIR:
+                                              MEME_NET:
+                                              MEME_PRD:
+                                              MEME_CARR:
+                                              MEME_PLAN:
+                                              "CB":
+                                              CLIP_REC
+            ELSE
+               CLEAR COB_NET2
+               CLEAR COB_PRD2
+               CLEAR COB_NETDS2
+            ENDIF
+
+...APDLM not using the CS rate table yet for term reason L
+. Employee
+            MOVE   "EE" TO MEME_DEPC
+            MOVE   "CB" TO MEME_RT
+            PACK   MEME_REC WITH MEME_LIST
+            FILL    " "               IN   ART_REC
+            CALL    RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                           CLIP_REC,ART_REC
+            UNPACK  ART_REC         INTO   ART_LIST
+            CALL ADD_RATES
+            MOVE FORM10 TO FORM7
+            MOVE FORM7 TO COB_EMPRT
+
+. Employee + Spouse
+            MOVE   "ES" TO MEME_DEPC
+            MOVE   "CB" TO MEME_RT
+            PACK   MEME_REC WITH MEME_LIST
+            FILL    " "               IN   ART_REC
+            CALL    RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                           CLIP_REC,ART_REC
+            UNPACK  ART_REC         INTO   ART_LIST
+            CALL ADD_RATES
+            MOVE FORM10 TO FORM7
+            MOVE FORM7 TO COB_SPSRT
+. Employee + Child
+            MOVE   "EC" TO MEME_DEPC
+            MOVE   "CB" TO MEME_RT
+            PACK   MEME_REC WITH MEME_LIST
+            FILL    " "               IN   ART_REC
+            CALL    RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                           CLIP_REC,ART_REC
+            UNPACK  ART_REC         INTO   ART_LIST
+            CALL ADD_RATES
+            MOVE FORM10 TO FORM7
+            MOVE FORM7 TO COB_CHDRT
+. Family
+            MOVE   "FM" TO MEME_DEPC
+            MOVE   "CB" TO MEME_RT
+            PACK   MEME_REC WITH MEME_LIST
+            FILL    " "               IN   ART_REC
+            CALL    RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                           CLIP_REC,ART_REC
+            UNPACK  ART_REC         INTO   ART_LIST
+            CALL ADD_RATES
+            MOVE FORM10 TO FORM7
+            MOVE FORM7 TO COB_FAMRT
+            IF (SQUEEZE MEME_TLET = "L" OR SQUEEZE MEME_TLET = "T")
+    debug
+               CALL   GET_NEW_CLIP
+               MOVE   "EE" TO MEME_DEPC
+               MOVE   "CS" TO MEME_RT
+               PACK   MEME_REC WITH MEME_LIST
+               FILL   " "               IN   ART_REC
+               CALL   RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                             CLIP_REC,ART_REC
+               UNPACK ART_REC         INTO   ART_LIST
+               PACK   COB_SUBEE  WITH ART_EEPOR,BLANKS
+
+               MOVE   "ES" TO MEME_DEPC
+               MOVE   "CS" TO MEME_RT
+               PACK   MEME_REC WITH MEME_LIST
+               FILL   " "               IN   ART_REC
+               CALL   RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                             CLIP_REC,ART_REC
+               UNPACK ART_REC         INTO   ART_LIST
+               PACK   COB_SUBES  WITH ART_EEPOR,BLANKS
+
+               MOVE   "EC" TO MEME_DEPC
+               MOVE   "CS" TO MEME_RT
+               PACK   MEME_REC WITH MEME_LIST
+               FILL   " "               IN   ART_REC
+               CALL   RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                             CLIP_REC,ART_REC
+               UNPACK ART_REC         INTO   ART_LIST
+               PACK   COB_SUBEC WITH ART_EEPOR,BLANKS
+
+               MOVE   "FM" TO MEME_DEPC
+               MOVE   "CS" TO MEME_RT
+               PACK   MEME_REC WITH MEME_LIST
+               FILL   " "               IN   ART_REC
+               CALL   RUN_RATECALC   USING   MEME_EFF,MEM_REC,MEME_REC:
+                                             CLIP_REC,ART_REC
+               UNPACK ART_REC         INTO   ART_LIST
+               PACK   COB_SUBFM WITH ART_EEPOR,BLANKS
+            ENDIF
+
+
+            MOVE MEME_NET TO COB_NET
+            PACK VAL_KEY1 WITH "522",MEME_NET
+            CALL      VAL_READ1
+            IF (RESULT = 1)
+               MOVE VAL_DESC TO COB_NETDSC
+            ELSE
+               MOVE BLANKS TO COB_NETDSC
+            ENDIF
+            MOVE MEME_PRD TO COB_PRD
+
+            IF (SQUEEZE COB_NET2 = "")
+               PACK COB_NET2 WITH COB_NET
+               PACK COB_PRD2 WITH COB_PRD
+               PACK COB_NETDS2 WITH COB_NETDSC
+            ELSE
+               PACK VAL_KEY1 WITH "522",COB_NET2
+               CALL      VAL_READ1
+               IF (RESULT = 1)
+                  MOVE VAL_DESC TO COB_NETDS2
+               ELSE
+                  MOVE BLANKS TO COB_NETDS2
+               ENDIF
+            ENDIF
+
+            WRITE     WORK_FILE,SEQ;COB_LIST
+
+            MOVE     COB_SERIES TO PARAM_NOW
+            FILL     " " IN COB_LIST
+
+        REPEAT
+
+        RETURN
+
+CHECK_ELIGIBILITY 
+         PACK      MEME_FK11 WITH MEM_ID1,BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                   MEME_FN:  ...File name list
+                   MEME_FC:  ...(I)ndex or (A)imdex
+                   MEME_FV:  ...File key varlists
+                   MEME_FK:  ...File key sizes
+                   MEME_LIST: ...File record (field list)
+                   MEME_REC: ...File record (packed)
+                   MEME_OLD: ...File saved when read
+                   MEME_QTY: ...Number of files
+                   1         ...File number for this read
+         LOOP
+            CALL      FILE_NEXT
+            BREAK IF (OVER)
+            BREAK IF (RESULT <> 1 OR MEM_ID1 <> MEME_ID1)
+            CONTINUE IF (SQUEEZE MEME_NET = "NOCOV" OR SQUEEZE MEME_NET = "LIFE")
+...This person has other current health coverage
+            IF (MEME_EFF <= "20090301")
+                IF ((SQUEEZE MEME_TRM = "") OR (MEME_TRM >= "20090301")) 
+                   SET HAS_ELG
+                   RETURN
+                ENDIF   
+            ENDIF
+         REPEAT
+
+         IF (SQUEEZE MEM_ACCU <> "")
+            PACK      MEME_FK11 WITH MEM_ACCU,BLANKS
+            CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                      MEME_FN:  ...File name list
+                      MEME_FC:  ...(I)ndex or (A)imdex
+                      MEME_FV:  ...File key varlists
+                      MEME_FK:  ...File key sizes
+                      MEME_LIST: ...File record (field list)
+                      MEME_REC: ...File record (packed)
+                      MEME_OLD: ...File saved when read
+                      MEME_QTY: ...Number of files
+                      1         ...File number for this read
+            LOOP
+               CALL      FILE_NEXT
+               BREAK IF (OVER)
+               BREAK IF (RESULT <> 1 OR MEM_ACCU <> MEME_ID1)
+               CONTINUE IF (SQUEEZE MEME_NET = "NOCOV" OR SQUEEZE MEME_NET = "LIFE")
+...This person has other current health coverage
+            IF (MEME_EFF <= "20090301")
+                IF ((SQUEEZE MEME_TRM = "") OR (MEME_TRM >= "20090301")) 
+                   SET HAS_ELG
+                   RETURN
+                ENDIF   
+            ENDIF
+            REPEAT
+         ENDIF
+         RETURN
+
+. ---------------------
+. Do Rate calc
+. ---------------------
+ADD_RATES
+         CLEAR  FORM10
+         CLEAR  WORK10
+         IF (SQUEEZE ART_AMT1 <> "" AND SQUEEZE ART_AMT1 <> "0" AND SQUEEZE ART_TYP1 = "PREM")
+            MOVE ART_AMT1  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT2 <> "" AND SQUEEZE ART_AMT2 <> "0" AND SQUEEZE ART_TYP2 = "PREM")
+            MOVE ART_AMT2  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT3 <> "" AND SQUEEZE ART_AMT3 <> "0" AND SQUEEZE ART_TYP3 = "PREM")
+            MOVE ART_AMT3  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10  TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT4 <> "" AND SQUEEZE ART_AMT4 <> "0" AND SQUEEZE ART_TYP4 = "PREM")
+            MOVE ART_AMT4  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT5 <> "" AND SQUEEZE ART_AMT5 <> "0" AND SQUEEZE ART_TYP5 = "PREM")
+            MOVE ART_AMT5  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT6 <> "" AND SQUEEZE ART_AMT6 <> "0" AND SQUEEZE ART_TYP6 = "PREM")
+            MOVE ART_AMT6  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10  TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT7 <> "" AND SQUEEZE ART_AMT7 <> "0" AND SQUEEZE ART_TYP7 = "PREM")
+            MOVE ART_AMT7  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT8 <> "" AND SQUEEZE ART_AMT8 <> "0" AND SQUEEZE ART_TYP8 = "PREM")
+            MOVE ART_AMT8  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT9 <> "" AND SQUEEZE ART_AMT9 <> "0" AND SQUEEZE ART_TYP9 = "PREM")
+            MOVE ART_AMT9  TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT10 <> "" AND SQUEEZE ART_AMT10 <> "0" AND SQUEEZE ART_TYP10 = "PREM")
+            MOVE ART_AMT10 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT11 <> "" AND SQUEEZE ART_AMT11 <> "0" AND SQUEEZE ART_TYP11 = "PREM")
+            MOVE ART_AMT11 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT12 <> "" AND SQUEEZE ART_AMT12 <> "0" AND SQUEEZE ART_TYP12 = "PREM")
+            MOVE ART_AMT12 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT13 <> "" AND SQUEEZE ART_AMT13 <> "0" AND SQUEEZE ART_TYP13 = "PREM")
+            MOVE ART_AMT13 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT14 <> "" AND SQUEEZE ART_AMT14 <> "0" AND SQUEEZE ART_TYP14 = "PREM")
+            MOVE ART_AMT14 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT15 <> "" AND SQUEEZE ART_AMT15 <> "0" AND SQUEEZE ART_TYP15 = "PREM")
+            MOVE ART_AMT15 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT16 <> "" AND SQUEEZE ART_AMT16 <> "0" AND SQUEEZE ART_TYP16 = "PREM")
+            MOVE ART_AMT16 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10  TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT17 <> "" AND SQUEEZE ART_AMT17 <> "0" AND SQUEEZE ART_TYP17 = "PREM")
+            MOVE ART_AMT17 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10  TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT18 <> "" AND SQUEEZE ART_AMT18 <> "0" AND SQUEEZE ART_TYP18 = "PREM")
+            MOVE ART_AMT18 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT19 <> "" AND SQUEEZE ART_AMT19 <> "0" AND SQUEEZE ART_TYP19 = "PREM")
+            MOVE ART_AMT19 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10  TO FORM10
+         ENDIF
+         IF (SQUEEZE ART_AMT20 <> "" AND SQUEEZE ART_AMT20 <> "0" AND SQUEEZE ART_TYP20 = "PREM")
+            MOVE ART_AMT20 TO WORK10
+            MOVE ART_AMT5  TO FEE_AMT
+            ADD FEE_AMT TO WORK10
+            ADD WORK10 TO FORM10
+         ENDIF
+
+         RETURN
+
+.-----------------
+GET_NEW_CLIP
+.-----------------
+...When in vendor the meme_clir is 00007672
+.         MOVE    "00007672" TO MEME_CLIR
+         MOVE    "00007697" TO MEME_CLIR
+         PACK    MEME_REC WITH MEME_LIST
+         MOVE    "01" TO MEM_REL
+         PACK    MEM_REC WITH MEM_LIST
+
+         FILL    " "               IN   CLIP_REC
+         CALL    RUN_CLIPCALC   USING   COB_BEGDT:
+                                        MEME_CLIR:
+                                        MEME_NET:
+                                        MEME_PRD:
+                                        MEME_CARR:
+                                        MEME_PLAN:
+                                        "CS":
+                                        CLIP_REC
+
+         UNPACK CLIP_REC INTO CLIP_LIST
+         IF (SQUEEZE CLIP_TRM = "")
+           FILL "9" IN CLIP_TRM
+         ENDIF
+         IF ((CLIP_TRM < COB_BEGDT) OR (SQUEEZE CLIP_REC = ""))
+. Check for good clip_rec....
+            PACK COB_NET2 WITH MEME_NET
+            PACK COB_PRD2 WITH MEME_PRD
+            PACK MEME_NET WITH "OGB", BLANKS
+            PACK MEME_PRD WITH "PPO",BLANKS
+            PACK MEME_PLAN WITH "PPO",BLANKS
+            CALL    RUN_CLIPCALC   USING   COB_BEGDT:
+                                           MEME_CLIR:
+                                           MEME_NET:
+                                           MEME_PRD:
+                                           MEME_CARR:
+                                           MEME_PLAN:
+                                           "CS":
+                                           CLIP_REC
+         ELSE
+            CLEAR COB_NET2
+            CLEAR COB_PRD2
+            CLEAR COB_NETDS2
+         ENDIF
+
+         RETURN
+
+. ----------------------
+.  Operator pressed F9
+. ----------------------
+QUIT
+         MOVE      BLANKS TO WCHAR
+
+         LOOP
+            RETCOUNT  NEW_RET
+            WHILE     (NEW_RET > OLD_RET)
+            NORETURN
+         REPEAT
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+         MOVE      BLANKS TO C_CLOSED
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+TRAP_SET
++        TRAP      HELP  NORESET IF F1
++        TRAP      SRCH  NORESET IF F2
++        TRAP      PREV  NORESET IF F3
++        TRAP      NEXT  NORESET IF F4
++        TRAP      NEW   NORESET IF F5
++        TRAP      EXPD  NORESET IF F6
++        TRAP      CODE  NORESET IF F7     ...Must be inactive (hoel.sr)
++        TRAP      NOTE  NORESET IF F8
+         TRAP      QUIT  NORESET IF F9
++        TRAP      MORE  NORESET IF F10
+         RETURN
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO
+         INC       PRINT.SR
+         INC       CMDPARAM.SR
+.

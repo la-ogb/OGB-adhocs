@@ -1,0 +1,658 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1011172.ps                                           + 
++    Description    :  List of OGB Employees by SSN                          +
++    Author         :  Loria Patterson                                       +  
++    Date created   :  12/15/2010                                            +
++    Project No.    :  A1011172                                              +  
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++---------------------------------Revisions----------------------------------+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ---------------------------- 
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       PRT.RL               ...Printer Definition File
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       VALID.RL             ... VALID CODE TABLE
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+        
+              INC       MEM.RL               ...Member Demographics 
+              INC       MEME.RL              ...Member Enrollment
+
+. ----------------------------
+. Input File Name
+. ----------------------------
+
+MEME_RF_FILE    FILE       VAR=8,TEXT
+MEME_RF_NAME    INIT       "/w/a1011172.meme.ref"
+MEME_RF_LIST  LIST
+MEME_RF_ID1    DIM        8
+MEME_RF_TRM    DIM        8
+             LISTEND
+
+. --------------------------------
+. Output file declarations
+. --------------------------------
+
+OGBIN_FILE      FILE      VAR=9,TEXT 
+OGBIN_NAME      INIT      "/w/a1011172.txt"
+
+OGBIN_REC       LIST
+OGBIN_SSN       DIM       9
+               LISTEND
+
+OGBIN_AGYNO_KEY INIT     "1-9 -T"
+
+. Sub Heading Line Definitions
+SUB1_REC      LIST
+..<Begin>..............................................................................
+SUB1_FL1      DIM    79
+SUB1_FL2      INIT   "OGB EMPLOYEES"
+..<END>.................................................................................
+              LISTEND
+ 
+SUB2_REC      LIST
+..<Begin>.......................................................................
+.......
+SUB2_FL1      DIM    81
+SUB2_FL2      INIT   "AGENCY:"
+..<END>.........................................................................
+........
+              LISTEND
+
+SUB3_REC      LIST
+..<Begin>.......................................................................
+.......
+SUB3_FL1      DIM    75 
+SUB3_FL2      INIT   "INVOICE DATE: "
+SUB3_INVDT    DIM    10
+..<END>.........................................................................
+              LISTEND
+
+SUB4_REC      LIST
+..<Begin>.......................................................................
+SUB4_FL1      DIM    4 
+SUB4_FL2      INIT  "SOC SEC NO"
+SUB4_FL3      DIM    9  
+SUB4_FL6      INIT  "LAST NAME"
+SUB4_FL5      DIM    10
+SUB4_FL4      INIT  "FIRST NAME"
+SUB4_FL7      DIM    10
+..<End>.........................................................................
+              LISTEND
+
+SUB5_REC      LIST
+..<Begin>.......................................................................
+SUB5_FL1      DIM    4 
+SUB5_FL2      INIT   "__________"
+SUB5_FL3      DIM    9  
+SUB5_FL4      INIT   "__________"
+SUB5_FL5      DIM    10
+SUB5_FL6      INIT   "_________"
+SUB5_FL7      DIM    10
+..<End>.........................................................................
+              LISTEND
+.
+. ----------------------------
+. Detail Lines Definition
+. ----------------------------
+
+DET1_REC      LIST
+..<BEGIN>..............................................................................
+D1FL_2             DIM     4 
+DET1_SSN           DIM     11
+D1FL_3             DIM     10 
+
+..<END>................................................................................
+              LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+BLANK8           INIT      "        "
+DATE             DIM       8 
+SLASH            INIT      "/" 
+FIRST_PAGE       DIM       1
+NEW_PAGE         INIT      "Y"
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TODAY            DIM       8
+CCYYMMDD         DIM       8
+TODAY_CCYYMM     DIM       8
+WRITE_COUNT      FORM      8
+TRAP_DATA        DIM       500
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+CNT3_4           DIM       4
+CNT3_3           DIM       3
+DISP2            DIM       2
+DISP3            DIM       3
+DISP4            DIM       4
+DIM_1            DIM       1
+MEME_THRU        DIM       8
+FORM2            FORM      2
+W_COV_FROM       DIM       8
+W_COV_THRU       DIM       8
+WRK_CCYY         DIM       4
+WRK_MM           DIM       2
+WRK_DD           DIM       2
+WRK_F4           FORM      4
+FORM_CCYY        FORM      4
+INV_COVF         DIM       10
+INV_COVT         DIM       10
+INV_DATE         DIM       8
+INV_DATE_CCYY    DIM       4
+INV_DATE_MM      DIM       2
+INV_DATE_DD      DIM       2
+INVOICE_DATE     DIM       8
+VALID_DATE       DIM       1
+YN_ANS           DIM       1
+YEAR             DIM       4
+CC               DIM       2
+YY               DIM       2
+DD               DIM       2    
+MM               DIM       2
+REPLY            DIM       1
+ERRMSG           INIT      "YOU HAVE ENTERED INVALID RESPONSE"
+SSN3             DIM       3
+SSN2             DIM       2
+SSN4             DIM       4
+FIRST_READ       INIT     "Y"
+HOLD_AGY         DIM       4
+HOLD_PRD         DIM       5
+AGENCY_NO        DIM       4
+PDF_NAME         DIM       43
+
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "50"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST 
+PARAM_XXX     DIM       10
+PARAM_YYY     DIM       5 
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+SRH_LEFT1     INIT      "Program name: "
+SRH_LEFT2     INIT      "Date Printed: "
+SRH_TITLE1    INIT      "   STATE OF LOUISIANA   "
+SRH_TITLE2    INIT      "OFFICE OF GROUP BENEFITS"
+SRH_RIGHT1    INIT      "Page Number: "
+SRH_RIGHT2    INIT      "Report Time: "
+SRH_DASH      INIT      "-"
+SRH_RNO       DIM       3
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler
+. ----------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "OGB LIST"          TO  C_OPER
+         MOVE      "A1011172"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+. Get printer information
+. ---------------------------
+         MOVE      "00000012" TO C_PRTUSR
+.         MOVE      "PDF" TO PRT_DESC
+         CALL      PRINT_PICK      .this routine gives the user a printer list
+         RETURN    IF (RESULT = 2)
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+     DEBUG
+
+       CALL      INITIALIZE
+       CALL      REFORMAT_MEME
+       CALL      OPEN_FILE
+       CALL      EXTRACT_WRK
+       CALL      CLOSE_OGBFILE USING OGBIN_FILE,OGBIN_NAME
+       CALL      OPEN_OGBFILE USING OGBIN_FILE,OGBIN_NAME
+       CALL      SORT_OGBFILE USING OGBIN_NAME,OGBIN_NAME,OGBIN_AGYNO_KEY
+         IF OVER
+              ERROR     HORZ="15",VERT="19":
+                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+                        LNCOL=C_ERRL,SHADE="Y":
+                        TEXT="SORT OUTPUT FAILED"
+              CHAIN     "MENU"
+         ENDIF
+
+. ...Close Files
+       CALL  CLOSE_FILES
+
+. ...Normal End-Of-Job
+       CALL  X_DISPLAY_COUNTS
+       CALL  NORMAL_EOJ
+
+. ...Return Control Back to Chain - End of Program
+       TRAPREST  TRAP_DATA
+       MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+       RETURN
+
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+      CLOCK     TIMESTAMP   INTO  TIMESTAMP
+      CLOCK     TIMESTAMP   INTO  CURRDATE
+      CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+      MOVE      "Records Read:     " TO X_CNTDESC1
+      MOVE      "Records Found:    " TO X_CNTDESC2
+      MOVE      "Not Used:         " TO X_CNTDESC3
+      MOVE      "Not Used:         " TO X_CNTDESC4
+      MOVE      "Not Used:         " TO X_CNTDESC5
+      MOVE      "Not Used:         " TO X_CNTDESC6
+
+      CALL      X_DISPLAY_COUNTS
+      RETURN
+. ----------------------------------
+. Reformat MEME
+. ----------------------------------
+REFORMAT_MEME
+
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:20, "REFORMATTING", *BOLDOFF
+
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+.--------------------------------------
+...Get only OGB Employees    
+.--------------------------------------
+   
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /w/ogb.ref":
+                         " -p21-25eq#"8800#"":
+                         "  -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(OGB)"
+               CHAIN     "MENU"
+         ENDIF
+.---------------------------------------
+...Get only Records without term dates
+.---------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/w/ogb.ref /w/a1011172.meme.ref":
+              " -p104-111eq#"",BLANK8,"#" 1-8 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(BLANK)"
+               CHAIN     "MENU"
+         ENDIF
+.---------------------------------------------
+...Get only Records with term dates > today
+.---------------------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/w/ogb.ref  /w/a1011172.meme.ref":
+              " -p104-111gt#"",TODAY,"#" 1-8 -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(TODAY append)"
+               CHAIN     "MENU"
+         ENDIF
+
+    SORT "/w/a1011172.meme.ref /w/a1011172.meme.ref 1-8 -u -t"
+        IF OVER
+              ERROR     HORZ="15",VERT="19":
+                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+                        LNCOL=C_ERRL,SHADE="Y":
+                        TEXT="SORT FAILED(a1011172.meme.ref)"
+              CHAIN     "MENU"
+        ENDIF
+
+
+. -------------------------------------------------------
+...Display message to operator that reformat is complete
+. -------------------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="     !!!!! REFORMAT COMPLETE !!!!!     ";
+
+ RETURN
+
+. --------------------------------------------------------
+...OPEN_FILE
+. -------------------------------------------------------
+OPEN_FILE
+
+        CALL OPEN_OGBFILE USING MEME_RF_FILE, MEME_RF_NAME   
+        CALL PREP_OGBFILE USING OGBIN_FILE,OGBIN_NAME
+
+    RETURN
+
+.******************************************************************************
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+         UNPACK    TIMESTAMP   INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+         PACK      R_DATE      WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+         PACK      R_TIME      WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+         MOVE      0             TO  WRITE_COUNT
+         MOVE      YES           TO  FIRST_PAGE
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+.        PACK      NORM_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s0b4099T"
+.        PACK      BOLD_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s3b4099T"
+.        PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+.        PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+.        PACK      NORM_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+.        PACK      BOLD_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+
+. ...This set of code is for printing portrait.....................
+    PACK NORM_10 WITH XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+    PACK BOLD_10 WITH XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+    PACK NORM_12 WITH XCAPE,"(12U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+    PACK BOLD_12 WITH XCAPE,"(12U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+    PACK NORM_16 WITH XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+    PACK BOLD_16 WITH XCAPE,"(11U",XCAPE,"(s0p16.67H8.5v0s3b0T"
+
+
+       PACK C_PRTFILE  WITH "/w/a1011172.txt"
+
+       CALL PRINT_PREP
+
+       RETURN        
+
+. ----------------------------
+. Print the report heading
+. ----------------------------
+
+PRINT_HEADING
+    
+         IF        (SQUEEZE PRT_DESC = "PDF")
+          IF (FIRST_PAGE = YES) 
+               MOVE "1" TO PAGE_NO
+               UNPACK PAGE_NO INTO R_PAGE_NO
+               PRINT *FONT="COURIER(07,BOLD)"
+               MOVE      NO          TO  FIRST_PAGE
+          ELSE
+               ADD 1 TO PAGE_NO
+               MOVE PAGE_NO TO R_PAGE_NO 
+               PRINT *FONT="COURIER(07,BOLD)",*F
+          ENDIF
+         ELSE
+                    PRINT     BOLD_16,*C
+         ENDIF
+
+         PRINT     *3,SRH_LEFT1,C_PROG:
+                   *76,SRH_TITLE1:
+                   *149,SRH_RIGHT1,(SQUEEZE R_PAGE_NO):
+                   *N:
+                   *3,SRH_LEFT2,R_DATE:
+                   *76,SRH_TITLE2:
+                   *149,SRH_RIGHT2,R_TIME
+         MOVE      1             TO LINE_NO
+         MOVE      1             TO LINE_NO
+         ADD 7 TO LINE_NO
+
+         RETURN
+
+. ----------------------------
+. Process Records
+. ----------------------------
+
+EXTRACT_WRK 
+ DEBUG  
+ LOOP
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL READ_OGBFILE USING MEME_RF_FILE,MEME_RF_NAME,MEME_RF_LIST
+   IF (RESULT <> 1)
+      BREAK
+   ENDIF
+
+   ADD 1 TO X_CNT1
+   UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+   IF (CNT1_3 = "000")
+      CALL X_DISPLAY_COUNTS
+   ENDIF
+
+   PACK MEM_FK11 WITH MEME_RF_ID1, BLANKS
+   CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                        MEM_FN:              ...FILE NAME LIST
+                        MEM_FC:              ...TYPE OF INDEX
+.                                            ...(I)NDEX or (A)IMDEX
+                        MEM_FV:              ...FILE KEY VARLISTS
+                        MEM_FK:              ...FILE KEY SIZES
+                        MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                        MEM_REC:             ...FILE RECORD (PACKED)
+                        MEM_OLD:             ...FILE SAVED WHEN READ
+                        MEM_QTY:             ...NUMBER OF FIlES
+                        1                    ...FILE NUMBER FOR THIS READ
+
+     IF (RESULT <> 1)
+       CONTINUE
+     ENDIF
+
+     IF (MEM_REL <> "01") 
+        CONTINUE
+     ENDIF
+
+     IF ((MEME_TRM = "") OR (TODAY > MEME_TRM))
+          MOVE MEM_ESSN TO OGBIN_SSN
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING OGBIN_FILE,OGBIN_NAME,OGBIN_REC
+          ADD 1 TO X_CNT2
+          CLEAR OGBIN_REC
+     ENDIF
+
+   REPEAT
+  RETURN
+
+. -----------------------
+. PRINT REPORT
+. -----------------------
+
+PRINT_REPORT
+
+     IF (LINE_NO > 50)
+       CALL PRINT_HEADING
+     ENDIF
+ 
+         MOVE OGBIN_SSN   TO DET1_SSN
+
+ 
+         PRINT *N,DET1_REC,*FLUSH
+
+         ADD 1 TO LINE_NO
+
+     RETURN
+
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+
+         CALL      CLOSE_OGBFILE USING MEME_RF_FILE,MEME_RF_NAME       
+         CALL      CLOSE_OGBFILE USING OGBIN_FILE,OGBIN_NAME    
+
+         RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         IF (RUN_MODE = "N")
+             DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL         
+             MOVE      "        NEOJ        " TO X_FINISH_STATUS
+             MOVE      "   a1011172 Completed    " TO X_PROG_FINISH
+.             CALL      X_END_OF_JOB
+         ENDIF
+         
+         CALL      X_DISPLAY_COUNTS
+
+         RETURN
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+              INC       UTIL.SR
+              INC       PRINT.SR
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       VALID.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+.  End of a1011172.ps
+. +++++++++++++++++++++++++++++++++++++

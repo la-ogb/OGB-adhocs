@@ -1,0 +1,579 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  A0812290
++    Description    :  Extract Health history from 2003 for school board
++                      employees provided by State Inspector General.
++ 
++    Author         :  Peter Constan
++    Date created   :  01/28/2009
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             Revisions
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL                                          
+              INC       MEME.RL          
+              INC       CLI.RL          
+
+. ---------------------------------------------------------------------------
+. Input File Declaration
+. ---------------------------------------------------------------------------
+
+INP_FD          FILE  VAR=9,TEXT
+INP_NM          INIT  "/w/a0812290.inp"
+
+INP_REC         LIST
+INP_ESSN        DIM     009     ...001-009
+                LISTEND
+
+. ---------------------------------------------------------------------------
+. I/O File Declaration
+. ---------------------------------------------------------------------------
+
+WRK_FD          FILE   VAR=600,TEXT
+WRK_NM          INIT   "/w/wrk_meme.txt"
+
+. ^uses meme.rl for LIST
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+OUTFILE_FD      FILE VAR=123,TEXT
+OUTFILE_NM      INIT "/w/a0812290.txt"
+
+OUTFILE_REC     LIST
+OUTFILE_LNAME   DIM   020
+OUTFILE_FNAME   DIM   015
+OUTFILE_MINIT   DIM   001
+OUTFILE_SSN     DIM   009
+OUTFILE_DOB     DIM   008
+OUTFILE_VEST    DIM   001
+OUTFILE_NET     DIM   005
+OUTFILE_PRD     DIM   005
+OUTFILE_RATE    DIM   002
+OUTFILE_COVLEV  DIM   002
+OUTFILE_AGYNO   DIM   004
+OUTFILE_AGYNAME DIM   035
+OUTFILE_EFF     DIM   008
+OUTFILE_TRM     DIM   008
+	        LISTEND 	 	    	 
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+CNT1_3          DIM       3
+CNT1_4          DIM       4
+INP_RET_CODE    FORM      1
+MEME_RET_CODE   FORM      1
+WRK_RET_CODE    FORM      1 
+FIRST_READ      INIT      "N"
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+BLANK8          INIT      "        "
+BLANK2          INIT      "  "
+BLANK1          INIT      " "
+TWO             INIT      "2"
+LIFE            INIT      "LIFE"
+JUNK4           DIM       4
+JUNK1_2         DIM       2
+JUNK2_2         DIM       2
+JUNK1           DIM       1
+LEV1_1          DIM       1
+LEV2_1          DIM       1
+
+DIFF_DAYS       FORM      3
+ENR_RECID       DIM       8
+
+HOLD_EFF        DIM       8
+HOLD_TRM        DIM       8
+
+HOLD_LIST       LIST
+HOLD_AGYNO      DIM       5
+HOLD_NET        DIM       5
+HOLD_PRD        DIM       5
+HOLD_COVLEV     DIM       2
+HOLD_RT         DIM       2
+                LISTEND
+    
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "SchBrd Aud Xtract" TO  C_OPER
+         MOVE      "A0812290"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+. ...Initialize
+         CALL INITIALIZE
+	 
+         CALL OPEN_FILES          
+         
+         debug
+         CALL EXTRACT_OUT
+ 
+         CALL CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         debug
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Records Read:   "   TO X_CNTDESC1
+	 MOVE      "Records Found:  "   TO X_CNTDESC2
+	 MOVE      "Not Used:       "   TO X_CNTDESC3
+	 MOVE      "Not Used:       "   TO X_CNTDESC4
+	 MOVE      "Not Used:       "   TO X_CNTDESC5
+	 MOVE      "Not Used:       "   TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+         
+         MOVE INP_NM TO C_FILE
+         CALL OPEN_OGBFILE USING INP_FD,INP_NM
+         
+         MOVE OUTFILE_NM TO C_FILE
+         CALL PREP_OGBFILE USING OUTFILE_FD,OUTFILE_NM
+
+         RETURN
+
+. ----------------------------
+. Extract Label Information
+. ----------------------------
+
+EXTRACT_OUT
+
+         LOOP
+             MOVE INP_NM TO C_FILE
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING INP_FD,INP_NM,INP_REC
+             MOVE RESULT TO INP_RET_CODE
+             IF (INP_RET_CODE != 1)
+                 CALL X_DISPLAY_COUNTS
+                 BREAK
+             ENDIF
+         
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF              
+             
+...Get Employee Record ID
+             CLEAR     OUTFILE_REC
+             CLEAR     MEM_AIM
+             PACK      MEM_AIM1  WITH "01X",INP_ESSN,BLANKS
+             PACK      MEM_AIM3  WITH "03X01",BLANKS
+             CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                                 MEM_FN:          ...File name list
+                                 MEM_FC:          ...(I)ndex or (A)imdex
+                                 MEM_FV:          ...File key varlists
+                                 MEM_AIM:         ...File key sizes
+                                 MEM_LIST:        ...File record (field list)
+                                 MEM_REC:         ...File record (packed)
+                                 MEM_OLD:         ...File saved when read
+                                 MEM_QTY:         ...Number of files
+                                 2                 
+
+              IF (RESULT != 1)
+                  CONTINUE
+              ENDIF
+              
+              PACK OUTFILE_LNAME  WITH MEM_LNAME
+              PACK OUTFILE_FNAME  WITH MEM_FNAME
+              PACK OUTFILE_MINIT  WITH MEM_MINIT
+              PACK OUTFILE_SSN    WITH MEM_ESSN
+              PACK OUTFILE_DOB    WITH MEM_DOB
+              IF (MEM_US01 = " ")
+                  PACK OUTFILE_VEST WITH "4"
+                ELSE
+                  PACK OUTFILE_VEST WITH MEM_US01
+              ENDIF
+
+              PACK ENR_RECID WITH MEM_ID1,BLANKS
+              
+              CALL GET_MEME
+              
+         REPEAT
+
+. ----------------------------
+. Get MEME Recors for Emp >= 2003
+. ----------------------------
+
+GET_MEME
+
+         CALL PREP_OGBFILE USING WRK_FD,WRK_NM
+
+         PACK     MEME_FK11 WITH ENR_RECID,BLANKS
+         CALL     FILE_READ USING MEME_FD:   ...File Declaration List
+                                  MEME_FN:   ...File Name List
+                                  MEME_FC:   ...(I)ndex or (A)imdex
+                                  MEME_FV:   ...File Key Varlists
+                                  MEME_FK:   ...File Key Sizes
+                                  MEME_LIST: ...File Record(Field List)
+                                  MEME_REC:  ...File Record(Packed)
+                                  MEME_OLD:  ...File Saved When Read
+                                  MEME_QTY:  ...Number Of Files
+                                  1          ...File Number For This Read
+              LOOP
+                  CALL FILE_NEXT USING MEME_FD:   ...File Declaration List
+                                       MEME_FN:   ...File Name List
+                                       MEME_FC:   ...(I)ndex or (A)imdex
+                                       MEME_FV:   ...File Key Varlists
+                                       MEME_FK:   ...File Key Sizes
+                                       MEME_LIST: ...File Record(Field List)
+                                       MEME_REC:  ...File Record(Packed)
+                                       MEME_OLD:  ...File Saved When Read
+                                       MEME_QTY:  ...Number Of Files
+                                       1          ...File Number For This Read
+                  MOVE RESULT TO MEME_RET_CODE                     
+                   WHILE  ((ENR_RECID = MEME_ID1) AND (MEME_RET_CODE = 1))   
+                   
+
+. ...Eliminate Records with Term date less than Effective date.
+. ...(Incorrectly billed members)                        
+                  IF ((MEME_EFF > MEME_TRM) AND (SQUEEZE MEME_TRM != ""))
+                      CONTINUE          
+                  ENDIF 
+
+. ...Eliminate Duplicate Billing Records          
+                  IF (MEME_LEV2 = "95   " AND SQUEEZE MEME_MODE = "")
+                      CONTINUE
+                  ENDIF
+             
+. ...Eliminate Life Records            
+                  IF (SQUEEZE MEME_NET = "LIFE")
+                      CONTINUE
+                  ENDIF             
+              
+. ...Prep Blank Term Dates with all 9s              
+                  IF (MEME_TRM = BLANK8)
+                      MOVE "99999999" TO MEME_TRM
+                  ENDIF              
+                       
+. ...Eliminate Terms Prior to 2003
+                  IF (MEME_TRM <= "20030101")
+                      CONTINUE
+                  ENDIF    
+                  
+                  PACK C_FILE WITH WRK_NM
+                  CALL WRITE_OGBREC USING WRK_FD,WRK_NM,MEME_LIST
+                   
+              REPEAT   
+              
+              CALL CLOSE_OGBFILE USING WRK_FD,WRK_NM
+              
+              CLEAR SCRATCH
+              PACK SCRATCH WITH "/w/wrk_meme.txt /w/wrk_meme.txt -t 96-103a"
+              SORT SCRATCH
+         
+              IF OVER
+                  ERROR     HORZ="15",VERT="19":
+                            BGCOL=C_ERRB,FGCOL=C_ERRF:
+                            LNCOL=C_ERRL,SHADE="Y":
+                            TEXT="SORT FAILED - /w/wrk_meme.txt to /w/wrk_meme.txt"
+                  CHAIN     "menu"
+              ENDIF              
+              
+              CALL OPEN_OGBFILE  USING WRK_FD,WRK_NM
+              
+              CLEAR HOLD_LIST
+              MOVE "Y" TO FIRST_READ
+
+              LOOP
+                  MOVE WRK_NM TO C_FILE
+                  CALL READ_OGBFILE USING WRK_FD,WRK_NM,MEME_LIST
+                  MOVE RESULT TO WRK_RET_CODE
+                  IF (WRK_RET_CODE != 1)
+                      BREAK
+                  ENDIF
+                  
+
+
+.                 ^is this a record you want, if not, dont populate hold fields
+                  IF (FIRST_READ = "Y")
+                      PACK HOLD_EFF    WITH MEME_EFF
+                      PACK HOLD_TRM    WITH MEME_TRM
+                      PACK HOLD_NET    WITH MEME_NET
+                      PACK HOLD_PRD    WITH MEME_PRD
+                      PACK HOLD_COVLEV WITH MEME_DEPC
+                      PACK HOLD_RT     WITH MEME_RT
+                      UNPACK MEME_LEV1 INTO LEV1_1,JUNK4
+                      IF (LEV1_1 = "R")
+                          MOVE MEME_LEV2 TO HOLD_AGYNO
+                        ELSE
+                          MOVE MEME_LEV1 TO HOLD_AGYNO
+                      ENDIF                       
+                      MOVE "N" TO FIRST_READ
+                      CONTINUE
+                  ENDIF
+                  
+                  UNPACK MEME_LEV1 INTO LEV1_1,JUNK4
+                  IF (LEV1_1 = "R")
+                      MOVE MEME_LEV2 TO MEME_LEV1
+                  ENDIF                                       
+
+                  IF ((HOLD_AGYNO = MEME_LEV1)  AND:
+                      (HOLD_NET = MEME_NET)     AND:
+                      (HOLD_PRD = MEME_PRD)     AND:
+                      (HOLD_COVLEV = MEME_DEPC) AND:
+                      (HOLD_RT = MEME_RT))
+                      MOVE 0 TO DIFF_DAYS
+                      CALL DELTA_DAYS USING MEME_EFF,HOLD_TRM,DIFF_DAYS
+                      IF (DIFF_DAYS = 1)
+                          MOVE MEME_TRM TO HOLD_TRM
+                          CONTINUE                      
+                        ELSE
+                          CALL OUTPUT_REC
+                      ENDIF
+                    ELSE
+                      CALL OUTPUT_REC
+                  ENDIF
+              
+              REPEAT
+              
+              CALL OUTPUT_REC
+              
+              CALL CLOSE_OGBFILE USING WRK_FD,WRK_NM
+
+         RETURN
+
+. ----------------------------
+. Output Record
+. ----------------------------
+
+OUTPUT_REC
+
+         CALL GET_AGY_NAME
+         PACK OUTFILE_NET    WITH HOLD_NET,BLANKS
+         PACK OUTFILE_PRD    WITH HOLD_PRD,BLANKS
+         PACK OUTFILE_RATE   WITH HOLD_RT,BLANKS
+         PACK OUTFILE_COVLEV WITH HOLD_COVLEV,BLANKS
+         PACK OUTFILE_AGYNO  WITH HOLD_AGYNO,BLANKS
+         PACK OUTFILE_EFF    WITH HOLD_EFF
+         PACK OUTFILE_TRM    WITH HOLD_TRM
+         ADD 1 TO X_CNT2
+         MOVE OUTFILE_NM TO C_FILE
+         CALL WRITE_OGBREC USING OUTFILE_FD,OUTFILE_NM,OUTFILE_REC                          
+         PACK HOLD_EFF    WITH MEME_EFF
+         PACK HOLD_TRM    WITH MEME_TRM
+         PACK HOLD_NET    WITH MEME_NET
+         PACK HOLD_PRD    WITH MEME_PRD
+         PACK HOLD_COVLEV WITH MEME_DEPC
+         PACK HOLD_RT     WITH MEME_RT
+         UNPACK MEME_LEV1 INTO LEV1_1,JUNK4
+         IF (LEV1_1 = "R")
+             MOVE MEME_LEV2 TO HOLD_AGYNO
+           ELSE
+             MOVE MEME_LEV1 TO HOLD_AGYNO
+         ENDIF 
+
+         RETURN
+
+. ----------------------------
+. Get Agency Name
+. ----------------------------
+
+GET_AGY_NAME
+
+         CLEAR CLI_AIM
+         PACK  CLI_AIM1 WITH "01X",HOLD_AGYNO,BLANKS
+         CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                                  CLI_FN:      ...File Name List
+                                  CLI_FC:      ...(I)ndex Or (A)imdex
+                                  CLI_FV:      ...File Key Varlists
+                                  CLI_AIM:     ...File Key Sizes
+                                  CLI_LIST:    ...File Record (Field List)
+                                  CLI_REC:     ...File Record (Packed)
+                                  CLI_OLD:     ...File Saved When Read
+                                  CLI_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+         IF (RESULT = 1)
+             MOVE CLI_NAME TO OUTFILE_AGYNAME
+           ELSE
+             MOVE BLANKS TO OUTFILE_AGYNAME
+         ENDIF  
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         DEBUG
+         
+         MOVE INP_NM TO C_FILE
+         CALL CLOSE_OGBFILE USING INP_FD,INP_NM
+         
+         MOVE OUTFILE_NM TO C_FILE
+         CALL CLOSE_OGBFILE USING OUTFILE_FD,OUTFILE_NM
+
+         RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    A0812290 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+         RETURN
+         
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of A0812290.PS          
+.----------------------------------------------------------------------------

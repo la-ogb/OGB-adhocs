@@ -1,0 +1,257 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a091028a.ps
++    Description    :  DEV - Delete M1/M2(LT)Event Records -- from d_ogbeve.ps
++                      with no sent date and created prior to 10/01/2009.
++    Author         :  Peter Constan
++    Date created   :  10/30/2009
++    Project Number :  A0910281
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    apiii  mm/dd/ccyyy A------- typ - comments
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       EVE.RL               ...Events
+
+ERR_DECL      FILE      FIX=3000
+ERR_FILE      INIT      "x_deleve.err"
+ERR_MSG       DIM       3000
+MSG@          DIM       @
+SEQ           FORM      "-1"
+CAL_CLOCK     DIM       21
+ACTION        DIM       10
+DO_CLEANUP    DIM       1
+
+PARAM_LIST    LIST
+RUNME         DIM       1
+SERIES        DIM       2
+CLR_HIST      INIT      "N"
+              LISTEND
+
+. Key File
+
+KEY_FILE     FILE      VAR=8,COMP
+KEY_NAME     INIT      "eve.jnk"
+
+KEY_KEY      DIM        8        1-8
+
+WRK_FILE     FILE      VAR=12,TEXT
+WRK_NAME     INIT      "evep.jnk"
+
+WRK_KEY      DIM        12
+
+
+BAD           FORM      10
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+.
+ENR_SUB       FORM   2
+ENR_MAX       FORM "50"
+SAVE_ID1      DIM    8
+CNT_INPUT     FORM  10
+JUNK2         DIM    2
+JUNK5         DIM    8
+CURRDATE      DIM    8
+BIG_REC       DIM    12
+BIG_TRM       DIM    8
+BIG_ACTIVE    DIM    1
+ORIG_LIFE     DIM    6
+
+.
++ --------------------------------------------------------
++   Begin Program
++ --------------------------------------------------------
+
+START
+       GOTO START_NOW
+
+. ------------------------------------
+.   Start here if selected from menu
+. ------------------------------------
+
+START_NOW
+
+         CALL      RUN_NOW
+
+         GOTO      QUIT
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (NO printer)
+
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+         MOVE      "menu"              TO C_NEXT
+         MOVE      "a091028a"          TO C_PROG
+         MOVE      "DELETE EVE M1/M2 LT RECS" TO C_OPER
+         MOVE      1 TO C_LEVEL
+
+. --------------
+.   No history
+. --------------
+         SET       C_NOHIST
+
+         CLOCK     CALENDAR    TO  CAL_CLOCK
+
+         MOVE      BLANKS TO C_LABEL
+         MOVE      BLANKS TO C_FILE
+         MOVE      BLANKS TO C_KEYS
+         MOVE      BLANKS TO C_POP4
+
+. ---------------------------------------
+.   Clear the screen and display window
+. ---------------------------------------
+
+         IF (C_RMODE = "I")
+            DISPLAY   *BGCOLOR=C_MANB,*ES:
+                      *RESETSW,*BGCOLOR=C_DATB,*COLOR=C_DATL,*+:
+                      *P1:2,*RPTCHAR *HLN:80,*COLOR=C_DATF:
+                      *P3:2,"<",CAL_CLOCK,">":
+                      *P28:2,"<",C_OPER,">":
+                      *P53:2,"<",C_PROG,">":
+                      *P68:2,"<",ACTION,">"
+
+             DISPLAY   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F," 1-xxxx ":
+                       *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F," 2-xxxx ":
+                       *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F," 3-xxxx ":
+                       *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F," 4-xxxx ":
+                       *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F," 5-xxxx ":
+                       *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F," 6-xxxx ":
+                       *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F," 7-xxxx ":
+                       *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F," 8-xxxx ":
+                       *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-QUIT ":
+                       *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"10-xxxx "
+
+             DISPLAY   *BGCOLOR=C_BOTB,*COLOR=C_BOTL,*+:
+                       *P1:C_WIND25,*RPTCHAR *HLN:80
+         ENDIF
+
+. -----------------------------
+.   Ask the user if OK to run
+. -----------------------------
+         IF (SQUEEZE RUN_MODE = "")
+            MOVE "Y" TO WCHAR
+            dialog    horz="18",vert="08":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="This program deletes M1/M2 LT EVE records":
+                      text=" Ready to go?           ":
+                      field=WCHAR
+            GOTO QUIT IF F9
+            GOTO QUIT IF (WCHAR <> "Y")
+         ENDIF
+
+.ask to clear history
+         IF (SQUEEZE RUN_MODE = "")
+            MOVE "Y" TO WCHAR
+            dialog    horz="18",vert="14":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="Do you want to clear HISTORY records":
+                      text="(Y)es or (N)o          :":
+                      field=CLR_HIST
+            GOTO QUIT IF F9
+         ENDIF
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+.-----------------------------------------------------------------------------
+MAIN_PROCESS
+
+         CLOCK TIMESTAMP INTO CURRDATE
+         IF (C_RMODE = "I")
+            message   horz="24",vert="07":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text="  Update Activity Log":
+                      text="------------------------":
+                      text="Input     :            "
+         ENDIF
+         debug
+         PACK      SCRATCH WITH "eve.dbf eve.jnk ":
+                  " -p9-10eq#"LT#" ":
+                  " -p954-954eq#"M#" ":
+                  " -p1618-1625ge#"20081001#" ":
+                  " -p1618-1625lt#"20091001#" ":
+                  " 1-8 -t -j -c "
+
+         REFORMAT  SCRATCH
+
+         OPEN      KEY_FILE,KEY_NAME
+         LOOP
+            READ      KEY_FILE,SEQ;KEY_KEY
+            WHILE     NOT OVER
+
+            PACK EVE_FK11 WITH KEY_KEY
+            CALL FILE_READ  USING  EVE_FD:
+                                   EVE_FN:
+                                   EVE_FC:
+                                   EVE_FV:
+                                   EVE_FK:
+                                   EVE_LIST:
+                                   EVE_REC:
+                                   EVE_OLD:
+                                   EVE_QTY:
+                                   1
+            BREAK IF (RESULT <> 1)
+            ADD 1 TO CNT_INPUT
+            IF (C_RMODE = "I")
+               UNPACK    CNT_INPUT INTO JUNK5,JUNK2
+               DISPLAY   *P38:10,CNT_INPUT
+            ENDIF
+            CONTINUE  IF (SQUEEZE EVE_TYPE = "")
+            CONTINUE  IF (SQUEEZE EVE_TYPE <> "LT")
+            CONTINUE  IF (EVE_NEWDT >= "20091001")
+            CONTINUE  IF (SQUEEZE EVE_HEADM != "")
+            CONTINUE  IF ((EVE_REAS1 != "M1") AND (EVE_REAS1 != "M2"))
+            IF (SQUEEZE CLR_HIST = "N")
+               CONTINUE  IF (SQUEEZE EVE_HEADM <> "")
+            ENDIF
+            CALL DELETE_EVE
+         REPEAT
+
+         RETURN
+
+DELETE_EVE
+.Delete it
+            debug
+            CALL FILE_DELETE USING  EVE_FD:
+                                    EVE_FN:
+                                    EVE_FC:
+                                    EVE_FV:
+                                    EVE_FK:
+                                    EVE_LIST:
+                                    EVE_REC:
+                                    EVE_OLD:
+                                    EVE_QTY:
+                                    1
+         RETURN
+
+
+.-----------------------------------------------------------------------------
+
+. ------------
+.   All done
+. ------------
+QUIT
+         error     horz="24",vert="17":
+                   bgcol=C_ERRB,fgcol=C_ERRF:
+                   lncol=C_ERRL,shade="Y":
+                   text="End of Processing ":
+                   text="------------------"
+         CHAIN     C_NEXT
+         STOP
+                         INC       FILE.IO
+                         INC       UTIL.SR

@@ -1,0 +1,384 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0505181
++    Description    :  Create Total accum for EOBs
++
++    apeks 05/19/2005 a0505181 DEV - Initial Version.
++..............................REVISIONS.......................................
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       X_COMMON.CB            ...Common work area
+              INC       COMMON.CB            ...Common work area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB
+              INC       E100.ABF             .. EOC file layout
+              INC       BNKIDX.RL            ...PDF Index layout
+              INC       EOBSTATS.RL          ...EOB invoice layout
+
+. --------------------------------------------------------------------------
+.
+DATE1         DIM       8
+DATE2         DIM       8
+DATE3         DIM       8
+IDX_OPTS      DIM       200
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+PRINT_STATE   DIM       1
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ACTION        DIM       10
+
+TIMESTAMP     DIM       14
+
+FORM1         FORM      1
+FORM2         FORM      2
+FORM3         FORM      3
+FORM4         FORM      4
+FORM5         FORM      5
+FORM6         FORM      6
+FORM7         FORM      7
+FORM8         FORM      8
+FORM9         FORM      9
+FORM10        FORM      10
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM4          DIM       4
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM8          DIM       8
+TRASH         DIM       1500
+
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+
+STMT_CNT     FORM      10 
+CHK_CNT      FORM      10 
+ACH_CNT      FORM      10 
+CLM_CNT      FORM      10 
+
+WS_DATE       DIM       8
+
+WS_CCYY       DIM       4
+WS_MM         DIM       2
+WS_DD         DIM       2
+
+. Input file list  (*.abf.sent)
+LST_FILE      FILE      VAR=100,TEXT
+LST_NAME      INIT      "/w/a0505181.inp"
+LST_LIST      LIST
+LST_REC       DIM       40  
+              LISTEND
+
+. Input File  (e100.abf)
+INP_FILE      FILE      VAR=1500,TEXT
+INP_NAME      DIM       40                
+INP_LIST      LIST
+INP_REC       DIM       1500
+              LISTEND
+
+INP_RTYP      DIM       4
+
+.Output file  (eobstats.rl)
+OUT_FILE      IFILE     VAR=150,KEYL=8,TEXT
+OUT_NAME      INIT      "/w/eobsts.ix1"
+
+TMP_FILE      IFILE     VAR=10,KEYL=8,TEXT
+TMP_NAME      INIT      "/w/eobclm.ix1"
+TMP_LIST      LIST
+TMP_REC       DIM       8
+              LISTEND
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST 
+PARAM_IN      DIM       12
+PARAM_OUT     DIM       12
+              LISTEND
+
+. -----------------
+.   Begin Program
+. -----------------
+
+. ------------------------------------
+.   Start here if selected from menu
+. ------------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "EOB Invoice" TO  C_OPER
+         MOVE      "A0505181"             TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+         CALL      INIT_PROG
+         CALL      READ_LISTING  
+
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. -----------------------------------
+.  Initialize Program
+. -----------------------------------
+
+INIT_PROG
+
+         MOVE      0           TO  READ_COUNT
+         MOVE      0           TO  WRITE_COUNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" Read In             ":
+                      text=" Selected            "
+         ENDIF
+
+. Create file listing....
+
+         PACK SCRATCH WITH "ls -1 /w/p05*.abf.sent > ",LST_NAME
+         ROLLOUT SCRATCH 
+
+. Open program files
+         CALL      OPEN_OGBFILE USING LST_FILE,LST_NAME
+         CALL      PREP_OGBFILE_IX USING OUT_FILE,OUT_NAME
+         CALL      CLOSE_OGBFILE_IX USING OUT_FILE,OUT_NAME
+         CALL      OPEN_OGBFILE_IX USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. -----------------------------------
+.  Read file listing
+. -----------------------------------
+
+READ_LISTING
+
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL      READ_OGBFILE USING LST_FILE,LST_NAME,LST_LIST
+
+            IF (RESULT <> 1)
+               BREAK
+            ENDIF
+
+            MOVE 0 TO STMT_CNT
+            MOVE 0 TO CHK_CNT
+            MOVE 0 TO CLM_CNT
+            MOVE 0 TO ACH_CNT
+ 
+            debug
+            PACK INP_NAME WITH LST_REC
+            
+            CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+            CALL PREP_OGBFILE_IX USING TMP_FILE,TMP_NAME
+            CALL CLOSE_OGBFILE_IX USING TMP_FILE,TMP_NAME
+            CALL OPEN_OGBFILE_IX USING TMP_FILE,TMP_NAME
+  
+            CALL CREATE_INV
+
+            CALL WRITE_OUT
+
+         REPEAT
+                      
+         RETURN
+
+. -----------------------------------
+.  Create invoice on file
+. -----------------------------------
+
+CREATE_INV  
+
+. Read the input file and write to the output file
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL      READ_OGBFILE USING INP_FILE,INP_NAME,INP_LIST
+            WHILE     (RESULT = 1)
+            ADD       1 TO READ_COUNT
+            IF (C_RMODE = "I")
+               DISPLAY   *P41:20,READ_COUNT
+            ENDIF
+
+            UNPACK INP_REC INTO INP_RTYP,TRASH         
+
+            CONTINUE IF (INP_RTYP <> "0001" AND INP_RTYP <> "0002")
+
+. Statement Count - 0001 Record; Rel = 002 or 006
+. Check Count - 0001 Record; Rel = 005 and routing code != EF
+. ACH Count - 0001 Record; Rel = 005 and routing code = EF
+            debug
+            IF (INP_RTYP = "0001")
+               UNPACK INP_REC INTO AB01_LIST,AB01_EXTENDED
+               UNPACK AB01_KEY INTO DIM7,WS_DATE,TRASH
+               IF (AB01_RELATION_CODE = "002")
+                  ADD 1 TO STMT_CNT
+               ENDIF
+               IF (AB01_RELATION_CODE = "006")
+                  ADD 1 TO STMT_CNT
+               ENDIF
+               IF (AB01_RELATION_CODE = "005")
+                  IF (AB01_ROUTING_CODE = "EF")
+                     ADD 1 TO ACH_CNT
+                  ELSE
+                     ADD 1 TO CHK_CNT
+                  ENDIF
+               ENDIF
+            ENDIF
+
+. Claim Count - 0002 Record; unique claim numbers
+
+            IF (INP_RTYP = "0002")
+               UNPACK INP_REC INTO AB02_LIST
+               PACK TMP_REC WITH AB02_CLAIM_NUMBER
+               CALL READ_OGBFILE_IX USING TMP_FILE,TMP_NAME,TMP_REC,TMP_LIST
+               CONTINUE IF (RESULT = 1)
+
+               CALL WRITE_OGBREC_IX USING TMP_FILE,TMP_NAME,TMP_REC,TMP_LIST
+               ADD 1 TO CLM_CNT
+            ENDIF                  
+
+         REPEAT
+
+         RETURN
+
+. -----------------------
+.  Write output record
+. -----------------------
+
+WRITE_OUT
+
+         debug
+         PACK EOB_DATE WITH WS_DATE          
+         PACK EOB_STMT WITH STMT_CNT
+         PACK EOB_CHKC WITH CHK_CNT
+         PACK EOB_ACHC WITH ACH_CNT 
+         PACK EOB_CLMC WITH CLM_CNT
+
+         CALL READ_OGBFILE_IX USING OUT_FILE,OUT_NAME,EOB_DATE,EOB_LIST
+
+         IF (RESULT <> 1)
+            CALL WRITE_OGBREC_IX USING OUT_FILE,OUT_NAME,EOB_DATE,EOB_LIST
+         ENDIF
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       X_STANDARD.SR
+         INC       VALID.IO
+         INC       X_OGBFILE.IO 

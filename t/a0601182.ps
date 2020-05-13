@@ -1,0 +1,592 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0601182
++    Description    :  Adhoc versin of BME0100 to provide Communications with  
++                   :  approximate counts of eligible voters in DOTD and Higher
++                   :  Ed based on the January, 2006 all-invoice file.     
++                                                     
++    Author         :  Amy Poole
++    Date created   :  01/18/2006
++    Project No.    :  A0601181
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                              Revisions
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...COMMON WORK AREA
+              INC       X_COMMON.CB          ...OGB COMMON WORK AREA
+              INC       X_OGBFILE.CB         ...OGB CUSTOM FILE HANDLER
+              INC       VALID.RL             ...VALID CODES
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       CLI.RL               ...CLIENT DEMOGRAPHICS
+              INC       MEM.RL               ...MEMBER DEMOGRAPHICS
+              INC       MEME.RL              ...MEMBER ENROLLMENT
+              INC       MEMO.RL              ...OTHER  ENROLLMENT INFO
+              INC       INVOICE.RL           ...INVOICE FILE DEFINITION 
+              INC       BME.RL        ...BOARD MEMBER ELECTION FILE DEF.
+
+. ----------------------------
+. Output File Declarations
+. ----------------------------
+
+...Used for the Invoice Files
+REG_FILE          FILE     VAR=333, TEXT
+REG_NAME          DIM      40          
+
+...File received from State Retirement for STRT Election 
+STATE_FILE       IFILE     VAR=68,KEYL=9,NODUP,TEXT      
+STATE_NAME       INIT	   "/ogb/work/stateret.ix1"
+ 	    	 
+STATE_LIST       LIST	   
+STATE_KEY1       DIM       9
+STATE_FILL1      DIM       1
+STATE_FIRST_MI   DIM       15
+STATE_LAST       DIM       15
+STATE_DOB        DIM       8
+STATE_FILL2      DIM       4
+STATE_RETDTE     DIM       8
+STATE_FILL3      DIM       8
+		 LISTEND 	 	    	 
+
+...This file is for Actives ATLRG Election
+BME_ATL_FILE    FILE      VAR=211,TEXT
+BME_ATL_NAME    INIT      "bmeatlrg.txt"
+                 
+...This file is for DPS/Corrections Election
+BME_DPS_FILE    FILE      VAR=211,TEXT
+BME_DPS_NAME    INIT      "bmedps.txt"
+                 
+...This file is for State Retirees STRT Election
+BME_STR_FILE    FILE      VAR=211,TEXT
+BME_STR_NAME    INIT      "bmestrt.txt"
+                 
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+.
+DISP1            DIM       1
+DISP2            DIM       2
+DISP3            DIM       3
+DISP4            DIM       4
+RECID            DIM       8
+CLI_RESULT       FORM      1 
+INV_RESULT       FORM      1 
+STATE_RESULT     FORM      1 
+MEM_RESULT       FORM      1 
+VAL_RESULT       FORM      1 
+FPTR             FORM      2
+LPTR             FORM      2
+WS_DATE          DIM       8
+WRK_DATE         DIM       8
+WRK_RECID        DIM       8
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+TODAY            DIM       8
+BLANK8           INIT      "        "
+BME_SRTKEY       INIT      "6-10 21-40 41-55 56-56 -T"   
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Board Member Election" TO  C_OPER
+         MOVE      "BME0100"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+. ...Initialize
+         CALL      INITIALIZE
+	 
+. ...Index State Retiree file
+         CALL      INDEX_FILES
+	 
+. ...Open Files	
+         CALL      OPEN_FILES 
+         
+. ...Extract Data from ALL invoice file
+	 CALL      EXT_ALL
+         
+.....Close the ALL invoice file and Open the RETIREE invoice file
+***         CALL      CLOSE_OGBFILE USING REG_FILE,REG_NAME
+***      MOVE      "/ogb/work/invoice_ret_noadj.0204"  TO REG_NAME  
+***         CALL      OPEN_OGBFILE USING REG_FILE,REG_NAME
+
+
+. ...Extract Data from RET invoice file
+***	 CALL      EXT_RET  
+         
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Sort Data   
+	 CALL      SORT_DATA  
+         
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         DEBUG
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "ALL INV Recs. Read: " TO X_CNTDESC1
+	 MOVE      "RET INV Recs. Read: " TO X_CNTDESC2
+	 MOVE      "ATLRG Recs. Written:" TO X_CNTDESC3
+	 MOVE      "DPS   Recs. Written:" TO X_CNTDESC4
+	 MOVE      "STRT  Recs. Written:" TO X_CNTDESC5
+	 MOVE      "" TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+. ----------------------------
+. Index files
+. ----------------------------
+
+INDEX_FILES
+
+         INDEX "/ogb/work/stateret.txt /ogb/work/stateret.ix1 1-9"
+         IF OVER
+             ERROR     HORZ="22",VERT="20":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="INDEX FAILED (stateret.txt)"    
+             CHAIN     "MENU"
+         ENDIF
+
+    RETURN
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         DEBUG
+	 MOVE      STATE_NAME TO C_FILE
+	 CALL 	   OPEN_OGBFILE_IX USING STATE_FILE,STATE_NAME
+
+***         MOVE      "/ogb/work/invoice_all_noadj.0204"  TO REG_NAME  
+         MOVE      "/ogb/work/invoice_all_noadj.txt"  TO REG_NAME  
+         CALL      OPEN_OGBFILE USING REG_FILE,REG_NAME
+
+         PACK      OGB_NAME WITH OGB_PATH,BME_ATL_NAME
+         MOVE      BME_ATL_NAME TO C_FILE
+         CALL      PREP_OGBFILE USING BME_ATL_FILE,OGB_NAME  
+
+         PACK      OGB_NAME WITH OGB_PATH,BME_DPS_NAME
+         MOVE      BME_DPS_NAME TO C_FILE
+         CALL      PREP_OGBFILE USING BME_DPS_FILE,OGB_NAME  
+
+         PACK      OGB_NAME WITH OGB_PATH,BME_STR_NAME
+         MOVE      BME_STR_NAME TO C_FILE
+         CALL      PREP_OGBFILE USING BME_STR_FILE,OGB_NAME  
+
+    RETURN
+
+. ---------------------------------------
+. Extract election files from ALL invoice
+. ---------------------------------------
+
+EXT_ALL   
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING REG_FILE,REG_NAME,INVOICE_LIST
+        MOVE RESULT TO INV_RESULT
+        IF (INV_RESULT <> 1)
+            BREAK
+        ENDIF
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+          
+...Exclude '94' & '95' locations - Surviving Spouses do not Vote
+        IF ((SQUEEZE CLIENTLEV2 = "94") OR (SQUEEZE CLIENTLEV2 = "95")) 
+            CONTINUE
+        ENDIF
+
+        IF (SQUEEZE CLIENTLEV2 <> "99") 
+            CALL GET_CLI     
+            CALL GET_MEM     
+            CONTINUE
+        ENDIF
+
+        PACK STATE_KEY1 WITH ENR_SSN
+        CALL READ_OGBFILE_IX USING STATE_FILE:
+                                   STATE_NAME:
+                                   STATE_KEY1:
+                                   STATE_LIST
+        MOVE RESULT TO STATE_RESULT
+        IF (STATE_RESULT <> 1)
+            CONTINUE
+        ENDIF
+
+        MOVE "STRT " TO BME_ELECT 
+        CALL GET_MEM     
+
+    REPEAT
+
+  RETURN
+
+
+. -------------------------------------
+. Extract Retiree File from RET invoice
+. -------------------------------------
+
+EXT_RET   
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING REG_FILE,REG_NAME,INVOICE_LIST
+        MOVE RESULT TO INV_RESULT
+        IF (INV_RESULT <> 1)
+            BREAK
+        ENDIF
+        ADD 1 TO X_CNT2
+        UNPACK X_CNT2 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+ 
+...Extract only State Retirees for STRT Election         
+        IF (SQUEEZE CLIENTLEV1 <> "R98")
+            CONTINUE
+        ENDIF
+
+        CALL GET_CLI     
+        CALL GET_MEM     
+
+    REPEAT
+
+  RETURN
+
+. ----------------------------
+
+GET_CLI
+
+    CLEAR BME_ELECT
+    CLEAR CLI_AIM
+    PACK CLI_AIM1 WITH "01X",CLIENTLEV1
+    PACK CLI_AIM2 WITH "02X",CLIENTLEV2
+    CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                             CLI_FN:      ...File Name List
+                             CLI_FC:      ...(I)ndex Or (A)imdex
+                             CLI_FV:      ...File Key Varlists
+                             CLI_AIM:     ...File Key Sizes
+                             CLI_LIST:    ...File Record (Field List)
+                             CLI_REC:     ...File Record (Packed)
+                             CLI_OLD:     ...File Saved When Read
+                             CLI_QTY:     ...Number Of Files
+                             2            ...File Number For This Read
+    MOVE RESULT TO CLI_RESULT
+    IF (CLI_RESULT = 1)
+        MOVE CLI_ELECT TO BME_ELECT
+    ENDIF
+
+  RETURN
+
+. ----------------------------
+
+GET_MEM
+
+        PACK      MEM_AIM1 WITH "01X",ENR_SSN,BLANKS
+        PACK      MEM_AIM3 WITH "03X","01",BLANKS   
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+	    GOTO GET_MEM_RETURN     
+        ENDIF
+
+        IF (SQUEEZE MEM_LIFE = "DECEAS")
+            GOTO GET_MEM_RETURN     
+        ENDIF
+
+        MOVE MEM_ESSN  TO BME_SSN   
+        MOVE MEM_LNAME TO BME_LNAME
+        SETLPTR BME_LNAME TO 20
+        MOVE MEM_FNAME TO BME_FNAME
+        SETLPTR BME_FNAME TO 15
+        MOVE MEM_MINIT TO BME_MINIT
+        MOVE MEM_ADDR1 TO BME_ADDRESS1
+        SETLPTR BME_ADDRESS1 TO 35
+        MOVE MEM_ADDR2 TO BME_ADDRESS2
+        SETLPTR BME_ADDRESS2 TO 35
+        MOVE MEM_CITY TO BME_CITY
+        SETLPTR BME_CITY TO 30
+        MOVE MEM_STATE TO BME_STATE
+        MOVE MEM_ZIP TO BME_ZIP
+        SETLPTR BME_ZIP TO 13
+
+        MOVE CLIENTLEV1 TO BME_AGENCYNO
+
+        SWITCH BME_ELECT
+***         CASE "ATLRG" 
+            CASE "DOTD " 
+                 MOVE OGB_SEQ1 TO OGB_SEQ
+                 CALL WRITE_OGBREC USING BME_ATL_FILE,BME_ATL_NAME,BME_LIST 
+                 ADD 1 TO X_CNT3
+***         CASE "DPS  " 
+            CASE "HGHED" 
+                 MOVE OGB_SEQ1 TO OGB_SEQ
+                 CALL WRITE_OGBREC USING BME_DPS_FILE,BME_DPS_NAME,BME_LIST 
+                 ADD 1 TO X_CNT4
+            CASE "STRT " 
+                 MOVE OGB_SEQ1 TO OGB_SEQ
+                 CALL WRITE_OGBREC USING BME_STR_FILE,BME_STR_NAME,BME_LIST 
+                 ADD 1 TO X_CNT5 
+        ENDSWITCH     
+
+GET_MEM_RETURN
+  RETURN
+
+. ------------------------------------------------------------------------
+. ...Sort Output file by Agency Number then by Last, First, Middle Initial
+. ------------------------------------------------------------------------
+
+SORT_DATA  
+  
+        MOVE      BME_ATL_NAME TO C_FILE
+        CALL      CLOSE_OGBFILE USING BME_ATL_FILE,BME_ATL_NAME  
+        PACK      OGB_NAME WITH OGB_PATH,BME_ATL_NAME
+        MOVE      BME_ATL_NAME TO C_FILE
+        CALL      OPEN_OGBFILE USING BME_ATL_FILE,OGB_NAME  
+        DISPLAY   *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                  *P30:21,"SORTING FILE...",*BOLDOFF
+        PACK      OGB_NAME WITH OGB_PATH,BME_ATL_NAME
+        MOVE      OGB_NAME TO C_FILE
+        MOVE      BME_SRTKEY TO C_KEYS
+        CALL      SORT_OGBFILE USING OGB_NAME,OGB_NAME,BME_SRTKEY
+        IF OVER
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT FAILED(bmeatlrg.txt)"
+            CHAIN   "MENU"
+        ENDIF
+   
+        MOVE      BME_DPS_NAME TO C_FILE
+        CALL      CLOSE_OGBFILE USING BME_DPS_FILE,BME_DPS_NAME  
+        PACK      OGB_NAME WITH OGB_PATH,BME_DPS_NAME
+        MOVE      BME_DPS_NAME TO C_FILE
+        CALL      OPEN_OGBFILE USING BME_DPS_FILE,OGB_NAME  
+        DISPLAY   *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                  *P30:21,"SORTING FILE...",*BOLDOFF
+        PACK      OGB_NAME WITH OGB_PATH,BME_DPS_NAME
+        MOVE      OGB_NAME TO C_FILE
+        MOVE      BME_SRTKEY TO C_KEYS
+        CALL      SORT_OGBFILE USING OGB_NAME,OGB_NAME,BME_SRTKEY
+        IF OVER
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT FAILED(bmedps.txt)"
+            CHAIN   "MENU"
+        ENDIF
+   
+        MOVE      BME_STR_NAME TO C_FILE
+        CALL      CLOSE_OGBFILE USING BME_STR_FILE,BME_STR_NAME  
+        PACK      OGB_NAME WITH OGB_PATH,BME_STR_NAME
+        MOVE      BME_STR_NAME TO C_FILE
+        CALL      OPEN_OGBFILE USING BME_STR_FILE,OGB_NAME  
+        DISPLAY   *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                  *P30:21,"SORTING FILE...",*BOLDOFF
+        PACK      OGB_NAME WITH OGB_PATH,BME_STR_NAME
+        MOVE      OGB_NAME TO C_FILE
+        MOVE      BME_SRTKEY TO C_KEYS
+        CALL      SORT_OGBFILE USING OGB_NAME,OGB_NAME,BME_SRTKEY
+        IF OVER
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT FAILED(bmestrt.txt)"
+            CHAIN   "MENU"
+        ENDIF
+   
+  RETURN
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+    
+
+CLOSE_FILES
+
+         CALL      CLOSE_OGBFILE USING REG_FILE,REG_NAME
+
+         CALL      CLOSE_OGBFILE_IX USING STATE_FILE,STATE_NAME
+
+    RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    BME0100 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+          INC       UTIL.SR      
+          INC       VALID.IO
+          INC       X_STANDARD.SR
+          INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+          INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of BME0100.PS
+. +++++++++++++++++++++++++++++++++++++

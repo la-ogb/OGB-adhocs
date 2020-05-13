@@ -1,0 +1,429 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1811071   
++    APSJM A1610251 11/07/2018 - INITIAL VERSION                                
++    DESC: PLACES NEW EGWP RECORD FOR MEMBERS WHO WERE TERMED FOR 12/31 UNDER
++          THE OLD EGWP CONTRACT.
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       MEMO.RL          ...Member Other Cov   
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+              INC       CMDPARAM.CB
+              INC       EGWP_TRR.RL
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+IN_FD        FILE       VAR=500,TEXT
+IN_NAME      INIT       "/w/life_trm_vibrant.txt"
+IN_LIST      LIST
+IN_ID1        DIM        8
+             LISTEND
+ 
+.Output Files
+MEME_O_FD     FILE     VAR=5320,TEXT
+MEME_O_NAME   INIT    "a1901071.txt"      
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+MEMO_SAVA       DIM  700
+MEMO_SAVB       DIM  700
+NEW_CCYY       FORM      4
+CURR_CCYY      FORM      4
+CURR_MM        FORM      2
+CURR_DD        FORM      2
+PLANYR_BEG     DIM       8     ...first day of new plan year
+PLANMO_END     DIM       8     ...last day of first month of new plan year
+PLANYR_END     DIM       8     ...last day of new plan year
+RPLC_MG       INIT "GV"
+MEME_SAV3     DIM  600
+MEME_SAV4     DIM  600
+W_TRM         DIM  08
+CMP_TRM       DIM  9
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "CREATE 01/01 EGWP" TO  C_OPER
+         MOVE      "a1811071"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+
+.
+.Needed so we can see if coverage is eff in new plan year
+. ----------------------------
+GET_PLANYR
+        UNPACK TODAY INTO CURR_CCYY,CURR_MM,CURR_DD
+...Adding 1 to year if program is run in the second half of the year (next AE) 
+        ADD 1 TO CURR_CCYY GIVING NEW_CCYY   
+
+        PACK PLANYR_BEG WITH NEW_CCYY,"0101"    
+        PACK PLANYR_END WITH NEW_CCYY,"1231"
+
+    RETURN
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING IN_FD,IN_NAME,IN_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACK MEM_FK11 WITH IN_ID1,BLANKS      
+    CALL  FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+        	           MEM_FN:  ...FILE NAME LIST  
+		           MEM_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEM_FV:  ...FILE KEY VARLISTS
+		           MEM_FK:  ...FILE KEY SIZES  
+		           MEM_LIST:...FILE RECORD (FIELD LIST)
+		           MEM_REC: ...FILE RECORD (PACKED)
+		           MEM_OLD: ...FILE SAVED WHEN READ
+		           MEM_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    IF (SQUEEZE MEM_DOD <> "")
+       CONTINUE
+    ENDIF
+    CALL READ_MEME
+    IF (SQUEEZE MEME_SAV3 <> "")
+         IF (SQUEEZE MEME_SAV4 = "")
+               DEBUG
+               PACKLEN MEME_REC WITH MEME_SAV3  
+               CALL WRITE_MEMMEM
+         ENDIF         
+    ENDIF
+ REPEAT
+ RETURN
+
+GET_BENID
+  CLEAR MEMO_SAVA
+  CLEAR MEMO_SAVB
+  PACK      MEMO_FK13 WITH TRR_POL,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       3                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           3             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (SQUEEZE MEMO_POL <> SQUEEZE TRR_POL))
+          BREAK                  
+      ENDIF	
+      SWITCH MEMO_TYPE
+         CASE "MEDA" OR "MEDB"
+         DEFAULT
+            CONTINUE
+      ENDSWITCH
+      IF (SQUEEZE MEMO_RANK = "")
+         CONTINUE
+      ENDIF
+      IF (SQUEEZE MEMO_EFF = "")
+         CONTINUE
+      ENDIF
+      SWITCH MEMO_TYPE
+         CASE "MEDA"
+           IF (SQUEEZE MEMO_POL = SQUEEZE TRR_POL) 
+              PACK MEMO_SAVA WITH MEMO_REC
+           ENDIF
+         CASE "MEDB"
+           IF (SQUEEZE MEMO_POL = SQUEEZE TRR_POL)   
+              PACK MEMO_SAVB WITH MEMO_REC
+           ENDIF
+      ENDSWITCH
+  REPEAT
+  RETURN
+
+WRITE_MEMMEM
+  DEBUG
+  CLEAR INM_REC
+  PACKLEN INM_REC WITH MEM_REC,MEME_REC
+  UNPACK INM_REC INTO INM_LIST
+  CALL DATE_CALC USING INME_TRM,"ADD","DAYS",1,INME_EFF
+  IF (SQUEEZE MEME_SAV = "")
+    MOVE BLANKS TO INME_TRM
+  ELSE
+    FILL "~" IN INME_TRM
+  ENDIF
+  MOVE BLANKS TO INME_TLET
+  MOVE BLANKS TO INME_TRUN
+  CLEAR INM_CHGBY
+  CLEAR INME_NEWBY
+  CLEAR INME_CHGBY
+  CLEAR INME_ID1
+  CLEAR INME_ID2
+  CALL WRITE_OGBREC USING MEME_O_FD,MEME_O_NAME,INM_LIST
+  CLEAR INM_LIST
+  RETURN
+.
+READ_MEME
+    CLEAR W_TRM
+    CLEAR MEME_SAV
+    CLEAR MEME_SAV3 .... LIFE TERMED BY TRR    
+    CLEAR MEME_SAV4 ....  NO ACTIVE LIFE 
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    LOOP 
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST
+                                   MEME_FC:  ...TYPE OF INDEX
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES
+                                   1         ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                  BREAK
+            ENDIF
+        IF (SQUEEZE MEME_NET <> "LIFE")
+           CONTINUE
+        ENDIF
+        IF ((SQUEEZE MEME_TRM = "20181231") AND (SQUEEZE MEME_CHGBY = "TRR"):
+             AND (SQUEEZE MEME_CHGDT = "20181105"))
+              SWITCH MEME_NET
+                CASE "LIFE "
+                     PACK MEME_SAV3 WITH MEME_LIST
+              ENDSWITCH
+        ENDIF  
+        IF (SQUEEZE MEME_TRM = "")
+            FILL "9" IN MEME_TRM
+        ENDIF
+        IF ((TODAY >= MEME_EFF) AND (TODAY < MEME_TRM))
+                PACK MEME_SAV4 WITH MEME_LIST
+        ENDIF
+                    
+        IF ((SQUEEZE MEME_EFF = "20190101") AND (SQUEEZE MEME_TRM = "20181231"))
+           PACKLEN MEME_SAV WITH MEME_LIST
+        ENDIF
+    REPEAT
+    RETURN
+.
+
+.
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING IN_FD,IN_NAME
+         CALL      PREP_OGBFILE USING MEME_O_FD,MEME_O_NAME 
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       CMDPARAM.SR
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1811071.PS 
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,1155 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0807021.ps
++    aplap 07/02/2008 A0807021 - MEMBER CLAIMS HISTORY FOR MORE THAN TWO YRS.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demo         
+              INC       MEME.RL          ...Member Enrollment   
+              INC       CLMS.RL          ...Claims Service Lines
+              INC       SEEK.RL
+
+. ----------------------------
+. Input File
+. ----------------------------
+INP_ID_FD     FILE      VAR=18, TEXT
+INP_ID_NAME   INIT      "/w/a0807021.txt"
+INPUT_LIST    LIST 
+INP_ID        DIM        8
+INP_ESSN      DIM        9
+              LISTEND
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+CLMHIST_O_FD       FILE     VAR=402,TEXT
+CLMHIST_O_NAME     INIT     "/mcsora/non_impact_load/hist_web/a08hist.txt"
+.
+CLMHIST_O_LIST    LIST
+CLMHIST_O_ESSN    DIM     11           001-011
+CLMHIST_O_PID     DIM     8            012-019 
+CLMHIST_O_CAT_DES DIM     35           020-054  
+CLMHIST_O_LNAME   DIM     20           055-074
+CLMHIST_O_FNAME   DIM     15           075-089 
+CLMHIST_O_MINIT   DIM     1            090-090
+CLMHIST_O_DOB     DIM     10           091-100
+CLMHIST_O_CPT_1   DIM     5            101-105
+CLMHIST_O_CPT_2   DIM     5            106-110
+CLMHIST_O_CPT_3   DIM     5            111-115
+CLMHIST_O_SF_1    DIM     10           116-125
+CLMHIST_O_SF_2    DIM     10           126-135
+CLMHIST_O_SF_3    DIM     10           136-145
+CLMHIST_O_CPT_DES_1 DIM   30           146-175
+CLMHIST_O_CPT_DES_2 DIM   30           176-205
+CLMHIST_O_CPT_DES_3 DIM   30           206-235
+CLMHIST_O_SPC_DES DIM     30           236-265
+CLMHIST_O_LOS     DIM     4            266-269
+CLMHIST_O_DIAG_D1 DIM     30           270-299
+CLMHIST_O_DIAG_D2 DIM     30           300-329
+CLMHIST_O_DIAG_D3 DIM     30           330-359
+CLMHIST_O_DIAG_D4 DIM     30           360-389
+CLMHIST_O_FIL     DIM     11           390-400
+CLMHIST_O_CAT     DIM     1            401-401       
+.                               1=Evaluation and management services
+.                               2=Surgical procedures
+.                               3=Pathology (lab) services
+.                               4=Radiology (xray services
+.                               5=All other non-impatient services
+.                               6=Inpatient confinements
+CLMHIST_O_RUN_SW DIM      1            402-402     1-Change File 2-Full File
+               LISTEND
+.
+CLMHIST_O_REC    DIM     402
+.
+CLMHIST_FD       FILE     VAR=311,TEXT
+CLMHIST_NAME     INIT     "/w/a0807021hist_wrk.txt"
+.
+CLMHIST_LIST    LIST
+CLMHIST_ESSN    DIM     11   1-11	
+CLMHIST_PID     DIM     8   12-19
+CLMHIST_CAT_DES DIM     35  20-54
+CLMHIST_LNAME   DIM     20  55-74
+CLMHIST_FNAME   DIM     15  75-89
+CLMHIST_MINIT   DIM     1   90-90
+CLMHIST_DOB     DIM     10  91-100
+CLMHIST_PROC    DIM     5  101-105 
+CLMHIST_SF      DIM     10 106-115
+CLMHIST_CPT_DES DIM     30 116-145 
+CLMHIST_SPC_DES DIM     30 146-175
+CLMHIST_LOS     DIM     4  176-179
+CLMHIST_DIAG_D1 DIM     30 180-209
+CLMHIST_DIAG_D2 DIM     30 210-239
+CLMHIST_DIAG_D3 DIM     30 240-269
+CLMHIST_DIAG_D4 DIM     30 270-299
+CLMHIST_FIL     DIM     11 300-310
+CLMHIST_CAT     DIM     1  311-311  1=Evaluation and management services
+              LISTEND           2=Surgical procedures    
+.                               3=Pathology (lab) services
+.                               4=Radiology (xray services
+.                               5=All other non-impatient services
+.                               6=Inpatient confinements
+.
+CLM_WRK_FD     FILE     VAR=165,TEXT
+CLM_WRK_NAME   INIT    "/w/clm.a0807021.wrk"
+CLM_WRK_LIST   LIST
+CLM_WRK_ID     DIM     8
+CLM_WRK_SPC    DIM     3  
+CLM_WRK_SF     DIM     8 
+CLM_WRK_ST     DIM     8 
+CLM_WRK_PID    DIM     8
+CLM_WRK_LNAME  DIM     20
+CLM_WRK_FNAME  DIM     15
+CLM_WRK_MINIT  DIM     1
+CLM_WRK_DOB    DIM     8
+CLM_WRK_ESSN   DIM     19
+CLM_WRK_DIAG_1 DIM     6 
+CLM_WRK_DIAG_2 DIM     6 
+CLM_WRK_DIAG_3 DIM     6
+CLM_WRK_DIAG_4 DIM     6
+CLM_WRK_DRG    DIM     3
+CLM_WRK_STAT   DIM     1
+CLM_WRK_TCHG   DIM     10  
+CLM_WRK_FORM   DIM     1  
+CLM_WRK_PAID   DIM     8  
+CLM_WRK_ADJTO  DIM     8
+CLM_WRK_LOS    DIM     4
+CLM_WRK_CHGDT  DIM     8
+              LISTEND                                      
+.                                                         
+CLME_WRK_FD    IFILE    VAR=27,KEYL=11,DUP,TEXT
+CLME_WRK_T_NAME INIT    "/w/clme.a0807021.wrk"
+CLME_WRK_I_NAME INIT    "/w/clme.a0807021.ix1"
+CLME_WRK_LIST  LIST
+CLME_WRK_ID    DIM     8
+CLME_WRK_LINE  DIM     3  
+CLME_WRK_STAT  DIM     4
+CLME_WRK_EC    DIM     10
+CLME_WRK_TYPE  DIM     2
+               LISTEND
+.
+CLME_WRK_KEY   DIM     11
+.
+XREF_FD      IFILE    VAR=25,KEYL=8,TEXT,DUP
+XREF_NAME    INIT     "/w/a0807021.xref.ix1"
+XREF_LIST    LIST
+XREF_F_ID     DIM     8
+XREF_T_ID     DIM     8
+XREF_T_ESSN   DIM     9
+             LISTEND
+XREF_KEY      DIM     8
+.
+LINK_FD         FILE    VAR=25,TEXT
+LINK_NAME       INIT    "/w/a0807021.link"
+LINK_LIST       LIST
+LINK_ID         DIM     8
+LINK_SSN        DIM     9
+LINK_EFF        DIM     8
+                LISTEND
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+.
+L_DATE        DIM  8
+RUN_SW        DIM  1
+WS_SF         DIM  10
+WS_CPT_DES    DIM  30
+WS_CPT        DIM  5
+OUT_MO        DIM  9
+OUT_DAY       DIM  9
+SVE_ACCU      DIM  8
+ACCU_ID1      DIM  8
+LOOP_CNT      FORM 1
+SVE_LINK_ID   DIM  8
+SVE_LINK_SSN  DIM  9
+MAIN_LOOP_ID  DIM  8
+MESS          INIT "MESS"
+TEN           INIT "^10"
+INDEX_OPTS    INIT "1-11 -D -J"
+FORM4         FORM 4
+.CLMHIST_SRTKEY INIT "1-19 311-311 101-105 146-175 180-209 112-115 106-107 109-110 -T"   
+CLMHIST_SRTKEY INIT "1-19 311-311 112-115 106-107 109-110 -T" 
+.CLMHIST_O_KEY     DIM 85
+.SVE_CLMHIST_O_KEY DIM 85
+CLMHIST_O_KEY     DIM 20
+SVE_CLMHIST_O_KEY DIM 20
+SERV_FROM     DIM  8        
+ZERO          FORM "      0.00"
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FORM_72       FORM 7.2
+W_CCYY        DIM  4
+W_DIM1        DIM  1
+W_DIM3        DIM  3
+W_DIM2        DIM  2
+W_DIM4        DIM  4
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+INC_DATE      DIM       8
+DATE_CCYY     DIM       6
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "CLAIM HIST EXT" TO  C_OPER
+         MOVE      "A0807021"       TO  C_PROG
+         MOVE      BLANKS           TO  C_LABEL
+         MOVE      BLANKS           TO  C_FILE
+         MOVE      BLANKS           TO  C_KEYS
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL REFORMAT_CLM
+   CALL REFORMAT_CLME
+   CALL INDEX_OGBFILE USING CLME_WRK_T_NAME,CLME_WRK_I_NAME,INDEX_OPTS    
+      IF OVER
+         ERROR     HORZ="22",VERT="20":
+                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+                   LNCOL=C_ERRL,SHADE="Y":
+                   TEXT="INDEX FAILED(CLME_CLM0150_WRK)"
+         CHAIN     "MENU"
+      ENDIF
+   CALL OPEN_FILES
+   CALL CREATE_XREF
+   CLEAR L_DATE
+   CALL PROCESS_CLM_WRK
+   CALL CLOSE_OGBFILE USING CLMHIST_FD,CLMHIST_NAME
+   DISPLAY *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+           *P30:21,"SORTING FILE...",*BOLDOFF
+   CALL SORT_OGBFILE USING CLMHIST_NAME,CLMHIST_NAME,CLMHIST_SRTKEY
+   IF OVER
+      ERROR     HORZ="15",VERT="19":
+                BGCOL=C_ERRB,FGCOL=C_ERRF:
+                LNCOL=C_ERRL,SHADE="Y":
+                TEXT="SORT FAILED"
+   ENDIF
+   MOVE CLMHIST_NAME TO C_FILE
+   CALL OPEN_OGBFILE USING CLMHIST_FD,CLMHIST_NAME    
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL READ_OGBFILE USING CLMHIST_FD,CLMHIST_NAME,CLMHIST_LIST
+   PACK CLMHIST_O_KEY WITH CLMHIST_ESSN,CLMHIST_PID,CLMHIST_CAT
+.                          CLMHIST_PROC,CLMHIST_SPC_DES,CLMHIST_DIAG_D1 
+   MOVE CLMHIST_O_KEY TO SVE_CLMHIST_O_KEY
+   CALL WRITE_CLMHIST
+   DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+   CALL UPDATE_VALTBL
+....Close Files
+   CALL      CLOSE_FILES 
+
+. .Copy file to /mcsora/non_impact_load/hist_web
+.  CLEAR SCRATCH
+.  PACK SCRATCH WITH "cp /w/clmhist.txt /mcsora/non_impact_load/hist_web/clmhist.txt" 
+           
+.  ROLLOUT SCRATCH                                                      
+.      IF OVER
+.            ERROR  HORZ="15",VERT="19":
+.                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                   LNCOL=C_ERRL,SHADE="Y":
+.                   TEXT="Copy of clmhist.txt FAILED"
+.            CHAIN     "MENU"
+.      ENDIF
+.
+.  CLEAR SCRATCH
+.  PACK  SCRATCH WITH "chmod 666 /mcsora/non_impact_load/hist_web/clmhist.txt"
+.  ROLLOUT SCRATCH
+.      IF OVER
+.            ERROR  HORZ="15",VERT="19":
+.                   BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                   LNCOL=C_ERRL,SHADE="Y":
+.                   TEXT="chmod of clmhist.txt FAILED"
+.      CHAIN     "MENU"
+.      ENDIF
+
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+.
+WRITE_CLMHIST
+ LOOP
+  IF (RESULT <> 1)
+        PACK CLMHIST_O_REC WITH CLMHIST_O_LIST
+        IF (SQUEEZE CLMHIST_O_REC <> "")
+          MOVE CLMHIST_O_NAME TO C_FILE
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING CLMHIST_O_FD,CLMHIST_O_NAME,CLMHIST_O_LIST
+          CLEAR CLMHIST_O_LIST
+          ADD 1 TO X_CNT4
+          UNPACK X_CNT4 INTO CNT1_4,CNT1_3
+          IF (CNT1_3 = "000")
+             CALL X_DISPLAY_COUNTS
+          ENDIF
+          BREAK
+        ELSE
+          BREAK
+        ENDIF 
+  ENDIF
+  SWITCH CLMHIST_CAT
+   CASE "3" OR "4"
+     IF (CLMHIST_O_KEY <> SVE_CLMHIST_O_KEY)
+         PACK CLMHIST_O_REC WITH CLMHIST_O_LIST
+         IF (SQUEEZE CLMHIST_O_REC <> "")
+           MOVE CLMHIST_O_NAME TO  C_FILE
+           CALL WRITE_OGBREC USING CLMHIST_O_FD,CLMHIST_O_NAME,CLMHIST_O_LIST
+           CLEAR CLMHIST_O_LIST
+           ADD 1 TO X_CNT4
+           UNPACK X_CNT4 INTO CNT1_4,CNT1_3
+           IF (CNT1_3 = "000")
+              CALL X_DISPLAY_COUNTS
+           ENDIF
+         ENDIF
+         MOVE CLMHIST_O_KEY TO SVE_CLMHIST_O_KEY
+     ENDIF
+     IF (SQUEEZE CLMHIST_O_SF_1 = "")
+        MOVE CLMHIST_ESSN TO CLMHIST_O_ESSN
+        MOVE CLMHIST_PID TO CLMHIST_O_PID
+        MOVE CLMHIST_CAT_DES TO CLMHIST_O_CAT_DES 
+        MOVE CLMHIST_LNAME TO CLMHIST_O_LNAME
+        MOVE CLMHIST_FNAME TO CLMHIST_O_FNAME
+        MOVE CLMHIST_MINIT TO CLMHIST_O_MINIT
+        MOVE CLMHIST_DOB TO CLMHIST_O_DOB
+        MOVE CLMHIST_PROC TO CLMHIST_O_CPT_1
+        MOVE CLMHIST_SF TO CLMHIST_O_SF_1
+        MOVE CLMHIST_CPT_DES TO CLMHIST_O_CPT_DES_1
+        MOVE CLMHIST_SPC_DES TO CLMHIST_O_SPC_DES
+        MOVE CLMHIST_LOS TO CLMHIST_O_LOS
+        MOVE CLMHIST_DIAG_D1 TO CLMHIST_O_DIAG_D1
+        MOVE CLMHIST_DIAG_D2 TO CLMHIST_O_DIAG_D2
+        MOVE CLMHIST_DIAG_D3 TO CLMHIST_O_DIAG_D3
+        MOVE CLMHIST_DIAG_D4 TO CLMHIST_O_DIAG_D4
+        MOVE CLMHIST_CAT TO CLMHIST_O_CAT
+        MOVE RUN_SW TO CLMHIST_O_RUN_SW
+     ELSE
+       IF (SQUEEZE CLMHIST_O_SF_2 = "")
+          MOVE CLMHIST_CAT_DES TO CLMHIST_O_CAT_DES 
+          MOVE CLMHIST_PROC TO CLMHIST_O_CPT_2
+          MOVE CLMHIST_SF TO CLMHIST_O_SF_2
+          MOVE CLMHIST_CPT_DES TO CLMHIST_O_CPT_DES_2
+          MOVE CLMHIST_SPC_DES TO CLMHIST_O_SPC_DES
+          MOVE CLMHIST_LOS TO CLMHIST_O_LOS
+          MOVE CLMHIST_DIAG_D1 TO CLMHIST_O_DIAG_D1
+          MOVE CLMHIST_DIAG_D2 TO CLMHIST_O_DIAG_D2
+          MOVE CLMHIST_DIAG_D3 TO CLMHIST_O_DIAG_D3
+          MOVE CLMHIST_DIAG_D4 TO CLMHIST_O_DIAG_D4
+          MOVE RUN_SW TO CLMHIST_O_RUN_SW
+       ELSE
+          MOVE CLMHIST_CAT_DES TO CLMHIST_O_CAT_DES 
+          MOVE CLMHIST_PROC TO CLMHIST_O_CPT_3
+          MOVE CLMHIST_SF TO CLMHIST_O_SF_3
+          MOVE CLMHIST_CPT_DES TO CLMHIST_O_CPT_DES_3
+          MOVE CLMHIST_SPC_DES TO CLMHIST_O_SPC_DES
+          MOVE CLMHIST_LOS TO CLMHIST_O_LOS
+          MOVE CLMHIST_DIAG_D1 TO CLMHIST_O_DIAG_D1
+          MOVE CLMHIST_DIAG_D2 TO CLMHIST_O_DIAG_D2
+          MOVE CLMHIST_DIAG_D3 TO CLMHIST_O_DIAG_D3
+          MOVE CLMHIST_DIAG_D4 TO CLMHIST_O_DIAG_D4
+          MOVE RUN_SW TO CLMHIST_O_RUN_SW
+          MOVE CLMHIST_O_NAME TO  C_FILE
+          CALL WRITE_OGBREC USING CLMHIST_O_FD,CLMHIST_O_NAME,CLMHIST_O_LIST
+          CLEAR CLMHIST_O_LIST
+          ADD 1 TO X_CNT4
+          UNPACK X_CNT4 INTO CNT1_4,CNT1_3
+          IF (CNT1_3 = "000")
+             CALL X_DISPLAY_COUNTS
+          ENDIF
+       ENDIF
+     ENDIF
+     MOVE CLMHIST_NAME TO  C_FILE
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL READ_OGBFILE USING CLMHIST_FD,CLMHIST_NAME,CLMHIST_LIST         
+     PACK CLMHIST_O_KEY WITH CLMHIST_ESSN,CLMHIST_PID,CLMHIST_CAT
+.                            CLMHIST_PROC,CLMHIST_SPC_DES,CLMHIST_DIAG_D1 
+     ADD 1 TO X_CNT1
+     UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+     IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+     ENDIF
+   DEFAULT
+     MOVE CLMHIST_ESSN TO CLMHIST_O_ESSN
+     MOVE CLMHIST_PID TO CLMHIST_O_PID
+     MOVE CLMHIST_CAT_DES TO CLMHIST_O_CAT_DES 
+     MOVE CLMHIST_LNAME TO CLMHIST_O_LNAME
+     MOVE CLMHIST_FNAME TO CLMHIST_O_FNAME
+     MOVE CLMHIST_MINIT TO CLMHIST_O_MINIT
+     MOVE CLMHIST_DOB TO CLMHIST_O_DOB
+     MOVE CLMHIST_PROC TO CLMHIST_O_CPT_1
+     MOVE CLMHIST_SF TO CLMHIST_O_SF_1
+     MOVE CLMHIST_CPT_DES TO CLMHIST_O_CPT_DES_1
+     MOVE CLMHIST_SPC_DES TO CLMHIST_O_SPC_DES
+     MOVE CLMHIST_LOS TO CLMHIST_O_LOS
+     MOVE CLMHIST_DIAG_D1 TO CLMHIST_O_DIAG_D1
+     MOVE CLMHIST_DIAG_D2 TO CLMHIST_O_DIAG_D2
+     MOVE CLMHIST_DIAG_D3 TO CLMHIST_O_DIAG_D3
+     MOVE CLMHIST_DIAG_D4 TO CLMHIST_O_DIAG_D4
+     MOVE CLMHIST_CAT TO CLMHIST_O_CAT
+     MOVE RUN_SW TO CLMHIST_O_RUN_SW
+     MOVE CLMHIST_O_NAME TO  C_FILE
+     CALL WRITE_OGBREC USING CLMHIST_O_FD,CLMHIST_O_NAME,CLMHIST_O_LIST
+     CLEAR CLMHIST_O_LIST
+     MOVE CLMHIST_NAME TO  C_FILE
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL READ_OGBFILE USING CLMHIST_FD,CLMHIST_NAME,CLMHIST_LIST         
+     PACK CLMHIST_O_KEY WITH CLMHIST_ESSN,CLMHIST_PID,CLMHIST_CAT 
+.                            CLMHIST_PROC,CLMHIST_SPC_DES,CLMHIST_DIAG_D1 
+     MOVE CLMHIST_O_KEY TO SVE_CLMHIST_O_KEY
+     ADD 1 TO X_CNT1
+     UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+     IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+     ENDIF
+  ENDSWITCH
+ REPEAT
+ RETURN
+
+.
+PROCESS_CLM_WRK
+   LOOP
+      MOVE CLM_WRK_NAME TO  C_FILE
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME,CLM_WRK_LIST
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+      IF (CNT1_3 = "000")
+         CALL X_DISPLAY_COUNTS
+      ENDIF
+      IF ((SQUEEZE L_DATE = "") OR (CLM_WRK_CHGDT > L_DATE))
+        MOVE CLM_WRK_CHGDT TO L_DATE
+      ENDIF
+      CLEAR FORM_72
+      MOVE CLM_WRK_TCHG TO FORM_72
+      IF (FORM_72 < ZERO)
+         CONTINUE
+      ENDIF
+      SWITCH CLM_WRK_FORM
+        CASE "H" OR "U"
+        DEFAULT
+           CONTINUE
+      ENDSWITCH
+      IF (CLM_WRK_STAT = "D")
+         CONTINUE
+      ENDIF     
+      IF (SQUEEZE CLM_WRK_ADJTO <> "")
+          CONTINUE
+      ENDIF
+      IF (CLM_WRK_FORM = "U") 
+         IF (SQUEEZE CLM_WRK_DRG = "")
+            CONTINUE
+         ELSE
+            MOVE XREF_NAME TO  C_FILE
+            MOVE CLM_WRK_PID TO XREF_KEY
+            CALL READ_OGBFILE_IX USING XREF_FD,XREF_NAME:
+                                       XREF_KEY,XREF_LIST
+            IF (RESULT = 1)
+              MOVE XREF_T_ID TO CLMHIST_PID
+              MOVE XREF_T_ESSN TO CLM_WRK_ESSN
+            ELSE
+               MOVE CLM_WRK_PID TO CLMHIST_PID
+            ENDIF
+            UNPACK CLM_WRK_ESSN INTO W_DIM3,W_DIM2,W_DIM4
+            PACK CLMHIST_ESSN WITH W_DIM3,"-",W_DIM2,"-",W_DIM4
+            MOVE CLM_WRK_LNAME TO CLMHIST_LNAME
+            MOVE CLM_WRK_FNAME TO CLMHIST_FNAME
+            MOVE CLM_WRK_MINIT TO CLMHIST_MINIT
+            UNPACK CLM_WRK_DOB INTO W_CCYY,W_MM,W_DD
+            PACK CLMHIST_DOB WITH W_MM,"/",W_DD,"/",W_CCYY
+            MOVE "6" TO CLMHIST_CAT
+            MOVE "Inpatient confinements" TO CLMHIST_CAT_DES
+            MOVE CLM_WRK_LOS TO CLMHIST_LOS
+            PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_1,BLANKS
+            CALL      VAL_READ1
+            MOVE VAL_DESC TO CLMHIST_DIAG_D1
+            IF (SQUEEZE CLM_WRK_DIAG_2 <> "")
+              PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_2,BLANKS
+              CALL      VAL_READ1
+              MOVE VAL_DESC TO CLMHIST_DIAG_D2 
+            ENDIF
+            IF (SQUEEZE CLM_WRK_DIAG_3 <> "")
+              PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_3,BLANKS
+              CALL      VAL_READ1
+              MOVE VAL_DESC TO CLMHIST_DIAG_D3 
+            ENDIF
+            IF (SQUEEZE CLM_WRK_DIAG_4 <> "")
+              PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_4,BLANKS
+              CALL      VAL_READ1
+              MOVE VAL_DESC TO CLMHIST_DIAG_D4 
+            ENDIF
+            UNPACK CLM_WRK_SF INTO W_CCYY,W_MM,W_DD
+            PACK CLMHIST_SF WITH W_MM,"/",W_DD,"/",W_CCYY
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL WRITE_OGBREC USING CLMHIST_FD,CLMHIST_NAME,CLMHIST_LIST
+            CLEAR CLMHIST_LIST
+            ADD 1 TO X_CNT4
+            UNPACK X_CNT4 INTO CNT1_4,CNT1_3
+            IF (CNT1_3 = "000")
+               CALL X_DISPLAY_COUNTS
+            ENDIF
+            CONTINUE
+         ENDIF
+      ENDIF    
+    
+..Read the clms file by key 11 (claim #)   
+      PACK CLMS_BASE WITH CLM_WRK_ID,BLANKS
+      PACK CLMS_KEY  WITH CLMS_BASE,"   " 
+      CALL POP_READ
+      LOOP
+         CALL POP_NEXT
+         IF ((RESULT <> 1) OR (CLMS_ID <> CLM_WRK_ID))
+               BREAK
+         ENDIF                  
+         ADD 1 TO X_CNT2
+         UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+         IF (CNT1_3 = "000")
+            CALL X_DISPLAY_COUNTS
+         ENDIF
+         IF (SQUEEZE CLMS_PROC = "")
+               CONTINUE
+         ENDIF
+         PACK      SEE_KEY WITH "*CVENI",CLMS_PROC,BLANKS
+         CALL      SEE_READ
+         IF (RESULT = 1)
+             CONTINUE               ...on table
+         ENDIF                 
+         PACK      SEE_KEY WITH "*HVENI",CLMS_PROC,BLANKS
+         CALL      SEE_READ
+         IF (RESULT = 1)
+             CONTINUE               ...on table
+         ENDIF                 
+         MOVE CLME_WRK_I_NAME TO  C_FILE
+         MOVE CLME_WRK_KEY TO C_KEYS
+         PACK CLME_WRK_KEY WITH CLMS_ID,CLMS_LINE
+         CALL READ_OGBFILE_IX USING CLME_WRK_FD,CLME_WRK_I_NAME:
+                                    CLME_WRK_KEY,CLME_WRK_LIST         
+         IF (RESULT = 1)
+           CONTINUE
+         ENDIF
+         MOVE XREF_NAME TO  C_FILE
+         MOVE CLM_WRK_PID TO XREF_KEY
+         CALL READ_OGBFILE_IX USING XREF_FD,XREF_NAME:
+                                    XREF_KEY,XREF_LIST
+         IF (RESULT = 1)
+             MOVE XREF_T_ID TO CLMHIST_PID
+             MOVE XREF_T_ESSN TO CLM_WRK_ESSN
+         ELSE
+             MOVE CLM_WRK_PID TO CLMHIST_PID
+         ENDIF
+         UNPACK CLM_WRK_ESSN INTO W_DIM3,W_DIM2,W_DIM4
+         PACK CLMHIST_ESSN WITH W_DIM3,"-",W_DIM2,"-",W_DIM4
+         MOVE CLM_WRK_LNAME TO CLMHIST_LNAME
+         MOVE CLM_WRK_FNAME TO CLMHIST_FNAME
+         MOVE CLM_WRK_MINIT TO CLMHIST_MINIT
+         UNPACK CLM_WRK_DOB INTO W_CCYY,W_MM,W_DD
+         PACK CLMHIST_DOB WITH W_MM,"/",W_DD,"/",W_CCYY
+         MOVE CLMS_PROC TO CLMHIST_PROC  
+         IF ((CLMS_PROC >= "99201") AND (CLMS_PROC <= "99499"))
+               MOVE "1" TO CLMHIST_CAT
+               MOVE "Evaluation and menagement services" TO CLMHIST_CAT_DES
+               RESET CLMS_DIAG
+               SCAN "1" IN CLMS_DIAG
+               IF EQUAL               
+                 PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_1,BLANKS
+                 CALL      VAL_READ1
+               ENDIF
+               RESET CLMS_DIAG
+               SCAN "2" IN CLMS_DIAG
+               IF EQUAL               
+                 PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_2,BLANKS
+                 CALL      VAL_READ1
+               ENDIF
+               RESET CLMS_DIAG
+               SCAN "3" IN CLMS_DIAG
+               IF EQUAL               
+                 PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_3,BLANKS
+                 CALL      VAL_READ1
+               ENDIF
+               RESET CLMS_DIAG
+               SCAN "4" IN CLMS_DIAG
+               IF EQUAL               
+                 PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_4,BLANKS
+                 CALL      VAL_READ1
+               ENDIF
+               MOVE VAL_DESC TO CLMHIST_DIAG_D1
+               PACK VAL_KEY1 WITH "501",CLMS_PROC
+               CALL VAL_READ1
+               MOVE VAL_DESC TO CLMHIST_CPT_DES
+               PACK VAL_KEY1 WITH "302",CLM_WRK_SPC
+               CALL VAL_READ1
+               MOVE VAL_DESC TO CLMHIST_SPC_DES
+         ELSE
+               UNPACK CLMS_PROC INTO W_DIM1
+               SWITCH W_DIM1   
+                 CASE "1" OR "2" OR "3" OR "4" OR "5" OR "6"
+                     MOVE "2" TO CLMHIST_CAT
+                     MOVE "Surgical procedures" TO CLMHIST_CAT_DES
+                     RESET CLMS_DIAG
+                     SCAN "1" IN CLMS_DIAG
+                     IF EQUAL               
+                       PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_1,BLANKS
+                       CALL      VAL_READ1
+                     ENDIF
+                     RESET CLMS_DIAG
+                     SCAN "2" IN CLMS_DIAG
+                       IF EQUAL               
+                          PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_2,BLANKS
+                          CALL      VAL_READ1
+                       ENDIF
+                     RESET CLMS_DIAG
+                     SCAN "3" IN CLMS_DIAG
+                     IF EQUAL               
+                       PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_3,BLANKS
+                       CALL      VAL_READ1
+                     ENDIF
+                     RESET CLMS_DIAG
+                     SCAN "4" IN CLMS_DIAG
+                       IF EQUAL               
+                         PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_4,BLANKS
+                         CALL      VAL_READ1
+                       ENDIF
+                     MOVE VAL_DESC TO CLMHIST_DIAG_D1
+                     PACK VAL_KEY1 WITH "501",CLMS_PROC
+                     CALL VAL_READ1
+                     MOVE VAL_DESC TO CLMHIST_CPT_DES
+                     PACK VAL_KEY1 WITH "302",CLM_WRK_SPC
+                     CALL VAL_READ1
+                     MOVE VAL_DESC TO CLMHIST_SPC_DES
+                 CASE "7" 
+                     MOVE "4" TO CLMHIST_CAT
+                     MOVE "Radiology (XRAY) services" TO CLMHIST_CAT_DES
+                     PACK VAL_KEY1 WITH "501",CLMS_PROC
+                     CALL VAL_READ1
+                     MOVE VAL_DESC TO CLMHIST_CPT_DES
+                 CASE "8"
+                     MOVE "3" TO CLMHIST_CAT
+                     MOVE "Pathology (lab) services" TO CLMHIST_CAT_DES
+                     PACK VAL_KEY1 WITH "501",CLMS_PROC
+                     CALL VAL_READ1
+                     MOVE VAL_DESC TO CLMHIST_CPT_DES
+                 DEFAULT
+                     MOVE "5" TO CLMHIST_CAT
+                     MOVE "All other non inpatient services" TO CLMHIST_CAT_DES
+                     PACK VAL_KEY1 WITH "501",CLMS_PROC
+                     CALL VAL_READ1
+                     MOVE VAL_DESC TO CLMHIST_CPT_DES
+                     PACK VAL_KEY1 WITH "302",CLM_WRK_SPC
+                     CALL VAL_READ1
+                     MOVE VAL_DESC TO CLMHIST_SPC_DES
+                     RESET CLMS_DIAG
+                     SCAN "1" IN CLMS_DIAG
+                     IF EQUAL               
+                       PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_1,BLANKS
+                       CALL      VAL_READ1
+                     ENDIF
+                     RESET CLMS_DIAG
+                     SCAN "2" IN CLMS_DIAG
+                       IF EQUAL               
+                          PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_2,BLANKS
+                          CALL      VAL_READ1
+                       ENDIF
+                     RESET CLMS_DIAG
+                     SCAN "3" IN CLMS_DIAG
+                     IF EQUAL               
+                       PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_3,BLANKS
+                       CALL      VAL_READ1
+                     ENDIF
+                     RESET CLMS_DIAG
+                     SCAN "4" IN CLMS_DIAG
+                       IF EQUAL               
+                         PACK VAL_KEY1 WITH "503",CLM_WRK_DIAG_4,BLANKS
+                         CALL      VAL_READ1
+                       ENDIF
+                     MOVE VAL_DESC TO CLMHIST_DIAG_D1
+               ENDSWITCH
+         ENDIF
+         UNPACK CLMS_FROM INTO W_CCYY,W_MM,W_DD
+         PACK CLMHIST_SF WITH W_MM,"/",W_DD,"/",W_CCYY
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING CLMHIST_FD,CLMHIST_NAME,CLMHIST_LIST
+         CLEAR CLMHIST_LIST
+         ADD 1 TO X_CNT4
+         UNPACK X_CNT4 INTO CNT1_4,CNT1_3
+         IF (CNT1_3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF
+      REPEAT
+   REPEAT
+   RETURN
+.
+CREATE_XREF
+        PACK   MEM_FK11 WITH BLANKS   
+        CALL   FILE_READ USING MEM_FD:    ...File declaration list
+               MEM_FN:   ...File name list
+               MEM_FC:   ...(I)ndex or (A)imdex
+               MEM_FV:   ...File key varlists
+               MEM_FK:   ...File key sizes
+               MEM_LIST: ...File record (field list)
+               MEM_REC:  ...File record (packed)
+               MEM_OLD:  ...File saved when read
+               MEM_QTY:  ...Number of files
+               1         ...File number for this read
+            LOOP
+              CALL      FILE_NEXT USING MEM_FD:    ...File declaration list
+                     MEM_FN:   ...File name list
+                     MEM_FC:   ...(I)ndex or (A)imdex
+                     MEM_FV:   ...File key varlists
+                     MEM_FK:   ...File key sizes
+                     MEM_LIST: ...File record (field list)
+                     MEM_REC:  ...File record (packed)
+                     MEM_OLD:  ...File saved when read
+                     MEM_QTY:  ...Number of files
+                     1         ...File number for this read
+              BREAK IF (RESULT <> 1)
+              ADD 1 TO X_CNT3
+              UNPACK X_CNT3 INTO CNT1_4,CNT1_3
+              IF (CNT1_3 = "000")
+                  CALL X_DISPLAY_COUNTS
+              ENDIF
+              MOVE MEM_ID1 TO MAIN_LOOP_ID
+              IF (SQUEEZE MEM_ACCU = "")
+                 CONTINUE
+              ENDIF
+              CALL PREP_OGBFILE USING LINK_FD,LINK_NAME 
+              MOVE MEM_ID1 TO ACCU_ID1
+              MOVE MEM_ID1 TO SVE_ACCU
+              MOVE 1 TO LOOP_CNT
+              CALL GET_LINKED_HISTORY
+              CALL CLOSE_OGBFILE USING LINK_FD,LINK_NAME: 
+                                       LINK_LIST 
+              PACK SCRATCH WITH LINK_NAME," ",LINK_NAME," 18-25 -t -r"
+              SORT      SCRATCH
+                 IF OVER
+                   ERROR     HORZ="22",VERT="20":
+                             BGCOL=C_ERRB,FGCOL=C_ERRF:
+                             LNCOL=C_ERRL,SHADE="Y":
+                             TEXT="SORT FAILED(test.link)"     
+                             CHAIN     "MENU"
+                 ENDIF
+              CALL OPEN_OGBFILE USING LINK_FD,LINK_NAME 
+              MOVE OGB_SEQ1 TO OGB_SEQ
+              CALL READ_OGBFILE USING LINK_FD,LINK_NAME,LINK_LIST
+              IF (RESULT <> 1)
+                CALL REPO_MEM
+                CONTINUE
+              ENDIF
+              IF (MAIN_LOOP_ID <> LINK_ID) 
+                 CALL REPO_MEM
+                 CONTINUE
+              ELSE
+                 MOVE LINK_ID TO SVE_LINK_ID
+                 MOVE LINK_SSN TO SVE_LINK_SSN
+                 CALL WRITE_XREF
+                 CALL REPO_MEM
+                 CONTINUE
+              ENDIF
+            REPEAT
+            RETURN
+
+REPO_MEM
+    PACK MEM_FK11 WITH MAIN_LOOP_ID
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+   RETURN
+
+
+GET_LINKED_HISTORY
+ LOOP
+    IF (LOOP_CNT <> 1)
+      IF (ACCU_ID1 = SVE_ACCU)
+         BREAK
+      ENDIF
+    ENDIF
+    IF (SQUEEZE ACCU_ID1 = "")
+       BREAK
+    ENDIF  
+    IF (LOOP_CNT > 7)
+       BREAK
+    ENDIF
+    PACK MEM_FK11 WITH ACCU_ID1
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+          ERROR     HORZ="22",VERT="20":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="READ FAILED(MEM-2)"     
+                    CHAIN     "MENU"
+    ENDIF
+    ADD 1 TO LOOP_CNT
+    MOVE MEM_ACCU TO ACCU_ID1
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             LOOP
+                CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+                IF ((MEM_ID1 <> MEME_ID1) OR (RESULT <> 1))
+                   BREAK
+                ENDIF
+                IF (SQUEEZE MEME_NET = "LIFE")
+                    CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                    MOVE "99999999" TO MEME_TRM
+                ENDIF               
+                IF (MEME_TRM < MEME_EFF)
+                    CONTINUE
+                ENDIF
+                MOVE MEME_ID1 TO LINK_ID
+                MOVE MEM_ESSN TO LINK_SSN
+                MOVE MEME_EFF TO LINK_EFF
+                MOVE OGB_SEQ1 TO OGB_SEQ
+                CALL WRITE_OGBREC USING LINK_FD,LINK_NAME,LINK_LIST
+             REPEAT 
+ REPEAT
+ RETURN
+.
+WRITE_XREF
+    LOOP
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL READ_OGBFILE USING LINK_FD,LINK_NAME,LINK_LIST
+       IF (RESULT <> 1)
+          BREAK    
+       ENDIF
+       IF (LINK_ID = SVE_LINK_ID)
+          CONTINUE
+       ENDIF
+       MOVE LINK_ID TO XREF_F_ID
+       MOVE SVE_LINK_ID TO XREF_T_ID
+       MOVE SVE_LINK_SSN TO XREF_T_ESSN
+       MOVE XREF_F_ID TO XREF_KEY
+       CALL WRITE_OGBREC_IX USING XREF_FD,XREF_NAME,XREF_KEY,XREF_LIST
+       CONTINUE
+    REPEAT
+    RETURN
+.
+.
+
+  DEBUG
+REFORMAT_CLM  
+
+ MOVE INP_ID_NAME TO C_FILE
+ CALL OPEN_OGBFILE USING INP_ID_FD,INP_ID_NAME
+ CALL PREP_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME
+ CALL CLOSE_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME
+
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:21, "REFORMATTING CLM", *BOLDOFF
+
+ LOOP
+ MOVE OGB_SEQ1 TO OGB_SEQ
+ CALL READ_OGBFILE USING INP_ID_FD,INP_ID_NAME,INPUT_LIST  
+ IF (RESULT <> 1)
+    BREAK
+ ENDIF
+
+ CLEAR SCRATCH
+
+   PACK SCRATCH WITH "clm.dbf"," ",CLM_WRK_NAME:
+   " -p347-354eq",INP_ID:
+   " 1-8 283-285 318-333 347-354 355-390 531-538 1011-1029": 
+   " 1407-1430 2053-2055 2353-2353 2359-2368 2491-2491 2496-2503":
+   " 2519-2526 2550-2553 2639-2646 -t -j -a"
+
+   REFORMAT SCRATCH
+       IF OVER
+          ERROR     HORZ="22",VERT="20":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="REFORMAT FAILED(CLM.DBF)"
+          CHAIN     "MENU"
+       ENDIF
+  REPEAT
+
+...Sort to check reformat for input ids
+
+  CALL SORT_OGBFILE USING CLM_WRK_NAME,CLM_WRK_NAME,CLMHIST_SRTKEY
+      IF OVER
+      ERROR     HORZ="15",VERT="19":
+                BGCOL=C_ERRB,FGCOL=C_ERRF:
+                LNCOL=C_ERRL,SHADE="Y":
+                TEXT="SORT FAILED"
+   ENDIF
+.
+.
+REFORMAT_CLME 
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:21, "REFORMATTING CLME", *BOLDOFF
+ CLEAR SCRATCH
+ PACK SCRATCH WITH "clme.dbf"," ","/w/clme.a0807021.wrk":
+ " -p9-12eq",MESS:
+ " -p15-17eq",TEN:
+ " 1-8 25-27 9-12 15-24 13-14 -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(CLME.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ RETURN
+
+.
+.
+UPDATE_VALTBL
+         PACK VAL_TYPE WITH "155",BLANKS
+         PACK VAL_CODE WITH "CLM150",BLANKS
+         PACK VAL_DESC WITH "CLAIMS WEB HISTORY ":
+                             "CHANGE",BLANKS
+         PACK VAL_OPT  WITH L_DATE,BLANKS
+         PACK VAL_FILL WITH BLANKS
+         CALL VAL_WRITE
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "CLM  Recs Read:    " TO X_CNTDESC1
+	 MOVE      "CLMS Recs Read:    " TO X_CNTDESC2
+	 MOVE      "MEM  Recs Read:    " TO X_CNTDESC3
+	 MOVE      "Recs Written  :    " TO X_CNTDESC4
+
+	 CALL      X_DISPLAY_COUNTS
+         MOVE "2" TO RUN_SW
+         CALL DATE_CALC USING TODAY,"SUB","YEARS",2,SERV_FROM   
+.        UNPACK TODAY INTO W_CCYY,W_MM,W_DD
+.        CALL  DAY_OF_WEEK USING TODAY,OUT_DAY,OUT_MO
+.        SWITCH OUT_DAY
+.          CASE "SATURDAY "
+.             IF (W_DD <= "07")
+.                MOVE "2" TO RUN_SW
+.                CALL DATE_CALC USING TODAY,"SUB","YEARS",2,SERV_FROM   
+.             ENDIF 
+.          DEFAULT
+.             MOVE "1" TO RUN_SW
+.             PACK VAL_KEY1 WITH "155CLM150"
+.             CALL VAL_READ1
+.             IF (RESULT = 1)
+.                MOVE VAL_OPT TO PARAM_DATE
+.             ELSE
+.                ERROR    HORZ="15",VERT="19":
+.                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                      LNCOL=C_ERRL,SHADE="Y":
+.                      TEXT="LAST CHANGE DATE IN VALID NOT FOUND"
+.                CHAIN    "MENU"
+.             ENDIF         
+.          ENDSWITCH
+         CALL      SETPOP_CLMS
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING CLMHIST_FD,CLMHIST_NAME
+         CALL      OPEN_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME  
+         CALL      OPEN_OGBFILE_IX USING CLME_WRK_FD,CLME_WRK_I_NAME
+         CALL      OPEN_OGBFILE USING INP_ID_FD,INP_ID_NAME
+         CALL      PREP_OGBFILE USING CLMHIST_O_FD,CLMHIST_O_NAME 
+         CALL      PREP_OGBFILE_IX USING XREF_FD,XREF_NAME    
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING CLMHIST_FD,CLMHIST_NAME
+         CALL      CLOSE_OGBFILE USING CLM_WRK_FD,CLM_WRK_NAME  
+         CALL      CLOSE_OGBFILE_IX USING CLME_WRK_FD,CLME_WRK_I_NAME
+         CALL      CLOSE_OGBFILE_IX USING XREF_FD,XREF_NAME    
+         CALL      CLOSE_OGBFILE USING CLMHIST_O_FD,CLMHIST_O_NAME 
+         CALL      CLOSE_OGBFILE USING INP_ID_FD,INP_ID_NAME
+         RETURN
+
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       POP.IO
+    INC       SEEK.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0807021.PS
+. +++++++++++++++++++++++++++++++++++++

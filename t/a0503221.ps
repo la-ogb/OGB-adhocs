@@ -1,0 +1,366 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0503221.ps
++    Description    :  Identify members who have had an "FX" record          
++                   :  created in MEMO by Eligibility as part of
++                   :  work around for edits to new fields    
++    Author         :  apeks
++    Date created   :  04/28/2005
++    Project Number :  A0503221
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++   apeks  04/20/2004  A0503221 - DEV - Initial Version
++                                REVISIONS
++------------------------------------------------------------------------------
++   apiii  mm/dd/ccyy  Ayymmdd# - MOD - Description
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demo File
+              INC       MEMO.RL              ...Member Other Coverage File
+              INC       MEME.RL              ...Member Enrollment File
+              INC       D_MEMO.RL            ...d_memo.ps load layout
+              INC       MEMCL.RL             ...Clinical History
+              
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+. Required fields to read memci file
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+.
+MASTER        DIM       @
+ENROLL_ID     DIM       @
+
+. -----------------------------
+...Output files
+. -----------------------------
+
+TMP1_NAME     INIT  "/w/a0503221.tmp1"
+TMP2_NAME     INIT  "/w/a0503221.tmp2"
+
+OUT_FILE      FILE  VAR=700,TEXT
+OUT_NAME      INIT  "x_fxfix.txt"
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+W_PROG          INIT    "a0503221"
+
+DIM2            DIM     2
+DIM3            DIM     3
+
+TIMESTAMP       DIM     14
+CURRDATE        DIM     8
+WRITE_COUNT     FORM    8
+ERROR_COUNT     FORM    8
+TRAP_DATA       DIM     500
+TODAY           DIM     8
+CAL_CLOCK       DIM     21
+ORIG_RETURN     FORM    5
+CURR_RETURN     FORM    5
+CNT1_4          DIM     4
+CNT1_3          DIM     3
+IN_FILE_RETCODE FORM    1
+MEM_RET_CODE    FORM    1
+MEMO_RET_CODE   FORM    1
+VAL_RET_CODE    FORM    1
+MEME_FOUND      INIT   "N"
+ESRD_FOUND      INIT   "N"
+FOUND_MEDA      INIT   "N"
+FOUND_MEDB      INIT   "N"
+HLD_STAT        DIM     1
+W_LOC           DIM     2
+LAST_RUN_DATE   DIM     8
+LAST_RUN_DATE6  DIM     6
+TODAY_CCYYMM    DIM     6
+L_CCYY          DIM     4
+L_MM            FORM    2
+L_DD            DIM     2
+T_CCYY          DIM     4
+T_MM            FORM    2
+T_DD            DIM     2
+NO_OF_MONTHS    FORM    2
+DATE_OF_65TH    DIM     8
+CHK_DATE        DIM     6
+LEV1_1          DIM     1
+JUNK2           DIM     2
+LEV1_2          DIM     2
+HOLD_RETIRE_DATE DIM    8
+O_EFF_CCYYMM    DIM     6
+O_TRM_CCYYMM    DIM     6
+NEW_MEMO_EFF    DIM     8
+UPDATED_MEDA    INIT   "N"
+UPDATED_MEDB    INIT   "N"
+ERR_SWT         INIT   "N"
+JUNK13          DIM    13
+JUNK17          DIM    17
+NOTE2_DATE      DIM    10
+NOTE2_MM        DIM     2
+NOTE2_DD        DIM     2
+NOTE2_CCYY      DIM     4
+NOTE3_DATE      DIM    10
+NOTE3_MM        DIM     2
+NOTE3_DD        DIM     2
+NOTE3_CCYY      DIM     4
+SLASH1          DIM     1
+SLASH2          DIM     1
+DATE_RSLT       DIM     2
+MEDA_NOTE_DATE  DIM     8
+MEDB_NOTE_DATE  DIM     8
+HOLD_MEDA_TRM   DIM     8
+HOLD_MEDB_TRM   DIM     8
+OUT_CCYY        DIM     4
+OUT_MM          DIM     2
+OUT_DD          DIM     2
+FRM_YES_NO      DIM     1
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+
+. -------------------------------------------------
+.   Put all externals used here
+. -------------------------------------------------
+
+RUN_U_MEMODT  EXTERNAL
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "FX MEMO FIX ADHOC"   TO  C_OPER
+         MOVE      W_PROG                TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         CALL      REF_FILES 
+
+         CALL      NEOJ
+         
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Reformat files
+. ----------------------------
+
+REF_FILES 
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         
+         CALL REFORM_FILES
+
+         RETURN
+         
+. ----------------------------
+. Reformat MEM
+. ----------------------------
+
+REFORM_FILES
+
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="20",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="Reformatting records...please wait";
+
+.Reformat FX MEMO records that need to be changed to EM
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "memo.dbf ",TMP1_NAME," -t -j -p464-465=AD":
+                           " -p470-471=FX -p13-15=MED 1-469 -f=#"EM#"":
+                           " 472-700",BLANKS       
+
+         REFORMAT SCRATCH
+             
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - memo.dbf to TMP1"
+             CHAIN     "menu"
+         ENDIF  
+
+.Reformat FX MEMO records that need to be change to AU
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "memo.dbf ",TMP2_NAME," -t -j -p464-465=CR":
+                           " -p470-471=FX -p13-15=MED 1-469 -f=#"AU#"":
+                           " 17-24 480-700",BLANKS
+                 
+         REFORMAT SCRATCH
+             
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - memo.dbf to TMP2"
+             CHAIN     "menu"
+         ENDIF  
+
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "cat ",TMP1_NAME," ",TMP2_NAME," > ":
+                           "$MCSDIR/f/",OUT_NAME,BLANKS
+
+         ROLLOUT SCRATCH
+
+         CALL ERASE_OGBFILE USING TMP1_NAME
+         CALL ERASE_OGBFILE USING TMP2_NAME
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. -----------------------
+.   Normal End of Job  
+. -----------------------
+
+NEOJ
+
+. ...Normal End-Of-Job
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="23",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="PROGRAM COMPLETED NORMALLY":
+                          TEXT="----------------------------------":
+                          TEXT="  Press any key to continue       ":
+                          FIELD=WCHAR 
+         ENDIF
+
+
+
+
+. -------------------------------------------------------------
+.   Set up for reading Clinical records by I/O routine "POP.IO"
+. -------------------------------------------------------------
+
+SETPOP_MEMCL
+         MOVEADR   MEMCL_REC   TO POP_REC
+         MOVEADR   MEMCL_SW    TO POP_SW
+         MOVEADR   MEMCL_DECL  TO POP_DECL
+         MOVEADR   MEMCL_NAME  TO POP_NAME
+         MOVEADR   MEMCL_KEY   TO POP_KEY
+         MOVEADR   MEMCL_OLD   TO POP_OLD
+         MOVEADR   MEMCL_BASE  TO POP_ID
+         MOVEADR   MEMCL_LINE  TO POP_LINE
+         RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       POP.IO        
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of ELG0360.PS
+. +++++++++++++++++++++++++++++++++++++

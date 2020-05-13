@@ -1,0 +1,605 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : A0509211.ps
++    Description    : Extracts file of Enrollee and Dependent totals
++                   : by 5-byte Zipcode for any member enrolled in any
++                   : Health Plan.
++                                                                      
++    Author         : Alina Sanchez           
++ APAES 09/09/2002 A0209091 INT - Initial Version.                        
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
++ APAJP 09/21/2005 A0509211 MOD - Made this adhoc version from nma0200.ps.                                                                     
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL            ...Member Demographics File
+              INC       MEME.RL           ...Member Enrollment/Eligibility File
+
+
+. ---------------------------------------------
+. ~~~~~~~~~~   File  Declarations   ~~~~~~~~~~
+. ---------------------------------------------
+       
+.~~~~~~~~~~~~~INPUT FILES 
+
+MDUP_FILE    FILE      VAR=29,TEXT
+MDUP_NME     INIT      "/w/a0509211.tmp"
+
+MDUP_REC      LIST
+..<Begin>....................................................................
+MDUP_ID1      DIM       8
+MDUP_EFFDT    DIM       8
+MDUP_TRMDT    DIM       8
+MDUP_PRD      DIM       5
+..<End>......................................................................
+              LISTEND
+
+
+.~~~~~~~~~~~~~I-O FILES 
+
+ZIPCNT_FILE       IFILE   FIX=30,UNCOMP,KEYL=13,NODUP,TEXT
+ZIPCNT_NME        INIT    "/w/a0509211.txt"
+ZIPCNT_IX1        INIT    "/w/a0509211.ix1"
+
+
+
+ZIPCNT_REC       LIST
+..<Begin>....................................................................
+ZIPCNT_ZPCD_KEY    DIM      5
+ZIPCNT_ENRCNT      FORM     8
+ZIPCNT_DEPCNT      FORM     8
+ZIPCNT_TTCNT       FORM     9
+..<End>......................................................................
+                 LISTEND
+
+
+.~~~~~~~~~~~~~OUTPUT FILES 
+
+ERR_FILE    FILE      VAR=8,TEXT
+ERR_NME     INIT      "/w/a0509211.err"
+
+ERR_REC      LIST
+..<Begin>....................................................................
+ERR_ID1      DIM       8
+..<End>......................................................................
+              LISTEND
+
+
+
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       6
+CAL_CLOCK        DIM       21
+ZIP5             DIM       5
+DIM8             DIM       8
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+
+PARAM_LIST       LIST
+PARAM_XXX        DIM      10
+PARAM_YYY        DIM       5
+PARAM_DATE       DIM       8
+                 LISTEND
+
+                         
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.     Program Specific Varibles
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+DT               INIT      "01"
+DBC_CMDLN        DIM       500
+OUT_SRTKEY       INIT      "1-8 -T -U"
+ZIP_SRTKEY       INIT      "1-5 -T"
+MEM_RET_CODE     FORM      1
+MDUP_RET_CODE    FORM      1
+ZIPC_RET_CODE    FORM      1
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+
+
+                          
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                 TO  C_NEXT
+         MOVE      "OGB Demographic Cnt " TO  C_OPER  ...(20-bytes Max)
+         MOVE      "A0509211"              TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      "MEM FILE"             TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+
++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. ~~~~~~~ Main Process ~~~~~~~
+. ----------------------------
+
+MAIN_PROCESS
+         debug
+. ...Initialize
+         CALL      INITIALIZE
+	 
+. ...Open Files	
+         CALL      OPEN_FILES 
+
+. ...Extract Data
+         CALL      EXTRACT_MEM_DATA
+
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Sort Output
+         CALL      SORT_OUTPUT
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+
+++++++++++++++++++<< END OF MAIN PROCESS >>++++++++++++++++++++++++++++++++++++
+                         
+
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "MDUP Recs Read  : " TO X_CNTDESC1
+	 MOVE      "MEM Recs Found  : " TO X_CNTDESC2
+	 MOVE      "Records Written : " TO X_CNTDESC3
+	 MOVE      "Error Recs      : " TO X_CNTDESC4
+	 MOVE      "                : " TO X_CNTDESC5
+	 MOVE      "                : " TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+...Creates a file of id#'s, effective and term date, product code, of active
+...people with health coverage other than HMO'S, CONV, or LIFE.
+
+         DISPLAY    *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                    *P30:21,"REFORMATING FILE...",*BOLDOFF
+
+...Layout
+.001-008     Record Id 
+.096-103     MEME Effective
+.104-111     MEME Term
+.117-121     Product
+.
+         PACK DBC_CMDLN WITH "meme.dbf"," ",MDUP_NME:
+                     " 1-8 96-103 104-111 117-121 -T -J":
+                     " -p96-103le",CURRDATE:
+                     " -p117-121neLIFE ":
+                     " -p104-111=#"        #"":
+                     " or -P104-111ge",CURRDATE:
+                     " -p96-103le",CURRDATE:
+                     " -p117-121neLIFE "
+         REFORMAT  DBC_CMDLN
+
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED"
+               CHAIN     "MENU"
+         ENDIF
+         DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+
+.~~~Sorting the Out File by the MDUP_ID1 to have all ID's
+.~~~in order and to get rid of duplicates.                        
+
+         DISPLAY    *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                    *P30:21,"SORTING FILE...",*BOLDOFF
+
+         MOVE MDUP_NME TO C_FILE
+         CALL SORT_OGBFILE  USING MDUP_NME,MDUP_NME:
+                                         OUT_SRTKEY
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED"
+               CHAIN     "MENU"
+         ENDIF
+         DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+ 
+        RETURN 
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+.~~Input Files
+
+         MOVE MDUP_NME TO C_FILE
+         CALL OPEN_OGBFILE USING MDUP_FILE,MDUP_NME
+
+
+.~~I/O Files
+
+         MOVE ZIPCNT_NME TO C_FILE
+         CALL PREP_OGBFILE_IX USING ZIPCNT_FILE,ZIPCNT_IX1
+
+
+.~~Output Files   
+
+         MOVE ERR_NME TO C_FILE
+         CALL PREP_OGBFILE USING ERR_FILE,ERR_NME
+
+
+         RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------
+. Extract Data
+. ----------------------------
+................................<< BEGIN >>...................................
+.This procedure reads the smaller version of the MEME file which includes only
+.records with Health Coverage and sorted to contain 
+.no duplicates. It compares each record being read against the MEM file in 
+.order to find all others associated with the same Enrollee Social Security #.
+.As it is reading both files it compares the relation field in order to add to  
+.the Enrollee or the Dependent count and write it to the index file by Zip Code.
+.If it finds a MEME ID that it is not in the MEM file then it writes the MEME  
+.ID to an error ).                                            
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+EXTRACT_MEM_DATA
+
+.        ~~~Reading meme dup file of members with health coverage                            
+         LOOP                
+            MOVE MDUP_NME TO C_FILE                                           
+            MOVE OGB_SEQ1 TO OGB_SEQ                                           
+            CALL READ_OGBFILE USING MDUP_FILE,MDUP_NME,MDUP_REC               
+
+            MOVE RESULT TO MDUP_RET_CODE                  ...Checking for EOF                            
+            IF (MDUP_RET_CODE <> 1)                                             
+                CALL X_DISPLAY_COUNTS
+                BREAK                                                          
+            ENDIF                                                              
+
+            ADD 1 TO X_CNT1                               ...Display Counters
+            UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+            IF (CNT1_3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF    
+
+
+.           ~~~Read the mem file by key 11 (member id)                                      
+            PACK MEM_FK11 WITH MDUP_ID1                                   
+            CALL FILE_READ USING MEM_FD:    ...File declaration list       
+                                 MEM_FN:   ...File name list                                      
+                                 MEM_FC:   ...(I)ndex or (A)imdex                                 
+                                 MEM_FV:   ...File key varlists                                   
+                                 MEM_FK:   ...File key sizes                                      
+                                 MEM_LIST: ...File record (field list)                            
+                                 MEM_REC:  ...File record (packed)                                
+                                 MEM_OLD:  ...File saved when read                                
+                                 MEM_QTY:  ...Number of files                                     
+                                 1         ...File number for this read                           
+                          
+
+            MOVE RESULT TO MEM_RET_CODE                  ...Check for EOF
+            IF (MEM_RET_CODE <> 1)  
+.               ~~~Write to error file(MEME ID'S NOT FOUND IN THE MEM FILE)...
+                MOVE MDUP_ID1 TO ERR_ID1                
+                MOVE ERR_NME TO C_FILE         
+                CALL WRITE_OGBREC USING ERR_FILE:
+                                        ERR_NME:
+                                        ERR_REC
+
+                ADD 1 TO X_CNT4                          ...Display Counters
+                CONTINUE
+            ENDIF
+             
+            ADD 1 TO X_CNT2                              ...Display Counters
+            UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+
+            UNPACK MEM_ZIP INTO ZIP5, DIM8
+.            IF (ZIP5 = "03275")
+.                TYPE ZIP5
+.            ELSE 
+.                CONTINUE
+.            ENDIF 
+.            TYPE ZIP5
+.            IF (NOT EQUAL)
+.                CONTINUE
+.            ENDIF 
+           
+            IF (MEM_REL = "01")           ...Checking for the relation in
+                CALL WRITE_ENR_CNT        ...order to add to the correct
+            ELSE                          ...counter and call to write rec.
+                CALL WRITE_DEP_CNT 
+            ENDIF             
+
+             
+         REPEAT
+
+         RETURN 
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+         
+. -------------------------------------------
+. Write Enrollee Record to the Index File 
+. -------------------------------------------
+................................<< BEGIN >>...................................
+
+WRITE_ENR_CNT
+
+         MOVE ZIP5 TO ZIPCNT_ZPCD_KEY                    ...Read ZIPCNT file 
+         CALL READ_OGBFILE_IX USING ZIPCNT_FILE:         ...for this ZIPCODE 
+                                    ZIPCNT_NME:
+                                    ZIPCNT_ZPCD_KEY:
+                                    ZIPCNT_REC
+
+         MOVE RESULT TO ZIPC_RET_CODE                    ...If this record does 
+         IF (ZIPC_RET_CODE = 2)                          ...not already exist
+             MOVE ZIP5 TO ZIPCNT_ZPCD_KEY                ...then write it to 
+             ADD 1 TO ZIPCNT_ENRCNT                      ...the file.
+             ADD 1 TO ZIPCNT_TTCNT
+             MOVE ZIPCNT_NME TO C_FILE         
+             CALL WRITE_OGBREC_IX USING ZIPCNT_FILE:
+                                         ZIPCNT_NME:
+                                         ZIPCNT_ZPCD_KEY:
+                                         ZIPCNT_REC
+         ELSE                                
+             MOVE ZIP5 TO ZIPCNT_ZPCD_KEY               ...Otherwise, use the  
+             ADD 1 TO ZIPCNT_ENRCNT                     ...UPDATE command to  
+             ADD 1 TO ZIPCNT_TTCNT                      ...re-write the record
+             MOVE ZIPCNT_NME TO C_FILE                  ...with only the updated
+             CALL UPDATE_OGBREC_IX USING ZIPCNT_FILE:    ...fields.
+                                         ZIPCNT_REC
+         ENDIF
+
+.        ~~~~Initializing the counters.....
+         CLEAR ZIPCNT_ENRCNT, ZIPCNT_DEPCNT, ZIPCNT_TTCNT, ZIPCNT_ZPCD_KEY 
+             
+
+         ADD 1 TO X_CNT3                                ...Display Counters
+
+         RETURN         
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+         
+
+
+
+. -------------------------------------------
+. Write Dependent Record to the Index File 
+. -------------------------------------------
+................................<< BEGIN >>...................................
+
+WRITE_DEP_CNT
+
+
+         MOVE ZIP5 TO ZIPCNT_ZPCD_KEY                    ...Read ZIPCNT file 
+         CALL READ_OGBFILE_IX USING ZIPCNT_FILE:         ...for this ZIPCODE 
+                                    ZIPCNT_NME:
+                                    ZIPCNT_ZPCD_KEY:
+                                    ZIPCNT_REC
+
+         MOVE RESULT TO ZIPC_RET_CODE                    ...If this record does 
+         IF (ZIPC_RET_CODE = 2)                          ...not already exist
+             MOVE ZIP5 TO ZIPCNT_ZPCD_KEY               ...then write it to 
+             ADD 1 TO ZIPCNT_DEPCNT                      ...the file.
+             ADD 1 TO ZIPCNT_TTCNT
+             MOVE ZIPCNT_NME TO C_FILE         
+             CALL WRITE_OGBREC_IX USING ZIPCNT_FILE:
+                                         ZIPCNT_NME:
+                                         ZIPCNT_ZPCD_KEY:
+                                         ZIPCNT_REC
+         ELSE                                
+             MOVE ZIP5 TO ZIPCNT_ZPCD_KEY              ...Otherwise, use the  
+             ADD 1 TO ZIPCNT_DEPCNT                     ...UPDATE command to  
+             ADD 1 TO ZIPCNT_TTCNT                      ...re-write the record
+             MOVE ZIPCNT_NME TO C_FILE                  ...with only the updated
+             CALL UPDATE_OGBREC_IX USING ZIPCNT_FILE:    ...fields.
+                                         ZIPCNT_REC
+         ENDIF
+
+
+.        ~~~~Initializing the counters.....
+         CLEAR ZIPCNT_DEPCNT, ZIPCNT_ENRCNT, ZIPCNT_TTCNT, ZIPCNT_ZPCD_KEY 
+             
+         ADD 1 TO X_CNT3                                ...Display Counters
+
+         RETURN         
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~. 
+.-------------------------
+.  Sort Output by Zip-code
+.-------------------------       
+SORT_OUTPUT
+         DISPLAY    *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                    *P30:21,"SORTING FILE...",*BOLDOFF
+
+         MOVE ZIPCNT_NME TO C_FILE
+         CALL SORT_OGBFILE  USING ZIPCNT_NME,ZIPCNT_NME:
+                                         ZIP_SRTKEY
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED"
+               CHAIN     "MENU"
+         ENDIF
+         DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+ 
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         UNLOAD    "schema"
+         
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+.~INPUT FILES
+          MOVE MDUP_NME TO C_FILE
+          CALL CLOSE_OGBFILE USING MDUP_FILE,MDUP_NME
+
+         
+.~I/O FILES
+          MOVE ZIPCNT_NME TO C_FILE
+          CALL CLOSE_OGBFILE_IX USING ZIPCNT_FILE,ZIPCNT_NME
+
+
+.~OUTPUT FILES
+         
+          MOVE ERR_NME TO C_FILE
+          CALL CLOSE_OGBFILE USING ERR_FILE,ERR_NME
+
+         
+         RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    A0509211 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+         RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+. --------------------------------
+. Subroutines and other includes
+. --------------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ///////////////////////////// End of A0509211.PS \\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

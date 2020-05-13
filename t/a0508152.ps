@@ -1,0 +1,899 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0508152.ps
++    Description    :  ELG - Reads the mem and the meme files and find all 
++                   :  enrollee's and their dependents which have health
++                   :  coverage. It also prints out those enrollees with no
++                   :  health coverage with the word "WAIVER" in the mem_life.
++                   :  
++    Author         :  Alina Sanchez    
++    Date created   :  08/15/2005
++    Project Number :  A0508152  
+++++++++++++++++++++++++++++<< REVISIONS >>++++++++++++++++++++++++++++++++++++
++ apiii  mm/dd/ccyy    A-------  TYP - Remarks.....
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       PRT.RL               ...Printer Definition File
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member demographic Record       
+              INC       MEME.RL              ...Mem. Enr/Elig Record            
+
+
+
+. ---------------------------------------------
+. ~~~~~~~~~~   File  Declarations   ~~~~~~~~~~                                  
+. ---------------------------------------------                                 
+
+                                                                                
+.~~~~~~~~~~~~~INPUT FILES                                                       
+
+.~~~~~~~~~~~~~OUTPUT FILES                                                      
+
+.~~~~~~ENROLLEE ELEGIBILITY FILE                                                          
+ENRELG_FD        FILE      VAR=90,TEXT                           
+ENRELG_TXT       INIT      "/w/a0508152.txt"                                     
+
+ENRELG_LIST      LIST                                                           
+..<Begin>....................................................................   
+ENRELG_EMPID     DIM       8                                                    
+ENRELG_DOB       DIM       8                                                    
+ENRELG_AGE       DIM       3                                                    
+ENRELG_SEX       DIM       1                                                    
+ENRELG_CITY      DIM       30                                                   
+ENRELG_STATE     DIM       2                                                    
+ENRELG_ZIP       DIM       13                                                   
+ENRELG_NET       DIM       10                                                   
+ENRELG_PRD       DIM       3                                                    
+ENRELG_DEPC      DIM       2                                                    
+ENRELG_DEPCNT    DIM       2                                                    
+ENRELG_STATUS    DIM       2                                                    
+ENRELG_WAIVER    DIM       6                                                    
+..<End>......................................................................   
+              LISTEND                                                           
+
+
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+FIRST_PAGE       DIM       1
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+WRITE_COUNT      FORM      8
+TRAP_DATA        DIM       500
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+TODAY            DIM       8
+
+
+PARAM_LIST       LIST
+PARAM_XXX        DIM      10
+PARAM_YYY        DIM       5
+PARAM_DATE       DIM       8
+                 LISTEND
+
+
+
+. ...Printing Controls
+
+NORM_10          DIM      29
+BOLD_10          DIM      29
+NORM_12          DIM      26
+BOLD_12          DIM      26
+NORM_16          DIM      33
+BOLD_16          DIM      33
+
+ESC_CHAR         EQU      27
+XCAPE            INIT     ESC_CHAR
+
+
+. ...Report Fields
+PAGE_NO          FORM      5
+
+LINE_NO          FORM      2
+LINE_MAX         FORM     "56"
+
+R_PAGE_NO        DIM       5
+R_DATE           DIM      10
+R_TIME           DIM       8
+YES              INIT     "Y"
+NO               INIT     "N"
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                             
+.     Program Specific Variables                                                 
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                             
+.~~~~~~ Variables
+ENR_DOB          DIM       8
+
+
+
+.~~~~~~ Sorting Fields     
+
+
+.~~~~~~ Mask Fields
+MASK1            INIT      "$$,$$$,$$9.99"
+MASK2            INIT      "$,$$$,$$$,$$9.99"
+
+
+.~~~~~~ Accumulators
+DEP_CNT          FORM      2
+
+
+
+.~~~~~~ Hold Fields
+MEM_ID1_HLD      DIM       8
+MEM_EMPSSN_HLD   DIM       9
+MEM_DEPID1_HLD   DIM       8                                              
+
+.~~~~~~ Screen Counters
+CNT_4            DIM       4
+CNT_3            DIM       3                             
+
+CNT_5            DIM       5
+CNT_2            DIM       2
+DISP5            DIM       5
+DISP4            DIM       4
+DISP3            DIM       3                  
+DISP2            DIM       2                  
+
+
+.~~~~~~ Flags
+WRITE_REC_YN     DIM       1
+MEM_RESULT       FORM      1                                      
+MEME_RESULT      FORM      1                                      
+
+
+
+DEFELG_RESULT    FORM      1                                      
+ENRSSN_RESULT    FORM      1                                      
+
+
+
+.~~~~~~ Date Manipulation Fields
+
+DATE            LIST 
+DT_MM            DIM       2
+DT_DD            DIM       2 
+DT_CCYY          DIM       4
+                LISTEND
+
+. -----------------------------------------------------------------------------
+.                            << < Report Layout > >> 
+. -----------------------------------------------------------------------------
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+SRH_LEFT1     INIT      "Program name: "
+SRH_LEFT2     INIT      "Date Printed: "
+SRH_TITLE1    INIT      "   STATE OF LOUISIANA   "
+SRH_TITLE2    INIT      "OFFICE OF GROUP BENEFITS"
+SRH_RIGHT1    INIT      "Page Number: "
+SRH_RIGHT2    INIT      "Report Time: "
+SRH_DASH      INIT      "-"
+                                                   
+
+
+. ----------------------------
+. Header Definition
+. ----------------------------
+
+.~~~~Report Titles
+
+TITLE1_REC   LIST
+..<BEGIN>.................................................
+TITLE1_FILL  DIM       44
+TITLE1 INIT "<< < DEFINITY ELIGIBILITY ERROR REPORT > >>"
+..<END>...................................................
+             LISTEND
+
+.~~~~Column Headers
+
+COLHDR1_REC  LIST
+..<BEGIN>.................................................
+CHDR1_1      DIM     1
+CHDR1_2      INIT    "Patient Name"
+CHDR1_3      DIM     21
+CHDR1_4      INIT    "Sex"
+CHDR1_5      DIM     2
+CHDR1_6      INIT    "Birth Date"
+CHDR1_7      DIM     3
+CHDR1_8      INIT    "Enr. SocSec"
+CHDR1_9      DIM     3
+CHDR1_10     INIT    "Status"
+CHDR1_11     DIM     4
+CHDR1_12     INIT    "Plan"
+CHDR1_13     DIM     3
+CHDR1_14     INIT    "Agency##"
+CHDR1_15     DIM     3
+CHDR1_16     INIT    "Level of Coverage"
+CHDR1_17     DIM     6
+CHDR1_18     INIT    "Effective Date"
+..<END>....................................................
+             LISTEND
+
+
+COLHDR2_REC  LIST
+..<BEGIN>.................................................
+CHDR2_1      DIM     1
+CHDR2_2      INIT    "____________"
+CHDR2_3      DIM     21
+CHDR2_4      INIT    "___"
+CHDR2_5      DIM     2
+CHDR2_6      INIT    "__________"
+CHDR2_7      DIM     3
+CHDR2_8      INIT    "___________"
+CHDR2_9      DIM     3
+CHDR2_10     INIT    "______"
+CHDR2_11     DIM     4
+CHDR2_12     INIT    "____"
+CHDR2_13     DIM     3
+CHDR2_14     INIT    "_______"
+CHDR2_15     DIM     3
+CHDR2_16     INIT    "_________________"
+CHDR2_17     DIM     6
+CHDR2_18     INIT    "______________"
+..<END>....................................................
+             LISTEND
+ 
+
+
+.~~~~Detail Lines
+
+ERR1_REC      LIST
+..<BEGIN>..................................................
+ERR1_FILL1       DIM     1
+ERR1_NAME        DIM     32       >Enrollee's Name
+ERR1_FILL2       DIM     3
+ERR1_SEX         DIM     1        >Patient's Sex                        
+ERR1_FILL3       DIM     3
+ERR1_DOB         DIM     10       >Patient's DOB                        
+ERR1_FILL4       DIM     3
+ERR1_ESSN        DIM     11       >Enrollee's Social Security No.                        
+ERR1_FILL5       DIM     3
+ERR1_STATUS      DIM     6        >Status(Active,Retire,Cobra)                 
+ERR1_FILL6       DIM     4
+ERR1_PLAN        DIM     7        >Plan(Option1,Option2)                              
+ERR1_FILL7       DIM     2
+ERR1_AGENCYNO    DIM     4        >Angency's Number                                          
+ERR1_FILL8       DIM     4
+ERR1_LEVCOV      DIM     19       >Level of Coverage                                      
+ERR1_FILL9       DIM     6
+ERR1_EFFDT       DIM     10       >Effective Date                                         
+..<END>....................................................
+             LISTEND
+
+
+
+NOERR1_REC   LIST
+..<BEGIN>.................................................
+NOERR1_FILL  DIM       49
+NOERR1       INIT "<< < NO  ERRORS  THIS  PERIOD > >>"
+..<END>...................................................
+             LISTEND
+
+
+. -----------------------------------------------------------------------------
+.                            << < Layout End > >> 
+. -----------------------------------------------------------------------------
+
+
+
+. --------------------------------------------------
+. ~~~~~~~~~~~~ << < Begin Program > >> ~~~~~~~~~~~~~
+. --------------------------------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                 TO  C_NEXT
+         MOVE      "Enrollee Eligibility" TO  C_OPER    >Max. 20 bytes
+         MOVE      "A0508152"             TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      BLANKS                 TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+                                                                               
+         MOVE      "00000025" TO C_PRTUSR   ...sends file to disk               
+         CALL      PRINT_PICK               ...this routine gives the user      
+         RETURN    IF (RESULT = 2)            .a printer list                   
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+
+
++++++++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+
+. ...Initialize
+         CALL      INITIALIZE
+                
+. ...Open Files	
+         CALL      OPEN_FILES 
+
+. ...Prepare Report         
+.         CALL      REPORT_PREP
+
+. ...Read Mem and Meme Files
+         CALL      READ_ELIGIBILITY_FILE
+
+. ...Print Done
+.         CALL      PRINT_DONE
+         
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+
++++++++++++++++++++++++++++<< END OF MAIN PROCESS >>+++++++++++++++++++++++++++
+
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	        MOVE      "Recs Read:        " TO X_CNTDESC1
+       	 MOVE      "Recs Writen:      " TO X_CNTDESC2
+         MOVE      "                  " TO X_CNTDESC3
+         MOVE      "                  " TO X_CNTDESC4
+	        MOVE      "                  " TO X_CNTDESC5
+	        MOVE      "                  " TO X_CNTDESC6
+	 
+	        CALL      X_DISPLAY_COUNTS
+
+
+
+         CLEAR DEP_CNT    
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+.~~Input Files                                                                  
+                                                                                
+.~~I/O Files                                                                    
+                                                                                
+.~~Output Files 
+         MOVE ENRELG_TXT TO C_FILE                 
+         CALL PREP_OGBFILE USING ENRELG_FD,ENRELG_TXT
+
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+         UNPACK    TIMESTAMP   INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+         PACK      R_DATE      WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+         PACK      R_TIME      WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+         MOVE      0           TO  WRITE_COUNT
+         MOVE      "Y"         TO  FIRST_PAGE
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+.~~~Portrait w/nice fonts-AS-
+         PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s p10.00h12.0v0s0b4099T"   
+         PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s p10.00h12.0v0s3b4099T"   
+         PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"      
+         PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"      
+         PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"       
+         PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"       
+                                                                                
+
+         MOVE "/w/elg0705.err" TO C_PRTFILE    ...prints file on /work/         
+
+                                                                       
+         CALL      PRINT_PREP                                                   
+
+     RETURN        
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------------------------------------------------------
+. This procedure will reads the mem and meme files to extract all enrollees 
+. and a count of their respective dependents which have health covereage.
+. 
+. ----------------------------------------------------------------------------
+
+READ_ELIGIBILITY_FILE
+
+   debug
+... Read the MEM file for Enrollee (Plan Member) Only                           
+
+
+    PACK      MEM_FK11 WITH BLANKS                                              
+    CALL      FILE_READ USING MEM_FD:    ...File declaration list               
+                      MEM_FN:   ...File name list                               
+                      MEM_FC:   ...(I)ndex or (A)imdex                          
+                      MEM_FV:   ...File key varlists                            
+                      MEM_FK:   ...File key sizes                               
+                      MEM_LIST: ...File record (field list)                     
+                      MEM_REC:  ...File record (packed)                         
+                      MEM_OLD:  ...File saved when read                         
+                      MEM_QTY:  ...Number of files                              
+                      1         ...File number for this read                    
+    LOOP                                                                        
+         CALL    FILE_NEXT USING MEM_FD:    ...File declaration list            
+                 MEM_FN:   ...File name list                                    
+                 MEM_FC:   ...(I)ndex or (A)imdex                               
+                 MEM_FV:   ...File key varlists                                 
+                 MEM_FK:   ...File key sizes                                    
+                 MEM_LIST: ...File record (field list)                          
+                 MEM_REC:  ...File record (packed)                              
+                 MEM_OLD:  ...File saved when read                              
+                 MEM_QTY:  ...Number of files
+                 1         ...File number for this read                         
+
+
+         BREAK IF (RESULT <> 1)                                                 
+         ADD 1 TO X_CNT1                                                        
+         UNPACK X_CNT1 INTO CNT_4,CNT_3                                         
+         IF (CNT_3 = "000")                                                     
+             CALL X_DISPLAY_COUNTS                                              
+         ENDIF                                                                  
+
+
+         IF (MEM_REL <> "01")                                             
+            CONTINUE                                                            
+         ENDIF                                                                  
+
+
+         CLEAR ENRELG_LIST
+
+
+.Call to determine if Enrollee has Health Coverage.
+         MOVE "N" TO WRITE_REC_YN
+         CALL READ_MEME
+         IF (WRITE_REC_YN = "N")
+             IF (MEM_LIFE = "WAIVER")
+                MOVE MEM_LIFE TO ENRELG_WAIVER
+             ELSE
+                CONTINUE
+             ENDIF  
+         ELSE
+             IF (WRITE_REC_YN = "Y")
+                 MOVE BLANKS TO ENRELG_WAIVER
+             ENDIF  
+         ENDIF
+
+         
+... Calculating the enrollee's age as of the date this program runs.        
+   debug
+         CALL CALC_AGE USING MEM_DOB, ENRELG_AGE, TODAY
+                     
+         MOVE MEM_ID1 TO ENRELG_EMPID
+         MOVE MEM_DOB TO ENRELG_DOB
+         MOVE MEM_SEX TO ENRELG_SEX
+         MOVE MEM_CITY TO ENRELG_CITY
+         MOVE MEM_STATE TO ENRELG_STATE
+         MOVE MEM_ZIP TO ENRELG_ZIP  
+
+
+         IF (WRITE_REC_YN = "Y")
+             MOVE MEME_DEPC TO ENRELG_DEPC
+             MOVE MEME_NET TO ENRELG_NET
+             MOVE MEME_PRD TO ENRELG_PRD
+             MOVE MEME_RT TO ENRELG_STATUS
+         ENDIF
+
+
+         CLEAR DEP_CNT
+         MOVE MEM_ID1 TO MEM_ID1_HLD
+         MOVE MEM_ESSN TO MEM_EMPSSN_HLD
+.Call to find and get a count of all dependents with Health Coverage.
+         CALL FIND_DEP_REC
+
+         MOVE DEP_CNT TO ENRELG_DEPCNT                                                    
+
+
+         MOVE OGB_SEQ1 TO OGB_SEQ                                            
+         CALL WRITE_OGBREC USING ENRELG_FD:                                   
+                                ENRELG_TXT:                                   
+                               ENRELG_LIST                                            
+                                                                                
+         ADD 1 TO X_CNT2
+         UNPACK X_CNT2 INTO DISP4,DISP3
+         IF (DISP3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF
+        
+
+    REPEAT
+
+   RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+
+. ---------------------------------------------------------------------------
+. Determines if Enrollee and dependent have health coverage or not and 
+. also determines which plan, what type of dependent code, employee status,
+. and if they have waiver status.
+. ---------------------------------------------------------------------------
+
+READ_MEME        
+
+    CLEAR MEME_FK11
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS                                      
+    CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST      
+                         MEME_FN:             ...FILE NAME LIST             
+                         MEME_FC:             ...TYPE OF INDEX              
+.                                             ...(I)NDEX or (A)IMDEX        
+                         MEME_FV:             ...FILE KEY VARLIST           
+                         MEME_FK:             ...FILE KEY SIZES             
+                         MEME_LIST:           ...FILE RECORD (FIELD LIST)   
+                         MEME_REC:            ...FILE RECORD (PACKED)       
+                         MEME_OLD:            ...FILE SAVED WHEN READ       
+                         MEME_QTY:            ...NUMBER OF FILES            
+                         1                    ...FILE NUMBER FOR THIS READ  
+
+   LOOP                                                                    
+            CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST      
+                                 MEME_FN:         ...FILE NAME LIST             
+                                 MEME_FC:         ...TYPE OF INDEX              
+.                                                 ...(I)NDEX or (A)IMDEX        
+                                 MEME_FV:         ...FILE KEY VARLIST           
+                                 MEME_FK:         ...FILE KEY SIZES             
+                                 MEME_LIST:       ...FILE RECORD (FIELD LIST)   
+                                 MEME_REC:        ...FILE RECORD (PACKED)       
+                                 MEME_OLD:        ...FILE SAVED WHEN READ       
+                                 MEME_QTY:        ...NUMBER OF FILES            
+                                 1                ...FILE NUMBER FOR THIS READ  
+
+
+  debug                         
+                                                                                
+
+     MOVE RESULT TO MEME_RESULT                   
+     IF ((MEME_RESULT <> 1) OR (MEM_ID1 <> MEME_ID1))
+         RETURN
+     ENDIF
+
+
+     IF ((SQUEEZE MEME_NET = "LIFE") OR (SQUEEZE MEME_NET = "DEFIN"))
+         CONTINUE
+     ENDIF
+
+
+     IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < TODAY))               
+         CONTINUE                                                        
+     ENDIF                                                              
+
+
+     IF ((SQUEEZE MEME_TRM = "") OR (MEME_TRM > TODAY))            
+         MOVE "Y" TO WRITE_REC_YN
+         BREAK
+     ENDIF                                                              
+
+
+    REPEAT
+
+  RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+
+. ----------------------------------------------------------------------------
+. This procedure will read the MEM file to find the Dependent's record
+. 
+. ----------------------------------------------------------------------------
+FIND_DEP_REC
+
+
+... Read the MEM file for Dependents                           
+   debug                                                                                
+      
+       CLEAR     MEM_AIM                                                           
+       PACK      MEM_AIM1 WITH "01X",MEM_EMPSSN_HLD,BLANKS                           
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST               
+                           MEM_FN:          ...FILE NAME LIST                      
+                           MEM_FC:          ...(I)NDEX OR (A)IMDEX                 
+                           MEM_FV:          ...FILE KEY VARLISTS                   
+                           MEM_AIM:         ...FILE KEY SIZES                      
+                           MEM_LIST:        ...FILE RECORD (FIELD LIST)            
+                           MEM_REC:         ...FILE RECORD (PACKED)                
+                           MEM_OLD:         ...FILE SAVED WHEN READ                
+                           MEM_QTY:         ...NUMBER OF FILES                     
+                           2                ...FILE NUMBER FOR THIS READ          
+                                                                                
+       LOOP                                                                   
+
+           MOVE RESULT TO MEM_RESULT 
+           IF ((MEM_RESULT <> 1) OR (MEM_EMPSSN_HLD <> MEM_ESSN))                                                
+               RETURN
+           ENDIF                                                                  
+
+           IF (MEM_REL = "01")                                             
+               CALL      FILE_NEXT                                               
+               CONTINUE                                                   
+           ENDIF                                                                  
+
+           CALL READ_DEP_MEME                                                    
+
+
+.       CLEAR     MEM_AIM                                                           
+.       PACK      MEM_AIM1 WITH "01X",MEM_EMPSSN_HLD,BLANKS                           
+       CALL      FILE_NEXT USING MEM_FD:    ...FILE DECLARATION LIST               
+                           MEM_FN:          ...FILE NAME LIST                      
+                           MEM_FC:          ...(I)NDEX OR (A)IMDEX                 
+                           MEM_FV:          ...FILE KEY VARLISTS                   
+                           MEM_AIM:         ...FILE KEY SIZES                      
+                           MEM_LIST:        ...FILE RECORD (FIELD LIST)            
+                           MEM_REC:         ...FILE RECORD (PACKED)                
+                           MEM_OLD:         ...FILE SAVED WHEN READ                
+                           MEM_QTY:         ...NUMBER OF FILES                     
+                           2                ...FILE NUMBER FOR THIS READ          
+                                                                                
+
+       REPEAT                                                            
+
+
+   RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+. ---------------------------------------------------------------------------
+. Determines if Dependent has health coverage or not and takes a count of 
+. all that do for each enrollee and writes it out with the enrollee record.
+. ---------------------------------------------------------------------------
+
+READ_DEP_MEME        
+
+    CLEAR MEME_FK11
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS                                      
+    CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST      
+                         MEME_FN:             ...FILE NAME LIST             
+                         MEME_FC:             ...TYPE OF INDEX              
+.                                             ...(I)NDEX or (A)IMDEX        
+                         MEME_FV:             ...FILE KEY VARLIST           
+                         MEME_FK:             ...FILE KEY SIZES             
+                         MEME_LIST:           ...FILE RECORD (FIELD LIST)   
+                         MEME_REC:            ...FILE RECORD (PACKED)       
+                         MEME_OLD:            ...FILE SAVED WHEN READ       
+                         MEME_QTY:            ...NUMBER OF FILES            
+                         1                    ...FILE NUMBER FOR THIS READ  
+
+   LOOP                                                                    
+            CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST      
+                                 MEME_FN:         ...FILE NAME LIST             
+                                 MEME_FC:         ...TYPE OF INDEX              
+.                                                 ...(I)NDEX or (A)IMDEX        
+                                 MEME_FV:         ...FILE KEY VARLIST           
+                                 MEME_FK:         ...FILE KEY SIZES             
+                                 MEME_LIST:       ...FILE RECORD (FIELD LIST)   
+                                 MEME_REC:        ...FILE RECORD (PACKED)       
+                                 MEME_OLD:        ...FILE SAVED WHEN READ       
+                                 MEME_QTY:        ...NUMBER OF FILES            
+                                 1                ...FILE NUMBER FOR THIS READ  
+
+
+  debug                         
+                                                                                
+
+     MOVE RESULT TO MEME_RESULT                   
+     IF ((MEME_RESULT <> 1) OR (MEM_ID1 <> MEME_ID1))
+         RETURN
+     ENDIF
+
+
+     IF ((SQUEEZE MEME_NET = "LIFE") OR (SQUEEZE MEME_NET = "DEFIN")) 
+         CONTINUE
+     ENDIF
+
+
+     IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < TODAY))               
+         CONTINUE                                                        
+     ENDIF                                                              
+
+
+     IF ((SQUEEZE MEME_TRM = "") OR (MEME_TRM > TODAY))            
+         ADD 1 TO DEP_CNT
+         BREAK
+     ENDIF                                                              
+
+
+    REPEAT
+
+  RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+.~INPUT FILES                                                                     
+         
+
+.~I/O FILES                                                                     
+
+                                                                                
+.~OUTPUT FILES 
+         MOVE ENRELG_TXT TO C_FILE                 
+         CALL CLOSE_OGBFILE USING ENRELG_FD,ENRELG_TXT
+
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+                                                                                
+NORMAL_EOJ                                                                      
+                                                                                
+. ...Normal End-Of-Job                                                          
+       IF (RUN_MODE = "N")              ---Manual Run; Not Scheduled            
+           CALL X_BLANK_SCREEN                                                  
+           PACK      X_FINISH_STATUS WITH "   ", "NEOJ","   "                   
+           MOVE      "a0508152 Completed      " TO X_PROG_FINISH                 
+           CALL      X_END_OF_JOB                                                 
+       ENDIF                                                                    
+                                                                                
+                                                                                
+. ...Return Control Back to Chain - End of Program                              
+       TRAPREST  TRAP_DATA                                                      
+       MOVE      SCH_RTSUCC TO SCH@RTCODE                                       
+                                                                                
+  RETURN                                                                        
+                                                                                
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       PRINT.SR
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<<<<<<~END~>>>>>>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                               End of a0508152.ps
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

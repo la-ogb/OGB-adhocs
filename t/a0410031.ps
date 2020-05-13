@@ -1,0 +1,998 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: A0410031                                            *
+.     *                                                                   *
+.     * DESCRIPTION: CREATE ELG HISTORY WITH CORRECTED RATE TABLE         *
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APSJM 11/16/2004 A0410031 DEV - INITIAL VERSION.                  *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrolllment
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       CLI.RL           ...Client
+              INC       D_MEMMEM.CB      ...Eligibility load
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+EXC_FD       FILE    VAR=32,TEXT
+EXC_NAME     INIT    "/w/medexc.txt"
+EXC_LIST     LIST
+EXC_ID1      DIM     8
+EXC_MEME_F   DIM     8
+EXC_MEMO_F   DIM     8
+EXC_RET_D    DIM     8    -Retirement Date After MEDA AND MEDB DATES
+             LISTEND
+.
+PAUL_FD         FILE    VAR=8,TEXT
+PAUL_NAME       INIT    "/w/paul.txt"
+PAUL_LIST       LIST
+PAUL_ID1        DIM     8
+                LISTEND
+PAUL_SRT_KEY   INIT     "1-8 -U -T"
+.
+HIS_CRE_FD      FILE    VAR=8,TEXT
+HIS_CRE_NAME    INIT    "/w/crehis_rt.txt"
+HIS_CRE_LIST    LIST
+HIS_CRE_ID1     DIM     8
+                LISTEND
+.
+NO_HIS_CRE_FD      FILE    VAR=8,TEXT
+NO_HIS_CRE_NAME    INIT    "/w/crehis_rt.txt"
+NO_HIS_CRE_LIST    LIST
+NO_HIS_CRE_ID1     DIM     8
+                   LISTEND
+.
+RT_FIX_FD    FILE     VAR=2300,TEXT
+RT_FIX_NAME  INIT     "rt_fix.txt"
+.
+WRK_EFF      DIM      8
+MEME_W_SAV   DIM      32
+.
+. ----------------------------
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+.
+CREHIS_SW     DIM  1
+WRITE_SW      DIM  1
+SAV_MEME_EFF  DIM  8
+SAV_MEME_TRM  DIM  8
+MED_F         DIM  8
+MED_T         DIM  8
+SP_ID1        DIM  8
+WOH_DATE_F_SP DIM  8
+WOH_DATE_T_SP DIM  8
+W_M_DATE_F_SP DIM  8
+W_M_DATE_T_SP DIM  8
+W_2_M_DATE_F_SP  DIM  8
+W_2_M_DATE_T_SP  DIM  8
+MEDA_SW_SP       DIM  1
+MEDB_SW_SP       DIM  1
+WOH_DATE_F    DIM  8
+WOH_DATE_T    DIM  8
+W_M_DATE_F    DIM  8
+W_M_DATE_T    DIM  8
+W_2_M_DATE_F  DIM  8
+W_2_M_DATE_T  DIM  8
+W_DIM1        DIM  1
+FIRST_READ    DIM  1
+MEDA_SW       DIM  1
+MEDB_SW       DIM  1
+LIFE          INIT "LIFE "
+BLANK8        INIT "        "
+B_DATE        DIM  8
+MEME_W_KEY    INIT "1-24 -T"
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "A0410031" TO  C_OPER
+         MOVE      "RT FIX"     TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL OPEN_FILES
+   CALL PROCESS_WRK
+....Close Files
+   CALL CLOSE_OGBFILE USING PAUL_FD,PAUL_NAME
+   CALL SORT_OGBFILE USING PAUL_NAME,PAUL_NAME,PAUL_SRT_KEY
+      IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="SORT FAILED(PAUL_NAME)"
+        CHAIN     "MENU"
+      ENDIF
+   
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_WRK
+    MOVE OGB_SEQ1 TO OGB_SEQ
+  LOOP
+    CALL READ_OGBFILE USING EXC_FD,EXC_NAME,EXC_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+.------------------------         
+...Get info from MEM-FILE
+.------------------------
+    PACK MEM_FK11 WITH EXC_ID1     
+    CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                         MEM_FN:              ...FILE NAME LIST
+                         MEM_FC:              ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:              ...FILE KEY VARLISTS
+                         MEM_FK:              ...FILE KEY SIZES
+                         MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                         MEM_REC:             ...FILE RECORD (PACKED)
+		         MEM_OLD:             ...FILE SAVED WHEN READ
+                         MEM_QTY:             ...NUMBER OF FIlES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    ADD 1 TO X_CNT2
+    UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    IF (MEM_REL <> "01")
+       CONTINUE
+    ENDIF
+    CLEAR CREHIS_SW
+    CLEAR WRITE_SW
+    CLEAR MEDA_SW
+    CLEAR MEDB_SW
+    CLEAR MEDA_SW_SP
+    CLEAR MEDB_SW_SP
+    PACK MEME_FK11 WITH EXC_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+	                   MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             LOOP
+                CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+                IF ((MEME_ID1 <> EXC_ID1) OR (RESULT <> 1))
+                   IF (WRITE_SW <> "1")
+                      MOVE EXC_ID1 TO PAUL_ID1
+                      CALL WRITE_OGBREC USING PAUL_FD,PAUL_NAME,PAUL_LIST
+                      CLEAR PAUL_LIST
+                   ENDIF
+                   BREAK
+                ENDIF
+                IF (SQUEEZE MEME_NET = "LIFE")
+                    CONTINUE
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                    CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                   MOVE "99999999" TO MEME_TRM 
+                ENDIF
+                UNPACK MEME_LEV1 INTO W_DIM1
+                IF ((W_DIM1 = "R") OR (SQUEEZE MEME_LEV2 = "99") OR:
+                   (SQUEEZE MEME_LEV2 = "95") OR (SQUEEZE MEME_LEV2 = "94"))
+                  IF ((MEME_DEPC = "ES") OR (MEME_DEPC = "FM"))
+                     CALL GET_MED_PRIM
+                     PACK MEM_SAV WITH MEM_REC
+                     CALL GET_SP_ID
+                     IF (RESULT <> 1)
+                       CONTINUE
+                     ENDIF
+                     MOVE MEM_ID1 TO SP_ID1
+                     UNPACK MEM_SAV INTO MEM_REC 
+                     CALL GET_MED_PRIM_SP
+                     IF (((MEDA_SW <> "1") OR (MEDB_SW <> "1")) AND:
+                         ((MEDA_SW_SP <> "1") OR (MEDB_SW_SP <> "1")))
+                         IF ((MEME_RT <> "R1") AND (MEME_RT <> "R2"))
+                         ELSE
+                             PACK INM_REC WITH MEM_REC,MEME_REC
+                             UNPACK INM_REC INTO INM_LIST
+                             MOVE "DELETE" TO INME_NEWBY
+                             CLEAR INME_ID1
+                             CLEAR INME_ID2
+                             MOVE OGB_SEQ1 TO OGB_SEQ
+                             CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                                     INM_LIST
+                             CLEAR INM_LIST
+                             MOVE "RN" TO MEME_RT
+                             PACK MEME_REC WITH MEME_LIST
+                             PACK INM_REC WITH MEM_REC,MEME_REC
+                             UNPACK INM_REC INTO INM_LIST
+                             CLEAR INME_NEWBY
+                             CLEAR INME_CHGBY
+                             IF (INME_TRM = "99999999")
+                                CLEAR INME_TRM
+                             ENDIF
+                             CLEAR INME_ID1
+                             CLEAR INME_ID2
+                             MOVE OGB_SEQ1 TO OGB_SEQ
+                             CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                                     INM_LIST
+                             CLEAR INM_LIST
+                             MOVE "1" TO WRITE_SW
+                         ENDIF
+                     ELSE
+                      IF ((MEDA_SW = "1") AND (MEDB_SW = "1") AND:
+                         (MEDA_SW_SP = "1") AND (MEDB_SW_SP = "1"))
+                       IF (SQUEEZE W_M_DATE_F <> "") 
+                         MOVE W_M_DATE_F TO WOH_DATE_F
+                         MOVE W_M_DATE_T TO WOH_DATE_T
+                       ELSE
+                         MOVE W_2_M_DATE_F TO WOH_DATE_F
+                         MOVE W_2_M_DATE_T TO WOH_DATE_T
+                       ENDIF
+                       IF (SQUEEZE W_M_DATE_F_SP <> "") 
+                         MOVE W_M_DATE_F_SP TO WOH_DATE_F_SP
+                         MOVE W_M_DATE_T_SP TO WOH_DATE_T_SP
+                       ELSE
+                         MOVE W_2_M_DATE_F_SP TO WOH_DATE_F_SP
+                         MOVE W_2_M_DATE_T_SP TO WOH_DATE_T_SP
+                       ENDIF
+                       CALL PROC_HIST
+                      ELSE
+                        IF ((MEDA_SW = "1") AND (MEDB_SW = "1"))
+                            IF (SQUEEZE W_M_DATE_F <> "") 
+                              MOVE W_M_DATE_F TO WOH_DATE_F
+                              MOVE W_M_DATE_T TO WOH_DATE_T
+                            ELSE
+                              MOVE W_2_M_DATE_F TO WOH_DATE_F
+                              MOVE W_2_M_DATE_T TO WOH_DATE_T
+                            ENDIF
+                            CALL PROC_HIST
+                        ELSE
+                          IF (SQUEEZE W_M_DATE_F_SP <> "")
+                              MOVE W_M_DATE_F_SP TO WOH_DATE_F_SP
+                              MOVE W_M_DATE_T_SP TO WOH_DATE_T_SP
+                          ELSE
+                              MOVE W_2_M_DATE_F_SP TO WOH_DATE_F_SP
+                              MOVE W_2_M_DATE_T_SP TO WOH_DATE_T_SP
+                          ENDIF
+                          CALL PROC_HIST
+                        ENDIF
+                      ENDIF
+                     ENDIF
+                  ELSE
+                     CALL GET_MED_PRIM
+                     IF ((MEDA_SW = "1") AND (MEDB_SW = "1"))
+                       IF (SQUEEZE W_M_DATE_F <> "") 
+                         MOVE W_M_DATE_F TO WOH_DATE_F
+                         MOVE W_M_DATE_T TO WOH_DATE_T
+                         CALL PROC_HIST
+                       ELSE
+                         MOVE W_2_M_DATE_F TO WOH_DATE_F
+                         MOVE W_2_M_DATE_T TO WOH_DATE_T
+                         CALL PROC_HIST
+                       ENDIF
+                     ELSE
+                       IF ((MEME_RT <> "R1") AND (MEME_RT <> "R2"))
+                       ELSE
+                         PACK INM_REC WITH MEM_REC,MEME_REC
+                         UNPACK INM_REC INTO INM_LIST
+                         MOVE "DELETE" TO INME_NEWBY
+                         CLEAR INME_ID1
+                         CLEAR INME_ID2
+                         MOVE OGB_SEQ1 TO OGB_SEQ
+                         CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                                     INM_LIST
+                         CLEAR INM_LIST
+                         MOVE "RN" TO MEME_RT
+                         PACK MEME_REC WITH MEME_LIST
+                         PACK INM_REC WITH MEM_REC,MEME_REC
+                         UNPACK INM_REC INTO INM_LIST
+                         CLEAR INME_NEWBY
+                         CLEAR INME_CHGBY
+                         IF (INME_TRM = "99999999")
+                             CLEAR INME_TRM
+                         ENDIF
+                         CLEAR INME_ID1
+                         CLEAR INME_ID2
+                         MOVE OGB_SEQ1 TO OGB_SEQ
+                         CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                                 INM_LIST
+                         CLEAR INM_LIST
+                         MOVE "1" TO WRITE_SW
+                       ENDIF
+                     ENDIF
+                  ENDIF 
+                ENDIF
+             REPEAT
+  REPEAT
+  RETURN
+
+PROC_HIST
+ IF ((MEDA_SW = "1") AND (MEDB_SW = "1")):
+  IF ((MEDA_SW_SP = "1") AND (MEDB_SW_SP = "1")):
+   IF ((MEME_EFF >= WOH_DATE_F) AND (WOH_DATE_T >= MEME_TRM) AND:
+      (MEME_EFF >= WOH_DATE_F_SP) AND (WOH_DATE_T_SP >= MEME_TRM))
+      IF (MEME_RT = "R2")
+      ELSE
+         PACK INM_REC WITH MEM_REC,MEME_REC
+         UNPACK INM_REC INTO INM_LIST
+         MOVE "DELETE" TO INME_NEWBY
+         CLEAR INME_ID1
+         CLEAR INME_ID2
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                               INM_LIST
+         CLEAR INM_LIST
+         MOVE "R2" TO MEME_RT
+         PACK MEME_REC WITH MEME_LIST
+         PACK INM_REC WITH MEM_REC,MEME_REC
+         UNPACK INM_REC INTO INM_LIST
+         CLEAR INME_NEWBY
+         CLEAR INME_CHGBY
+         IF (INME_TRM = "99999999")
+            CLEAR INME_TRM
+         ENDIF
+         CLEAR INME_ID1
+         CLEAR INME_ID2
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                 INM_LIST
+         CLEAR INM_LIST
+         MOVE "1" TO WRITE_SW
+      ENDIF 
+   ELSE
+       MOVE EXC_ID1 TO PAUL_ID1
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING PAUL_FD,PAUL_NAME,PAUL_LIST
+       CLEAR PAUL_LIST
+       GOTO PROC_HIST_RET
+   ENDIF
+  ELSE
+    IF ((MEME_EFF >= WOH_DATE_F) AND (WOH_DATE_T >= MEME_TRM))
+       IF (MEME_RT = "R1")
+       ELSE
+         PACK INM_REC WITH MEM_REC,MEME_REC
+         UNPACK INM_REC INTO INM_LIST
+         MOVE "DELETE" TO INME_NEWBY
+         CLEAR INME_ID1
+         CLEAR INME_ID2
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                 INM_LIST
+         CLEAR INM_LIST
+         MOVE "R1" TO MEME_RT
+         PACK MEME_REC WITH MEME_LIST
+         PACK INM_REC WITH MEM_REC,MEME_REC
+         UNPACK INM_REC INTO INM_LIST
+         CLEAR INME_NEWBY
+         CLEAR INME_CHGBY
+         IF (INME_TRM = "99999999")
+            CLEAR INME_TRM
+         ENDIF
+         CLEAR INME_ID1
+         CLEAR INME_ID2
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                 INM_LIST
+         CLEAR INM_LIST
+         MOVE "1" TO WRITE_SW
+       ENDIF
+    ELSE 
+         MOVE WOH_DATE_F TO MED_F
+         MOVE WOH_DATE_T TO MED_T 
+         MOVE MEME_EFF TO SAV_MEME_EFF
+         MOVE MEME_TRM TO SAV_MEME_TRM
+         CALL SPLIT_LINE
+    ENDIF
+  ENDIF
+ ELSE
+   IF ((MEME_EFF >= WOH_DATE_F_SP) AND (WOH_DATE_T_SP >= MEME_TRM))
+        IF (MEME_RT = "R1")
+        ELSE
+          PACK INM_REC WITH MEM_REC,MEME_REC
+          UNPACK INM_REC INTO INM_LIST
+          MOVE "DELETE" TO INME_NEWBY
+          CLEAR INME_ID1
+          CLEAR INME_ID2
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                  INM_LIST
+          CLEAR INM_LIST
+          MOVE "R1" TO MEME_RT
+          PACK MEME_REC WITH MEME_LIST
+          PACK INM_REC WITH MEM_REC,MEME_REC
+          UNPACK INM_REC INTO INM_LIST
+          CLEAR INME_NEWBY
+          CLEAR INME_CHGBY
+          IF (INME_TRM = "99999999")
+             CLEAR INME_TRM
+          ENDIF
+          CLEAR INME_ID1
+          CLEAR INME_ID2
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                  INM_LIST
+          CLEAR INM_LIST
+          MOVE "1" TO WRITE_SW
+        ENDIF
+   ELSE
+          MOVE WOH_DATE_F_SP TO MED_F
+          MOVE WOH_DATE_T_SP TO MED_T 
+          MOVE MEME_EFF TO SAV_MEME_EFF
+          MOVE MEME_TRM TO SAV_MEME_TRM
+          CALL SPLIT_LINE
+   ENDIF
+ ENDIF
+
+PROC_HIST_RET
+ RETURN
+
+SPLIT_LINE
+  IF ((SAV_MEME_EFF < MED_F) AND (SAV_MEME_TRM > MED_T))
+     PACK INM_REC WITH MEM_REC,MEME_REC
+     UNPACK INM_REC INTO INM_LIST
+     MOVE "DELETE" TO INME_NEWBY
+     CLEAR INME_ID1
+     CLEAR INME_ID2
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                             INM_LIST
+     CLEAR INM_LIST
+     MOVE MED_F TO MEME_EFF
+     MOVE MED_T TO MEME_TRM
+     MOVE "R1" TO MEME_RT      
+     PACK MEME_REC WITH MEME_LIST
+     PACK INM_REC WITH MEM_REC,MEME_REC
+     UNPACK INM_REC INTO INM_LIST
+     CLEAR INME_NEWBY
+     CLEAR INME_CHGBY
+     IF (INME_TRM = "99999999")
+        CLEAR INME_TRM
+     ENDIF
+     CLEAR INME_ID1
+     CLEAR INME_ID2
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                             INM_LIST
+     CLEAR INM_LIST
+     CALL DATE_CALC USING MED_F,"SUB","DAYS",1,MEME_TRM
+     MOVE SAV_MEME_EFF TO MEME_EFF 
+     MOVE "RN" TO MEME_RT
+     PACK MEME_REC WITH MEME_LIST
+     PACK INM_REC WITH MEM_REC,MEME_REC
+     UNPACK INM_REC INTO INM_LIST
+     CLEAR INME_NEWBY
+     CLEAR INME_CHGBY
+     IF (INME_TRM = "99999999")
+        CLEAR INME_TRM
+     ENDIF
+     CLEAR INME_ID1
+     CLEAR INME_ID2
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                             INM_LIST
+     CLEAR INM_LIST
+     CALL DATE_CALC USING MED_T,"ADD","DAYS",1,MEME_EFF 
+     MOVE SAV_MEME_TRM TO MEME_TRM
+     MOVE "RN" TO MEME_RT
+     PACK MEME_REC WITH MEME_LIST
+     PACK INM_REC WITH MEM_REC,MEME_REC
+     UNPACK INM_REC INTO INM_LIST
+     CLEAR INME_NEWBY
+     CLEAR INME_CHGBY
+     IF (INME_TRM = "99999999")
+        CLEAR INME_TRM
+     ENDIF
+     CLEAR INME_ID1
+     CLEAR INME_ID2
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                             INM_LIST
+     CLEAR INM_LIST
+     MOVE "1" TO WRITE_SW
+  ELSE
+    IF ((MED_F <= SAV_MEME_EFF) AND (MED_T < SAV_MEME_TRM))
+       PACK INM_REC WITH MEM_REC,MEME_REC
+       UNPACK INM_REC INTO INM_LIST
+       MOVE "DELETE" TO INME_NEWBY
+       CLEAR INME_ID1
+       CLEAR INME_ID2
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                               INM_LIST
+       CLEAR INM_LIST
+       MOVE SAV_MEME_EFF TO MEME_EFF 
+       MOVE MED_T TO MEME_TRM        
+       MOVE "R1" TO MEME_RT     
+       PACK MEME_REC WITH MEME_LIST
+       PACK INM_REC WITH MEM_REC,MEME_REC
+       UNPACK INM_REC INTO INM_LIST
+       CLEAR INME_NEWBY
+       CLEAR INME_CHGBY
+       IF (INME_TRM = "99999999")
+          CLEAR INME_TRM
+       ENDIF
+       CLEAR INME_ID1
+       CLEAR INME_ID2
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                               INM_LIST
+       CLEAR INM_LIST
+       CALL DATE_CALC USING MED_T,"ADD","DAYS",1,MEME_EFF
+       MOVE SAV_MEME_TRM TO MEME_TRM
+       MOVE "RN" TO MEME_RT
+       PACK MEME_REC WITH MEME_LIST
+       PACK INM_REC WITH MEM_REC,MEME_REC
+       UNPACK INM_REC INTO INM_LIST
+       CLEAR INME_NEWBY
+       CLEAR INME_CHGBY
+       IF (INME_TRM = "99999999")
+          CLEAR INME_TRM
+       ENDIF
+       CLEAR INME_ID1
+       CLEAR INME_ID2
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                               INM_LIST
+       CLEAR INM_LIST
+       MOVE "1" TO WRITE_SW
+    ELSE
+          PACK INM_REC WITH MEM_REC,MEME_REC
+          UNPACK INM_REC INTO INM_LIST
+          MOVE "DELETE" TO INME_NEWBY
+          CLEAR INME_ID1
+          CLEAR INME_ID2
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                 INM_LIST
+          CLEAR INM_LIST
+          MOVE SAV_MEME_EFF TO MEME_EFF 
+          CALL DATE_CALC USING MED_F,"SUB","DAYS",1,MEME_TRM 
+          MOVE "RN" TO MEME_RT
+          PACK MEME_REC WITH MEME_LIST
+          PACK INM_REC WITH MEM_REC,MEME_REC
+          UNPACK INM_REC INTO INM_LIST
+          CLEAR INME_NEWBY
+          CLEAR INME_CHGBY
+          IF (INME_TRM = "99999999")
+            CLEAR INME_TRM
+          ENDIF
+          CLEAR INME_ID1
+          CLEAR INME_ID2
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                  INM_LIST
+          CLEAR INM_LIST
+          MOVE MED_F TO MEME_EFF
+          MOVE SAV_MEME_TRM TO MEME_TRM
+          MOVE "R1" TO MEME_RT  
+          PACK MEME_REC WITH MEME_LIST
+          PACK INM_REC WITH MEM_REC,MEME_REC
+          UNPACK INM_REC INTO INM_LIST
+          CLEAR INME_NEWBY
+          CLEAR INME_CHGBY
+          IF (INME_TRM = "99999999")
+            CLEAR INME_TRM
+          ENDIF
+          CLEAR INME_ID1
+          CLEAR INME_ID2
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING RT_FIX_FD,RT_FIX_NAME:
+                                  INM_LIST
+          CLEAR INM_LIST
+          MOVE "1" TO WRITE_SW
+    ENDIF
+  ENDIF
+  RETURN
+
+GET_MED_PRIM
+  CLEAR W_M_DATE_F
+  CLEAR W_M_DATE_T
+  CLEAR W_2_M_DATE_F
+  CLEAR W_2_M_DATE_T
+  CLEAR MEDA_SW
+  CLEAR MEDB_SW
+  PACK MEMO_FK11 WITH EXC_ID1,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> EXC_ID1))
+          BREAK                  
+      ENDIF	
+      IF (SQUEEZE MEMO_TRM = "")
+         MOVE "99999999" TO MEMO_TRM
+      ENDIF
+      IF ((MEME_TRM < MEMO_EFF) OR (MEME_EFF > MEMO_TRM)) 
+         CONTINUE
+      ENDIF
+      IF (SQUEEZE MEMO_RANK = "")
+         CONTINUE
+      ENDIF
+      SWITCH MEMO_TYPE
+         CASE "MEDA" OR "MEDB"
+         DEFAULT
+           CONTINUE
+      ENDSWITCH
+      IF (MEMO_EFF <= "19970701")
+         MOVE "1" TO MEDA_SW
+         MOVE "1" TO MEDB_SW
+         IF (SQUEEZE W_M_DATE_F = "")
+            MOVE MEMO_EFF TO W_M_DATE_F
+         ELSE
+            IF (MEMO_EFF < W_M_DATE_F)
+               MOVE MEMO_EFF TO W_M_DATE_F
+            ENDIF
+         ENDIF	
+         IF (SQUEEZE W_M_DATE_T = "")
+            MOVE MEMO_TRM TO W_M_DATE_T
+         ELSE
+            IF (MEMO_TRM > W_M_DATE_T)
+               MOVE MEMO_TRM TO W_M_DATE_T
+            ENDIF
+         ENDIF	
+      ELSE
+       IF (MEMO_VER = "Y")
+         IF (MEMO_TYPE = "MEDA")
+            IF (SQUEEZE W_2_M_DATE_F = "")
+              MOVE MEMO_EFF TO W_2_M_DATE_F
+            ELSE
+               IF (MEMO_EFF > W_2_M_DATE_F)
+                 MOVE MEMO_EFF TO W_2_M_DATE_F
+               ENDIF
+            ENDIF  
+            IF (SQUEEZE W_2_M_DATE_T = "")
+               MOVE MEMO_TRM TO W_2_M_DATE_T
+            ELSE
+               IF (MEMO_TRM < W_2_M_DATE_T)
+                 MOVE MEMO_TRM TO W_2_M_DATE_T
+               ENDIF
+            ENDIF
+            MOVE "1" TO MEDA_SW
+         ELSE
+            IF (SQUEEZE W_2_M_DATE_F = "")
+              MOVE MEMO_EFF TO W_2_M_DATE_F
+            ELSE
+               IF (MEMO_EFF > W_2_M_DATE_F)
+                 MOVE MEMO_EFF TO W_2_M_DATE_F
+               ENDIF
+            ENDIF  
+            IF (SQUEEZE W_2_M_DATE_T = "")
+               MOVE MEMO_TRM TO W_2_M_DATE_T
+            ELSE
+               IF (MEMO_TRM < W_2_M_DATE_T)
+                 MOVE MEMO_TRM TO W_2_M_DATE_T
+               ENDIF
+            ENDIF
+            MOVE "1" TO MEDB_SW
+         ENDIF
+       ENDIF
+      ENDIF
+  REPEAT
+  RETURN
+
+GET_MED_PRIM_SP
+  CLEAR W_M_DATE_F_SP
+  CLEAR W_M_DATE_T_SP
+  CLEAR W_2_M_DATE_F_SP
+  CLEAR W_2_M_DATE_T_SP
+  CLEAR MEDA_SW_SP
+  CLEAR MEDB_SW_SP
+  PACK MEMO_FK11 WITH SP_ID1,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> SP_ID1))
+          BREAK                  
+      ENDIF	
+      IF (SQUEEZE MEMO_TRM = "")
+         MOVE "99999999" TO MEMO_TRM
+      ENDIF
+      IF ((MEME_TRM < MEMO_EFF) OR (MEME_EFF > MEMO_TRM)) 
+         CONTINUE
+      ENDIF
+      IF (SQUEEZE MEMO_RANK = "")
+         CONTINUE
+      ENDIF
+      SWITCH MEMO_TYPE
+         CASE "MEDA" OR "MEDB"
+         DEFAULT
+           CONTINUE
+      ENDSWITCH
+      IF (MEMO_EFF <= "19970701")
+         MOVE "1" TO MEDA_SW_SP
+         MOVE "1" TO MEDB_SW_SP
+         IF (SQUEEZE W_M_DATE_F_SP = "")
+            MOVE MEMO_EFF TO W_M_DATE_F_SP
+         ELSE
+            IF (MEMO_EFF < W_M_DATE_F_SP)
+               MOVE MEMO_EFF TO W_M_DATE_F_SP
+            ENDIF
+         ENDIF	
+         IF (SQUEEZE W_M_DATE_T_SP = "")
+            MOVE MEMO_TRM TO W_M_DATE_T_SP
+         ELSE
+            IF (MEMO_TRM > W_M_DATE_T_SP)
+               MOVE MEMO_TRM TO W_M_DATE_T_SP
+            ENDIF
+         ENDIF	
+      ELSE 
+       IF (MEMO_VER = "Y")
+         IF (MEMO_TYPE = "MEDA")
+            IF (SQUEEZE W_2_M_DATE_F_SP = "")
+              MOVE MEMO_EFF TO W_2_M_DATE_F_SP
+            ELSE
+               IF (MEMO_EFF > W_2_M_DATE_F_SP)
+                 MOVE MEMO_EFF TO W_2_M_DATE_F_SP
+               ENDIF
+            ENDIF  
+            IF (SQUEEZE W_2_M_DATE_T_SP = "")
+               MOVE MEMO_TRM TO W_2_M_DATE_T_SP
+            ELSE
+               IF (MEMO_TRM < W_2_M_DATE_T_SP)
+                 MOVE MEMO_TRM TO W_2_M_DATE_T_SP
+               ENDIF
+            ENDIF
+            MOVE "1" TO MEDA_SW_SP
+         ELSE
+            IF (SQUEEZE W_2_M_DATE_F_SP = "")
+              MOVE MEMO_EFF TO W_2_M_DATE_F_SP
+            ELSE
+               IF (MEMO_EFF > W_2_M_DATE_F_SP)
+                 MOVE MEMO_EFF TO W_2_M_DATE_F_SP
+               ENDIF
+            ENDIF  
+            IF (SQUEEZE W_2_M_DATE_T_SP = "")
+               MOVE MEMO_TRM TO W_2_M_DATE_T_SP
+            ELSE
+               IF (MEMO_TRM < W_2_M_DATE_T_SP)
+                 MOVE MEMO_TRM TO W_2_M_DATE_T_SP
+               ENDIF
+            ENDIF
+            MOVE "1" TO MEDB_SW_SP
+         ENDIF
+       ENDIF
+      ENDIF
+  REPEAT
+  RETURN
+
+GET_SP_ID
+   CLEAR     MEM_AIM
+   PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+   PACK      MEM_AIM3 WITH "03X","02",BLANKS
+   CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+   RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "Input Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written  :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING PAUL_FD,PAUL_NAME
+         CALL      PREP_OGBFILE USING RT_FIX_FD,RT_FIX_NAME
+         CALL      OPEN_OGBFILE USING EXC_FD,EXC_NAME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING RT_FIX_FD,RT_FIX_NAME
+         CALL      CLOSE_OGBFILE USING EXC_FD,EXC_NAME
+         RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of ELG0850.PS
+. +++++++++++++++++++++++++++++++++++++

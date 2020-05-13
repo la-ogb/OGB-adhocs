@@ -1,0 +1,874 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program Name  :  A1602291                                         +
++                                                                      +
++     Description  :  Using Medimpact records from ELG1100.PS, this    +
++                     program finds OGB members with invalid EGWP ids  +
++                     and updates Impact with the correct value from   +
++                     the Medimpact file.                              +
++                                                                      +
++          Author  :  Jakob Hendrix                                    +
++    Root Program  :  ELG1100                                          +
++ .................................................................... +
++  apjwh - 02/29/2016 - DEV - Initial Version                          +
++ .................................................................... +
++  apiii - mm/dd/ccyy - CHG -                                          +
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++ -------------------------------------------------------------
++ Required Program Includes 
++ -------------------------------------------------------------    
+                            
+    INC    COMMON.CB       ...Common work area
+    INC    X_COMMON.CB     ...OGB Common Work Area
+    INC    VALID.RL        ...Valid codes
+    INC    X_OGBFILE.CB    ...OGB Custom File Handler
+    INC    PRT.RL          ...Printer Definition File
+              
++ -------------------------------------------------------------
++ Program Specific Includes
++ -------------------------------------------------------------
+
+    INC    MEM.RL          ...Member Demographics
+    INC    MEME.RL         ...Member Enrollment Data
+    INC    MEMO.RL         ...Member Other Coverage Data
+    INC    D_MEMMEM.CB     ...Member Import Layout
+    INC    CMDPARAM.CB     ...Command Line variables
+
++ -------------------------------------------------------------
++ File Declarations
++ -------------------------------------------------------------
+
+...Input File(s)
+
+MEDIMP_FD          FILE    VAR=392,  TEXT
+MEDIMP_NAME        INIT    "/w/mgr_eligibility.txt"
+MEDIMP_LIST        LIST
+..............................
+MEDIMP_REC         CHAR     392    
+..............................
+                   LISTEND
+
+...Work File(s)
+
+F_MEDIMP_FD        FILE    VAR=100,  TEXT
+F_MEDIMP_NAME      INIT    "/w/a1602291_medimp.txt"  
+F_MEDIMP_LIST      LIST
+..............................
+F_MEDIMP_ID1       CHAR     08
+F_MEDIMP_EGWP      CHAR     30
+F_MEDIMP_LNAME     CHAR     20
+F_MEDIMP_FNAME     CHAR     15
+F_MEDIMP_HICN      CHAR     20    
+..............................
+                   LISTEND    
+
+...Output File(s)
+
+UPDATE_REC_FD      FILE    VAR=4800,  TEXT  ...input for d_memmem.cb
+UPDATE_REC_NAME    INIT    "a1602291.out"
+
+ERROR_FD           FILE    VAR=100,  TEXT
+ERROR_NAME         INIT    "/w/a1602291_error.txt"
+
++ -------------------------------------------------------------
++ Program Specific Variables & Working Storage
++ -------------------------------------------------------------
+
+...<Test Options>...
+
+CREATE_MEDIMP      INIT    "Y"  ...create a new Medimp file?
+DELETE_FILES       INIT    "Y"  ...delete work files at EOP?
+
+...<End Test Options>...
+    
+...Character Variables
+
+PIPE               INIT    "|"
+APOS               INIT    "'"
+CHAR_1             CHAR     1
+CHAR_3             CHAR     3
+FILE_BEGIN         NUM     "0"    
+
+...Clock Variables
+
+TIMESTAMP          CHAR     14
+CURRDATE           CHAR     8
+TRAP_DATA          CHAR     500
+CAL_CLOCK          CHAR     21
+ORIG_RETURN        NUM     5
+CURR_RETURN        NUM     5
+TODAY              CHAR     8
+R_TIME             CHAR     8
+
+...Date Variables
+
+EFF_ASOF           CHAR     8
+LAST_DATE          INIT    "99999999"
+SWITCH_DATE        INIT    "20150301"
+R_DATE             CHAR     10
+
+...Printing Controls
+
+NORM_10            CHAR     29
+BOLD_10            CHAR     29
+NORM_12            CHAR     26
+BOLD_12            CHAR     26
+NORM_16            CHAR     33
+BOLD_16            CHAR     33
+
+ESC_CHAR           EQU     27
+XCAPE              INIT    ESC_CHAR
+
+PARAM_LIST         LIST
+..............................
+PARAM_XXX          CHAR     10
+PARAM_YYY          CHAR     5
+PARAM_DATE         CHAR     8
+..............................
+                   LISTEND
+
+...Search Variables
+
+SAVE_MEME_REC      CHAR     600
+SAVE_MEME_TRM      CHAR     8
+NAME_MATCH_TF      CHAR     1
+
+
++ ----------------------------------------------------------------------
++ Begin Program 
++ ----------------------------------------------------------------------
+
+...Start here if selected from menu (RUN_MODE = "N")
+
+    CALL    RUN_NOW
+
+    CHAIN   C_NEXT
+
+...Start here if called by the Scheduler (RUN_MODE = "B")
+
+    INC    SCHED_NP.SR    ...Scheduler routines (w/o printer)
+
+RUN_NOW
+
+...Check return stack
+
+    RETCOUNT    ORIG_RETURN
+
+...Screen Display
+ 
+    DISPLAY    *ES
+
+    MOVE     "MENU"                INTO  C_NEXT
+    MOVE     "EGWP ID Update"      INTO  C_OPER
+    MOVE     "A1602291"            INTO  C_PROG
+    MOVE     BLANKS                INTO  C_LABEL
+    MOVE     BLANKS                INTO  C_FILE
+    MOVE     BLANKS                INTO  C_KEYS
+    CLOCK    CALENDAR              INTO  CAL_CLOCK
+         
+    CALL    X_BLANK_SCREEN
+
+...Set Applicable Traps 
+
+    TRAPSAVE    TRAP_DATA
+    TRAPCLR     ALL
+    TRAP        QUIT  NORESET  IF  F9
+    
+...Get scheduler information
+
+    CALL    SCHED_PICK
+
+    IF ((RUN_MODE = "B") OR (RUN_MODE = "N"))
+        CALL    MAIN_PROCESS
+    ENDIF
+
+    RETURN
+
++ ----------------------------------------------------------------------
++ Main Process
++ ----------------------------------------------------------------------
+
+MAIN_PROCESS
+
+...Collect data for comparison
+    debug
+    CALL    INITIALIZE    
+    CALL    PREPARE_FILES
+    CALL    PROCESS_MEDIMP
+    CALL    COMPARE_EGWP
+
+...Close Files
+    debug
+    CALL    CLEAN_UP    
+
+   RETURN
+                                                   
++ ----------------------------------------------------------------------
++ Sub-Routines 
++ ----------------------------------------------------------------------
++/-----------------------------------
+INITIALIZE
++/-----------------------------------
+*///Draws the standard screen header///*
+
+    DISPLAY *P1:9,*ES
+
+...From X_STANDARD.SR. Returns date and draws screen header
+    CALL    X_BLANK_SCREEN
+
+    CLOCK    TIMESTAMP  INTO  TIMESTAMP
+    CLOCK    TIMESTAMP  INTO  CURRDATE
+    CLOCK    TIMESTAMP  INTO  TODAY
+
+...Display Counters
+    MOVE    "Total Medimpact Records:"  INTO  X_CNTDESC1
+    MOVE    "Medimpact Records Read:"   INTO  X_CNTDESC2
+    MOVE    "Records to be Changed:"    INTO  X_CNTDESC3
+    MOVE    "Error Records:"            INTO  X_CNTDESC4
+    MOVE    "Not Used:"                 INTO  X_CNTDESC5
+    MOVE    "Not Used:"                 INTO  X_CNTDESC6
+
+    CALL    X_DISPLAY_COUNTS
+
+  RETURN
+
++/-----------------------------------
+PREPARE_FILES
++/-----------------------------------
+*///Open/prepare all files///*
+
+...Open/Prepare files
+    IF  (CREATE_MEDIMP = "Y")
+        CALL    OPEN_OGBFILE  USING  MEDIMP_FD, MEDIMP_NAME    
+
+        CALL    PREP_OGBFILE  USING  F_MEDIMP_FD, F_MEDIMP_NAME
+    ELSE
+        CALL    OPEN_OGBFILE  USING  F_MEDIMP_FD, F_MEDIMP_NAME
+    ENDIF
+
+    CALL    PREP_OGBFILE  USING  UPDATE_REC_FD, UPDATE_REC_NAME
+
+    CALL    PREP_OGBFILE  USING  ERROR_FD, ERROR_NAME
+
+  RETURN
+
++/-----------------------------------
+PROCESS_MEDIMP
++/-----------------------------------
+*///Formats the MI raw data into the F_MEDIMP_LIST///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+PMED_FIRST_YN     CHAR    1
+./-----------------------------------
+
+    CALL    SCREEN_CLEAN  USING  20, 22
+
+    IF  (CREATE_MEDIMP <> "Y")
+        RETURN
+    ENDIF
+
+    MESSAGE    HORZ="16", VERT="20":
+               BGCOL=C_DLGB, FGCOL=C_DLGF:
+               LNCOL=C_DLGL, SHADE="y":
+
+               TEXT="Creating MedImpact Comparison File...Please Wait";
+
+    MOVE    "Y"       INTO  PMED_FIRST_YN
+    MOVE    OGB_SEQ1  INTO  OGB_SEQ
+
+    LOOP
+        CALL    READ_OGBFILE  USING  MEDIMP_FD, MEDIMP_NAME, MEDIMP_LIST
+
+        BREAK  IF  (RESULT <> 1)
+
+...Skips header records
+        MOVE    MEDIMP_REC  INTO  CHAR_3
+
+        IF  ((CHAR_3 = "ST|") AND (PMED_FIRST_YN = "Y")) 
+            MOVE    "N"  INTO  PMED_FIRST_YN
+            CONTINUE
+        ELSE  IF  ((CHAR_3 = "CHQ") OR (CHAR_3 = "SE|"))
+            CONTINUE
+        ENDIF
+
+...Pulls required fields from MedImpact file
+        CALL    MEDIMP_DELIMIT
+
+...Writes to MedImpact comparison file
+        CALL    WRITE_OGBREC  USING  F_MEDIMP_FD, F_MEDIMP_NAME: 
+                                     F_MEDIMP_LIST
+
+...Counts MedImpact EGWP records
+        CALL    COUNTER_ROUTINE  USING  X_CNT1, 1000
+
+    REPEAT
+
+...Reset the file to the first position
+    REPOSIT  F_MEDIMP_FD, FILE_BEGIN
+
+    CALL    SCREEN_CLEAN  USING  20, 22
+    CALL    X_DISPLAY_COUNTS
+
+  RETURN
+
++/-----------------------------------
+MEDIMP_DELIMIT
++/-----------------------------------
+*///Pulls the fields from the MedImpact record into the given variable.
+.   these fields to the MedImpact comparison file.///*
+
+    CALL    DELIMIT_STRING  USING  MEDIMP_REC, 02, F_MEDIMP_EGWP,  PIPE
+    CALL    DELIMIT_STRING  USING  MEDIMP_REC, 05, F_MEDIMP_LNAME, PIPE
+    CALL    DELIMIT_STRING  USING  MEDIMP_REC, 06, F_MEDIMP_FNAME, PIPE
+    CALL    DELIMIT_STRING  USING  MEDIMP_REC, 14, F_MEDIMP_ID1,   PIPE
+    CALL    DELIMIT_STRING  USING  MEDIMP_REC, 27, F_MEDIMP_HICN,  PIPE 
+
+  RETURN  ...With COM_LIST fields from the MedImpact file
+
++/-----------------------------------
+COMPARE_EGWP
++/-----------------------------------
+*/// With the ogbID from Medimpact, find the most recent EGWP record.
+.    Only change inequal egwpIDs///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+LOOP_ID1          CHAR    8
+LAST_ID1          CHAR    8
+./-----------------------------------
+
+    MESSAGE    HORZ="25", VERT="20":
+               BGCOL=C_DLGB, FGCOL=C_DLGF:
+               LNCOL=C_DLGL, SHADE="y":
+
+               TEXT="Comparing EIDs ... Please Wait";
+    
+    MOVE    OGB_SEQ1  TO  OGB_SEQ
+
+    LOOP
+        CLEAR    MEM_LIST
+        CLEAR    MEME_LIST
+        CLEAR    SAVE_MEME_REC
+        CLEAR    SAVE_MEME_TRM
+        CLEAR    NAME_MATCH_TF
+        CLEAR    LOOP_ID1
+        CLEAR    LAST_ID1
+
+        CALL    READ_OGBFILE  USING  F_MEDIMP_FD, F_MEDIMP_NAME:
+                                     F_MEDIMP_LIST
+        BREAK  IF  (RESULT <> 1)
+
+        CALL    COUNTER_ROUTINE  USING  X_CNT2, 1000
+
+        IF  (SQUEEZE F_MEDIMP_ID1 = "")    ...Skips "PRO" recs 
+            CONTINUE
+        ENDIF
+
+        MOVE    F_MEDIMP_ID1  INTO  LOOP_ID1
+
+...Cycles through all MEM records a person might have. If an active EGWP
+...rec is found, it stops. Otherwise it will stop when a MEM rec is
+...found that links back to the original MEM rec or is blank.
+        LOOP
+            CALL    READ_MEM   USING  LOOP_ID1 
+            CALL    FIND_EGWP  USING  LOOP_ID1 
+
+            IF  (SAVE_MEME_TRM >= TODAY)
+                BREAK
+            ENDIF
+
+            IF  ((MEM_ACCU = F_MEDIMP_ID1) OR (MEM_ACCU = LAST_ID1):
+                OR (SQUEEZE MEM_ACCU = ""))
+                BREAK
+            ENDIF
+
+            MOVE    LOOP_ID1  INTO  LAST_ID1
+            MOVE    MEM_ACCU  INTO  LOOP_ID1
+        REPEAT
+
+...Saves the MEME rec. If no valid one was found, writes to error file.
+        IF  (SQUEEZE SAVE_MEME_REC = "")
+.           CALL    WRITE_OGBFILE  USING  ERROR_FD, ERROR_NAME:
+.                                          F_MEDIMP_LIST
+
+.           CALL    COUNTER_ROUTINE  USING  X_CNT4,  50
+
+            CONTINUE
+        ENDIF
+    
+        UNPACK    SAVE_MEME_REC  INTO  MEME_LIST
+
+...Test EID. No difference, move along, else replace OGB EID with MI's
+        IF  (SQUEEZE MEME_EID = SQUEEZE F_MEDIMP_EGWP)  ...No change
+            CONTINUE
+        ELSE    
+            MOVE    F_MEDIMP_EGWP  INTO  MEME_EID
+        ENDIF
+
+...Find records with mismatched names.
+        CALL    NAME_CHECK  USING  MEM_FNAME, F_MEDIMP_FNAME:
+                                   MEM_LNAME, F_MEDIMP_LNAME
+
+...The account with an active plan was not the one Medimpact had. Find
+...the correct ID. 
+        IF  (MEME_ID1 <> MEM_ID1)
+            CALL    READ_MEM  USING  MEME_ID1
+
+            IF  (NAME_MATCH_TF = "F")
+                CLEAR    NAME_MATCH_TF
+                CALL     NAME_CHECK  USING  MEM_FNAME, F_MEDIMP_FNAME:
+                                            MEM_LNAME, F_MEDIMP_LNAME
+            ENDIF
+        ENDIF
+
+...In case names are too divergent, checks the HIC Number. If those
+...don't match, output error.
+        IF  (NAME_MATCH_TF = "F")
+            CALL    FIND_HICN  USING  MEME_ID1
+
+            IF  (SQUEEZE MEMO_POL = SQUEEZE F_MEDIMP_HICN)
+                CLEAR    NAME_MATCH_TF
+            ELSE    
+                CALL     WRITE_OGBREC  USING  ERROR_FD, ERROR_NAME:
+                                              F_MEDIMP_LIST
+                CALL    COUNTER_ROUTINE  USING  X_CNT4,  50
+                CONTINUE
+            ENDIF
+        ENDIF
+
+...Pack the INM record to write out to the change file.
+        CLEAR    INM_LIST
+        CLEAR    INM_REC
+        CLEAR    INM_CHGBY
+
+        PACKLEN    INM_REC  WITH  MEM_REC, MEME_LIST
+        UNPACK     INM_REC  INTO  INM_LIST 
+
+...Replace the bad egwpID
+        CALL    WRITE_OGBREC  USING  UPDATE_REC_FD:
+                      UPDATE_REC_NAME:
+                     INM_LIST
+
+        CALL    COUNTER_ROUTINE  USING  X_CNT3, 10
+    REPEAT
+
+    CALL    SCREEN_CLEAN  USING  20,  22
+    CALL    X_DISPLAY_COUNTS
+
+  RETURN
+
+. *****************************************
+. Finds the MEM record for OGBid provided
+. *****************************************
++/-----------------------------------
+READ_MEM        ROUTINE  MEM@ID1
++/-----------------------------------
+*///Finds the MEM record for ogbID provided///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+MEM@ID1           CHAR    @    
+./-----------------------------------
+
+...Search the MEM table by OGB@ID Index Key
+    PACK    MEM_FK11  WITH  MEM@ID1, BLANKS
+
+    CALL    FILE_READ  USING  MEM_FD:    ...FILE DECLARATION LIST
+                              MEM_FN:    ...FILE NAME LIST  
+                              MEM_FC:    ...(I)NDEX OR (A)IMDEX
+                              MEM_FV:    ...FILE KEY VARLISTS
+                              MEM_FK:    ...FILE KEY SIZES  
+                              MEM_LIST:  ...FILE RECORD (FIELD LIST)
+                              MEM_REC:   ...FILE RECORD (PACKED)
+                              MEM_OLD:   ...FILE SAVED WHEN READ
+                              MEM_QTY:   ...NUMBER OF FILES 
+                              1          ...FILE NUMBER FOR THIS READ
+
+...EOF indicating no MEM rec found for OGBid.
+    IF  (RESULT <> 1)
+        CLEAR    MEM_LIST
+        RETURN
+    ENDIF
+
+  RETURN  ...With demographic data of the OGBid provided
+
++/-----------------------------------
+FIND_EGWP        ROUTINE  MEME@ID1
++/-----------------------------------
+*///Finds the MEM record for OGBid provided///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+MEME@ID1         CHAR    @
+./-----------------------------------
+
+    CLEAR    MEME_LIST
+    CLEAR    MEME_REC
+    CLEAR    MEME_FK11
+
+    PACK     MEME_FK11  WITH  MEME@ID1, BLANKS
+
+    CALL     FILE_READ  USING  MEME_FD:    ...FILE DECLARATION LIST
+                               MEME_FN:    ...FILE NAME LIST  
+                               MEME_FC:    ...(I)NDEX OR (A)IMDEX
+                               MEME_FV:    ...FILE KEY VARLISTS
+                               MEME_FK:    ...FILE KEY SIZES  
+                               MEME_LIST:  ...FILE RECORD (FIELD LIST)
+                               MEME_REC:   ...FILE RECORD (PACKED)
+                               MEME_OLD:   ...FILE SAVED WHEN READ
+                               MEME_QTY:   ...NUMBER OF FILES 
+                               1           ...FILE NUMBER FOR THIS READ
+
+    LOOP
+        CALL    FILE_NEXT  ...using MEME
+        IF  ((RESULT <> 1) OR (MEME@ID1 <> MEME_ID1))  ...End of file
+            CLEAR    MEME_LIST
+            BREAK
+        ENDIF
+
+        IF  (SQUEEZE MEME_PRD <> "EGWP")
+            CONTINUE
+        ELSE
+            IF  (SQUEEZE MEME_TRM = "")
+                MOVE    LAST_DATE  INTO  MEME_TRM
+            ENDIF    
+        
+...Found active plan. Nice.
+            IF  (MEME_TRM >= TODAY)
+                MOVE    MEME_REC  INTO  SAVE_MEME_REC
+                MOVE    MEME_TRM  INTO  SAVE_MEME_TRM
+                RETURN
+
+...Is new EGWP record more recent than prior one?
+            ELSE  IF  (SQUEEZE SAVE_MEME_TRM <> "")
+                IF  (MEME_TRM > SAVE_MEME_TRM)
+                    MOVE    MEME_REC  INTO  SAVE_MEME_REC
+                    MOVE    MEME_TRM  INTO  SAVE_MEME_TRM
+                ELSE
+                    CONTINUE    ...and older rec
+                ENDIF
+
+...First run
+            ELSE
+                MOVE    MEME_REC  INTO  SAVE_MEME_REC
+                MOVE    MEME_TRM  INTO  SAVE_MEME_TRM
+            ENDIF
+        ENDIF
+    REPEAT
+
+    RETURN
+
++/-----------------------------------
+NAME_CHECK        ROUTINE  FNAME@OGB,  FNAME@MED,  LNAME@OGB,  LNAME@MED
++/-----------------------------------
+*///Compare the first and last names between OGB and Medimpact///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+FNAME@OGB         CHAR    @
+FNAME@MED         CHAR    @
+LNAME@OGB         CHAR    @
+LNAME@MED         CHAR    @
+
+NAME_LIST         LIST
+.............................
+FNAME_CHAR_3      CHAR    3
+LNAME_CHAR_3      CHAR    3
+FNAME_CHAR_1      CHAR    1
+FNAME_SAVE_MED    CHAR    20
+FNAME_SAVE_OGB    CHAR    20
+LNAME_SAVE_MED    CHAR    20
+LNAME_SAVE_OGB    CHAR    20
+.............................
+                  LISTEND
+./-----------------------------------
+
+    CLEAR    NAME_LIST    
+    CLEAR    CHAR_3
+    CLEAR    CHAR_1
+
+...Removes apostropies from name variables. 
+    CALL    HUNT_APOS  USING  FNAME@MED, FNAME_SAVE_MED
+    CALL    HUNT_APOS  USING  FNAME@OGB, FNAME_SAVE_OGB
+    CALL    HUNT_APOS  USING  LNAME@MED, LNAME_SAVE_MED
+    CALL    HUNT_APOS  USING  LNAME@OGB, LNAME_SAVE_OGB
+
+...First 3 char of first name
+    MOVE    FNAME@MED  INTO  FNAME_CHAR_3
+    MOVE    FNAME@OGB  INTO  CHAR_3
+
+    IF (FNAME_CHAR_3 <> CHAR_3)
+
+...In case of additions such as "III", MI, etc
+        SCAN    (SQUEEZE FNAME@MED)  IN  FNAME@OGB 
+        IF  (EQUAL)
+            RESET    FNAME@OGB    
+        ELSE
+            SCAN    (SQUEEZE FNAME@OGB)  IN  FNAME@MED 
+            IF  (EQUAL)
+ debug
+                RESET    FNAME@MED    
+            ELSE
+                MOVE    FNAME@MED  INTO  FNAME_CHAR_1
+                MOVE    FNAME@OGB  INTO  CHAR_1
+                MOVE    "F"  INTO  NAME_MATCH_TF
+            ENDIF
+        ENDIF
+    ENDIF
+
+...First 3 char of last name
+    CLEAR   CHAR_3
+    MOVE    LNAME@MED  INTO  LNAME_CHAR_3
+    MOVE    LNAME@OGB  INTO  CHAR_3
+
+    IF  (LNAME_CHAR_3 <> CHAR_3)
+
+...In case of additions such as appended spouse surnames
+        SCAN    (SQUEEZE LNAME@MED)  IN  LNAME@OGB
+        IF  (EQUAL)
+            RESET    LNAME@OGB
+        ELSE
+            SCAN    (SQUEEZE LNAME@OGB)  IN  LNAME@MED
+            IF  (EQUAL)
+                RESET    LNAME@MED
+            ELSE
+                MOVE    "F"  INTO  NAME_MATCH_TF
+                RETURN
+            ENDIF    
+        ENDIF
+    ENDIF
+
+...If the last names match, and the first char of the first name matches
+    IF ((FNAME_CHAR_1 = CHAR_1) AND (NAME_MATCH_TF = "F"))
+        CLEAR    NAME_MATCH_TF
+    ENDIF
+
+...Replaces any removed apostrophies for the update records
+    IF  (FNAME_SAVE_MED <> NULL)
+        MOVE    FNAME_SAVE_MED  INTO  FNAME@MED
+    ENDIF
+
+    IF  (FNAME_SAVE_OGB <> NULL)
+        MOVE    FNAME_SAVE_OGB  INTO  FNAME@OGB
+    ENDIF
+
+    IF  (LNAME_SAVE_MED <> NULL)
+        MOVE    LNAME_SAVE_MED  INTO  LNAME@MED
+    ENDIF
+
+    IF  (LNAME_SAVE_OGB <> NULL)
+        MOVE    LNAME_SAVE_OGB  INTO  LNAME@OGB
+    ENDIF
+
+  RETURN
+
+. ***********************************
+. Find the HIC Number of the member
+. ***********************************
++/-----------------------------------
+FIND_HICN        ROUTINE  MEMO@ID1
++/-----------------------------------
+*///Find the HIC number///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+MEMO@ID1          CHAR    @  ...OGB id
+./-----------------------------------
+    
+    CLEAR    MEMO_LIST
+    CLEAR    MEMO_REC
+    CLEAR    MEMO_FK11
+
+    PACK     MEMO_FK11  WITH   MEMO@ID1, BLANKS
+
+    CALL    FILE_READ   USING  MEMO_FD:    ...FILE DECLARATION LIST
+                               MEMO_FN:    ...FILE NAME LIST
+                               MEMO_FC:    ...TYPE OF INDEX
+                               MEMO_FV:    ...FILE KEY VARLISTS
+                               MEMO_FK:    ...FILE KEY SIZES
+                               MEMO_LIST:  ...FILE RECORD (FIELD LIST)
+                               MEMO_REC:   ...FILE RECORD (PACKED)
+                               MEMO_OLD:   ...FILE SAVED WHEN READ
+                               MEMO_QTY:   ...NUMBER OF FILES
+                               1           ...FILE NUMBER FOR THIS READ
+
+    LOOP
+        CLEAR    MEMO_LIST
+        CALL     FILE_NEXT  ..using MEMO 
+
+        BREAK  IF  ((RESULT <> 1) OR (MEMO_ID1 <> MEMO@ID1))
+
+        IF  (SQUEEZE MEMO_TRM = "")
+            MOVE    LAST_DATE  INTO  MEMO_TRM
+        ENDIF
+
+        IF  (MEMO_TRM >= TODAY)
+            RETURN
+        ENDIF
+    REPEAT
+
+  RETURN
+
++/-----------------------------------
+HUNT_APOS        ROUTINE  NAME@APOS, SAVE@APOS
++/-----------------------------------
+*///Removes apostrophies///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+NAME@APOS         CHAR    @
+SAVE@APOS         CHAR    @
+NAME_1            CHAR    20
+NAME_2            CHAR    20
+./-----------------------------------
+
+    MOVE    NAME@APOS  INTO  SAVE@APOS
+
+...Removes an apostrophy from a name. Keeps the original.
+    SCAN    APOS  IN  NAME@APOS
+    IF  (EQUAL)
+        BUMP      NAME@APOS
+        MOVE      NAME@APOS  INTO  NAME_2
+        BUMP      NAME@APOS  BY  -2
+        LENSET    NAME@APOS
+        RESET     NAME@APOS
+        MOVE      NAME@APOS  INTO  NAME_1
+        PACK      NAME@APOS  WITH  NAME_1, NAME_2
+    ELSE
+        CLEAR    SAVE@APOS
+    ENDIF
+
+  RETURN
+
++/-----------------------------------
+COUNTER_ROUTINE        ROUTINE  CNT@VAR, CNT@DIV
++/-----------------------------------
+*///Increments the counter passed in parameter 1 by 1.
+.   If CNT@VAR is evenly divisible by CNT@DIV, redraw the screen///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+CNT@VAR           FORM    @
+CNT@DIV           FORM    @
+./-----------------------------------
+
+    MOVE    (CNT@VAR + 1)  INTO  CNT@VAR
+
+    IF  (CNT@VAR % CNT@DIV = 0)
+        CALL    X_DISPLAY_COUNTS
+    ENDIF
+
+  RETURN  ...With new tallies
+
++/-----------------------------------
+CLEAN_UP
++/-----------------------------------
+*///Close and delete files///*
+
+...Input files
+    CALL    CLOSE_OGBFILE  USING  MEDIMP_FD, MEDIMP_NAME
+
+...Work files
+    IF  (DELETE_FILES = "Y")
+        CLOSE    F_MEDIMP_FD, DELETE
+    ELSE
+        CALL    CLOSE_OGBFILE  USING  F_MEDIMP_FD, F_MEDIMP_NAME
+    ENDIF
+
+...Output files
+    CALL    CLOSE_OGBFILE  USING  UPDATE_REC_FD, UPDATE_REC_NAME
+    CALL    CLOSE_OGBFILE  USING  ERROR_FD, ERROR_NAME
+
+    CALL    NORMAL_EOJ
+
+   RETURN
+
++/-----------------------------------
+SCREEN_CLEAN        ROUTINE  CLN@START, CLN@END
++/-----------------------------------
+*///Erases lines from CLEAN.START to CLEAN.END///*
+./-----------------------------------
+./ Local Variables
+./-----------------------------------
+CLN@START         NUM     @
+CLN@END           NUM     @
+V.POS             NUM     2
+./-----------------------------------
+
+    FOR  V.POS  FROM  CLN@START  TO  CLN@END
+        DISPLAY    *V=V.POS, *EL
+    REPEAT
+
+    CALL    X_DISPLAY_COUNTS
+
+  RETURN  ...With a neater screen
+
++/-----------------------------------
+QUIT
++/-----------------------------------
+*///Operator pressed F9///*
+
+    IF  (C_RMODE = "I")
+        ERROR    HORZ="23", VERT="19":
+                 BGCOL=C_ERRB, FGCOL=C_ERRF:
+                 LNCOL=C_ERRL, SHADE="Y":
+
+                 TEXT=" Process Aborted by Operator ":
+                 TEXT="-----------------------------"
+
+        MESSAGEERASE    
+    ENDIF
+
+    CLEAR      C_NOHIST
+
+    TRAPREST  TRAP_DATA
+
+    IF (RUN_MODE = "B")
+        LOOP
+            RETCOUNT    CURR_RETURN
+            WHILE  (CURR_RETURN > ORIG_RETURN)
+            NORETURN
+        REPEAT
+
+        MOVE    SCH_RTABRT  INTO  SCH@RTCODE
+         RETURN
+    ENDIF
+
+   CHAIN    "MENU"
+
++/-----------------------------------
+NORMAL_EOJ
++/-----------------------------------
+*///End of program clean-up.///*
+
+    MOVE    "NEOJ"                INTO  X_FINISH_STATUS
+    MOVE    "A1602291 Completed"  INTO  X_PROG_FINISH
+
+    IF  ((RUN_MODE = "N") AND (NOT C_CMDPAR))
+        CALL    X_END_OF_JOB
+    ENDIF
+
+...Return Control to Chain - End of Program
+
+        TRAPREST    TRAP_DATA
+        MOVE        SCH_RTSUCC  INTO  SCH@RTCODE
+
+   RETURN
+
++ -------------------------------------------------------------
++ Subroutines Found in Includes 
++ -------------------------------------------------------------
+
+    INC    CMDPARAM.SR
+    INC    FILE.IO
+    INC    PRINT.SR
+    INC    UTIL.SR
+    INC    VALID.IO
+    INC    X_OGBFILE.IO
+    INC    X_STANDARD.SR
+    INC    DELIMIT.SR
+
++ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ End of <A1602291.PS> 
++ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

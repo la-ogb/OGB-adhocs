@@ -1,0 +1,1044 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0310241.PS
++    apsjm 10/24/2003 A0310241 ADH - DEPENDENT COSTS                      
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment   
+              INC       CLMS.RL          ...Claims Detail   
+              INC       MONPLAN.RL       ...Plan By Paid Month
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+MONPLAN_FD       IFILE    FIX=213,UNCOMP,KEYL=11,TEXT
+MONPLAN_NAME     INIT     "/w/depcost.ix1"
+.
+MONPLAN_KEY      DIM      11 
+
+MONPLAN2_FD      FILE     VAR=80,UNCOMP,TEXT
+MONPLAN2_NAME    INIT     "/w/depcost_detail.txt"
+MONPLAN2_LIST    LIST
+MONPLAN2_PLAN    DIM      5
+MONPLAN2_DATE    DIM      6
+MONPLAN2_CLAIM   DIM      8
+MONPLAN2_PAID    FORM     10.2
+MONPLAN2_AGE     DIM      3
+                 LISTEND
+
+MMXPLAN2_FD      FILE     VAR=80,UNCOMP,TEXT
+MMXPLAN2_NAME    INIT     "/w/memxcost_detail.txt"
+MMXPLAN2_LIST    LIST
+MMXPLAN2_PLAN    DIM      5
+MMXPLAN2_DATE    DIM      6
+MMXPLAN2_ID      DIM      8
+MMXPLAN2_ACC     DIM      4 
+MMXPLAN2_PAID    FORM     10.2
+MMXPLAN2_AGE     DIM      3
+                 LISTEND
+.
+. ----------------------------
+.
+CLM_WRK_FD      FILE    VAR=53,TEXT
+CLM_WRK_NME     INIT    "/w/clm.a0310241.wrk"
+CLM_WRK_LIST    LIST
+CLM_WRK_ID1     DIM     8
+CLM_WRK_INC     DIM     8
+CLM_WRK_DOB     DIM     8
+CLM_WRK_REL     DIM     2
+CLM_WRK_NET     DIM     5
+CLM_WRK_PRD     DIM     5
+CLM_WRK_CARR    DIM     4
+CLM_WRK_PLAN    DIM     4
+CLM_WRK_FORM    DIM     1
+CLM_WRK_DOUT    DIM     8
+                 LISTEND
+.
+MEMX_WRK_FD     FILE     VAR=107,TEXT
+MEMX_WRK_NME    INIT    "/w/memx.a0310241.wrk2"
+MEMX_WRK_LIST   LIST
+MEMX_WRK_ID     DIM     8
+MEMX_WRK_NET    DIM     5
+MEMX_WRK_PRD    DIM     5
+MEMX_WRK_CARR   DIM     4
+MEMX_WRK_PLAN   DIM     4
+MEMX_WRK_ACC    DIM     4
+MEMX_WRK_AMT    DIM     10  
+MEMX_WRK_SRC    DIM     1
+MEMX_WRK_INC    DIM     8
+MEMX_WRK_PD     DIM     8
+MEMX_WRK_TCHG   DIM     10 
+MEMX_WRK_TDED   DIM     10 
+MEMX_WRK_COPA   DIM     10 
+MEMX_WRK_ALLOW  DIM     10  
+MEMX_WRK_COINS  DIM     10 
+                LISTEND 
+.
+MONPAT_FD        IFILE    FIX=21,UNCOMP,KEYL=11,TEXT
+MONPAT_NAME      INIT     "/w/monpat.ix1"
+.
+MONPAT_LIST      LIST
+MONPAT_PLAN      DIM  5
+MONPAT_DATE      DIM  6
+MONPAT_PAT       FORM 10
+                 LISTEND
+.
+MONPAT_KEY       DIM  11 
+.
+MX_MONPAT_FD     IFILE    FIX=20,UNCOMP,KEYL=19,TEXT
+MX_MONPAT_NAME   INIT     "/w/mx_monpat.ix1"
+.
+MX_MONPAT_LIST   LIST
+MX_MONPAT_PLAN   DIM  5
+MX_MONPAT_DATE   DIM  6
+MX_MONPAT_ID     DIM  8
+MX_MONPAT_CT     FORM 1
+                 LISTEND
+.
+MX_MONPAT_KEY       DIM  19 
+.
+LOGFILE_FDX      IFILE   VAR=44,DUP,TEXT
+LOGFILE_NME      INIT    "/ogb/work/z_ogbvoi.log"
+LOGFILE_IX1      INIT    "/ogb/work/z_ogbvoi.ix1"
+LOGFILE_REC      DIM     044
+
+LOGFILE_LIST     LIST
+LOGFILE_CLM      DIM     008
+LOGFILE_CHKNO    DIM     010
+LOGFILE_AMT      DIM     010
+LOGFILE_DOUT     DIM     008
+LOGFILE_VOIDT    DIM     008
+                 LISTEND
+
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+W_LIST        LIST
+W_PAID        FORM 12.2
+W_CHG         FORM 12.2
+W_ALLOW       FORM 12.2
+W_COPA        FORM 12.2
+W_DEDU        FORM 12.2
+W_COIN        FORM 12.2
+W_COBA        FORM 12.2
+W_COBP        FORM 12.2
+              LISTEND
+.
+WS_AGE        DIM  3
+PAID_FROM     INIT "200207"
+PAID_THRU     INIT "200306"
+DIM4          DIM  4
+INDEX_OPTS    INIT "9-16 -D -J"
+FORM2         FORM 2
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+EFF_CCYYMM    DIM  6
+TRM_CCYYMM    DIM  6
+DATE_CCYYMM   DIM  6
+WS_DIM1       DIM  1
+WS_DIM4       DIM  4
+MEMX_WRK_SKY  INIT  "1-8 -T"
+DIM7          DIM  7
+DIM2          DIM  2
+DIM19         DIM  19
+DIMMM         DIM  2
+DIMDD         DIM  2
+DIMCCYY       DIM  4
+FPTR          FORM 2  
+BUMP_SW       FORM "0"
+SLASH_SW      FORM "0"
+CNT_4         DIM  4
+CNT_3         DIM  3
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+FORM_102      FORM      10.2
+LOG_RESULT FORM     1
+MONPLAN_RESULT FORM     1
+MONPAT_RESULT  FORM     1
+MX_MONPAT_RESULT FORM   1
+MEM_RESULT    FORM      1
+MX_ACC_CT     FORM      7
+MX_MONPAT_PK  DIM       11
+SVE_MEMID     DIM       8
+FIRST_READ    DIM       1  
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+DATE_CCYY     DIM       6
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "menu"             TO  C_NEXT
+         MOVE      "DEPENDENT COST" TO  C_OPER
+         MOVE      "a0310241"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL REFORMAT_CLM 
+   CALL REFORMAT_MEMX
+   CALL INITIALIZE
+   CALL OPEN_FILES
+   CALL CALC_PATIENTS 
+   CALL ACCUM_CLAIMS_PAID
+   CALL ACCUM_MEMX_PAID
+   CALL CONN_PARTS
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+ACCUM_CLAIMS_PAID
+       LOOP
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL READ_OGBFILE USING CLM_WRK_FD,CLM_WRK_NME:
+                                   CLM_WRK_LIST
+           IF (RESULT <> 1)
+             BREAK
+           ENDIF
+           ADD 1 TO X_CNT2
+           UNPACK X_CNT2 INTO CNT_4,CNT_3
+           IF (CNT_3 = "000")
+              CALL X_DISPLAY_COUNTS
+           ENDIF 
+           IF (CLM_WRK_FORM = "B")
+              CONTINUE
+           ENDIF
+           IF ((CLM_WRK_DOUT >= "20020715") AND (CLM_WRK_DOUT <= "20030321")) 
+             MOVE CLM_WRK_ID1 TO LOGFILE_CLM
+             CALL READ_OGBFILE_IX USING LOGFILE_FDX:
+                                      LOGFILE_IX1:
+                                      LOGFILE_CLM:
+                                      LOGFILE_LIST
+             MOVE RESULT TO LOG_RESULT
+             IF (LOG_RESULT = 1)
+                 MOVE LOGFILE_DOUT TO CLM_WRK_DOUT
+             ENDIF
+           ENDIF
+           UNPACK CLM_WRK_DOUT INTO DATE_CCYYMM
+           IF (DATE_CCYYMM > "200306")
+              CONTINUE
+           ENDIF 
+           CALL CALC_AGE USING CLM_WRK_DOB,WS_AGE,CLM_WRK_INC
+           IF ((WS_AGE > " 20") AND (WS_AGE < " 25"))
+           ELSE
+             CONTINUE
+           ENDIF
+
+           IF (CLM_WRK_REL <> "03")
+               CONTINUE
+           ENDIF
+
+           SWITCH CLM_WRK_NET
+             CASE "OGB  " OR "BLUE " OR "FARA " OR "AMCAR" OR "DEFIN" OR "     "
+             DEFAULT
+              CONTINUE
+           ENDSWITCH
+
+..Read the clms file by key 11 (claim #)   
+               PACK CLMS_BASE WITH CLM_WRK_ID1,BLANKS
+               PACK CLMS_KEY  WITH CLMS_BASE,"   " 
+               CALL POP_READ
+               CLEAR W_LIST
+               LOOP
+                   CALL POP_NEXT
+ 
+                   IF ((RESULT <> 1) OR (CLMS_ID <> CLM_WRK_ID1))
+                      PACK MONPLAN_DATE WITH DATE_CCYYMM                
+                      SWITCH CLM_WRK_NET
+                         CASE "OGB  "
+                            MOVE CLM_WRK_PRD TO MONPLAN_PLAN
+                         CASE "BLUE " OR "FARA " OR "AMCAR" OR "DEFIN" 
+                            MOVE CLM_WRK_NET TO MONPLAN_PLAN
+                         CASE "     "
+                            MOVE "NOTHG" TO MONPLAN_PLAN
+                      ENDSWITCH
+                      PACK   MONPLAN_KEY WITH MONPLAN_PLAN,MONPLAN_DATE   
+                      CALL   READ_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME:
+                                             MONPLAN_KEY,MONPLAN_LIST
+                      IF (RESULT = 1)
+                          ADD W_PAID TO MONPLAN_PAID
+                          ADD W_CHG TO MONPLAN_CHGS
+                          ADD W_ALLOW TO MONPLAN_ALLOW
+                          ADD W_COBA TO MONPLAN_A_COB
+                          ADD W_COBP TO MONPLAN_P_COB
+                          ADD W_DEDU TO MONPLAN_DED
+                          ADD W_COPA TO MONPLAN_COPAY
+                          ADD W_COIN TO MONPLAN_COINS
+                          CALL UPDATE_OGBREC_IX USING MONPLAN_FD,MONPLAN_LIST
+                          MOVE MONPLAN_PLAN TO MONPLAN2_PLAN
+                          MOVE MONPLAN_DATE TO MONPLAN2_DATE
+                          MOVE W_PAID TO MONPLAN2_PAID
+                          MOVE WS_AGE TO MONPLAN2_AGE
+                          MOVE CLM_WRK_ID1 TO MONPLAN2_CLAIM 
+                          CALL WRITE_OGBREC USING	MONPLAN2_FD,MONPLAN2_NAME:
+                                                  MONPLAN2_LIST
+                      ELSE
+                          MOVE W_PAID TO MONPLAN_PAID
+                          MOVE W_CHG TO MONPLAN_CHGS
+                          MOVE W_ALLOW TO MONPLAN_ALLOW
+                          MOVE W_COBA TO MONPLAN_A_COB
+                          MOVE W_COBP TO MONPLAN_P_COB
+                          MOVE W_DEDU TO MONPLAN_DED
+                          MOVE W_COPA TO MONPLAN_COPAY
+                          MOVE W_COIN TO MONPLAN_COINS
+                          CALL WRITE_OGBREC_IX USING MONPLAN_FD,MONPLAN_NAME:
+                                          MONPLAN_KEY,MONPLAN_LIST
+                          MOVE MONPLAN_PLAN TO MONPLAN2_PLAN
+                          MOVE MONPLAN_DATE TO MONPLAN2_DATE
+                          MOVE W_PAID TO MONPLAN2_PAID
+                          MOVE WS_AGE TO MONPLAN2_AGE
+                          MOVE CLM_WRK_ID1 TO MONPLAN2_CLAIM 
+                          CALL WRITE_OGBREC USING	MONPLAN2_FD,MONPLAN2_NAME:
+                                                  MONPLAN2_LIST
+                      ENDIF
+                      CLEAR MONPLAN_LIST
+                      MOVE "ALL  " TO MONPLAN_PLAN
+                      PACK MONPLAN_DATE WITH DATE_CCYYMM                
+                      PACK   MONPLAN_KEY WITH MONPLAN_PLAN,MONPLAN_DATE
+                      CALL   READ_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME:
+                                             MONPLAN_KEY,MONPLAN_LIST
+                      IF (RESULT = 1)
+                          ADD W_PAID TO MONPLAN_PAID
+                          ADD W_CHG TO MONPLAN_CHGS
+                          ADD W_ALLOW TO MONPLAN_ALLOW
+                          ADD W_COBA TO MONPLAN_A_COB
+                          ADD W_COBP TO MONPLAN_P_COB
+                          ADD W_DEDU TO MONPLAN_DED
+                          ADD W_COPA TO MONPLAN_COPAY
+                          ADD W_COIN TO MONPLAN_COINS
+                          CALL UPDATE_OGBREC_IX USING MONPLAN_FD,MONPLAN_LIST 
+                      ELSE
+                          MOVE W_PAID TO MONPLAN_PAID
+                          MOVE W_CHG TO MONPLAN_CHGS
+                          MOVE W_ALLOW TO MONPLAN_ALLOW
+                          MOVE W_COBA TO MONPLAN_A_COB
+                          MOVE W_COBP TO MONPLAN_P_COB
+                          MOVE W_DEDU TO MONPLAN_DED
+                          MOVE W_COPA TO MONPLAN_COPAY
+                          MOVE W_COIN TO MONPLAN_COINS
+                          CALL WRITE_OGBREC_IX USING MONPLAN_FD,MONPLAN_NAME:
+                                          MONPLAN_KEY,MONPLAN_LIST
+                      ENDIF
+                      CLEAR MONPLAN_LIST
+                      BREAK
+                   ENDIF                  
+                   CLEAR FORM_102  
+                   MOVE CLMS_PAYP TO FORM_102 
+                   ADD FORM_102 TO W_PAID 
+                   CLEAR FORM_102  
+                   MOVE CLMS_PAYE TO FORM_102 
+                   ADD FORM_102 TO W_PAID 
+                   CLEAR FORM_102  
+                   MOVE CLMS_CHG TO FORM_102 
+                   ADD FORM_102 TO W_CHG  
+                   CLEAR FORM_102  
+                   MOVE CLMS_ALLOW TO FORM_102 
+                   ADD FORM_102 TO W_ALLOW
+                   CLEAR FORM_102  
+                   MOVE CLMS_COPA TO FORM_102 
+                   ADD FORM_102 TO W_COPA 
+                   CLEAR FORM_102  
+                   MOVE CLMS_DEDU TO FORM_102 
+                   ADD FORM_102 TO W_DEDU 
+                   CLEAR FORM_102  
+                   MOVE CLMS_COIN TO FORM_102 
+                   ADD FORM_102 TO W_COIN 
+                   CLEAR FORM_102  
+                   MOVE CLMS_COBA TO FORM_102 
+                   ADD FORM_102 TO W_COBA 
+                   CLEAR FORM_102  
+                   MOVE CLMS_COBP TO FORM_102 
+                   ADD FORM_102 TO W_COBP 
+               REPEAT
+       REPEAT
+       RETURN
+
+ACCUM_MEMX_PAID
+  LOOP
+     MOVE OGB_SEQ1 TO OGB_SEQ
+     CALL READ_OGBFILE USING MEMX_WRK_FD,MEMX_WRK_NME:
+                             MEMX_WRK_LIST
+     IF (RESULT <> 1)
+        BREAK
+     ENDIF
+     ADD 1 TO X_CNT2
+     UNPACK X_CNT2 INTO CNT_4,CNT_3
+     IF (CNT_3 = "000")
+         CALL X_DISPLAY_COUNTS
+     ENDIF 
+     IF (MEMX_WRK_ACC = "DEDU")
+        CONTINUE
+     ENDIF
+     CALL GET_DOB
+     IF (MEM_RESULT <> 1)
+         CONTINUE
+     ENDIF
+     CALL CALC_AGE USING MEM_DOB,WS_AGE,MEMX_WRK_INC
+     IF ((WS_AGE > " 20") AND (WS_AGE < " 25"))
+     ELSE
+          CONTINUE
+     ENDIF
+
+     IF (MEM_REL <> "03")
+         CONTINUE
+     ENDIF
+
+     UNPACK MEMX_WRK_PD INTO DATE_CCYYMM
+     SWITCH MEMX_WRK_SRC
+          CASE "1"
+                MOVE "FARA " TO MONPLAN_PLAN
+          CASE "2" 
+                MOVE "AMCAR" TO MONPLAN_PLAN
+          CASE "3" 
+                MOVE "BLUE " TO MONPLAN_PLAN
+          CASE "4" 
+                MOVE "BEHAV" TO MONPLAN_PLAN
+.               PACK MX_MONPAT_KEY WITH MONPLAN_PLAN,DATE_CCYYMM,MEMX_WRK_ID
+.               CALL   READ_OGBFILE_IX USING MX_MONPAT_FD,MX_MONPAT_NAME:
+.                                      MX_MONPAT_KEY,MX_MONPAT_LIST
+.               IF (RESULT <> 1)
+.                UNPACK MX_MONPAT_KEY INTO MX_MONPAT_PLAN,MX_MONPAT_DATE
+.                MOVE 1 TO MX_MONPAT_CT
+.                CALL  WRITE_OGBREC_IX USING MX_MONPAT_FD,MX_MONPAT_NAME:
+.                                       MX_MONPAT_KEY,MX_MONPAT_LIST
+.                CLEAR MX_MONPAT_LIST
+.                PACK MONPAT_KEY WITH MONPLAN_PLAN,DATE_CCYYMM
+.                CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+.                                       MONPAT_KEY,MONPAT_LIST
+.                IF   (RESULT = 1)
+.                  UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                  ADD 1 TO MONPAT_PAT
+.                  CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+.                ELSE
+.                   UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                   MOVE 1 TO MONPAT_PAT 
+.                   CALL WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+.                                        MONPAT_KEY,MONPAT_LIST
+.                ENDIF
+.                CLEAR MONPAT_LIST
+.                PACK MONPAT_KEY WITH "ALL  ",DATE_CCYYMM
+.                CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+.                                       MONPAT_KEY,MONPAT_LIST
+.                IF   (RESULT = 1)
+.                  ADD 1 TO MONPAT_PAT
+.                  UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                  CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+.                ELSE
+.                   UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                   MOVE 1 TO MONPAT_PAT 
+.                   CALL WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+.                                        MONPAT_KEY,MONPAT_LIST
+.                ENDIF
+.                CLEAR MONPAT_LIST
+.               ENDIF
+          CASE "5" 
+                MOVE "DEFIN" TO MONPLAN_PLAN
+          CASE "6" 
+                MOVE "RX   " TO MONPLAN_PLAN   
+          CASE "8" 
+                MOVE "BEHAV" TO MONPLAN_PLAN
+.               PACK MX_MONPAT_KEY WITH MONPLAN_PLAN,DATE_CCYYMM,MEMX_WRK_ID
+.               CALL   READ_OGBFILE_IX USING MX_MONPAT_FD,MX_MONPAT_NAME:
+.                                      MX_MONPAT_KEY,MX_MONPAT_LIST
+.               IF (RESULT <> 1)
+.                UNPACK MX_MONPAT_KEY INTO MX_MONPAT_PLAN,MX_MONPAT_DATE
+.                MOVE 1 TO MX_MONPAT_CT
+.                CALL  WRITE_OGBREC_IX USING MX_MONPAT_FD,MX_MONPAT_NAME:
+.                                       MX_MONPAT_KEY,MX_MONPAT_LIST
+.                CLEAR MX_MONPAT_LIST
+.                PACK MONPAT_KEY WITH MONPLAN_PLAN,DATE_CCYYMM
+.                CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+.                                       MONPAT_KEY,MONPAT_LIST
+.                IF   (RESULT = 1)
+.                  UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                  ADD 1 TO MONPAT_PAT
+.                  CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+.                ELSE
+.                   UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                   MOVE 1 TO MONPAT_PAT 
+.                   CALL WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+.                                        MONPAT_KEY,MONPAT_LIST
+.                ENDIF
+.                CLEAR MONPAT_LIST
+.                PACK MONPAT_KEY WITH "ALL  ",DATE_CCYYMM
+.                CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+.                                       MONPAT_KEY,MONPAT_LIST
+.                IF   (RESULT = 1)
+.                  ADD 1 TO MONPAT_PAT
+.                  UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                  CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+.                ELSE
+.                   UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+.                   MOVE 1 TO MONPAT_PAT 
+.                   CALL WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+.                                        MONPAT_KEY,MONPAT_LIST
+.                ENDIF
+.                CLEAR MONPAT_LIST
+.               ENDIF
+          DEFAULT
+                CONTINUE
+        ENDSWITCH
+      MOVE   DATE_CCYYMM TO MONPLAN_DATE
+      PACK   MONPLAN_KEY WITH MONPLAN_PLAN,MONPLAN_DATE  
+      CALL   READ_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME:
+                                   MONPLAN_KEY,MONPLAN_LIST
+      IF (RESULT = 1)
+         CLEAR FORM_102  
+         MOVE MEMX_WRK_AMT TO FORM_102 
+         ADD FORM_102 TO MONPLAN_PAID 
+         CLEAR FORM_102  
+         MOVE MEMX_WRK_TCHG TO FORM_102 
+         ADD FORM_102 TO MONPLAN_CHGS  
+         CLEAR FORM_102  
+         MOVE MEMX_WRK_ALLOW TO FORM_102 
+         ADD FORM_102 TO MONPLAN_ALLOW
+         CLEAR FORM_102  
+         MOVE MEMX_WRK_COPA TO FORM_102 
+         ADD FORM_102 TO MONPLAN_COPAY
+         CLEAR FORM_102  
+         MOVE MEMX_WRK_TDED TO FORM_102 
+         ADD FORM_102 TO MONPLAN_DED
+         CLEAR FORM_102  
+         MOVE MEMX_WRK_COINS TO FORM_102 
+         ADD FORM_102 TO MONPLAN_COINS
+         CALL UPDATE_OGBREC_IX USING MONPLAN_FD,MONPLAN_LIST 
+      ELSE 
+         MOVE MEMX_WRK_AMT TO MONPLAN_PAID
+         MOVE MEMX_WRK_TCHG TO MONPLAN_CHGS
+         MOVE MEMX_WRK_ALLOW TO MONPLAN_ALLOW
+         MOVE MEMX_WRK_COPA TO MONPLAN_COPAY
+         MOVE MEMX_WRK_TDED TO MONPLAN_DED
+         MOVE MEMX_WRK_COINS TO MONPLAN_COINS
+         CALL WRITE_OGBREC_IX USING MONPLAN_FD,MONPLAN_NAME:
+                                     MONPLAN_KEY,MONPLAN_LIST
+       ENDIF
+       CLEAR MONPLAN_LIST
+       MOVE "ALL  " TO MONPLAN_PLAN
+       MOVE   DATE_CCYYMM TO MONPLAN_DATE
+       PACK   MONPLAN_KEY WITH MONPLAN_PLAN,MONPLAN_DATE
+       CALL   READ_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME:
+                       MONPLAN_KEY,MONPLAN_LIST
+       IF (RESULT = 1)
+           CLEAR FORM_102  
+           MOVE MEMX_WRK_AMT TO FORM_102 
+           ADD FORM_102 TO MONPLAN_PAID 
+           CLEAR FORM_102  
+           MOVE MEMX_WRK_TCHG TO FORM_102 
+           ADD FORM_102 TO MONPLAN_CHGS  
+           CLEAR FORM_102  
+           MOVE MEMX_WRK_ALLOW TO FORM_102 
+           ADD FORM_102 TO MONPLAN_ALLOW
+           CLEAR FORM_102  
+           MOVE MEMX_WRK_COPA TO FORM_102 
+           ADD FORM_102 TO MONPLAN_COPAY
+           CLEAR FORM_102  
+           MOVE MEMX_WRK_TDED TO FORM_102 
+           ADD FORM_102 TO MONPLAN_DED
+           CLEAR FORM_102  
+           MOVE MEMX_WRK_COINS TO FORM_102 
+           ADD FORM_102 TO MONPLAN_COINS
+           CALL UPDATE_OGBREC_IX USING MONPLAN_FD,MONPLAN_LIST 
+           MOVE MONPLAN_PLAN TO MMXPLAN2_PLAN
+           MOVE MONPLAN_DATE TO MMXPLAN2_DATE
+           MOVE MEMX_WRK_AMT TO MMXPLAN2_PAID
+           MOVE WS_AGE TO MMXPLAN2_AGE
+           MOVE MEMX_WRK_ID TO MMXPLAN2_ID
+           MOVE MEMX_WRK_ACC TO MMXPLAN2_ACC
+           CALL WRITE_OGBREC USING	MMXPLAN2_FD,MMXPLAN2_NAME:
+                                   MMXPLAN2_LIST
+        ELSE 
+           MOVE MEMX_WRK_AMT TO MONPLAN_PAID
+           MOVE MEMX_WRK_TCHG TO MONPLAN_CHGS
+           MOVE MEMX_WRK_ALLOW TO MONPLAN_ALLOW
+           MOVE MEMX_WRK_COPA TO MONPLAN_COPAY
+           MOVE MEMX_WRK_TDED TO MONPLAN_DED
+           MOVE MEMX_WRK_COINS TO MONPLAN_COINS
+           CALL WRITE_OGBREC_IX USING MONPLAN_FD,MONPLAN_NAME:
+                                       MONPLAN_KEY,MONPLAN_LIST
+           MOVE MONPLAN_PLAN TO MONPLAN2_PLAN
+           MOVE MONPLAN_DATE TO MONPLAN2_DATE
+           MOVE W_PAID TO MONPLAN2_PAID
+           MOVE WS_AGE TO MONPLAN2_AGE
+           MOVE MEMX_WRK_ID TO MMXPLAN2_ID
+           MOVE MEMX_WRK_ACC TO MMXPLAN2_ACC
+           CALL WRITE_OGBREC USING	MONPLAN2_FD,MONPLAN2_NAME:
+                                   MONPLAN2_LIST
+        ENDIF
+        CLEAR MONPLAN_LIST
+  REPEAT
+  RETURN
+       
+GET_DOB
+     PACK   MEM_FK11 WITH MEMX_WRK_ID 
+     CALL   FILE_READ USING MEM_FD:    ...File declaration list
+               MEM_FN:   ...File name list
+               MEM_FC:   ...(I)ndex or (A)imdex
+               MEM_FV:   ...File key varlists
+               MEM_FK:   ...File key sizes
+               MEM_LIST: ...File record (field list)
+               MEM_REC:  ...File record (packed)
+               MEM_OLD:  ...File saved when read
+               MEM_QTY:  ...Number of files
+               1         ...File number for this read
+     MOVE RESULT TO MEM_RESULT
+     RETURN
+
+REFORMAT_CLM 
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:21, "REFORMATTING CLM", *BOLDOFF
+
+ PACK     SCRATCH WITH "clm.dbf"," ":
+          CLM_WRK_NME:
+          " -p2496-2501ge",PAID_FROM:
+ " 1-8 318-325 531-538 1007-1008 2473-2491 2496-2503 -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(CLM.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ REFORMAT SCRATCH
+ RETURN
+
+REFORMAT_MEMX
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:21, "REFORMATTING MEMX", *BOLDOFF
+ CLEAR SCRATCH
+ PACK SCRATCH WITH "memx.dbf"," ","/w/memx.a0310241.wrk1":
+ " -p117-122ge",PAID_FROM:
+ " 1-8 9-26 33-36 60-69 86-86 101-108 117-124 160-189 261-280 -c -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(MEMX.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ CLEAR SCRATCH
+ PACK     SCRATCH WITH "/w/memx.a0310241.wrk1"," ":
+          MEMX_WRK_NME:
+ " -p50-55le",PAID_THRU:
+ " -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(MEMX.STS0050.WRK1)"
+         CHAIN     "MENU"
+     ENDIF
+ RETURN
+
+CALC_PATIENTS
+        PACK   MEM_FK11 WITH BLANKS   
+        CALL   FILE_READ USING MEM_FD:    ...File declaration list
+               MEM_FN:   ...File name list
+               MEM_FC:   ...(I)ndex or (A)imdex
+               MEM_FV:   ...File key varlists
+               MEM_FK:   ...File key sizes
+               MEM_LIST: ...File record (field list)
+               MEM_REC:  ...File record (packed)
+               MEM_OLD:  ...File saved when read
+               MEM_QTY:  ...Number of files
+               1         ...File number for this read
+            LOOP
+              CALL      FILE_NEXT USING MEM_FD:    ...File declaration list
+                     MEM_FN:   ...File name list
+                     MEM_FC:   ...(I)ndex or (A)imdex
+                     MEM_FV:   ...File key varlists
+                     MEM_FK:   ...File key sizes
+                     MEM_LIST: ...File record (field list)
+                     MEM_REC:  ...File record (packed)
+                     MEM_OLD:  ...File saved when read
+                     MEM_QTY:  ...Number of files
+                     1         ...File number for this read
+              BREAK IF (RESULT <> 1)
+              ADD 1 TO X_CNT3
+              UNPACK X_CNT3 INTO CNT1_4,CNT1_3
+              IF (CNT1_3 = "000")
+                  CALL X_DISPLAY_COUNTS
+              ENDIF
+              IF (MEM_REL <> "03")
+                 CONTINUE
+              ENDIF
+              PACK   MEME_FK11 WITH MEM_ID1,BLANKS
+              CALL   FILE_READ USING MEME_FD:    ...File declaration list
+                     MEME_FN:   ...File name list
+                     MEME_FC:   ...(I)ndex or (A)imdex
+                     MEME_FV:   ...File key varlists
+                     MEME_FK:   ...File key sizes
+                     MEME_LIST: ...File record (field list)
+                     MEME_REC:  ...File record (packed)
+                     MEME_OLD:  ...File saved when read
+                     MEME_QTY:  ...Number of files
+                     1         ...File number for this read
+              LOOP
+                CALL   FILE_NEXT USING MEME_FD:    ...File declaration list
+                       MEME_FN:   ...File name list
+                       MEME_FC:   ...(I)ndex or (A)imdex
+                       MEME_FV:   ...File key varlists
+                       MEME_FK:   ...File key sizes
+                       MEME_LIST: ...File record (field list)
+                       MEME_REC:  ...File record (packed)
+                       MEME_OLD:  ...File saved when read
+                       MEME_QTY:  ...Number of files
+                       1         ...File number for this read
+                BREAK IF (RESULT <> 1)
+                BREAK IF (MEM_ID1 <> MEME_ID1)
+                IF (SQUEEZE MEME_PRD = "HMO")
+                   CONTINUE                           
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                   MOVE "99999999" TO MEME_TRM
+                ENDIF
+                IF (MEME_TRM < MEME_EFF)
+                   CONTINUE
+                ENDIF
+                IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_NET = "LIFE")
+                   CONTINUE
+                ENDIF
+                CALL CALC_AGE USING MEM_DOB,WS_AGE,MEME_EFF 
+                IF ((WS_AGE > " 20") AND (WS_AGE < " 25"))
+                ELSE
+                   CONTINUE
+                ENDIF
+                UNPACK MEME_EFF INTO EFF_CCYYMM 
+                UNPACK MEME_TRM INTO TRM_CCYYMM 
+                IF ((TRM_CCYYMM < "199907")  OR (EFF_CCYYMM > "200306")) 
+                   CONTINUE
+                ENDIF
+                IF (EFF_CCYYMM < "199907") 
+                   MOVE "199907" TO EFF_CCYYMM
+                ENDIF
+                IF (TRM_CCYYMM> "200306") 
+                  MOVE "200306" TO TRM_CCYYMM
+                ENDIF
+                LOOP
+                   IF (EFF_CCYYMM > TRM_CCYYMM)
+                     BREAK
+                   ENDIF 
+                   PACK MONPAT_DATE WITH EFF_CCYYMM               
+                   SWITCH MEME_NET
+                     CASE "OGB  "
+                        MOVE MEME_PRD TO MONPAT_PLAN
+                     DEFAULT
+                        IF  (SQUEEZE MEME_PRD = "HMO")
+                           MOVE MEME_PRD TO MONPAT_PLAN
+                        ELSE
+                           MOVE MEME_NET TO MONPAT_PLAN
+                        ENDIF
+                   ENDSWITCH
+                   PACK   MONPAT_KEY WITH MONPAT_PLAN,MONPAT_DATE
+                   CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+                                         MONPAT_KEY,MONPAT_LIST
+                   IF   (RESULT = 1)
+                     UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                     ADD 1 TO MONPAT_PAT
+                     CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+                   ELSE
+                     UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                     MOVE 1 TO MONPAT_PAT 
+                     CALL   WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+                                            MONPAT_KEY,MONPAT_LIST
+                   ENDIF
+                   CLEAR MONPAT_LIST
+                   IF (SQUEEZE MEME_PRD = "HMO")
+                     PACK MONPAT_DATE WITH EFF_CCYYMM               
+                     MOVE "ALL  " TO MONPAT_PLAN
+                     PACK   MONPAT_KEY WITH MONPAT_PLAN,MONPAT_DATE
+                     CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+                                            MONPAT_KEY,MONPAT_LIST
+                     IF   (RESULT = 1)
+                        UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                        ADD 1 TO MONPAT_PAT
+                        CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+                     ELSE
+                        UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                        MOVE 1 TO MONPAT_PAT 
+                        CALL   WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+                                               MONPAT_KEY,MONPAT_LIST
+                     ENDIF
+                     CLEAR MONPAT_LIST
+                    CALL DATE_CALC USING EFF_CCYYMM,"ADD","MONTHS",1,DATE_CCYYMM
+                    MOVE DATE_CCYYMM TO EFF_CCYYMM
+                    CONTINUE
+                  ENDIF
+                  IF (SQUEEZE MONPAT_PLAN <> "DEFIN")
+                    PACK   MONPAT_KEY WITH "RX   ",EFF_CCYYMM  
+                    CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+                                          MONPAT_KEY,MONPAT_LIST
+                    IF   (RESULT = 1)
+                       UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                       ADD 1 TO MONPAT_PAT
+                       CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+                    ELSE
+                       UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                       MOVE 1 TO MONPAT_PAT 
+                       CALL   WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+                                              MONPAT_KEY,MONPAT_LIST
+                    ENDIF
+                    CLEAR MONPAT_LIST
+                    PACK   MONPAT_KEY WITH "BEHAV",EFF_CCYYMM  
+                    CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+                                          MONPAT_KEY,MONPAT_LIST
+                    IF   (RESULT = 1)
+                       UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                       ADD 1 TO MONPAT_PAT
+                       CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+                    ELSE
+                       UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                       MOVE 1 TO MONPAT_PAT 
+                       CALL   WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+                                              MONPAT_KEY,MONPAT_LIST
+                    ENDIF
+                    CLEAR MONPAT_LIST
+                  ENDIF
+                  PACK MONPAT_DATE WITH EFF_CCYYMM               
+                  MOVE "ALL  " TO MONPAT_PLAN
+                  PACK   MONPAT_KEY WITH MONPAT_PLAN,MONPAT_DATE
+                  CALL   READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:
+                                         MONPAT_KEY,MONPAT_LIST
+                  IF   (RESULT = 1)
+                     UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                     ADD 1 TO MONPAT_PAT
+                     CALL   UPDATE_OGBREC_IX USING MONPAT_FD,MONPAT_LIST 
+                  ELSE
+                     UNPACK MONPAT_KEY INTO MONPAT_PLAN,MONPAT_DATE
+                     MOVE 1 TO MONPAT_PAT 
+                     CALL   WRITE_OGBREC_IX USING MONPAT_FD,MONPAT_NAME:
+                                            MONPAT_KEY,MONPAT_LIST
+                  ENDIF
+                  CLEAR MONPAT_LIST
+                  CALL DATE_CALC USING EFF_CCYYMM,"ADD","MONTHS",1,DATE_CCYYMM
+                  MOVE DATE_CCYYMM TO EFF_CCYYMM
+                REPEAT 
+                ADD 1 TO X_CNT5
+                UNPACK X_CNT5 INTO CNT_4,CNT_3
+                IF (CNT_3 = "000")
+                   CALL X_DISPLAY_COUNTS
+                ENDIF 	
+              REPEAT
+            REPEAT
+            RETURN
+
+CONN_PARTS
+         CALL      CLOSE_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME
+         CALL      OPEN_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME
+    LOOP
+         CALL      READKS_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME:           
+                                           MONPLAN_LIST 
+         MOVE      RESULT TO MONPLAN_RESULT
+         IF        (MONPLAN_RESULT <> 1)
+                   BREAK                   
+         ENDIF
+         PACK      MONPAT_KEY WITH MONPLAN_PLAN,MONPLAN_DATE
+         CALL      READ_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME:           
+                                         MONPAT_KEY,MONPAT_LIST 
+         MOVE      RESULT TO MONPAT_RESULT
+         IF        (MONPAT_RESULT = 1)
+               MOVE MONPAT_PAT TO MONPLAN_PAT_CT 
+               CALL      UPDATE_OGBREC_IX USING MONPLAN_FD,MONPLAN_LIST 
+         ENDIF
+    REPEAT
+    RETURN
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "CLM  Recs Read:    " TO X_CNTDESC1
+	 MOVE      "CLMS Recs Read:    " TO X_CNTDESC2
+	 MOVE      "MEM  Recs Read:    " TO X_CNTDESC3
+	 MOVE      "MEMX Recs Read:    " TO X_CNTDESC4
+	 MOVE      "Recs Written  :    " TO X_CNTDESC5
+
+	 CALL      X_DISPLAY_COUNTS
+
+         CALL      SETPOP_CLMS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING CLM_WRK_FD,CLM_WRK_NME
+         CALL      OPEN_OGBFILE USING MEMX_WRK_FD,MEMX_WRK_NME
+         CALL      PREP_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME
+         CALL      PREP_OGBFILE USING MONPLAN2_FD,MONPLAN2_NAME
+         CALL      PREP_OGBFILE USING MMXPLAN2_FD,MMXPLAN2_NAME
+         CALL      PREP_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME
+         CALL      PREP_OGBFILE_IX USING MX_MONPAT_FD,MX_MONPAT_NAME
+         CALL      OPEN_OGBFILE_IX USING LOGFILE_FDX,LOGFILE_IX1
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING CLM_WRK_FD,CLM_WRK_NME
+         CALL      CLOSE_OGBFILE USING MEMX_WRK_FD,MEMX_WRK_NME
+         CALL      CLOSE_OGBFILE_IX USING MONPLAN_FD,MONPLAN_NAME
+         CALL      CLOSE_OGBFILE USING MONPLAN2_FD,MONPLAN2_NAME
+         CALL      CLOSE_OGBFILE_IX USING MONPAT_FD,MONPAT_NAME
+         CALL      CLOSE_OGBFILE_IX USING MX_MONPAT_FD,MX_MONPAT_NAME
+         CALL      CLOSE_OGBFILE_IX USING LOGFILE_FDX,LOGFILE_IX1
+         RETURN
+
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       POP.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of STS0050.PS
+. +++++++++++++++++++++++++++++++++++++

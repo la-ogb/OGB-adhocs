@@ -1,0 +1,576 @@
+.     ********************************************************************
+.     *                     OFFICE OF GROUP BENEFITS                      *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: a1901311.ps                                         *
+.     * Description: Process Enrollment(Qualification) file for Live Better
+.     *              LA
+.     *                                                                   *
+.     *-------------------------------------------------------------------*
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *            ---------------------------------------------          *
+.     * apsjm 05/27/2015 A1505261 DEV - Initial Version                   *
+.     * apazw 06/12/2017 - mod - increase file size
+.     *-------------------------------------------------------------------*
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       VALID.RL             ...Valid codes
+              INC       CMDPARAM.CB          ...OGB Custom File Handler              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrolllment
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       CLI.RL           ...Client
+              INC       D_MEMMEM.CB      ...Member Import Layout
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+... Input Files
+...Enrollment File From LBL VENDOR      
+LBL_ENROLL_FD   FILE      VAR=336,TEXT
+LBL_ENROLL_NAME INIT      "/w/lbl_enroll.txt"  
+LBL_ENROLL_LIST LIST
+LBL_ENROLL_ESSN DIM       9
+                LISTEND
+.
+LBL_CORR_FD     FILE     VAR=8,TEXT      
+LBL_CORR_NAME   INIT      "/w/a1901301_corr.txt"
+LBL_CORR_LIST   LIST
+LBL_CORR_ID1    DIM       8
+                LISTEND
+... Output Files
+
+... Used in the D_MEMMEM program to create LBL MEME records 
+LBL_UPDT_FD    FILE      VAR=X_INM_SIZE,TEXT
+LBL_UPDT_NAME  INIT      "a1901301.txt"
+
+...Error file for LBL Enrollment errors                            
+LBL_ERR_FD     FILE      VAR=386,TEXT
+LBL_ERR_NAME   INIT      "/w/a1901301.err"
+LBL_ERR_LIST   LIST    
+LBL_ERR_REC    DIM       386
+              LISTEND
+.
+. ---------------------------------------------
+. Program Specific Variables & Working Storage
+. ---------------------------------------------
+NEW_PY         DIM       4
+MEME_SAV3      DIM       600
+DIM_CCYY       DIM       4
+NEW_CCYY       FORM      4
+CURR_CCYY      FORM      4
+CURR_MM        FORM      2
+CURR_DD        FORM      2
+PLANYR_BEG     DIM       8     ...first day of new plan year
+PLANMO_END     DIM       8     ...last day of first month of new plan year
+PLANYR_END     DIM       8     ...last day of new plan year
+EFF_CCYY      DIM  4
+ARRAY_CNT     FORM 1
+LOOP_CNT      FORM 1
+ACCU_ID1      DIM  8
+SVE_ACCU      DIM  8
+W_LPTR                  FORM      9
+CK_TRM                  DIM       008
+.
+SAVE_TRM                DIM      008
+NUM_OF_DAYS             FORM     005
+MEMO_SAVA      DIM      700
+MEMO_SAVB      DIM      700
+T_DATE         DIM      8
+DEP_OK         DIM      1
+SUB_OK         DIM      1
+DEP_DEL        DIM      1
+TILDE          INIT     "~"
+EH_ENROLL_SAV  DIM      336
+SVE_ESSN       DIM       09
+MEM_ZIP5       DIM       5
+WRK_F4         FORM      4
+FORM_CCYY      FORM      4
+W_CCYY         DIM       4
+WRK_DATE       DIM       8
+CLD_HLT_SW    DIM  1
+SP_HLT_SW     DIM  1
+L_TRM         DIM  8
+W_TRM         DIM  8
+EH_TRM        DIM  8
+W_REL         DIM  2
+WS_ERROR      DIM  50
+MEDA_SW       DIM  1
+MEDB_SW       DIM  1
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+FIRST_READ    INIT     "Y"
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "LBL Enrollment"   TO  C_OPER
+         MOVE      "ELG2500"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LETTER
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. --------------------------------
+... Adding CMD_START for autosys
+. ---------------------------------
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+  DEBUG
+  CALL      INITIALIZE
+  CALL      GET_PLANYR
+  CALL      OPEN_FILES
+  CALL      PROCESS_INPUT 
+
+. ...Close all files        
+  CALL CLOSE_FILES
+
+  MOVE BLANKS TO SCRATCH
+  
+  PACK SCRATCH WITH "cp /w/lbl_enroll.txt":                                     
+                    " /mcsora/non_impact_load/lbl_enroll_",TODAY,".txt" 
+  ROLLOUT SCRATCH
+       IF OVER
+          ERROR  HORZ="15",VERT="19":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="Copy to /mcsora/non_impact_load FAILED"
+                 CHAIN     "MENU"
+       ENDIF
+
+  MOVE BLANKS TO SCRATCH
+ 
+  PACK SCRATCH WITH "cp /w/lbl_enroll.txt":
+                    " /w/lbl_enroll_",TODAY,".txt"
+  ROLLOUT SCRATCH
+       IF OVER
+          ERROR  HORZ="15",VERT="19":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="Backup Copy to w FAILED"
+                 CHAIN     "MENU"
+       ENDIF
+
+
+. ...Normal End-Of-Job
+  CALL      NORMAL_EOJ
+         
+. ...Return Control Back to Chain - End of Program
+  TRAPREST  TRAP_DATA
+  IF (NOT C_CMDPAR)
+        MOVE SCH_RTSUCC TO SCH@RTCODE
+  ENDIF
+
+  RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+         MOVE "Input Records     :" TO X_CNTDESC1
+         MOVE "Update Records    :" TO X_CNTDESC2
+         MOVE "Error Records     :" TO X_CNTDESC3
+         
+         IF (NOT C_CMDPAR)
+            CALL      X_DISPLAY_COUNTS
+         ENDIF
+         UNPACK TODAY INTO FORM_CCYY,W_MM,W_DD
+         ADD 1 TO FORM_CCYY
+         PACK NEW_PY WITH FORM_CCYY
+         RETURN
+         
+.-------------------------------
+.-------------------------------
+
+.-----------------------------
+. Open Files
+.-----------------------------
+
+OPEN_FILES
+
+         MOVE LBL_ENROLL_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING LBL_ENROLL_FD,LBL_ENROLL_NAME
+         MOVE LBL_UPDT_NAME   TO C_FILE
+         CALL PREP_OGBFILE USING LBL_UPDT_FD,LBL_UPDT_NAME      
+         MOVE LBL_ERR_NAME TO C_FILE
+         CALL PREP_OGBFILE USING LBL_ERR_FD,LBL_ERR_NAME
+         MOVE LBL_CORR_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING LBL_CORR_FD,LBL_CORR_NAME
+         RETURN
+
+.
+.Needed so we can see if coverage is eff in new plan year
+. ----------------------------
+GET_PLANYR
+        MOVE "20181127" TO TODAY
+        UNPACK TODAY INTO CURR_CCYY,CURR_MM,CURR_DD
+...Adding 1 to year if program is run in the second half of the year (next AE) 
+        ADD 1 TO CURR_CCYY GIVING NEW_CCYY   
+        MOVE NEW_CCYY TO DIM_CCYY
+        PACK PLANYR_BEG WITH NEW_CCYY,"0101"    
+        PACK PLANYR_END WITH NEW_CCYY,"1231"
+
+    RETURN
+
+
+. ----------------------------
+. Process Data
+. ----------------------------
+
+PROCESS_INPUT 
+... Read the input LBL file               
+    MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+    CALL READ_OGBFILE USING LBL_CORR_FD,LBL_CORR_NAME,LBL_CORR_LIST 
+    IF (RESULT <> 1)
+        BREAK   
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+         CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACK      MEM_FK11 WITH LBL_CORR_ID1,BLANKS
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+
+    IF (SQUEEZE MEM_DOD <> "")
+         MOVE "MEMBER DECEASED" TO WS_ERROR
+         PACKLEN LBL_ERR_REC WITH LBL_ENROLL_ESSN," ",WS_ERROR
+         CALL WRITE_ERROR
+         CONTINUE
+    ENDIF
+    CALL READ_MEME   
+    IF (SQUEEZE MEME_SAV2 <> "")
+      CONTINUE
+    ENDIF
+    IF (SQUEEZE MEME_SAV3 = "")
+      CONTINUE
+    ENDIF
+    CLEAR INM_REC
+    PACKLEN INM_REC WITH MEM_REC,MEME_SAV3
+    UNPACK INM_REC INTO INM_LIST
+    MOVE "OGB  " TO INME_NET
+    MOVE "LBLA " TO INME_PRD
+    MOVE "CRED " TO INME_PLAN
+    MOVE "01" TO INME_RT
+    MOVE "EE" TO INME_DEPC
+    MOVE BLANKS TO INME_ERSA
+    MOVE  PLANYR_BEG TO INME_EFF
+    MOVE  PLANYR_END TO INME_TRM 
+    MOVE BLANKS TO INME_RD01
+    MOVE BLANKS TO INME_RD02
+    MOVE BLANKS TO INME_RD03
+    CLEAR INME_CHGBY
+    CLEAR INM_NEWBY
+    CLEAR INM_CHGBY
+    CLEAR INME_NEWBY
+    CLEAR INME_CHGBY
+    CLEAR INME_QLET
+    CLEAR INME_QLTRM
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LBL_UPDT_FD,LBL_UPDT_NAME,INM_LIST
+    CLEAR INM_LIST
+  REPEAT                                   
+  RETURN
+
+GET_LINKED_IDS
+ MOVE 1 TO LOOP_CNT
+ LOOP
+    IF (LOOP_CNT <> 1)
+      IF (ACCU_ID1 = SVE_ACCU)
+         BREAK
+      ENDIF
+    ENDIF
+    IF (SQUEEZE ACCU_ID1 = "")
+       BREAK
+    ENDIF  
+    IF (LOOP_CNT > 7)
+       BREAK
+    ENDIF
+    PACK MEM_FK11 WITH ACCU_ID1
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       BREAK
+    ENDIF
+    ADD 1 TO LOOP_CNT
+    ADD 1 TO ARRAY_CNT
+    MOVE MEM_ACCU TO ACCU_ID1
+    IF (MEM_REL <> "01")
+       CONTINUE
+    ENDIF
+ REPEAT
+ RETURN
+   
+.##############################################################################
+.##############################################################################
+WRITE_ERROR    
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  CALL WRITE_OGBREC USING LBL_ERR_FD,LBL_ERR_NAME,LBL_ERR_LIST
+  CLEAR LBL_ERR_LIST
+  
+.##############################################################################
+.-------------------------------
+...Write out ERROR records
+.-------------------------------
+
+  RETURN
+.
+READ_MEME    
+    CLEAR MEME_SAV
+    CLEAR MEME_SAV2
+    CLEAR MEME_SAV3
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    LOOP 
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST
+                                   MEME_FC:  ...TYPE OF INDEX
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES
+                                   1         ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                  BREAK
+            ENDIF
+            IF ((SQUEEZE MEME_NET = "OGB") AND (SQUEEZE MEME_PRD = "LBLA")):
+              IF (SQUEEZE MEME_TRM = PLANYR_END)
+                PACKLEN MEME_SAV2 WITH MEME_LIST
+              ELSE
+                 IF (MEME_TRM > PLANYR_BEG)
+                     PACKLEN MEME_SAV3 WITH MEME_LIST
+                 ENDIF
+              ENDIF
+            ENDIF
+            IF (SQUEEZE MEME_NET <> "BLUE")
+               CONTINUE
+            ENDIF
+            IF (SQUEEZE MEME_PRD = "HSA")
+               CONTINUE
+            ENDIF
+            IF (SQUEEZE MEME_PLAN = "HRA1")
+               CONTINUE
+            ENDIF
+            SWITCH MEME_LEV1
+               CASE "5005 " OR "5006 " OR "5007 "
+                  CONTINUE
+            ENDSWITCH
+            IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                 CONTINUE
+              ENDIF
+            ENDIF
+            IF (SQUEEZE MEME_TRM = "")
+               FILL "9" IN W_TRM     
+            ELSE
+               MOVE MEME_TRM TO W_TRM
+            ENDIF
+            IF (W_TRM < PLANYR_BEG)
+               CONTINUE
+            ENDIF
+            SWITCH MEME_LEV1
+               CASE "5000 " OR "5001 "
+                 PACKLEN MEME_SAV3 WITH MEME_LIST
+               DEFAULT
+                 IF ((MEME_EFF <= PLANYR_BEG) AND (W_TRM > PLANYR_BEG))
+                   PACKLEN MEME_SAV WITH MEME_LIST
+                 ENDIF 
+            ENDSWITCH
+    REPEAT
+    RETURN
+
+.
+. ----------------------------------------------------
+. ----------------------------------------------------
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+
+.-----------------------------
+. Close Files
+.
+.-----------------------------
+
+CLOSE_FILES
+
+         RETURN
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+      IF (C_CMDPAR)
+         CALL CMD_END
+         STOP
+      ENDIF
+
+      IF (RUN_MODE = "N")
+          DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL
+          MOVE      "        NEOJ        " TO X_FINISH_STATUS
+      ENDIF 
+      CALL        X_DISPLAY_COUNTS
+         
+    RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       CMDPARAM.SR  
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of ELG2500.PS

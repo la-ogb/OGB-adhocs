@@ -1,0 +1,1495 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : a0501191.ps
++    Description    : MEDICARE DISCREPANCIES EXTRACT 
++
++    apeks 01/18/2005 a0501191 DEV - Initial Version. 
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy ayymmdd# MOD - Description 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_OGBFILE.CB
+              INC       PRT.RL               ...Printer Definition File
+              INC       MEM.RL               ...Member Demographics
+              INC       MEME.RL              ...Member Eligibility
+              INC       MEMO.RL              ...Member Other Coverage
+. --------------------------------------------------------------------------
+.
+DATE1         DIM       8
+DATE2         DIM       8
+DATE3         DIM       8
+IDX_OPTS      DIM       200
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+W_CCYY        DIM       4
+W_MMDD        DIM       4
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+TIMESTAMP     DIM       14
+CURR_DATE     DIM       8
+FROM_DATE     DIM       8
+THRU_DATE     DIM       8
+
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+FORM1         FORM      1
+FORM2         FORM      2
+FORMTWO       FORM      2
+FORM3         FORM      3
+FORM4         FORM      4
+FORM5         FORM      5
+FORM6         FORM      6
+FORM7         FORM      7
+FORM8         FORM      8
+FORM9         FORM      9
+FORM10        FORM      10
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM4          DIM       4
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM8          DIM       8
+DIM9          DIM       9
+DIM10         DIM       10
+DIM12         DIM       12
+DIMTWO        DIM       2
+DIMTEN        DIM       10
+DIM_10        DIM       10
+
+CURRDATE      DIM       8
+
+COUNT_MEM     FORM      8
+COUNT_MEME    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+. Program specific variables
+.-----------------------------
+
+W_MEM         DIM       8
+W_SSN         DIM       9
+W_REL         DIM       2
+
+GOT_EMP       DIM       1
+
+EMP_MEDA      DIM       700  . emp (01) MEDA 
+EMP_MEDB      DIM       700  . emp (01) MEDB
+EMP_MDAE      DIM       8
+EMP_MDBE      DIM       8
+SPO_MEDA      DIM       700  . spouse (02) MEDA
+SPO_MEDB      DIM       700  . spouse (02) MEDB
+SPO_MDAE      DIM       8
+SPO_MDBE      DIM       8
+
+BIL_PRIM      FORM      2
+
+EMP_MEM       DIM       700
+EMP_MEME      DIM       700
+SPO_MEM       DIM       700
+SPO_MEME      DIM       700
+HLD_MEM       DIM       700
+HLD_MEME      DIM       700
+HLD_MEDA      DIM       700
+HLD_MEDB      DIM       700
+
+HLD_RNKA      DIM       8
+HLD_RNKB      DIM       8
+
+HLD_EFFA      DIM       8
+HLD_EFFB      DIM       8
+
+HLD_TRMA      DIM       8
+HLD_TRMB      DIM       8
+
+W_EFFA        DIM       8
+W_TRMA        DIM       8
+W_EFFB        DIM       8
+W_TRMB        DIM       8
+
+DATE_RSLT     DIM       2
+
+BIL_STATUS      DIM       1   . A/R 
+CLM_STATUS      DIM       1   . A/R 
+
+. Special Circumstances
+W_DISB        DIM       1   . Disabled (LEV2 = 94) D=yes
+W_ESRD        DIM       1   . End Stage Renal Disease E=yes
+W_HANDICAP    DIM       1   . Member Handicapped H=yes
+W_RETWRK      DIM       1   . Retiree returning to work R=yes
+W_SURV        DIM       1   . Surviving Spouse (LEV2 = 95) S=yes
+
+W_RETD        DIM       8
+
+W_CMS         DIM       1
+
+WS_CCYY       DIM       4   .> ccyy
+WS_CC         DIM       2   .> cc  
+WS_YY         DIM       2   .> yy  
+WS_MM         DIM       2   .> mm  
+WS_DD         DIM       2   .> dd
+
+W_LEV1        DIM       4
+W_LEV1_1      DIM       1
+W_LEV1_2      DIM       2
+W_LEV2        DIM       2
+
+W_RATE        DIM       2   . Current rate
+W_CRRT        DIM       2   . Calculated rate
+W_CRAE        DIM       8   . Calculated eff
+W_CRAT        DIM       8   . Calculated term
+W_CRAR        DIM       1   . Calculated rank
+W_CRBE        DIM       8   . Calculated eff
+W_CRBT        DIM       8   . Calculated term
+W_CRBR        DIM       1   . Calculated rank
+
+W_DIFF        FORM      5
+
+. input files
+.-----------------------------
+. reformat of MEM
+WRK_FILE      FILE      VAR=700,TEXT
+WRK_NAME      INIT      "/w/a0501191.wrk"
+WRK_LIST      LIST
+WRK_REC       DIM       700
+              LISTEND
+
+CMS_FILE      IFILE     VAR=100,KEYLEN=8,TEXT
+CMS_NAME      INIT      "/w/cms1.ix1"
+CMS_LIST      LIST
+CMS_MEM       DIM       8       . Member ID -- KEY
+CMS_HIC       DIM       12
+CMS_MDAE      DIM       8
+CMS_MDAT      DIM       8
+CMS_MDBE      DIM       8
+CMS_MDBT      DIM       8
+              LISTEND
+
+.ESRD
+ESRD_FILE      IFILE     VAR=150,KEYLEN=8,TEXT
+ESRD_NAME      INIT      "/w/esrd.ix1"
+ESRD_LIST      LIST
+ESRD_CLM_PATID DIM       8         .>PAT. RECD ID           
+ESRD_CLM_LNAME DIM       20        .>PAT. LAST NAME         
+ESRD_CLM_FNAME DIM       15        .>PAT. FIRST NAME        
+ESRD_CLM_MINIT DIM       1         .>PAT. INITIAL           
+ESRD_CLM_DOB   DIM       8         .>PAT. DATE OF BIRTH     
+ESRD_CLM_NO    DIM       8         .>CLAIM NUMBER           
+ESRD_CLM_SSNA  DIM       19        .>SSN A         
+ESRD_CLM_SSNB  DIM       19        .>SSN B         
+ESRD_CLM_MEMID DIM       8         .>MEM. RECD ID           
+ESRD_CLM_DIAG  DIM       6         .>PRIN DIAGNOSIS CODE    
+                LISTEND
+
+ESRD_KEY       DIM       8         .>PAT. RECD ID  KEY      
+
+
+. output file
+.-----------------------------
+
+OUT_FILE      FILE      VAR=500,TEXT
+OUT_NAME      INIT      "/w/a0501191.txt"
+OUT_LIST      LIST
+OUT_MEM       DIM       8   . Impact MEM ID
+OUT_SSN       DIM       9   . SSN
+OUT_REL       DIM       2   . Relation
+OUT_RETD      DIM       10  . Retirement Date (empty if active)
+OUT_MDAE      DIM       10  . Medicare A effective (MEMO file)
+OUT_MDAT      DIM       10  . Medicare A term (MEMO)
+OUT_MDAR      DIM       1   . Medicare A rank (MEMO)
+OUT_MDBE      DIM       10  . Medicare B effective (MEMO)
+OUT_MDBT      DIM       10  . Medicare B term (MEMO)
+OUT_MDBR      DIM       1   . Medicare B rank (MEMO)
+OUT_CRAE      DIM       10  . Corrected MEDA eff
+OUT_CRAT      DIM       10  . Corrected MEDA term
+OUT_CRAR      DIM       1   . Corrected MEDA rank
+OUT_CRBE      DIM       10  . Corrected MEDB eff
+OUT_CRBT      DIM       10  . Corrected MEDB term
+OUT_CRBR      DIM       1   . Corrected MEDB rank
+OUT_CMS       DIM       1   . On file from CMS (Medicare) Y/N
+OUT_RATE      DIM       2   . Current rate table
+OUT_CRRT      DIM       2   . Corrected rate table
+OUT_SPEC      DIM       5   . Special Circumstances
+OUT_LNAME     DIM       20  . Last name
+OUT_FNAME     DIM       15  . First name
+OUT_MINIT     DIM       1   . Middle Initial
+              LISTEND
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST
+PARAM_FILE    DIM       12
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+OGB@DIM1      DIM       @
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+MCS@DIM3      DIM       @
+MCS@DIM4      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+.RUN_CLIPCALC    EXTERNAL
+
+. -----------------
+.   Begin Program
+. -----------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "MEDICARE DISCREPANCIES" TO  C_OPER
+         MOVE      "a0501191"           TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+         LOADMOD   "clipcalc"
+
+. --------------------------------------------------------------------------------
+.   1-Help  2-Srch  3-Prev  4-Next  5-New   6-Serv  7-Code  8-Note  9-Quit 10-More
+. --------------------------------------------------------------------------------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         CALL      INITIALIZE    
+         CALL      CREATE_EXTRACT
+         CALL      CLEAN_UP
+         CALL      NEOJ
+
+         TRAPREST  TRAP_DATA
+
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. -----------------------------------
+.  Prepare for extract
+. -----------------------------------
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+          IF (C_RMODE = "I")
+            message   horz="26",vert="10":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" Reformatting MEM File":
+                      text=" Please wait...      "
+         ENDIF
+
+. Reformat MEM records for Current Members
+         PACK DIM8 WITH BLANKS
+         CLEAR SCRATCH
+         PACK SCRATCH WITH "mem.dbf ",WRK_NAME," 1-700":
+                           " -p336-343=#"",DIM8,"#" -t -j"
+        
+         REFORMAT SCRATCH
+
+         MOVE      0           TO  COUNT_MEM
+         MOVE      0           TO  COUNT_MEME
+         MOVE      0           TO  WRITE_COUNT
+         MOVE      0           TO  ERROR_COUNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" MEM  In             ":
+                      text=" MEME In             ":
+                      text=" Written             "
+         ENDIF
+
+         CALL      OPEN_OGBFILE USING WRK_FILE,WRK_NAME
+         CALL      OPEN_OGBFILE_IX USING CMS_FILE,CMS_NAME
+         CALL      OPEN_OGBFILE_IX USING ESRD_FILE,ESRD_NAME
+         CALL      PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. -----------------------------------
+. Read through the MEM & MEME files
+. -----------------------------------
+CREATE_EXTRACT
+
+         LOOP
+            MOVE      OGB_SEQ1 TO OGB_SEQ
+            CALL      READ_OGBFILE USING WRK_FILE,WRK_NAME,WRK_LIST  
+            IF        (RESULT <> 1) 
+                      BREAK
+            ENDIF
+
+            ADD       1 TO COUNT_MEM
+            MOVE      COUNT_MEM TO WORK_COUNT
+            UNPACK    WORK_COUNT INTO FRONT,BACK
+            IF (BACK = "000")
+               IF (C_RMODE = "I")
+                  DISPLAY   *P41:20,COUNT_MEM
+               ENDIF
+            ENDIF
+
+. Member Demographic Data
+            CLEAR HLD_MEM
+            CLEAR W_SSN
+            CLEAR W_MEM
+            CLEAR W_REL
+            CLEAR W_RATE
+            CLEAR W_RETD
+
+            CLEAR EMP_MEDA
+            CLEAR EMP_MEDB
+            CLEAR SPO_MEDA
+            CLEAR SPO_MEDB
+
+            UNPACK WRK_REC INTO MEM_LIST
+            PACK HLD_MEM WITH WRK_REC
+            PACK W_SSN WITH MEM_ESSN
+            PACK W_MEM WITH MEM_ID1
+            PACK W_REL WITH MEM_REL
+
+            UNPACK MEM_LIFE INTO DIM5
+            IF (SQUEEZE DIM5 = "HANDI")
+               PACK W_HANDICAP WITH "H"
+            ELSE
+               PACK W_HANDICAP WITH BLANKS
+            ENDIF
+
+. Member Enrollment Data
+            PACK W_RETWRK WITH BLANKS
+            CALL READ_MEME USING W_MEM,HLD_MEME
+
+            CONTINUE IF (SQUEEZE HLD_MEME = "")
+
+            debug
+            IF (W_REL = "01")
+               PACK EMP_MEM  WITH HLD_MEM
+               PACK EMP_MEME WITH HLD_MEME
+            ELSE
+               CALL GET_EMP  
+               IF (GOT_EMP = "Y")
+                  PACK EMP_MEM WITH MEM_REC
+               ELSE
+                  PACK EMP_MEM WITH BLANKS
+               ENDIF
+               CALL READ_MEME USING MEM_ID1,EMP_MEME
+               UNPACK HLD_MEM INTO MEM_LIST
+               UNPACK HLD_MEME INTO MEME_LIST
+            ENDIF
+
+. Medicare (Other Coverage) Data
+            CALL READ_MEMO USING W_MEM,HLD_MEDA,HLD_MEDB
+
+            UNPACK HLD_MEDA INTO MEMO_LIST
+            PACK HLD_RNKA WITH MEMO_RANK
+            PACK HLD_EFFA WITH MEMO_EFF 
+            PACK HLD_TRMA WITH MEMO_TRM 
+
+            UNPACK HLD_MEDB INTO MEMO_LIST
+            PACK HLD_RNKB WITH MEMO_RANK
+            PACK HLD_EFFB WITH MEMO_EFF 
+            PACK HLD_TRMB WITH MEMO_TRM 
+
+            IF (W_REL = "01")
+               PACK EMP_MEDA WITH HLD_MEDA
+               PACK EMP_MEDB WITH HLD_MEDB
+            ENDIF
+
+            IF (W_REL = "02")
+               PACK SPO_MEDA WITH HLD_MEDA
+               PACK SPO_MEDB WITH HLD_MEDB
+            ENDIF
+
+. Did we get info from Medicare?
+            CALL READ_CMS
+
+. ESRD Status?
+            CALL READ_ESRD
+
+. Retirement Status
+            UNPACK HLD_MEME INTO MEME_LIST
+
+            PACK W_LEV1 WITH MEME_LEV1            
+            UNPACK MEME_LEV1 INTO W_LEV1_1,DIM2,W_LEV1_2
+            UNPACK MEME_LEV2 INTO W_LEV2
+
+            PACK BIL_STATUS WITH "A"       . default to Active
+            PACK CLM_STATUS WITH "A"       . default to Active
+            PACK W_SURV WITH BLANKS 
+
+            IF (W_LEV1_1 = "R")
+               PACK BIL_STATUS WITH "R"
+               IF (W_LEV1_2 = "SV")
+                  PACK W_SURV WITH "S"    
+               ENDIF
+            ENDIF
+
+            IF (W_LEV2 = "93" OR W_LEV2 = "99")
+               PACK BIL_STATUS WITH "R"
+            ENDIF           
+
+            IF (W_LEV2 = "94")
+               PACK BIL_STATUS WITH "R"
+               PACK W_DISB WITH "D"
+            ELSE
+               PACK W_DISB WITH BLANKS  
+            ENDIF           
+
+            IF (W_LEV2 = "95")
+               PACK BIL_STATUS WITH "R"
+               PACK W_SURV WITH "S"    
+            ENDIF           
+
+            CALL GET_RETD
+            IF (SQUEEZE W_RETD = "")
+               IF (W_SURV = "S" OR W_DISB = "D")
+                  PACK CLM_STATUS WITH "R"
+               ENDIF
+            ELSE
+               IF (W_LEV2 <> "92")
+                  PACK CLM_STATUS WITH "R"
+               ENDIF
+            ENDIF
+
+. Evaluate Medicare status
+            CALL EVAL_MED
+
+         REPEAT
+
+         RETURN
+
+. ---------------------------------
+. Read MEME file   
+. ---------------------------------
+
+READ_MEME ROUTINE MCS@DIM1,MCS@DIM2
+
+         CLEAR     MCS@DIM2
+
+         PACK      MEME_FK11 WITH MCS@DIM1,BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                   MEME_FN:  ...File name list
+                   MEME_FC:  ...(I)ndex or (A)imdex
+                   MEME_FV:  ...File key varlists
+                   MEME_FK:  ...File key sizes
+                   MEME_LIST: ...File record (field list)
+                   MEME_REC: ...File record (packed)
+                   MEME_OLD: ...File saved when read
+                   MEME_QTY: ...Number of files
+                   1         ...File number for this read
+         LOOP
+            CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                      MEME_FN:  ...File name list
+                      MEME_FC:  ...(I)ndex or (A)imdex
+                      MEME_FV:  ...File key varlists
+                      MEME_FK:  ...File key sizes
+                      MEME_LIST: ...File record (field list)
+                      MEME_REC: ...File record (packed)
+                      MEME_OLD: ...File saved when read
+                      MEME_QTY: ...Number of files
+                      1         ...File number for this read
+
+            WHILE (RESULT = 1)
+            WHILE (MCS@DIM1 = MEME_ID1)
+
+            ADD       1 TO COUNT_MEME
+            MOVE      COUNT_MEME TO WORK_COUNT
+            UNPACK    WORK_COUNT INTO FRONT,BACK
+            IF (BACK = "000")
+               IF (C_RMODE = "I")
+                  DISPLAY   *P41:21,COUNT_MEME
+               ENDIF
+            ENDIF
+
+. Consider only health records                
+            CONTINUE IF (SQUEEZE MEME_NET = "LIFE")
+
+            IF (SQUEEZE MEME_LEV2 = "92")
+               PACK W_RETWRK WITH "R"
+            ENDIF
+
+. Include only active enrollment 
+            CONTINUE IF (SQUEEZE MEME_TRM <> "")
+
+            PACK MCS@DIM2 WITH MEME_REC
+
+            IF (MEM_REL = "01")
+               PACK W_RATE WITH MEME_RT
+            ENDIF
+
+         REPEAT   
+
+MEME_LOOP_END
+         RETURN
+
+. -----------------------------------------------
+.  Read MEMO file for most recent active records
+. -----------------------------------------------
+
+READ_MEMO ROUTINE MCS@DIM1,MCS@DIM2,MCS@DIM3
+
+            CLEAR     MCS@DIM2
+            CLEAR     MCS@DIM3
+
+            PACK      MEMO_FK11 WITH MCS@DIM1,BLANKS
+            CALL      FILE_READ USING MEMO_FD:    ...File declaration list
+                      MEMO_FN:  ...File name list
+                      MEMO_FC:  ...(I)ndex or (A)imdex
+                      MEMO_FV:  ...File key varlists
+                      MEMO_FK:  ...File key sizes
+                      MEMO_LIST: ...File record (field list)
+                      MEMO_REC: ...File record (packed)
+                      MEMO_OLD: ...File saved when read
+                      MEMO_QTY: ...Number of files
+                      1         ...File number for this read
+            LOOP
+               CALL      FILE_NEXT USING MEMO_FD:    ...File declaration list
+                         MEMO_FN:  ...File name list
+                         MEMO_FC:  ...(I)ndex or (A)imdex
+                         MEMO_FV:  ...File key varlists
+                         MEMO_FK:  ...File key sizes
+                         MEMO_LIST: ...File record (field list)
+                         MEMO_REC: ...File record (packed)
+                         MEMO_OLD: ...File saved when read
+                         MEMO_QTY: ...Number of files
+                         1         ...File number for this read
+
+               WHILE (RESULT = 1)
+               WHILE (MCS@DIM1 = MEMO_ID1)
+
+               CONTINUE IF (MEMO_TYPE <> "MEDA" AND MEMO_TYPE <> "MEDB")
+       
+               IF (MEMO_TYPE = "MEDA")
+                  IF (SQUEEZE MEMO_TRM = "" OR MEMO_TRM > CURRDATE)
+                     PACK MCS@DIM2 WITH MEMO_REC
+                  ENDIF
+               ENDIF 
+
+               IF (MEMO_TYPE = "MEDB")
+                  IF (SQUEEZE MEMO_TRM = "" OR MEMO_TRM > CURRDATE)
+                     PACK MCS@DIM3 WITH MEMO_REC
+                  ENDIF
+               ENDIF 
+
+            REPEAT
+          
+READ_MEMO_END
+         RETURN
+
+. -----------------------
+.  Read CMS records
+. -----------------------
+READ_CMS
+
+         PACK W_CMS WITH "N"
+
+         CALL READ_OGBFILE_IX USING CMS_FILE,CMS_NAME,W_MEM,CMS_LIST
+
+         IF (RESULT <> 1)
+            GOTO READ_CMS_END
+         ENDIF
+
+         PACK W_CMS WITH "Y"
+
+         IF (CMS_MDAE = "00000000")
+            PACK CMS_MDAE WITH BLANKS
+         ENDIF
+
+         IF (CMS_MDAT = "00000000")
+            PACK CMS_MDAT WITH BLANKS
+         ENDIF
+
+         IF (CMS_MDBE = "00000000")
+            PACK CMS_MDBE WITH BLANKS
+         ENDIF
+
+         IF (CMS_MDBT = "00000000")
+            PACK CMS_MDBT WITH BLANKS
+         ENDIF
+
+READ_CMS_END
+         RETURN
+
+. -----------------------
+.  Read ESRD records
+. -----------------------
+
+READ_ESRD
+
+         PACK W_ESRD WITH BLANKS
+
+         PACK ESRD_KEY WITH W_MEM
+         CALL READ_OGBFILE_IX USING ESRD_FILE,ESRD_NAME,ESRD_KEY,ESRD_LIST
+        
+         IF (RESULT = 1)
+            PACK W_ESRD WITH "E"
+         ENDIF 
+
+         RETURN
+
+. -----------------------
+.  Get Employee Data
+. -----------------------
+
+GET_EMP
+
+         PACK GOT_EMP WITH "N"
+
+         CLEAR     MEM_AIM
+         PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+         PACK      MEM_AIM3 WITH "03X","01",BLANKS
+         CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                       MEM_FN:          ...FILE NAME LIST
+                       MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                       MEM_FV:          ...FILE KEY VARLISTS
+                       MEM_AIM:          ...FILE KEY SIZES
+                       MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                       MEM_REC:         ...FILE RECORD (PACKED)
+                       MEM_OLD:         ...FILE SAVED WHEN READ
+                       MEM_QTY:         ...NUMBER OF FILES
+                       2                 ...FILE NUMBER FOR THIS READ
+         IF (RESULT <> 1)
+            GOTO GET_EMP_END
+         ENDIF
+
+         PACK GOT_EMP WITH "Y"
+
+GET_EMP_END
+         RETURN
+
+. -----------------------------
+.  Get Retirement Date
+. -----------------------------
+
+GET_RETD
+
+         UNPACK HLD_MEME INTO MEME_LIST
+
+         IF (W_REL = "01")
+            PACK W_RETD WITH MEM_RETD
+         ELSE
+            UNPACK EMP_MEM INTO MEM_LIST 
+            PACK W_RETD WITH MEM_RETD
+            UNPACK HLD_MEM INTO MEM_LIST
+         ENDIF
+
+         IF (SQUEEZE MEM_ACCU <> "" AND SQUEEZE W_RETD = "")
+            IF (W_LEV2 = "95" OR W_LEV1_2 = "SV")
+               PACK W_SURV WITH "S"
+               CALL GET_MEM USING MEM_ACCU
+            ENDIF
+         ENDIF
+
+GET_RETD_END
+         RETURN
+
+. -----------------------------
+.  Get alternate member record
+. -----------------------------
+
+GET_MEM ROUTINE MCS@DIM1
+
+         PACK MEM_FK11 WITH MCS@DIM1
+         CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                       MEM_FN:          ...FILE NAME LIST
+                       MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                       MEM_FV:          ...FILE KEY VARLISTS
+                       MEM_FK:          ...FILE KEY SIZES
+                       MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                       MEM_REC:         ...FILE RECORD (PACKED)
+                       MEM_OLD:         ...FILE SAVED WHEN READ
+                       MEM_QTY:         ...NUMBER OF FILES
+                       1                 ...FILE NUMBER FOR THIS READ
+         IF (RESULT <> 1)
+            GOTO GET_MEM_END
+         ENDIF
+
+         CALL GET_EMP
+         IF (GOT_EMP = "Y")
+            PACK W_RETD WITH MEM_RETD
+         ENDIF
+         UNPACK HLD_MEM INTO MEM_LIST
+
+GET_MEM_END
+         RETURN
+
+. -----------------------------
+.  Evaluate for Discrepancies
+. -----------------------------
+
+EVAL_MED  
+
+         CALL CLM_PAYMT
+
+         CALL BIL_RATES
+
+. MEDA discrepancies
+
+         IF (SQUEEZE HLD_EFFA <> SQUEEZE W_CRAE)
+            CALL DELTA_DAYS USING HLD_EFFA,W_CRAE,W_DIFF
+            IF (W_DIFF <= -1 AND W_DIFF >= 1)
+               CALL WRITE_OUT
+               GOTO EVAL_MED_END
+            ENDIF
+         ENDIF
+
+         IF (SQUEEZE HLD_TRMA <> SQUEEZE W_CRAT)
+            CALL WRITE_OUT
+            GOTO EVAL_MED_END
+         ENDIF
+
+. If rank doesn't match only error if one is blank
+         IF (SQUEEZE HLD_RNKA <> SQUEEZE W_CRAR)
+            IF (SQUEEZE HLD_RNKA = "" OR SQUEEZE W_CRAR = "")
+               CALL WRITE_OUT
+               GOTO EVAL_MED_END
+            ENDIF
+         ENDIF
+
+. MEDB discrepancies
+
+         IF (SQUEEZE HLD_EFFB <> SQUEEZE W_CRBE)
+            CALL DELTA_DAYS USING HLD_EFFB,W_CRBE,W_DIFF
+            IF (W_DIFF <= -1 AND W_DIFF >= 1)
+               CALL WRITE_OUT
+               GOTO EVAL_MED_END
+            ENDIF
+         ENDIF
+
+         IF (SQUEEZE HLD_TRMB <> SQUEEZE W_CRBT)
+            CALL WRITE_OUT
+            GOTO EVAL_MED_END
+         ENDIF
+
+. If rank doesn't match only error if one is blank
+         IF (SQUEEZE HLD_RNKB <> SQUEEZE W_CRBR)
+            IF (SQUEEZE HLD_RNKB = "" OR SQUEEZE W_CRBR = "")
+               CALL WRITE_OUT
+               GOTO EVAL_MED_END
+            ENDIF
+         ENDIF
+
+. Billing rate discrepancies
+         IF (SQUEEZE W_CRRT <> SQUEEZE W_RATE)
+            CALL WRITE_OUT
+            GOTO EVAL_MED_END
+         ENDIF
+
+EVAL_MED_END
+         RETURN
+
+. -----------------------------
+.  Claims Payment Values      
+. -----------------------------
+
+CLM_PAYMT
+
+. Claims payment
+
+. Default values to blanks
+
+         PACK W_CRAR WITH BLANKS
+         PACK W_CRAE WITH BLANKS
+         PACK W_CRAT WITH BLANKS
+
+         PACK W_CRBR WITH BLANKS
+         PACK W_CRBE WITH BLANKS
+         PACK W_CRBT WITH BLANKS
+..................
+. Active employees
+. If Medicare B ONLY -- Medicare primary; actual effective date
+. Medicare A ONLY or A&B -- MEMO unranked
+......................................
+ 
+         IF (CLM_STATUS = "A")         . active
+. Medicare B ONLY rule
+            IF (SQUEEZE HLD_MEDA = "")
+               IF (SQUEEZE HLD_MEDB <> "")            
+                  PACK W_CRBR WITH "1"
+                  PACK W_CRBE WITH HLD_EFFB  
+                  PACK W_CRBT WITH HLD_TRMB
+               ENDIF
+               IF (W_CMS = "Y" AND SQUEEZE W_CRBR = "")
+                  IF (SQUEEZE CMS_MDAE = "" AND SQUEEZE CMS_MDBE <> "")
+                     IF (SQUEEZE CMS_MDBT = "" OR CMS_MDBT > CURRDATE)
+                        PACK W_CRBR WITH "1"
+                        PACK W_CRBE WITH CMS_MDBE  
+                        PACK W_CRBT WITH CMS_MDBT
+                     ENDIF
+                  ENDIF
+               ENDIF
+            ELSE
+               debug 
+               IF (W_CMS = "Y")
+                  IF (SQUEEZE CMS_MDAE = "" AND SQUEEZE CMS_MDBE <> "")
+                     IF (SQUEEZE CMS_MDBT = "" OR CMS_MDBT > CURRDATE)
+                        PACK W_CRBR WITH "1"
+                        PACK W_CRBE WITH CMS_MDBE  
+                        PACK W_CRBT WITH CMS_MDBT
+                     ENDIF
+                  ENDIF
+               ENDIF
+            ENDIF
+            IF (SQUEEZE HLD_TRMA <> "" AND SQUEEZE HLD_RNKA = "")
+               debug
+               PACK HLD_EFFA WITH BLANKS  
+               PACK HLD_TRMA WITH BLANKS  
+            ENDIF   
+            IF (SQUEEZE HLD_TRMB <> "" AND SQUEEZE HLD_RNKB = "")
+               debug
+               PACK HLD_EFFB WITH BLANKS  
+               PACK HLD_TRMB WITH BLANKS  
+            ENDIF   
+         ENDIF
+
+..................
+. Retirees         
+. Medicare A or B -- MEMO ranked
+......................................
+         CLEAR W_EFFA
+         CLEAR W_TRMA
+         CLEAR W_EFFB
+         CLEAR W_TRMB
+
+         IF (CLM_STATUS = "R")         . retiree         
+            IF (SQUEEZE HLD_MEDA <> "")      
+               PACK W_CRAR WITH "1"
+               UNPACK HLD_MEDA INTO MEMO_LIST
+               CALL GET_NOTEDATES USING MEMO_NOTE2
+               IF (SQUEEZE W_EFFA = "")
+                  PACK W_CRAT WITH MEMO_TRM 
+                  IF (W_RETD > MEMO_EFF)
+                     PACK W_CRAE WITH W_RETD
+                  ELSE
+                     PACK W_CRAE WITH MEMO_EFF
+                  ENDIF
+               ELSE
+                  PACK W_CRAT WITH W_TRMA
+                  IF (W_RETD > W_EFFA)
+                     PACK W_CRAE WITH W_RETD
+                  ELSE
+                     PACK W_CRAE WITH W_EFFA
+                  ENDIF
+               ENDIF
+            ELSE
+               IF (W_CMS = "Y" AND SQUEEZE CMS_MDAE <> "")
+                  IF (SQUEEZE CMS_MDAT = "")
+                     PACK W_CRAR WITH "1"
+                     PACK W_CRAT WITH CMS_MDAT
+                     IF (W_RETD > CMS_MDAE)
+                        PACK W_CRAE WITH W_RETD
+                     ELSE
+                        PACK W_CRAE WITH CMS_MDAE
+                     ENDIF
+                  ENDIF
+               ENDIF
+            ENDIF
+            IF (SQUEEZE HLD_MEDB <> "")      
+               PACK W_CRBR WITH "1"
+               UNPACK HLD_MEDB INTO MEMO_LIST
+               CALL GET_NOTEDATES USING MEMO_NOTE3
+               IF (SQUEEZE W_EFFB = "")
+                  PACK W_CRBT WITH MEMO_TRM 
+                  IF (W_RETD > MEMO_EFF)
+                     PACK W_CRBE WITH W_RETD
+                  ELSE
+                     PACK W_CRBE WITH MEMO_EFF
+                  ENDIF
+               ELSE
+                  PACK W_CRAT WITH W_TRMB
+                  IF (W_RETD > W_EFFB)
+                     PACK W_CRBE WITH W_RETD
+                  ELSE
+                     PACK W_CRBE WITH W_EFFB
+                  ENDIF
+               ENDIF
+            ELSE
+               IF (W_CMS = "Y" AND SQUEEZE CMS_MDBE <> "")
+                  IF (SQUEEZE CMS_MDBT = "")
+                     PACK W_CRBR WITH "1"
+                     PACK W_CRBT WITH CMS_MDBT
+                     IF (W_RETD > CMS_MDBE)
+                        PACK W_CRBE WITH W_RETD
+                     ELSE
+                        PACK W_CRBE WITH CMS_MDBE
+                     ENDIF
+                  ENDIF
+               ENDIF
+            ENDIF
+         ENDIF
+
+CLM_PAYMT_END
+         RETURN
+
+. -----------------------------
+.  Billing Rate Values      
+. -----------------------------
+
+BIL_RATES
+
+. Billing Information
+..................
+. Active employees
+. Default rate table is "AC"                                   
+. Exceptions are COBRA and Disability (CP/5000/5001)   
+......................................
+ 
+         IF (BIL_STATUS = "A")         . active
+            debug
+            PACK W_CRRT WITH "AC"    
+            IF (W_LEV2 = "92")       . retiree returned to work
+               PACK W_CRRT WITH "RN"
+            ENDIF
+            IF (W_LEV1 = "5000")     . COBRA
+               debug
+               IF (W_RATE = "CB" OR W_RATE = "CD")
+                  PACK W_CRRT WITH W_RATE
+               ELSE
+                  PACK W_CRRT WITH "CB"
+               ENDIF
+            ELSE 
+               IF (MEME_COBR = "C")
+                  debug
+                  PACK W_CRRT WITH "CP"
+                  GOTO BIL_RATES_END
+               ENDIF
+            ENDIF
+            IF (W_LEV1 = "5001")     . Sponsored Dependent 
+               PACK W_CRRT WITH "DN"
+               IF (SQUEEZE HLD_RNKA <> "" AND SQUEEZE HLD_EFFA <> "")
+                  IF (SQUEEZE HLD_RNKB <> "" AND SQUEEZE HLD_EFFB <> "")
+                     IF (SQUEEZE HLD_TRMA = "" AND SQUEEZE HLD_TRMB = "")
+                        PACK W_CRRT WITH "D1"
+                     ENDIF
+                  ENDIF
+               ENDIF
+            ENDIF
+            GOTO BIL_RATES_END
+         ENDIF
+
+..................
+. Retirees         
+. Default rate table is "RN"
+. R1 = One on Medicare -- employee or spouse
+. R2 = Two on Medicare -- employee & spouse
+. On Medicare means having both Parts A & B 
+. Grandfather clause: Both retired and either part prior to 07/01/1997
+....................................................
+
+. Default value
+         PACK W_CRRT WITH "RN"
+
+         IF (SQUEEZE W_RETD = "")
+            IF (W_SURV = "S" OR W_DISB = "D")
+               PACK W_CRRT WITH "AC"
+            ENDIF
+         ENDIF
+
+. Get employee and spouse medicare data
+         IF (W_REL = "01")
+            debug 
+            IF (MEME_DEPC = "ES" OR MEME_DEPC = "FM")
+               CALL GET_SPOUSE
+               UNPACK HLD_MEM INTO MEM_LIST
+            ELSE
+               PACK SPO_MEDA WITH BLANKS
+               PACK SPO_MEDB WITH BLANKS
+            ENDIF
+         ENDIF
+        
+         IF (W_REL <> "01")
+            debug
+            UNPACK EMP_MEM INTO MEM_LIST 
+            CALL READ_MEMO USING MEM_ID1,EMP_MEDA,EMP_MEDB
+            UNPACK HLD_MEM INTO MEM_LIST
+         ENDIF
+
+         IF (W_REL <> "01" AND W_REL <> "02")
+            debug 
+            UNPACK EMP_MEME INTO MEME_LIST
+            IF (MEME_DEPC = "ES" OR MEME_DEPC = "FM")
+               CALL GET_SPOUSE
+               UNPACK HLD_MEM INTO MEM_LIST
+            ELSE
+               PACK SPO_MEDA WITH BLANKS
+               PACK SPO_MEDB WITH BLANKS
+            ENDIF
+         ENDIF
+        
+. Find ranked, active effective, verified dates
+. Employee's Medicare A
+         CLEAR MEMO_LIST
+         PACK EMP_MDAE WITH BLANKS
+         UNPACK EMP_MEDA INTO MEMO_LIST
+         IF (MEMO_VER = "Y")
+            IF (W_REL = "01")
+               IF (W_CRAR > "0" AND SQUEEZE W_CRAT = "")
+                  PACK EMP_MDAE WITH W_CRAE
+               ENDIF
+            ELSE
+               IF (MEMO_RANK > "0" AND SQUEEZE MEMO_TRM = "")
+                  PACK EMP_MDAE WITH MEMO_EFF
+               ENDIF
+            ENDIF
+         ENDIF
+
+. Employee's Medicare B
+         CLEAR MEMO_LIST
+         PACK EMP_MDBE WITH BLANKS
+         UNPACK EMP_MEDB INTO MEMO_LIST
+         IF (MEMO_VER = "Y")
+            IF (W_REL = "01")
+               IF (W_CRBR > "0" AND SQUEEZE W_CRBT = "")
+                  PACK EMP_MDBE WITH W_CRBE
+               ENDIF
+            ELSE
+               IF (MEMO_RANK > "0" AND SQUEEZE MEMO_TRM = "")
+                  PACK EMP_MDBE WITH MEMO_EFF
+               ENDIF
+            ENDIF
+         ENDIF
+
+. Spouse's Medicare A
+         CLEAR MEMO_LIST
+         PACK SPO_MDAE WITH BLANKS
+         UNPACK SPO_MEDA INTO MEMO_LIST
+         IF (MEMO_VER = "Y")
+            IF (W_REL = "02")
+               IF (W_CRAR > "0" AND SQUEEZE W_CRAT = "")
+                  PACK SPO_MDAE WITH W_CRAE
+               ENDIF
+            ELSE
+               IF (MEMO_RANK > "0" AND SQUEEZE MEMO_TRM = "")
+                  PACK SPO_MDAE WITH MEMO_EFF
+               ENDIF
+            ENDIF
+         ENDIF
+
+. Spouse's Medicare A
+         CLEAR MEMO_LIST
+         PACK SPO_MDBE WITH BLANKS
+         UNPACK SPO_MEDB INTO MEMO_LIST
+         IF (MEMO_VER = "Y")
+            IF (W_REL = "02")
+               IF (W_CRBR > "0" AND SQUEEZE W_CRBT = "")
+                  PACK SPO_MDBE WITH W_CRBE
+               ENDIF
+            ELSE
+               IF (MEMO_RANK > "0" AND SQUEEZE MEMO_TRM = "")
+                  PACK SPO_MDBE WITH MEMO_EFF
+               ENDIF
+            ENDIF
+         ENDIF
+
+         MOVE 0 TO BIL_PRIM
+
+SET_EMP
+
+. If they have both parts ... qualify for rate reduction
+         IF (SQUEEZE EMP_MDAE <> "" AND SQUEEZE EMP_MDBE <> "")
+            ADD 1 TO BIL_PRIM
+            GOTO SET_SPO
+         ENDIF
+
+         IF (W_RETD > "19970701" OR SQUEEZE W_RETD = "")
+            GOTO SET_SPO   
+         ENDIF
+
+. Grandfather clause
+         IF (EMP_MDAE <= "19970701" AND SQUEEZE EMP_MDAE <> "")
+            ADD 1 TO BIL_PRIM
+         ELSE
+            IF (SQUEEZE EMP_MDBE <= "19970701" AND SQUEEZE EMP_MDBE <> "")
+               ADD 1 TO BIL_PRIM
+            ENDIF
+         ENDIF
+
+SET_SPO
+
+. If they have both parts ... qualify for rate reduction
+         IF (SQUEEZE SPO_MDAE <> "" AND SQUEEZE SPO_MDBE <> "")
+            ADD 1 TO BIL_PRIM
+            GOTO CORR_RATE
+         ENDIF
+
+         IF (W_RETD > "19970701" OR SQUEEZE W_RETD = "")
+            GOTO CORR_RATE 
+         ENDIF
+
+. Grandfather clause
+         IF (SPO_MDAE <= "19970701" AND SQUEEZE SPO_MDAE <> "")
+            ADD 1 TO BIL_PRIM
+         ELSE
+            IF (SQUEEZE SPO_MDBE <= "19970701" AND SQUEEZE SPO_MDBE <> "")
+               ADD 1 TO BIL_PRIM
+            ENDIF
+         ENDIF
+
+CORR_RATE
+         IF (BIL_PRIM = 1)
+            PACK W_CRRT WITH "R1"
+         ENDIF
+
+         IF (BIL_PRIM = 2)
+            PACK W_CRRT WITH "R2"
+         ENDIF  
+
+BIL_RATES_END
+         RETURN 
+
+. ---------------------------
+.  Get active spouse records
+. ---------------------------
+
+GET_SPOUSE
+
+. Read for an active spouse
+         CLEAR     MEM_AIM
+         PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+         PACK      MEM_AIM3 WITH "03X","02",BLANKS
+         CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                       MEM_FN:          ...FILE NAME LIST
+                       MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                       MEM_FV:          ...FILE KEY VARLISTS
+                       MEM_AIM:          ...FILE KEY SIZES
+                       MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                       MEM_REC:         ...FILE RECORD (PACKED)
+                       MEM_OLD:         ...FILE SAVED WHEN READ
+                       MEM_QTY:         ...NUMBER OF FILES
+                       2                 ...FILE NUMBER FOR THIS READ
+         IF (RESULT <> 1)
+            GOTO GET_SPOUSE_END
+         ENDIF
+
+. First spouse is not active
+         CALL READ_MEME USING MEM_ID1,SPO_MEME
+         IF (SQUEEZE SPO_MEME = "")
+            CALL NEXT_SPOUSE
+         ENDIF 
+
+. No active spouse found
+         IF (SQUEEZE SPO_MEME = "")
+            PACK SPO_MEDA WITH BLANKS
+            PACK SPO_MEDB WITH BLANKS
+            GOTO GET_SPOUSE_END
+         ENDIF
+
+. Find Medicare information on spouse
+         CALL READ_MEMO USING MEM_ID1,SPO_MEDA,SPO_MEDB
+
+GET_SPOUSE_END
+         RETURN
+
+. ---------------------------
+.  Check for another spouse
+. ---------------------------
+
+NEXT_SPOUSE
+
+         LOOP
+           CALL      FILE_NEXT USING MEM_FD:    ...File declaration list
+               MEM_FN:   ...File name list
+               MEM_FC:   ...(I)ndex or (A)imdex
+               MEM_FV:   ...File key varlists
+               MEM_AIM:  ...File key sizes
+               MEM_LIST: ...File record (field list)
+               MEM_REC:  ...File record (packed)
+               MEM_OLD:  ...File saved when read
+               MEM_QTY:  ...Number of files
+               2         ...File number for this read
+
+           IF (RESULT <> 1 OR W_SSN <> MEM_ESSN)
+              BREAK               
+           ENDIF 
+
+           CALL READ_MEME USING MEM_ID1,SPO_MEME
+
+           IF (SQUEEZE SPO_MEME = "")
+              GOTO NEXT_SPOUSE_END
+           ENDIF
+
+         REPEAT 
+
+NEXT_SPOUSE_END
+         RETURN
+
+. -----------------------
+.  Output records
+. -----------------------
+
+WRITE_OUT
+
+. Need EMPLOYEE name for pulling folders
+         UNPACK EMP_MEM INTO MEM_LIST
+         PACK OUT_LNAME WITH MEM_LNAME
+         PACK OUT_FNAME WITH MEM_FNAME
+         PACK OUT_MINIT WITH MEM_MINIT
+
+. Member Information
+         PACK OUT_MEM   WITH W_MEM
+         PACK OUT_SSN   WITH W_SSN
+         PACK OUT_REL   WITH W_REL
+         CALL REFRM_DATE USING W_RETD,OUT_RETD 
+
+
+. Current MEDA
+         UNPACK HLD_MEDA INTO MEMO_LIST
+         CALL REFRM_DATE USING MEMO_EFF,OUT_MDAE 
+         CALL REFRM_DATE USING MEMO_TRM,OUT_MDAT 
+         PACK OUT_MDAR WITH MEMO_RANK
+
+. Current MEDB
+         UNPACK HLD_MEDB INTO MEMO_LIST
+         CALL REFRM_DATE USING MEMO_EFF,OUT_MDBE 
+         CALL REFRM_DATE USING MEMO_TRM,OUT_MDBT 
+         PACK OUT_MDBR WITH MEMO_RANK
+
+. Corrected MEDA
+         CALL REFRM_DATE USING W_CRAE,OUT_CRAE 
+         CALL REFRM_DATE USING W_CRAT,OUT_CRAT 
+         PACK OUT_CRAR WITH W_CRAR
+
+. Corrected MEDB
+         CALL REFRM_DATE USING W_CRBE,OUT_CRBE 
+         CALL REFRM_DATE USING W_CRBT,OUT_CRBT 
+         PACK OUT_CRBR WITH W_CRBR
+
+. Current Rate
+         PACK OUT_RATE WITH W_RATE  
+
+. Corrected Rate
+         PACK OUT_CRRT WITH W_CRRT
+
+. In CMS file?
+         PACK OUT_CMS WITH W_CMS
+
+. Special Circumstances
+         PACK OUT_SPEC WITH W_DISB,W_ESRD,W_HANDICAP,W_RETWRK,W_SURV
+
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+         ADD 1 TO WRITE_COUNT
+         MOVE      WRITE_COUNT TO WORK_COUNT
+         UNPACK    WORK_COUNT INTO FRONT,BACK
+         IF (BACK = "000")
+            IF (C_RMODE = "I")
+               DISPLAY   *P41:22,WRITE_COUNT
+            ENDIF
+         ENDIF
+
+         RETURN
+
+. ----------------------------
+. Format date into mm/dd/ccyy
+. ----------------------------
+
+REFRM_DATE ROUTINE MCS@DIM1,MCS@DIM2
+
+         IF (MCS@DIM1 = "00000000" OR (SQUEEZE MCS@DIM1) = "")
+            PACK MCS@DIM2 WITH BLANKS
+            GOTO REFRM_DATE_END
+         ENDIF
+
+         UNPACK    MCS@DIM1 INTO WS_CCYY, WS_MM, WS_DD
+         PACK      MCS@DIM2 WITH WS_MM,"/",WS_DD,"/",WS_CCYY
+
+REFRM_DATE_END         
+         RETURN
+
+. -------------------------------------
+. Get actual Medicare Dates from Notes
+. -------------------------------------
+
+GET_NOTEDATES ROUTINE OGB@DIM1
+
+         debug
+         UNPACK OGB@DIM1 INTO DIMTEN,DIM3,DIM10,DIM3,DIM_10
+         IF (DIMTEN = "MEDICARE A")
+            CALL FORM_DATE USING DIM10,W_EFFA,DIM_10,W_TRMA
+            IF (SQUEEZE W_EFFA <> "") 
+               GOTO GET_NOTEDATES_END
+            ENDIF
+         ELSE
+            IF (DIMTEN = "MEDICARE B")
+               CALL FORM_DATE USING DIM10,W_EFFB,DIM_10,W_TRMB
+               IF (SQUEEZE W_EFFB <> "") 
+                  GOTO GET_NOTEDATES_END
+               ENDIF
+            ENDIF  
+         ENDIF  
+ 
+
+GET_NOTEDATES_END
+         RETURN
+
+. ------------------------------------------
+.  Format Dates to ccyymmdd from mm/dd/ccyy
+. ------------------------------------------
+
+FORM_DATE ROUTINE MCS@DIM1,MCS@DIM2,MCS@DIM3,MCS@DIM4
+
+         UNPACK MCS@DIM1 INTO WS_MM,DIM1,WS_DD,DIM1,WS_CCYY
+         PACK   MCS@DIM2 WITH WS_CCYY,WS_MM,WS_DD
+         CALL   VALID_DATE USING MCS@DIM2,DATE_RSLT
+         IF     (DATE_RSLT <> "OK") 
+                PACK MCS@DIM2 WITH BLANKS
+         ENDIF
+
+         UNPACK MCS@DIM3 INTO WS_MM,DIM1,WS_DD,DIM1,WS_CCYY
+         PACK   MCS@DIM4 WITH WS_CCYY,WS_MM,WS_DD
+         CALL   VALID_DATE USING MCS@DIM3,DATE_RSLT
+         IF     (DATE_RSLT <> "OK") 
+                PACK MCS@DIM4 WITH BLANKS
+         ENDIF
+
+         RETURN
+
+. -----------------------
+.  Clean up work file
+. -----------------------
+
+CLEAN_UP
+
+         CALL CLOSE_OGBFILE USING WRK_FILE,WRK_NAME
+         CALL ERASE_OGBFILE USING WRK_NAME
+
+         RETURN
+
+. -----------------------
+.   Normal End of Job  
+. -----------------------
+
+NEOJ
+         IF (C_RMODE = "I")
+            DISPLAY   *P41:20,COUNT_MEM
+            DISPLAY   *P41:21,COUNT_MEME
+            DISPLAY   *P41:22,WRITE_COUNT
+            error     horz="23",vert="09":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" MEDICARE DISCREPANCIES Complete ":
+                      text="---------------------------------"
+         ENDIF
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       X_OGBFILE.IO
+

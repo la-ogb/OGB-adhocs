@@ -1,0 +1,836 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1305061.PS -- Ad-hoc version EXT3333.PS
++    Description    :  BLUE CROSS Accum Details  
++
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy Ayymmdd# - TYP - Description                            
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       PRT.RL
+              INC       VALID.RL             ...Valid codes
+              INC       ACCUM.RL             ...3rd Party Payers Accums
+              INC       X_OGBFILE.CB         ...OGB Standard io
+              INC       MEM.RL               
+              INC       MEME.RL
+              INC       MEMX.RL
+              INC       ACCMLD.RL
+              INC       ACCMERR.RL
+            
+. --------------------------------------------------------------------------
+.
+CCYYMMDD           DIM       8
+CCYY               DIM       4
+MM                 DIM       2
+DD                 DIM       2    
+                                                                                
+OUT_SRTKEY         INIT      "9-16D -T"                                         
+
+PAIDDTE_RET_CODE   FORM      1                                                  
+                                                                                
+HIGH_DATE          DIM       8                                                  
+                                                                                
+PDDT_DATE          DIM       6                                                  
+PDDT_CC            DIM       2                                                  
+PDDT_YY            DIM       2                                                  
+PDDT_MM            DIM       2                                                  
+                                                                                
+EXTDT_CCYY         DIM       4                                                  
+EXTDT_MM           DIM       2                                                  
+EXTDT_DD           DIM       2                                                  
+ZERO               DIM       1                                                  
+NUM                DIM       1                                                  
+                                                                                
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+TIMESTAMP     DIM       14
+
+FORM2         FORM      2
+FORM_2        FORM      2
+FORMTWO       FORM      2
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM9          DIM       9
+DIM10         DIM       10
+DIM15         DIM       15
+DIM16         DIM       16
+DIM20         DIM       20
+DIM22         DIM       22
+DIM23         DIM       23
+DIM24         DIM       24
+DIM29         DIM       29
+DIM30         DIM       30
+DIMONE        DIM       1
+DIMTHREE      DIM       3
+DIMFIVE       DIM       5
+
+AMOUNT        DIM       10
+
+W_MON         FORM      2
+W_DAY         FORM      2
+W_YR4         FORM      4
+
+W_REM         FORM     .2
+
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+KEEP_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+SAME_CLM      DIM       1
+
+DATADATE      DIM       6
+
+HLD_MEME_NET  DIM       5
+HLD_MEME_TRM  DIM       8
+
+W_FROM        DIM       8
+FR_CCYY       DIM       4
+FR_CC         DIM       2
+FR_YY         DIM       2
+FR_MM         DIM       2
+FR_DD         DIM       2  
+
+W_THRU        DIM       8
+TO_CCYY       DIM       4
+TO_CC         DIM       2
+TO_YY         DIM       2
+TO_MM         DIM       2
+TO_DD         DIM       2  
+
+INB_CC        DIM       2
+INB_YY        DIM       2
+INB_MM        DIM       2
+INB_DD        DIM       2  
+
+DOB_CC        DIM       2
+DOB_YY        DIM       2
+DOB_MM        DIM       2
+DOB_DD        DIM       2  
+
+W_REL         DIM       2
+W_ENR         DIM       8
+W_MEM         DIM       8
+
+W_DOSF        DIM       8
+W_DOST        DIM       8
+W_PAYD        DIM       8
+W_PRVN        DIM       30
+W_DIAG        DIM       6 
+W_TCHG        DIM       10
+W_TDED        DIM       10
+W_TCOP        DIM       10
+
+W_DOB         DIM       1
+W_FIRST       DIM       1
+W_LAST        DIM       1 
+W_SEX         DIM       1 
+I_SEX         DIM       1
+W_OKAY        DIM       1 
+
+SSN_OK        DIM       1
+REL_OK        DIM       1
+SSN_FOUND     DIM       1
+
+W_SSN         DIM       9
+
+IDX_KEY       DIM       20
+
+IDX_RESULT    FORM      1 
+PRV_RESULT    FORM      1 
+MEM_RESULT    FORM      1 
+
+MONEY1        FORM      7.2
+MONEY2        FORM      7.2
+MONEY3        FORM      7.2
+
+W_TYPE        DIM       4
+W_DEDU        INIT      "DEDU"
+W_LIFE        INIT      "LIFE"
+
+ACC_FILE      IFILE     VAR=400,TEXT,KEYLEN=20      
+ACC_NAME      INIT      "x_ext333.ix1"
+
+ACC_TXT       INIT      "x_ext333.txt"
+ACC_HLD       INIT      "x_ext333.hld"
+
+ACC_KEY       DIM       20     . Member ID,type,from date  
+
+ERR_FILE      FILE      VAR=400,TEXT      
+ERR_NAME      INIT      "/w/ext0333.err"
+
+. United File is in different layout -- change this layout or reformat
+. to this layout --- use these field names....
+INP_LIST      LIST
+INP_FIL1      DIM 2 
+INP_ALLO      DIM 10
+INP_BILT      DIM 3 
+INP_DOB       DIM 8
+INP_FIL2      DIM 2  
+INP_CHGS      FORM 7.2
+INP_CLMN      DIM 15 
+INP_COIN      FORM 7.2
+INP_COPA      FORM 7.2
+INP_DSRC      DIM 5  
+INP_FROM      DIM 8  
+INP_THRU      DIM 8  
+INP_FDAT      DIM 8  
+INP_PAYD      DIM 8  
+INP_DAYS      DIM 5  
+INP_DEDU      FORM 7.2
+INP_FIL3      DIM 40
+INP_DIAG      DIM 6
+INP_FIL4      DIM 3
+INP_SSN       DIM 9
+INP_SEX       DIM 1
+INP_FIL5      DIM 3
+INP_PAID      FORM 7.2
+INP_NETP      DIM 1   
+INP_FIL6      DIM 55 
+INP_PRV       DIM 13
+INP_FIL7      DIM 51
+INP_LAST      DIM 16
+INP_FIRST     DIM 16
+INP_REL       DIM 2
+INP_MEM       DIM 8
+              LISTEND
+
+ACCUM_FILE    FILE      VAR=188,TEXT
+ACCUM_NAME    INIT      "/w/bluecross_accum.txt"  
+
+ACCUM_CNT     FORM     10
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST
+PARAM_IN      DIM       12
+PARAM_HCFA    DIM       12
+PARAM_UBHD    DIM       12
+PARAM_UBSV    DIM       12
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+
+. ----------------------------------------------------------------------------- 
+. ----------------------------------------------------------------------------- 
+
+
+. -----------------
+.   Begin Program
+. -----------------
+
+. ------------------------------------
+.   Start here if selected from menu
+. ------------------------------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "BLUE CROSS ACCUMS DETAILS" TO  C_OPER
+         MOVE      "EXT3333"             TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         debug
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+         PACK      VAL_KEY1 WITH "155EXTDT",BLANKS                              
+         CALL      VAL_READ1                                                    
+         IF (RESULT = 1)                                                        
+            MOVE VAL_OPT TO CCYYMMDD                                            
+         ENDIF                                                                  
+                                                                                
+         UNPACK CCYYMMDD INTO CCYY,MM,DD                                        
+                                                                                
+         CALL      CREATE_EXTRACT
+
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. -----------------------------------
+.  Create conversion file
+. -----------------------------------
+CREATE_EXTRACT
+
+.        debug
+         MOVE      0           TO  READ_COUNT
+         MOVE      0           TO  WRITE_COUNT
+         MOVE      0           TO  ERROR_COUNT
+         MOVE      0           TO  ACCUM_CNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" Input Records       ":
+                      text=" Output Records      ":
+                      text=" Errors              "
+
+         ENDIF
+
+. Read the input file and write to the output file
+         CALL      OPEN_OGBFILE USING ACCUM_FILE,ACCUM_NAME
+         CALL      PREP_OGBFILE USING ERR_FILE,ERR_NAME
+         CALL      PREP_OGBFILE_IX USING ACC_FILE,ACC_NAME
+         CALL      OPEN_OGBFILE_IX USING MEMX_DECL,MEMX_NAME
+
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING ACCUM_FILE,ACCUM_NAME,ACCUM_LIST
+            IF (RESULT <> 1)
+               GOTO CREATE_EXTRACT_END
+            ENDIF
+
+            ADD       1 TO READ_COUNT
+            IF (C_RMODE = "I")
+               MOVE      READ_COUNT TO WORK_COUNT
+               UNPACK    WORK_COUNT TO FRONT,BACK
+               IF        (BACK = "000")
+                  DISPLAY   *P41:20,READ_COUNT
+                  DISPLAY   *P41:21,WRITE_COUNT
+                  DISPLAY   *P41:22,ERROR_COUNT
+               ENDIF
+            ENDIF
+ 
+            CLEAR SSN_FOUND
+            CALL GET_ENROLLEE_SSN 
+            IF (SSN_FOUND = "N")
+                CONTINUE
+            ENDIF
+
+...Added by aplls on 9/2/09
+...Eliminating Unverified Records
+            IF ((MEM_HOLD = "UNVDEP") AND (MEM_US05 = "N"))
+               CONTINUE
+            ENDIF
+
+            IF (ACCUM_FROM_DTE < "20130101")
+               CALL GET_MEME_REC
+               IF (SQUEEZE HLD_MEME_NET = "BLUE")
+                  CALL CREATE_ACCUM
+               ENDIF
+            ELSE
+               CALL CREATE_ACCUM
+            ENDIF
+
+         REPEAT
+
+CREATE_EXTRACT_END
+         RETURN
+
+.:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+.
+.
+. --------------------------
+.   Get the Enrollee's SSN 
+. --------------------------
+GET_ENROLLEE_SSN
+
+.        debug
+
+        PACK      MEM_FK11 WITH ACCUM_MEMBER_ID
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+
+... If the Member is not found, program continue to the        
+... next record to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            MOVE "N" TO SSN_FOUND
+            GOTO GET_ENROLLEE_SSN_END
+        ENDIF
+
+        MOVE MEM_ESSN TO W_SSN
+
+GET_ENROLLEE_SSN_END
+         RETURN
+
+.
+.
+. ----------------------------------------------------------------------
+.   Get the Member's record that coinside with the date of service (DOS)
+. ----------------------------------------------------------------------
+GET_MEME_REC    
+
+... Read the MEME record with the
+... Member's Record ID
+
+        PACK W_FROM WITH ACCUM_FROM_DTE
+        CLEAR HLD_MEME_NET   
+        CLEAR HLD_MEME_TRM   
+        CLEAR MEME_SAV
+        PACK MEME_FK11 WITH MEM_ID1,BLANKS
+ 
+        CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                             MEME_FN:             ...FILE NAME LIST
+                             MEME_FC:             ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                             MEME_FV:             ...FILE KEY VARLIST
+                             MEME_FK:             ...FILE KEY SIZES
+                             MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                             MEME_REC:            ...FILE RECORD (PACKED)
+                             MEME_OLD:            ...FILE SAVED WHEN READ
+                             MEME_QTY:            ...NUMBER OF FILES
+                             1                    ...FILE NUMBER FOR THIS READ
+
+        LOOP
+            CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST
+                                 MEME_FN:         ...FILE NAME LIST
+                                 MEME_FC:         ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                                 MEME_FV:         ...FILE KEY VARLIST
+                                 MEME_FK:         ...FILE KEY SIZES
+                                 MEME_LIST:       ...FILE RECORD (FIELD LIST)
+                                 MEME_REC:        ...FILE RECORD (PACKED)
+                                 MEME_OLD:        ...FILE SAVED WHEN READ
+                                 MEME_QTY:        ...NUMBER OF FILES
+                                 1                ...FILE NUMBER FOR THIS READ
+
+... If NO MEME record is found, then it exits the routine    
+
+            IF (RESULT <> 1) 
+                GOTO GET_MEME_REC_END
+            ENDIF 
+
+... If not equal then exits the routine
+
+            IF (MEM_ID1 <> MEME_ID1)
+                GOTO GET_MEME_REC_END
+            ENDIF
+
+... Excludes LIFE Plans              
+            IF (MEME_EFF >= "20130101")
+               CONTINUE
+            ENDIF
+
+            IF (SQUEEZE MEME_NET = "LIFE")
+               CONTINUE
+            ENDIF
+
+            IF (SQUEEZE MEME_NET = "EGWP")
+               CONTINUE
+            ENDIF
+
+            IF (SQUEEZE MEME_NET = "EXTND")
+               CONTINUE
+            ENDIF
+
+            IF (SQUEEZE MEME_TRM = "")
+                MOVE "99999999" TO MEME_TRM
+            ENDIF
+
+            IF (MEME_TRM > HLD_MEME_TRM AND MEME_TRM > MEME_EFF)
+                PACK HLD_MEME_TRM WITH MEME_TRM
+                PACK HLD_MEME_NET WITH MEME_NET
+            ENDIF
+
+        REPEAT
+
+GET_MEME_REC_END
+         RETURN
+
+. --------------------------
+.   Create Accums 
+. --------------------------
+CREATE_ACCUM
+
+.        debug
+         CLEAR ACC_LIST
+
+         PACK W_FROM WITH ACCUM_FROM_DTE
+         PACK W_THRU WITH ACCUM_THRU_DTE
+         PACK W_MEM  WITH ACCUM_MEMBER_ID
+
+         ADD 1 TO ACCUM_CNT
+
+. Create deductible accum record
+
+.         CALL GET_DEDU                  ...commented out 5/1/12 - a1205011
+
+. Create lifetime accum record
+
+         CALL GET_LIFE
+ 
+CREATE_ACCUM_END
+         RETURN
+
+. --------------------------
+.  Create deductible accum
+. --------------------------
+. Only out of network deductibles are included here.
+GET_DEDU
+
+         debug
+         IF (ACCUM_DEDUCT_AMT = 0)
+            GOTO GET_DEDU_END
+         ENDIF
+
+         IF (ACCUM_IN_OUT_NET = "OUT")
+            GOTO GET_DEDU_END
+         ENDIF
+
+         PACK W_TYPE WITH W_DEDU  
+         CALL WRITE_ACCUM USING ACCUM_DEDUCT_AMT
+
+GET_DEDU_END
+         RETURN
+
+. ------------------------------
+.  Create lifetime accum 
+. ------------------------------
+
+GET_LIFE
+
+         IF (ACCUM_PD_AMT = 0)
+            GOTO GET_LIFE_END
+         ENDIF
+
+         PACK W_TYPE WITH W_LIFE
+         CALL WRITE_ACCUM USING ACCUM_PD_AMT
+
+GET_LIFE_END
+         RETURN
+
+. --------------------------
+.  Write accum record
+. --------------------------
+
+WRITE_ACCUM ROUTINE MCS@FORM1
+
+
+         IF (SQUEEZE W_MEM = "UNKNOWN")
+             GOTO WRITE_ACCUM_END
+         ENDIF
+ 
+         CALL CHECK_KEYDATE
+
+. Write new record on indexed file
+         PACK ACC_SSN WITH W_SSN
+         IF (SQUEEZE ACC_SSN = "%&")
+             PACK ACC_SSN WITH BLANKS
+         ENDIF
+         PACK ACC_REL WITH ACCUM_REL_CODE
+         IF (SQUEEZE ACC_REL = "%&")
+             PACK ACC_REL WITH BLANKS
+         ENDIF
+         PACK ACC_MEM WITH W_MEM
+         IF (SQUEEZE ACC_MEM = "%&")
+             PACK ACC_MEM WITH BLANKS
+         ENDIF
+         PACK ACC_FROM WITH W_FROM 
+         IF (SQUEEZE ACC_FROM = "%&")
+             PACK ACC_FROM WITH BLANKS
+         ENDIF
+         PACK ACC_THRU WITH W_THRU
+         IF (SQUEEZE ACC_THRU = "%&")
+             PACK ACC_THRU WITH BLANKS
+         ENDIF
+         PACK ACC_TYPE WITH W_TYPE
+         IF (SQUEEZE ACC_TYPE = "%&")
+             PACK ACC_TYPE WITH BLANKS
+         ENDIF
+         PACK ACC_DOSF WITH ACCUM_FROM_DTE
+         IF (SQUEEZE ACC_DOSF = "%&")
+             PACK ACC_DOSF WITH BLANKS
+         ENDIF
+         PACK ACC_DOST WITH ACCUM_THRU_DTE
+         IF (SQUEEZE ACC_DOST = "%&")
+             PACK ACC_DOST WITH BLANKS
+         ENDIF
+         PACK ACC_PAYD WITH ACCUM_PD_DTE
+         IF (SQUEEZE ACC_PAYD = "%&")
+             PACK ACC_PAYD WITH BLANKS
+         ENDIF
+         PACK ACC_PRVN WITH ACCUM_PROV_NAME
+         IF (SQUEEZE ACC_PRVN = "%&")
+             PACK ACC_PRVN WITH BLANKS
+         ENDIF
+        
+         MOVE ACCUM_PD_AMT TO MONEY1
+         PACK ACC_AMT  WITH MONEY1
+         MOVE ACCUM_CHG_AMT TO MONEY1
+         PACK ACC_TCHG WITH MONEY1 
+         MOVE ACCUM_DEDUCT_AMT TO MONEY1
+         PACK ACC_TDED WITH MONEY1      
+         MOVE ACCUM_COPAY_AMT TO MONEY1
+         PACK ACC_COPA WITH MONEY1         
+         MOVE ACCUM_ALLOW_AMT TO MONEY1 
+         PACK ACC_ALLO WITH MONEY1
+         MOVE ACCUM_COIN_AMT  TO MONEY1 
+         PACK ACC_COIN WITH MONEY1
+        
+         PACK ACC_DIAG WITH ACCUM_DIAG_CODE
+         IF (SQUEEZE ACC_DIAG = "%&")
+             PACK ACC_DIAG WITH BLANKS
+         ENDIF
+         REPLACE "H " IN ACCUM_CLMN 
+         REPLACE "D " IN ACCUM_CLMN 
+         PACK ACC_CLMN WITH (SQUEEZE ACCUM_CLMN),BLANKS
+         IF (SQUEEZE ACC_CLMN = "%&")
+             PACK ACC_CLMN WITH BLANKS
+         ENDIF
+         PACK ACC_RXNM WITH BLANKS
+         PACK ACC_RXNO WITH BLANKS
+         PACK ACC_RXQT WITH BLANKS
+         PACK ACC_DTWR WITH CURRDATE
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         PACK ACC_KEY WITH W_MEM,W_TYPE,W_FROM,BLANKS
+         CALL WRITE_OGBREC_IX USING ACC_FILE,ACC_NAME,ACC_KEY,ACC_LIST
+         ADD 1 TO WRITE_COUNT  
+
+WRITE_ACCUM_END
+         RETURN
+
+.----------------------------
+. Check for DUP KEY Dates
+.----------------------------
+
+CHECK_KEYDATE
+
+IDX_READ
+.        debug
+. Read for Claim on File
+         PACK ACC_KEY WITH W_MEM,W_TYPE,W_FROM,BLANKS
+         CALL READ_OGBFILE_IX USING ACC_FILE,ACC_NAME:
+                                     ACC_KEY,ACC_LIST            
+
+         IF (RESULT = 1)
+             CALL ADD_DAY
+             GOTO IDX_READ
+         ELSE
+            GOTO MEMX_READ
+         ENDIF 
+
+MEMX_READ
+. Read MEMX for from date
+.        debug
+         CLEAR MEMX_REC
+         PACK DIM24 WITH BLANKS
+         PACK MEMX_KEY WITH W_MEM,DIM24,W_TYPE,W_FROM
+         CALL READ_OGBFILE_IX USING MEMX_DECL,MEMX_NAME,MEMX_KEY,MEMX_REC
+       
+         IF (RESULT = 1)
+            CALL ADD_DAY
+            GOTO IDX_READ
+         ENDIF
+
+CHECK_KEYDATE_END
+         RETURN
+
+.-------------------------------------
+.Add Day to From DATE                  
+.-------------------------------------
+
+ADD_DAY
+
+         UNPACK W_FROM INTO W_YR4,W_MON,W_DAY
+ 
+         SWITCH W_DAY
+         CASE 31
+             MOVE "01" TO W_DAY     
+             IF (W_MON = 12)
+                ADD 1 TO W_YR4 
+                MOVE "01" TO W_MON      
+             ELSE
+                ADD 1 TO W_MON
+             ENDIF 
+         CASE 30
+             IF (W_MON = 04 OR W_MON = 06)
+                ADD 1 TO W_MON
+                MOVE "01" TO W_DAY     
+             ELSE 
+                IF (W_MON = 09 OR W_MON = 11)
+                   ADD 1 TO W_MON
+                   MOVE "01" TO W_DAY     
+                ELSE
+                   ADD 1 TO W_DAY
+                ENDIF 
+             ENDIF 
+         CASE 29
+             IF (W_MON = 02)
+                MOVE "01" TO W_DAY     
+                ADD 1 TO W_MON
+             ELSE
+                ADD 1 TO W_DAY
+             ENDIF 
+         CASE 28
+             DIVIDE W_YR4 BY 4 GIVING W_REM
+             IF (W_MON = 02 AND W_REM = .00)
+                MOVE "01" TO W_DAY     
+                ADD 1 TO W_MON
+             ELSE
+                ADD 1 TO W_DAY
+             ENDIF 
+         DEFAULT
+             ADD 1 TO W_DAY
+         ENDSWITCH
+
+         PACK W_FROM WITH W_YR4,W_MON,W_DAY
+
+         REPLACE " 0" IN W_FROM
+         REPLACE " 0" IN W_THRU
+
+         IF (W_FROM > W_THRU)
+            PACK W_THRU WITH W_FROM 
+         ENDIF
+
+         RETURN
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ END ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                                                                                
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       X_OGBFILE.IO
+         INC       X_MEMSRCH.EX
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO

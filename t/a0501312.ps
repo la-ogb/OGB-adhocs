@@ -1,0 +1,657 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0501312.PS
++    Description    :  Extract member records whose agency have elected to 
++                   :  no longer use OGB for their insurance provider.
++    Author         :  Lisa Spurlock
++    Date created   :  10/01/2004
++    Project #      :  a0410011
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                          REVISIONS
+.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       MEMO.RL           
+    INC       D_MEMMEM.CB          ...Member Import Layout
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+AGYMEM_FILE       FILE      VAR=12,TEXT
+AGYMEM_NAME       INIT      "/ogb/work/meme.agymems"  
+
+AGYMEM_LIST       LIST
+AGYMEM_KEY1       DIM       08
+AGYMEM_ID2        DIM       04
+                  LISTEND
+
+.~~~~~~~~~~OUTPUT FILES
+OUTPUT_FILE       FILE      VAR=2300,TEXT
+OUTPUT_NAME       INIT      "a0501312.out"
+
+OUT_FILE          FILE      VAR=45,TEXT
+OUT_NAME          INIT      "/ogb/work/a0501312.txt"
+
+OUT_LIST     LIST
+OUT_MEME_ID1      DIM       08
+OUT_MEME_ID2      DIM       04
+OUT_MEME_LEV1     DIM       05
+OUT_MEME_LEV2     DIM       05
+OUT_MEME_TRM      DIM       08
+OUT_MEME_NET      DIM       05
+OUT_MEME_PRD      DIM       05
+OUT_MEME_PLAN     DIM       04
+             LISTEND
+
+ERR_FILE          FILE      VAR=52,TEXT
+ERR_NAME          INIT      "/ogb/work/a0501312.err"
+
+ERR_LIST     LIST
+ERR_ID1           DIM       08
+ERR_ID2           DIM       04
+ERR_REASON        DIM       40
+             LISTEND
+
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+TERM_LETR_DATE  	DIM      8
+TODAY           	DIM      8
+.TODAY           	INIT     "20041231"
+TODAY_CCYY           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+BLANK8                  INIT     "        "
+HLD_REC                 DIM      1300
+HLD_MEM_ID1             DIM      08  
+INP_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+MEME_RESULT             FORM      1 
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+TERM_DATE               DIM      8
+
+ERROR_1                 INIT    "MEMBER RECORD ID NOT FOUND.             "
+ERROR_2                 INIT    "NO MEME RECORD ID EXIST FOR MEM RECORD  "
+
+TICKEY                  INIT     "~~~~"
+
+AGCY_NBR                DIM      4          
+KEYIN_DATE              DIM      6          
+KEYIN_CCYY              DIM      4          
+KEYIN_MM                DIM      2          
+KEYIN_DD                DIM      2          
+VALID_DATE              DIM      1          
+TERM_REASON             DIM      1          
+YN_ANS                  DIM      1          
+ERRMSG                  INIT     "YOU HAVE ENTERED AN INVALID RESPONSE !"       
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 		    chains to the print program
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "P0501312"                 TO    C_NEXT
+.     MOVE      "MENU"                     TO    C_NEXT
+      MOVE      "Term Agency Extract"      TO    C_OPER
+      MOVE      "A0501312"                TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+
+  CALL      INITIALIZE
+
+
+.....Prompt for Operator to keyin the Agency and Term Date needed for extract
+  CALL      AGENCY_DATE_KEYIN   
+
+. ...Reformat MEME file
+  CALL      REFORMAT_MEME
+
+  DEBUG
+  CALL      OPEN_FILES
+  DEBUG
+  CALL      EXTRACT_OUTPUT_FILE    
+  CALL      CLOSE_FILES
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "P0501312"                 TO    C_NEXT
+. MOVE      "MENU"                     TO    C_NEXT
+  MOVE      "Term Agency Extract"      TO    C_OPER
+  MOVE      "A0501312"                TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Records Read:        " TO X_CNTDESC1
+  MOVE "Records Written:     " TO X_CNTDESC2
+  MOVE "Records Processed    " TO X_CNTDESC3
+  MOVE "Error Records Found: " TO X_CNTDESC4
+  MOVE "                     " TO X_CNTDESC5
+  MOVE "                     " TO X_CNTDESC6
+  DISPLAY *ES
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+  UNPACK TODAY INTO TODAY_CCYY,TODAY_MM,TODAY_DD
+  CALL DATE_CALC USING TODAY,"ADD","DAYS",1,TERM_LETR_DATE
+
+ RETURN
+
+.............................................................................
+
+.-------------------------------
+. Reformat MEME file
+.-------------------------------
+REFORMAT_MEME
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+.-------------------------------------------------------------
+...Get only Records for the agency that was keyed in MEME_LEV1
+.-------------------------------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf meme.agcy": 
+              " -p021-025eq#"",AGCY_NBR,"#" -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.dbf)"
+               CHAIN     "MENU"
+         ENDIF
+    
+.-------------------------------------------------------------
+...Get only Records for the agency that was keyed in MEME_LEV2
+.-------------------------------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf meme.agcy": 
+              " -p026-030eq#"",AGCY_NBR,"#" -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.agcy append)"
+               CHAIN     "MENU"
+         ENDIF
+    
+.----------------------------------------
+...Get only Records without term dates
+.----------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.agcy /ogb/work/meme.agymems": 
+              " -p104-111eq#"",BLANK8,"#" 1-12 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.agymems)"
+               CHAIN     "MENU"
+         ENDIF
+
+.------------------------------------------
+...Get only Records with term dates > today
+.------------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.agcy /ogb/work/meme.agymems":     
+              " -p104-111gt#"",TODAY,"#" 1-12 -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.agymems append)"
+               CHAIN     "MENU"
+         ENDIF
+
+    SORT "/ogb/work/meme.agymems /ogb/work/meme.agymems 1-12 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(meme.agymems)"
+               CHAIN     "MENU"
+         ENDIF
+ 
+    RETURN
+
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+    CALL OPEN_OGBFILE USING AGYMEM_FILE,AGYMEM_NAME
+ 
+    CALL PREP_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+    CALL PREP_OGBFILE USING ERR_FILE,ERR_NAME
+
+    CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME   
+
+  RETURN
+
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file (meme.agymems)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING AGYMEM_FILE,AGYMEM_NAME,AGYMEM_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the MEM file for the Member 
+
+        CLEAR     INM_REC
+        CLEAR     ERR_REASON
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH AGYMEM_KEY1
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+
+... If the Member is not found, the program writes to an error file
+... and then continues to the next record to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            MOVE ERROR_1 TO ERR_REASON
+            CALL WRITE_ERROR_RECS 
+            CONTINUE         
+        ENDIF
+
+        PACK MEM_SAV WITH MEM_REC
+
+... Read the MEME record with the Member's Record ID 
+
+        CLEAR MEME_SAV
+        PACK MEME_FK11 WITH AGYMEM_KEY1,AGYMEM_ID2
+        CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                              MEME_FN:  ...FILE NAME LIST  
+                              MEME_FC:  ...TYPE OF INDEX   
+.                                       ...(I)NDEX OR (A)IMDEX
+                              MEME_FV:  ...FILE KEY VARLISTS
+                              MEME_FK:  ...FILE KEY SIZES  
+                              MEME_LIST:...FILE RECORD (FIELD LIST)
+                              MEME_REC: ...FILE RECORD (PACKED)
+                              MEME_OLD: ...FILE SAVED WHEN READ
+                              MEME_QTY: ...NUMBER OF FILES 
+                              1         ...FILE NUMBER FOR THIS READ
+         MOVE RESULT TO MEME_RESULT
+         IF  (MEME_RESULT <> 1)
+             MOVE ERROR_2 TO ERR_REASON
+             CALL WRITE_ERROR_RECS 
+             CONTINUE
+         ENDIF
+
+
+... Gets only LIFE Records                          
+
+         IF (SQUEEZE MEME_NET <> "LIFE") 
+             CONTINUE
+         ENDIF
+
+... Gets only Active Records                          
+
+         IF (SQUEEZE MEME_LEV2 = "99") 
+             CONTINUE
+         ENDIF
+
+... Checks for the correct Agency Number to Extract
+
+         IF (SQUEEZE MEME_LEV1 <> AGCY_NBR)
+             IF (SQUEEZE MEME_LEV2 <> AGCY_NBR)
+                 CONTINUE
+             ENDIF
+         ENDIF
+
+... If MEM_ID1 <> MEME_ID1 then the program writes the error and reads the
+... next record
+
+         IF (MEM_ID1 <> MEME_ID1)
+             MOVE ERROR_2 TO ERR_REASON
+             CALL WRITE_ERROR_RECS 
+             CONTINUE
+         ENDIF
+
+... Excludes Blank Fields              
+         IF (SQUEEZE MEME_NET = "") 
+             CONTINUE
+         ENDIF
+
+         PACK MEME_SAV WITH MEME_REC
+
+         IF ((MEME_TRM >= TODAY) OR (SQUEEZE MEME_TRM = ""))
+             CALL WRITE_OUTPUT_RECS       
+             CONTINUE
+         ENDIF
+
+     REPEAT
+
+  RETURN
+
+.##############################################################################
+WRITE_OUTPUT_RECS
+.##############################################################################
+.---------------
+...Write records
+.---------------
+
+    PACK HLD_REC WITH MEM_SAV,MEME_SAV
+    UNPACK HLD_REC INTO INM_LIST
+    IF (SQUEEZE INME_TRM <> "")
+        IF (INME_TRM <= TERM_DATE)
+            GOTO WRITE_OUTPUT_RECS_RET
+        ENDIF 
+    ENDIF 
+    PACK INME_TRM WITH TERM_DATE 
+    PACK INME_ID2 WITH "    "
+    PACK INME_TLET WITH TERM_REASON
+    PACK INME_TRUN WITH TERM_LETR_DATE
+    PACK INME_CHGDT WITH "        "    
+    PACK INME_CHGBY WITH "      "    
+    CALL WRITE_OGBREC USING OUTPUT_FILE:
+                            OUTPUT_NAME:
+                            INM_LIST
+
+    ADD 1 TO X_CNT2
+
+    CALL WRITE_OUT_RECS       
+
+WRITE_OUTPUT_RECS_RET
+  RETURN
+
+.##############################################################################
+.
+.******************************************************************************
+WRITE_ERROR_RECS      
+.******************************************************************************
+ 
+    MOVE AGYMEM_KEY1 TO ERR_ID1
+    MOVE AGYMEM_ID2 TO ERR_ID2
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING ERR_FILE:
+                            ERR_NAME:
+                            ERR_LIST
+
+    ADD 1 TO X_CNT4
+
+  RETURN
+ 
+.
+.******************************************************************************
+WRITE_OUT_RECS      
+.******************************************************************************
+ 
+    MOVE MEME_ID1 TO OUT_MEME_ID1
+    MOVE MEME_ID2 TO OUT_MEME_ID2
+    MOVE MEME_LEV1 TO OUT_MEME_LEV1
+    MOVE MEME_LEV2 TO OUT_MEME_LEV2
+    MOVE MEME_TRM TO OUT_MEME_TRM
+    MOVE MEME_NET TO OUT_MEME_NET
+    MOVE MEME_PRD TO OUT_MEME_PRD
+    MOVE MEME_PLAN TO OUT_MEME_PLAN
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME:
+                            OUT_LIST  
+
+    ADD 1 TO X_CNT3
+
+  RETURN
+ 
+.
+.******************************************************************************
+
+.******************************************************************************
+ 
+AGENCY_DATE_KEYIN
+
+    DISPLAY *ES
+    LOOP
+        MOVE "0000"   TO AGCY_NBR    
+        MOVE "000000" TO KEYIN_DATE
+        MOVE " "      TO TERM_REASON
+        MOVE " "      TO YN_ANS    
+        KEYIN  *P=10:5, "PLEASE ENTER THE AGENCY NUMBER TO TERM":         
+               " (EX. 1234). ",*UC, AGCY_NBR, *P=10:5, *EL
+        KEYIN  *P=10:5, "ENTER THE AGENCY'S TERMINATION DATE (CCYYMM). ": 
+               *UC, KEYIN_DATE, *P=10:5, *EL
+.       KEYIN  *P=10:5, "PLEASE ENTER TERMINATION REASON CODE ('T' OR 'C'). ": 
+.              *UC, TERM_REASON, *P=10:5, *EL
+        MOVE " " TO VALID_DATE
+        CALL VALIDATE_AGCY_KEYIN_DTE
+        IF (VALID_DATE = "Y")
+            DISPLAY *P=20:6, *REVON, "AGENCY: ",AGCY_NBR, *REVOFF
+            DISPLAY *P=20:7, *REVON, "TERM DATE: ",TERM_DATE, *REVOFF
+            DISPLAY *P=20:8, *REVON, "TERM REASON CODE: ",TERM_REASON, *REVOFF
+            KEYIN  *P=10:5, "WOULD YOU LIKE TO CHANGE ANY RESPONSES? ":
+               " (Y/N)? ",*UC, YN_ANS, *P=10:5, *ES
+            IF (YN_ANS = "Y")
+                CONTINUE                 
+            ELSE     
+                BREAK
+            ENDIF    
+        ELSE  
+            DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                    *P=10:6, *EL    
+            CONTINUE
+        ENDIF
+    REPEAT
+   RETURN
+.............................................................................
+
+VALIDATE_AGCY_KEYIN_DTE
+
+    TYPE AGCY_NBR  
+    IF NOT EQUAL
+        RETURN
+    ENDIF
+   
+    TYPE KEYIN_DATE
+    IF NOT EQUAL
+        RETURN
+    ENDIF
+ 
+.   IF (TERM_REASON <> "T")        
+.       IF (TERM_REASON <> "C")
+.           RETURN
+.       ENDIF
+.   ENDIF
+   
+    UNPACK KEYIN_DATE INTO KEYIN_CCYY, KEYIN_MM
+
+    IF (KEYIN_CCYY >= "2000") 
+        IF ((KEYIN_MM > "00") AND (KEYIN_MM <= "12"))
+            SWITCH KEYIN_MM
+                CASE "01" OR "03" OR "05" OR "07" OR "08" OR "10" OR "12"
+                    MOVE "31" TO KEYIN_DD  
+                CASE "02"
+                    MOVE "28" TO KEYIN_DD  
+                CASE "04" OR "06" OR "09" OR "11"
+                    MOVE "30" TO KEYIN_DD  
+            ENDSWITCH
+            PACK TERM_DATE WITH KEYIN_CCYY, KEYIN_MM, KEYIN_DD
+            MOVE "Y" TO VALID_DATE
+        ENDIF
+    ENDIF
+
+  RETURN
+.............................................................................
+
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+
+  CALL CLOSE_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  CALL CLOSE_OGBFILE USING ERR_FILE,ERR_NAME
+
+  CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+  RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "   A0501312 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

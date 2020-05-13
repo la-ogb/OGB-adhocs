@@ -1,0 +1,502 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1603161.ps
++    Description    :  Dependent of dependent eval                     
++
++    apeks 03/16/2016 a1603161 DEV - Initial Version.                   
++..............................REVISIONS.......................................
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       PRT.RL
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Standard io
+              INC       MEM.RL               
+              INC       MEME.RL
+              INC       CMDPARAM.CB          
+            
+. --------------------------------------------------------------------------
+.
+
+. Counters
+FLD_CTR      FORM       4
+
+. Pointers
+FLD_PTR      FORM       4 
+TMP_PTR      FORM       4
+FRM_PTR      FORM       4
+LEN_PTR      FORM       4
+
+PIPE          INIT       "|"
+COMMA         INIT       ","
+STAR          INIT       "*"
+QUOTE         INIT       "#""
+SLASH         INIT       "/"
+
+CCYYMMDD           DIM       8
+CCYY               DIM       4
+CC                 DIM       2
+YY                 DIM       2
+MM                 DIM       2
+DD                 DIM       2    
+                                                                                
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+TIMESTAMP     DIM       14
+
+FORM2         FORM      2
+FORM8         FORM      8
+FORM10        FORM      7.2
+FORM_2        FORM      2
+FORMTWO       FORM      2
+
+DIM2          DIM       2
+DIM3          DIM       3
+
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+KEEP_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+W_SURV        DIM       2  
+W_DEPTRM      DIM       8
+W_DEP26       DIM       8
+
+DATE_RSLT     DIM       2
+DATA_RSLT     DIM       2
+
+INP_FILE      FILE      VAR=70,TEXT
+INP_NAME      INIT      "/w/depofdep.txt"
+INP_LIST      LIST
+INP_MEM       DIM       8  
+INP_ALT       DIM       8  
+INP_LNM       DIM       20
+INP_FNM       DIM       15
+INP_DOB       DIM       8
+INP_DEP       DIM       8
+              LISTEND
+
+OUT_FILE    FILE      VAR=300,TEXT
+OUT_NAME    INIT      "/w/depofdep_out.csv"
+OUT_LIST    LIST
+OUT_LNM     DIM       20
+OUT_CM1     INIT      ","
+OUT_FNM     DIM       15
+OUT_CM2     INIT      ","
+OUT_DOB     DIM       8
+OUT_CM3     INIT      ","
+OUT_MEM     DIM       8
+OUT_CM4     INIT      ","
+OUT_DEP     DIM       8 
+OUT_CM5     INIT      ","
+OUT_DEPT    DIM       8 
+OUT_CM6     INIT      ","
+OUT_EFF1    DIM       8 
+OUT_CM7     INIT      ","
+OUT_TRM1    DIM       8 
+OUT_CM8     INIT      ","
+OUT_ALT     DIM       8
+OUT_CM9     INIT      ","
+OUT_EFF2    DIM       8 
+OUT_CM10    INIT      ","
+OUT_TRM2    DIM       8 
+OUT_CM11    INIT      ","
+OUT_CODE    DIM       10
+            LISTEND
+
+HDR_LIST    LIST
+HDR_1       INIT      "Last Name,First Name,DOB,Member ID,Parent ID,Parent Term"
+HDR_2       INIT      "24-Eff,24-Trm,Alt ID,Alt Eff,Alt Term"
+            LISTEND
+
+W_MON       DIM       2
+W_DAY       DIM       2
+W_YR        DIM       4
+
+TMP_NM      DIM       8
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST      WITH NAMES
+PARAM_IN      DIM       12
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+MCS@DIM3      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+
+. -----------------
+.   Begin Program
+. -----------------
+
+. ------------------------------------
+.   Start here if selected from menu
+. ------------------------------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+         MOVE  "depofdep"    TO  C_PROG
+         IF (C_CMDPAR)
+            CALL CMD_START USING C_PROG   
+         ENDIF
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                  TO  C_NEXT
+         MOVE      "Dep of Dep Data" TO  C_OPER
+         MOVE      BLANKS                  TO  C_LABEL
+         MOVE      BLANKS                  TO  C_FILE
+         MOVE      BLANKS                  TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+
+        CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         CALL      INIT_PROG
+         CALL      PROC_RECS     
+
+         TRAPREST  TRAP_DATA
+
+         IF (C_CMDPAR)
+            CALL CMD_END
+            STOP
+         ELSE
+            MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+. Initialize Program
+. -----------------------------------
+
+INIT_PROG
+
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+         MOVE      0           TO  READ_COUNT
+         MOVE      0           TO  WRITE_COUNT
+         MOVE      0           TO  ERROR_COUNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" Input Records       ":
+                      text=" Output Records      " 
+
+         ENDIF
+
+         PACK SCRATCH WITH "mem.dbf ",INP_NAME:
+                           " -p27-28=24":
+                           " 1-8 548-555 29-63 278-285 685-692": 
+                           " -j -t",BLANKS
+         REFORMAT SCRATCH 
+
+         CALL      OPEN_OGBFILE USING INP_FILE,INP_NAME
+         CALL      PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,HDR_LIST
+
+         RETURN
+
+. -----------------------------------
+.  Process records                     
+. -----------------------------------
+
+PROC_RECS     
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         LOOP
+            CALL      READ_OGBFILE USING INP_FILE,INP_NAME,INP_LIST
+            IF (RESULT <> 1)
+               RETURN             
+            ENDIF
+
+            ADD       1 TO READ_COUNT
+            IF (C_RMODE = "I")
+               MOVE      READ_COUNT TO WORK_COUNT
+               UNPACK    WORK_COUNT TO FRONT,BACK
+               IF        (BACK = "0")
+                  DISPLAY   *P41:20,READ_COUNT
+                  DISPLAY   *P41:21,WRITE_COUNT
+               ENDIF
+            ENDIF
+
+            CLEAR W_SURV
+            CLEAR W_DEP26
+            CLEAR W_DEPTRM
+            CLEAR OUT_DEPT
+            CLEAR OUT_CODE
+
+            CALL GET_COV USING INP_MEM,OUT_EFF1,OUT_TRM1
+
+            CONTINUE IF (SQUEEZE OUT_EFF1 = "")
+
+            IF (SQUEEZE INP_ALT <> "")
+               CALL GET_COV USING INP_ALT,OUT_EFF2,OUT_TRM2
+               debug 
+               IF (SQUEEZE OUT_TRM2 < CURRDATE AND SQUEEZE OUT_TRM1 < CURRDATE)
+                  CONTINUE
+               ENDIF
+            ELSE
+               CLEAR OUT_EFF2,OUT_TRM2
+               CONTINUE IF (OUT_TRM1 < CURRDATE)
+            ENDIF
+
+            PACK OUT_MEM WITH INP_MEM,BLANKS
+            PACK OUT_LNM WITH INP_LNM,BLANKS
+            PACK OUT_FNM WITH INP_FNM,BLANKS
+            PACK OUT_DOB WITH INP_DOB,BLANKS
+            PACK OUT_DEP WITH INP_DEP,BLANKS
+            PACK OUT_ALT WITH INP_ALT,BLANKS
+
+            CALL GET_DEP 
+
+            IF (SQUEEZE W_SURV <> "")
+               PACK OUT_CODE WITH "SURVIVOR",BLANKS             
+            ENDIF
+
+            CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+
+          REPEAT
+
+         RETURN
+
+. -----------------------
+. Get coverage from MEME
+. -----------------------
+
+GET_COV ROUTINE MCS@DIM1,MCS@DIM2,MCS@DIM3 
+
+         CLEAR MCS@DIM2
+         CLEAR MCS@DIM3
+         PACK MEME_FK11 WITH MCS@DIM1,BLANKS
+         CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                               MEME_FN:  ...FILE NAME LIST  
+                               MEME_FC:  ...TYPE OF INDEX   
+.                                        ...(I)NDEX OR (A)IMDEX
+                               MEME_FV:  ...FILE KEY VARLISTS
+                               MEME_FK:  ...FILE KEY SIZES  
+                               MEME_LIST:...FILE RECORD (FIELD LIST)
+                               MEME_REC: ...FILE RECORD (PACKED)
+                               MEME_OLD: ...FILE SAVED WHEN READ
+                               MEME_QTY: ...NUMBER OF FILES 
+                               1         ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                   MEME_FN:  ...FILE NAME LIST  
+                                   MEME_FC:  ...TYPE OF INDEX   
+.                                            ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:  ...FILE KEY VARLISTS
+                                   MEME_FK:  ...FILE KEY SIZES  
+                                   MEME_LIST:...FILE RECORD (FIELD LIST)
+                                   MEME_REC: ...FILE RECORD (PACKED)
+                                   MEME_OLD: ...FILE SAVED WHEN READ
+                                   MEME_QTY: ...NUMBER OF FILES 
+                                   1         ...FILE NUMBER FOR THIS READ
+
+            IF (RESULT <> 1 OR MCS@DIM1 <> MEME_ID1)
+               BREAK       
+            ENDIF
+
+. Skip voided records
+            IF (MEME_TLET = "V")
+               CONTINUE
+            ENDIF
+
+            IF (SQUEEZE MEME_TRM <> "")
+               CONTINUE IF (MEME_TRM < MEME_EFF)
+            ENDIF
+
+. Skip No coverage records
+            CONTINUE IF (SQUEEZE MEME_NET = "NOCOV")
+
+. Check survivor status
+            IF (SQUEEZE W_SURV = "")
+               UNPACK MEME_LEV1 INTO DIM3,W_SURV
+               IF (SQUEEZE W_SURV <> "SV")
+                  CLEAR W_SURV
+               ENDIF
+               IF (SQUEEZE MEME_LEV2 = "95")
+                  PACK W_SURV WITH MEME_LEV2
+               ENDIF
+            ENDIF
+
+            IF (SQUEEZE MEME_TRM = "")
+               PACK MCS@DIM3 WITH NINES
+            ENDIF
+
+            IF (MEME_EFF < MCS@DIM2 OR SQUEEZE MCS@DIM2 = "")
+               PACK MCS@DIM2 WITH MEME_EFF,BLANKS
+            ENDIF
+
+            IF (MEME_TRM > MCS@DIM3 OR SQUEEZE MCS@DIM3 = "")
+               PACK MCS@DIM3 WITH MEME_TRM,BLANKS
+            ENDIF
+
+         REPEAT
+
+         RETURN
+
+. -----------------------
+.  Get Dependent
+. -----------------------
+
+GET_DEP
+
+         PACK      MEM_FK11 WITH INP_DEP,BLANKS
+         CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                             MEM_FN:          ...FILE NAME LIST
+                             MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                             MEM_FV:          ...FILE KEY VARLISTS
+                             MEM_FK:          ...FILE KEY SIZES
+                             MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                             MEM_REC:         ...FILE RECORD (PACKED)
+                             MEM_OLD:         ...FILE SAVED WHEN READ
+                             MEM_QTY:         ...NUMBER OF FILES
+                             1                 ...FILE NUMBER FOR THIS READ
+
+         IF (RESULT <> 1)
+            PACK OUT_CODE WITH "NO DEP",BLANKS
+         ENDIF
+
+         CALL DATE_CALC USING MEM_DOB,"ADD","YEARS",26,W_DEP26 
+         CALL DATE_CALC USING W_DEP26,"ADD","MONTHS",1,W_DEPTRM
+         UNPACK W_DEPTRM INTO CCYY,MM,DD
+         PACK W_DEPTRM WITH CCYY,MM,"01",BLANKS
+         CALL DATE_CALC USING W_DEPTRM,"SUB","DAYS",1,OUT_DEPT
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+                                                                                
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       X_OGBFILE.IO
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO
+         INC       CMDPARAM.SR

@@ -1,0 +1,460 @@
++    Program Name   :  A1002102.ps  
++    Description    :  Letter extract for COBRA premium assistance extension.
++                                       
++    APDLM 03/02/2010 A1002102 dev - initial version                      
++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEME.RL              Member Enrollment File   
+
+.----------------------------------------------------------------------------
+.Input File Declarations
+.----------------------------------------------------------------------------
+
+...Reformatted file
+REF_FILE         FILE    VAR=54,TEXT
+REF_NAME         INIT    "A1002102ref.txt"
+REF_NAME1        DIM     30
+
+REF_REC          LIST
+..<BEGIN>....................................................................
+REF_ID1          DIM    8    001-008
+REF_ID2          DIM    4    009-012
+REF_LEV1         DIM    5    013-017
+REF_LEV2         DIM    5    018-022
+REF_MODE         DIM    1    023-023
+REF_EFF          DIM    8    024-031
+REF_TRM          DIM    8    032-039
+REF_NET          DIM    5    040-044
+REF_TLET         DIM    1    045-045
+REF_TRUN         DIM    8    046-053
+REF_REF          DIM    1    054-054
+..<END>......................................................................
+                 LISTEND
+
+.----------------------------------------------------------------------------
+.Output File Declarations
+.----------------------------------------------------------------------------
+OUT_FILE        FILE    VAR=165,TEXT
+OUT_NAME        INIT    "a1002102out.txt" 
+OUT_NAME1       DIM     30
+
+OUT_REC         LIST
+...<Begin>...................................................................
+OUT_ID1    DIM 008          001 008          Counter
+OUT_LNAME  DIM 020          009 028          Emp Last Name
+OUT_FNAME  DIM 015          029 043          Emp First Name
+OUT_MINIT  DIM 001          044 044          Emp Mid Init
+OUT_ADDR1  DIM 035          045 079          Emp Address 1
+OUT_ADDR2  DIM 035          080 114          Emp Address 2
+OUT_CITY   DIM 030          115 144          Emp City
+OUT_STATE  DIM 002          145 146          Emp State
+OUT_ZIP    DIM 013          147 159          Emp Zip
+OUT_CTR    DIM 006          160 165          Counter
+..<END>------------------------------------------------------------------
+         LISTEND
+
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+REF_SRTKEY    INIT    "1-8 -t -u"
+
+...Work file variables
+
+TODAY          DIM       8
+
+TODAY_LIST     LIST
+WS_CCYY        DIM       4
+WS_MM          DIM       2
+WS_DD          DIM       2
+               LISTEND
+
+TRAP_DATA      DIM       500
+
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+
+.Used to display screen counters
+CNT_5          DIM       5
+CNT_2          DIM       2
+
+CTR            FORM      6
+
+MEM_RESULT     FORM      1
+
+SWT_WRITE      DIM       1
+
+SAV_LEV1       DIM       4
+SAV_LEV2       DIM       4
+
+HLD_LEV1       LIST
+HLD_R          DIM       1
+HLD_3          DIM       3
+               LISTEND
+
+SPACE4         DIM       4
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+        MOVE      "menu"         TO C_NEXT
+        MOVE      "A1002102" TO C_PROG
+        MOVE      "COBRA EXTENSION NOTICE " TO C_OPER
+        MOVE      BLANKS TO C_LABEL
+        MOVE      BLANKS TO C_FILE 
+        MOVE      BLANKS TO C_KEYS
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+
+ASK_OPTION
+
+         MOVE      BLANKS TO WCHAR
+         dialog    horz="20",vert="08":
+                   bgcol=C_DLGB,fgcol=C_DLGF:
+                   lncol=C_DLGL,shade="Y":
+                   text="COBRA Subsidy Extension Notice             ":
+                   text="Ready to go (Y/N): ":
+                   field=WCHAR
+         GOTO      QUIT IF (WCHAR <> "Y")
+
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN     C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+   DEBUG
+         CALL MAIN_PROCESS
+         
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+    DEBUG
+
+    CALL INITIAL
+    CALL REFORMAT_MEME
+    CALL OPEN_OGBFILE USING REF_FILE,REF_NAME1 
+    CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME1 
+    CALL PROCESS_FILE
+    CALL CLOSE_OGBFILE USING REF_FILE,REF_NAME1
+    CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME1
+
+    RETURN
+
+.--------------------
+.Reformats MEME
+.--------------------
+REFORMAT_MEME
+
+    DISPLAY   *BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+              *P30:21, "REFORMATTING MEME FILE", *BOLDOFF
+...Individual bill mode is monthly
+...Not a life record
+...Lev2 is 90
+...Lev1 does not start with an 'R'
+...Records with B in ref_ref loop through read_meme     
+    PACK      SCRATCH WITH "meme.dbf"," ",REF_NAME1," 1-12 21-30 134-134 ":
+                           "96-116 404-412 -f=A ":
+                           "-p134-134eqM ":
+                           "-p112-115neLIFE ":
+                           "-p26-30eq90 ":
+                           "-p21-21neR -j -t"
+
+    REFORMAT  SCRATCH
+
+    IF OVER
+            ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="REFORMAT FAILED"
+            CHAIN     "MENU"
+    ENDIF
+
+    DISPLAY   *BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+              *P30:21, "APPENDING TO REFORMAT ", *BOLDOFF
+
+...Termed on or after 10/31/09
+...Term reason is L
+...Term letter sent before 3/3/10 (when changes were made)
+...Not a life record    
+...Records with B in ref_ref will go straight to read_mem
+    PACK      SCRATCH WITH "meme.dbf"," ",REF_NAME1," 1-12 21-30 134-134 ":
+                           "96-116 404-412 -f=B ":
+                           "-p104-111ge20091031 ":
+                           "-p404-404eqL ":
+                           "-p405-412lt20100303 ":
+                           "-p112-115neLIFE -j -t -a"
+
+    REFORMAT  SCRATCH
+
+    IF OVER
+            ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="2ND REFORMAT FAILED"
+            CHAIN     "MENU"
+    ENDIF
+
+    RETURN
+
+. -------------------------------
+.Reads file created from reformat
+. -------------------------------
+PROCESS_FILE
+
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING REF_FILE, REF_NAME1, REF_REC 
+
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+
+        IF (REF_REF = "A")
+            CALL READ_MEME
+        ELSE  
+            CALL READ_MEM
+        ENDIF
+
+      REPEAT
+
+    RETURN
+
+. ------------------------------
+. Reads MEME for dates of subsidy coverage
+. ------------------------------
+READ_MEME
+
+   PACK MEME_FK11 WITH REF_ID1,BLANKS
+   CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+        LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+            IF ((MEME_ID1 <> REF_ID1) OR (RESULT <> 1))
+                BREAK       
+            ENDIF
+
+...Ignore nulls 
+            IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+               CONTINUE  
+            ENDIF
+...Monthly bill
+            IF (SQUEEZE MEME_MODE <> "M")
+                CONTINUE
+            ENDIF
+...Health claim
+            IF (SQUEEZE MEME_NET = "LIFE")
+                CONTINUE
+            ENDIF
+...Subsidy
+            IF (SQUEEZE MEME_LEV2 <> "90")
+                CONTINUE
+            ENDIF
+            UNPACK MEME_LEV1 INTO HLD_R, HLD_3  
+            IF (HLD_R = "R")
+                CONTINUE
+            ENDIF
+
+...Record was effective on 10/31/09
+            IF (SQUEEZE MEME_TRM = "")
+                MOVE "99999999" TO MEME_TRM
+            ENDIF
+            IF ((MEME_EFF > "20091031") OR (MEME_TRM < "20091031"))
+                CONTINUE
+            ENDIF
+
+        CALL READ_MEM
+
+        REPEAT
+      
+    RETURN
+
+. ------------------------------
+. Reading MEM to get the dependent's
+
+. ------------------------------
+READ_MEM
+
+           CLEAR     MEM_FK11
+           PACK      MEM_FK11 WITH REF_ID1,BLANKS     
+           CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                               MEM_FN:          ...FILE NAME LIST
+                               MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                               MEM_FV:          ...FILE KEY VARLISTS
+                               MEM_FK:          ...FILE KEY SIZES
+                               MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                               MEM_REC:         ...FILE RECORD (PACKED)
+                               MEM_OLD:         ...FILE SAVED WHEN READ
+                               MEM_QTY:         ...NUMBER OF FILES
+                               1                 ...FILE NUMBER FOR THIS READ
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            RETURN
+        ENDIF
+
+        MOVE MEM_LNAME TO OUT_LNAME
+        MOVE MEM_FNAME TO OUT_FNAME
+        MOVE MEM_MINIT TO OUT_MINIT
+        MOVE MEM_ADDR1 TO OUT_ADDR1
+        MOVE MEM_ADDR2 TO OUT_ADDR2
+        MOVE MEM_CITY  TO OUT_CITY
+        MOVE MEM_STATE TO OUT_STATE
+        MOVE MEM_ZIP   TO OUT_ZIP
+        MOVE MEM_ID1   TO OUT_ID1
+
+        ADD 1 TO CTR
+        MOVE CTR TO OUT_CTR
+        REPLACE " 0" IN OUT_CTR
+
+        CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME1,OUT_REC 
+        CLEAR OUT_REC
+        ADD 1 TO X_CNT2
+
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       CLOCK     TIMESTAMP INTO CURRDATE
+
+. ...Display Counters
+	 MOVE      "Input records read" TO X_CNTDESC1
+	 MOVE      "Records output    " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+
+         PACK    REF_NAME1 WITH OGB_PATH,REF_NAME
+         PACK    OUT_NAME1 WITH OGB_PATH,OUT_NAME
+
+         MOVE CURRDATE TO TODAY
+         UNPACK TODAY INTO TODAY_LIST
+
+    RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

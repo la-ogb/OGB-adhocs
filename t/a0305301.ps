@@ -1,0 +1,639 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0305301
++    Description    :  EXTR  - Health Enrollment Stats
++
++    apeks 05/30/2003 a0305301 DEV - Initial Version. 
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy ayymmdd# MOD - Description            
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_OGBFILE.CB
+              INC       PRT.RL               ...Printer Definition File
+              INC       MEM.RL               ...Member Demographics
+              INC       MEME.RL              ...Member Eligibility
+              INC       CLI.RL               ...Client Demographics
+              INC       CLIP.RL              ...Client Pricing
+              INC       BIL.RL               ...Billing Demographics
+              INC       BILD.RL              ...Billing detail
+              INC       VALID.RL             ...Valid codes
+              INC       ZIPCODE.RL
+
+
+. --------------------------------------------------------------------------
+.
+DATE1         DIM       8
+DATE2         DIM       8
+DATE3         DIM       8
+IDX_OPTS      DIM       200
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+PRINT_STATE   DIM       1
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ACTION        DIM       10
+TIMESTAMP     DIM       14
+FROM_DATE     DIM       8
+THRU_DATE     DIM       8
+GRP1          DIM       4
+GRP2          DIM       2
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+CITY          DIM       8
+MY_NET        DIM       5
+MY_PRD        DIM       5
+MY_CARR       DIM       4
+MY_PLAN       DIM       4
+NPCP          DIM       18
+TYPE1         DIM       1
+TYPE2         DIM       2
+TYPE3         DIM       1
+TYPE4         DIM       1
+RATE_TYPE     DIM       2
+.
+FORM1         FORM      1
+FORM2         FORM      2
+FORM3         FORM      3
+FORM4         FORM      4
+FORM5         FORM      5
+FORM6         FORM      6
+FORM7         FORM      7
+FORM8         FORM      8
+FORM9         FORM      9
+FORM10        FORM      10
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM4          DIM       4
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM8          DIM       8
+DIM9          DIM       9
+DIM10         DIM       10
+DIMONE        DIM       1
+DIMTWO        DIM       2
+
+TODAY         DIM       8
+CURRDATE      DIM       8
+LAST_CLIR     DIM       8
+LAST_ELIG     DIM       8
+
+COUNT_MEM     FORM      8
+COUNT_MEME    FORM      8
+KEEP_COUNT    FORM      8
+FOUND_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+DROP_CNT      FORM      8
+MALE_CNT      FORM      8
+FEMALE_CNT    FORM      8
+TOTAL_CNT     FORM      8
+ACT_CNT       FORM      8
+COB_CNT       FORM      8
+UNK_CNT       FORM      8
+RET_CNT       FORM      8
+SP_CNT        FORM      8
+CHILD_CNT     FORM      8
+DEF_CNT       FORM      8
+
+LST_MEME      DIM       8
+HLD_MEME      DIM       8
+
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+
+W_OKAY        DIM       1
+
+. Enrollee file
+ENR_NAME      INIT      "/w/a0305301.enr"
+ENR_NM1       INIT      "/w/a0305301.en1"
+ENR_NM2       INIT      "/w/a0305301.en2"
+
+ENR_FILE      IFILE      VAR=25,KEYLEN=8,TEXT 
+ENR_IDX       INIT      "/w/a0305301.ix1"
+ENR_LIST      LIST
+ENR_MEM       DIM       8
+ENR_RT        DIM       2
+              LISTEND
+
+ENR_KEY       DIM       8
+
+
+.Eligibility Extracted File
+ELGX_FILE     FILE      VAR=150,TEXT
+ELGX_NAME     INIT      "/w/a0305301.csv"
+ELGX_LIST     LIST
+ELGX_REC      DIM       150
+              LISTEND
+
+DATA_LIST     LIST
+ELGX_MALES    DIM       10
+ELGX_FEMALES  DIM       10
+ELGX_ACT      DIM       10
+ELGX_RET      DIM       10
+ELGX_COB      DIM       10
+ELGX_UNK      DIM       10
+ELGX_TOTYRS   DIM       12
+ELGX_AVGAGE   DIM       3 
+              LISTEND
+
+W_CNT         FORM      10
+W_RGN         FORM      2 
+W_AGE         DIM       3 
+TOT_YRS       FORM      12
+
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST
+PARAM_FILE    DIM       12
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+RUN_CLIPCALC    EXTERNAL
+
+. -----------------
+.   Begin Program
+. -----------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "HEALTH ENROLLMENT" TO  C_OPER
+         MOVE      "A0305301"            TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+         LOADMOD   "clipcalc"
+
+. --------------------------------------------------------------------------------
+.   1-Help  2-Srch  3-Prev  4-Next  5-New   6-Serv  7-Code  8-Note  9-Quit 10-More
+. --------------------------------------------------------------------------------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------
+.   Get "override" date
+. -----------------------
+
+         CLOCK     TIMESTAMP INTO PARAM_FROM
+
+         IF (RUN_MODE = "")
+            CALL      GET_OVERRIDE_INFO
+         ENDIF
+
+         RETURN    IF (SQUEEZE PARAM_FROM = "")
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. --------------------
+.   Get The Override
+. --------------------
+
+GET_OVERRIDE_INFO
+
+         message   horz="15",vert="06":
+                   bgcol=C_ERRB,fgcol=C_ERRF:
+                   lncol=C_ERRL,shade="Y":
+                   text="     HEALTH ENROLLMENT STATS       ":
+                   text="--------------------------------------":
+                   text="Enter effective date for extract: ":
+                   text="Effective Date.... " 
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_ERRB,*COLOR=C_ERRF:
+                   *P36:10,PARAM_FROM 
+
+K1
+         MOVE      36          TO  KEY_COL
+         MOVE      10          TO  KEY_ROW
+         MOVE      8           TO  KEY_SIZ
+         MOVE      0           TO  KEY_DEC
+         MOVE      "D"         TO  KEY_TYP
+         MOVE      "L"         TO  KEY_JUS
+         MOVE      "O"         TO  KEY_REQ
+         DISPLAY   *BGCOLOR=C_ERRB,*COLOR=C_ERRF
+         CALL      KEY_IN   USING  PARAM_FROM
+         GOTO      K1  IF (DIRECTION = 1)
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         CALL      CREATE_ENR
+
+         CALL      CREATE_EXTRACT
+
+         TRAPREST  TRAP_DATA
+
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. -----------------------------------
+.  Create enrollee file
+. -----------------------------------
+CREATE_ENR
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" Reformatting File   ":
+                      text=" Please wait...      "
+         ENDIF
+
+         PACK SCRATCH WITH "meme.dbf ",ENR_NM1:
+                           " -p96-103le",PARAM_FROM:
+                           " -p104-111=#"        #"":
+                           " -p130-131ne#"LF#"":
+                           " -p130-131ne#"  #" 1-8":
+                           " 130-131 -j -t"
+
+         REFORMAT SCRATCH
+
+         PACK SCRATCH WITH "meme.dbf ",ENR_NM2:
+                           " -p96-103le",PARAM_FROM:
+                           " -p104-111ge",PARAM_FROM:
+                           " -p130-131ne#"LF#"":
+                           " -p130-131ne#"  #" 1-8":
+                           " 130-131 -j -t"
+
+         REFORMAT SCRATCH
+
+         CLEAR SCRATCH
+         PACK SCRATCH WITH "cat ",ENR_NM1," ",ENR_NM2:
+                           " > ",ENR_NAME
+
+         ROLLOUT SCRATCH
+
+         CLEAR SCRATCH
+         PACK SCRATCH WITH ENR_NAME," ",ENR_NAME," 1-8 -t -u"
+
+         SORT SCRATCH 
+
+         CLEAR SCRATCH
+         PACK SCRATCH WITH ENR_NAME," ",ENR_IDX," 1-8"
+
+         INDEX SCRATCH         
+
+         RETURN
+
+. -----------------------------------
+.  Create extract file
+. -----------------------------------
+CREATE_EXTRACT
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+         MOVE      0           TO  COUNT_MEM
+         MOVE      0           TO  COUNT_MEME
+         MOVE      0           TO  FOUND_COUNT
+         MOVE      0           TO  KEEP_COUNT
+         MOVE      0           TO  ERROR_COUNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" ------------------- ":
+                      text=" MEME In             ":
+                      text=" Recs Found          "
+         ENDIF
+         MOVE      MEM_FNS TO C_FILE
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      PREP_OGBFILE USING ELGX_FILE,ELGX_NAME
+         CALL      OPEN_OGBFILE_IX USING ENR_FILE,ENR_IDX
+
+. -----------------------------------
+. Read through the MEM & MEME files
+. -----------------------------------
+                  
+         PACK      MEME_FK11 WITH BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                   MEME_FN:  ...File name list
+                   MEME_FC:  ...(I)ndex or (A)imdex
+                   MEME_FV:  ...File key varlists
+                   MEME_FK:  ...File key sizes
+                   MEME_LIST: ...File record (field list)
+                   MEME_REC: ...File record (packed)
+                   MEME_OLD: ...File saved when read
+                   MEME_QTY: ...Number of files
+                   1         ...File number for this read
+
+         LOOP
+            CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                      MEME_FN:  ...File name list
+                      MEME_FC:  ...(I)ndex or (A)imdex
+                      MEME_FV:  ...File key varlists
+                      MEME_FK:  ...File key sizes
+                      MEME_LIST: ...File record (field list)
+                      MEME_REC: ...File record (packed)
+                      MEME_OLD: ...File saved when read
+                      MEME_QTY: ...Number of files
+                      1         ...File number for this read
+
+            WHILE (RESULT = 1)
+
+           debug
+            ADD       1 TO COUNT_MEME
+            
+            MOVE      COUNT_MEME TO WORK_COUNT
+            UNPACK    WORK_COUNT INTO FRONT,BACK
+            IF (BACK = "000")
+               IF (C_RMODE = "I")
+                  DISPLAY   *P41:21,COUNT_MEME
+                  DISPLAY   *P41:22,FOUND_COUNT
+               ENDIF
+            ENDIF
+
+            CONTINUE IF (LST_MEME = MEME_ID1)
+
+            CONTINUE IF (PARAM_FROM < MEME_EFF)
+            CONTINUE IF (PARAM_FROM > MEME_TRM AND:
+                         SQUEEZE MEME_TRM > "")
+
+            CONTINUE IF (SQUEEZE MEME_NET = "LIFE")
+            CONTINUE IF (SQUEEZE MEME_NET = "CONV")
+
+            debug
+            ADD 1 TO FOUND_COUNT            
+            PACK LST_MEME WITH MEME_ID1
+            CALL GET_COUNTS             
+
+         REPEAT
+
+         CALL PUT_OUT 
+  
+         IF (C_RMODE = "I")
+            DISPLAY   *P41:21,COUNT_MEME
+            DISPLAY   *P41:22,FOUND_COUNT
+            error     horz="23",vert="09":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text="Enrollment Stats Complete ":
+                      text="---------------------------"
+         ENDIF
+
+         RETURN
+
+. ---------------------------------
+. Obtain enrollment counts
+. ---------------------------------
+
+GET_COUNTS
+
+         PACK      MEM_FK11 WITH MEME_ID1
+         CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                   MEM_FN:  ...File name list
+                   MEM_FC:  ...(I)ndex or (A)imdex
+                   MEM_FV:  ...File key varlists
+                   MEM_FK:  ...File key sizes
+                   MEM_LIST: ...File record (field list)
+                   MEM_REC: ...File record (packed)
+                   MEM_OLD: ...File saved when read
+                   MEM_QTY: ...Number of files
+                   1        ...File number for this read
+
+         IF (RESULT = 1)
+            ADD 1 TO TOTAL_CNT
+         ELSE
+            GOTO GET_COUNTS_END
+         ENDIF
+
+         IF (MEM_SEX = "F")
+            ADD 1 TO FEMALE_CNT
+         ELSE
+            ADD 1 TO MALE_CNT
+         ENDIF
+
+         CLEAR W_AGE
+         CLEAR FORM3
+         CALL CALC_AGE USING MEM_DOB,W_AGE,PARAM_FROM
+         MOVE W_AGE TO FORM3
+         ADD FORM3 TO TOT_YRS
+
+         CLEAR W_OKAY
+         IF (MEM_REL = "01")
+            PACK W_OKAY WITH "Y"
+         ELSE
+            CALL GET_ENR
+         ENDIF 
+
+         IF (W_OKAY = "N")
+            ADD 1 TO UNK_CNT
+            GOTO GET_COUNTS_END
+         ENDIF 
+
+         IF (MEME_RT = "AC" OR MEME_RT = "SA")
+            ADD 1 TO ACT_CNT
+            GOTO GET_COUNTS_END
+         ENDIF
+
+         UNPACK MEME_RT INTO DIM1,DIMONE 
+         IF (DIM1 = "C")
+            ADD 1 TO COB_CNT
+            GOTO GET_COUNTS_END
+         ENDIF
+
+         IF (DIM1 = "R" OR DIM1 = "S")
+            ADD 1 TO RET_CNT
+            GOTO GET_COUNTS_END
+         ENDIF
+
+         ADD 1 TO UNK_CNT
+
+GET_COUNTS_END
+         RETURN
+
+. ---------------------------------
+.  Get Enrollee MEM record
+. ---------------------------------
+
+GET_ENR
+
+         PACK W_OKAY WITH "N"
+         CLEAR     MEM_AIM
+         PACK      MEM_AIM1  WITH "01X",MEM_ESSN,BLANKS
+         PACK      MEM_AIM3  WITH "03X01",BLANKS
+         CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                             MEM_FN:          ...File name list
+                             MEM_FC:          ...(I)ndex or (A)imdex
+                             MEM_FV:          ...File key varlists
+                             MEM_AIM:         ...File key sizes
+                             MEM_LIST:        ...File record (field list)
+                             MEM_REC:         ...File record (packed)
+                             MEM_OLD:         ...File saved when read
+                             MEM_QTY:         ...Number of files
+                             2                ...File number for this read
+
+         IF (RESULT <> 1)
+            GOTO GET_ENR_END
+         ENDIF
+
+         PACK ENR_KEY WITH MEM_ID1
+         CALL READ_OGBFILE_IX USING ENR_FILE,ENR_IDX,ENR_KEY,ENR_LIST
+
+         IF (RESULT <> 1)
+            GOTO GET_ENR_END
+         ENDIF
+
+         PACK W_OKAY WITH "Y"
+         PACK MEME_RT WITH ENR_RT
+
+GET_ENR_END 
+         RETURN
+
+. ---------------------------------
+. Extract record complete
+. ---------------------------------
+
+PUT_OUT
+
+         PACK ELGX_REC WITH "Males,Females,Active,Retired,Cobra,":
+                       "Unknown,Average Age,"
+         CALL WRITE_OGBREC USING ELGX_FILE,ELGX_NAME,ELGX_LIST
+
+         PACK ELGX_MALES    WITH MALE_CNT 
+         PACK ELGX_FEMALES  WITH FEMALE_CNT
+         PACK ELGX_ACT      WITH ACT_CNT
+         PACK ELGX_RET      WITH RET_CNT 
+         PACK ELGX_COB      WITH COB_CNT  
+         PACK ELGX_UNK      WITH UNK_CNT  
+         PACK ELGX_TOTYRS   WITH TOT_YRS
+         DIVIDE TOTAL_CNT INTO TOT_YRS GIVING FORM3
+         MOVE FORM3 TO ELGX_AVGAGE  
+ 
+         PACK ELGX_REC WITH ELGX_MALES,",",ELGX_FEMALES,",":
+              ELGX_ACT,",",ELGX_RET,",",ELGX_COB,",":
+              ELGX_UNK,",",ELGX_AVGAGE,","
+
+         CALL WRITE_OGBREC USING ELGX_FILE,ELGX_NAME,ELGX_LIST
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO
+         INC       PRINT.SR
+         INC       ZIPCODE.IO
+         INC       X_OGBFILE.IO
+

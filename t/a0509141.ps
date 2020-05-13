@@ -1,0 +1,569 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0509141.ps
++    Description    :  ELG - Reads the file from APS Health by the OGB
++                   :  internal ID and then the meme file to find if the
++                   :  member no longer has coverage from EPO, PPO, or MCO.
++                   :  The output file will have the OGB ID, their ID, name,       
++                   :  date of birth, the date of the last coverage and the
++                   :  name of which HMO or not the member went to.
++                   :  
++    Author         :  Alina Sanchez    
++    Date created   :  09/30/2005
++    Project Number :  A0509141  
+++++++++++++++++++++++++++++<< REVISIONS >>++++++++++++++++++++++++++++++++++++
++ apiii  mm/dd/ccyy    A-------  TYP - Remarks.....
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       PRT.RL               ...Printer Definition File
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member demographic Record       
+              INC       MEME.RL              ...Mem. Enr/Elig Record            
+
+
+
+. ---------------------------------------------
+. ~~~~~~~~~~   File  Declarations   ~~~~~~~~~~                                  
+. ---------------------------------------------                                 
+
+                                                                                
+.~~~~~~~~~~~~~INPUT FILES                                                       
+APSHLTH_FD        FILE      VAR=121,TEXT                           
+APSHLTH_TXT       INIT      "/w/apshealth.prn"                                     
+
+APSHLTH_LIST      LIST                                                           
+..<Begin>....................................................................   
+APSHLTH_OGBID     DIM       8                                                    
+APSHLTH_SPACE1    DIM       6                                                    
+APSHLTH_APSID     DIM       7                                                    
+APSHLTH_LNAME     DIM       19                                                   
+APSHLTH_FNAME     DIM       18                                                   
+APSHLTH_DOB       DIM       10                                                   
+APSHLTH_SPACE2    DIM       53                                                   
+..<End>......................................................................   
+              LISTEND                                                           
+
+
+.~~~~~~~~~~~~~OUTPUT FILES                                                      
+
+.~~~~~~ENROLLEE ELEGIBILITY FILE                                                          
+ENRELG_FD        FILE      VAR=83,TEXT                           
+ENRELG_TXT       INIT      "/w/a0509141.txt"                                     
+
+ENRELG_LIST      LIST                                                           
+..<Begin>....................................................................   
+ENRELG_OGBID     DIM       8                                                    
+ENRELG_SPACE1    DIM       6                                                    
+ENRELG_APSID     DIM       7                                                    
+ENRELG_LNAME     DIM       19                                                   
+ENRELG_FNAME     DIM       18                                                   
+ENRELG_DOB       DIM       10                                                   
+ENRELG_TERM      DIM       10                                                   
+ENRELG_NEWPROV   DIM       5                                                    
+..<End>......................................................................   
+              LISTEND                                                           
+
+
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+FIRST_PAGE       DIM       1
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+WRITE_COUNT      FORM      8
+TRAP_DATA        DIM       500
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+TODAY            DIM       8
+
+
+PARAM_LIST       LIST
+PARAM_XXX        DIM      10
+PARAM_YYY        DIM       5
+PARAM_DATE       DIM       8
+                 LISTEND
+
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                             
+.     Program Specific Variables                                                 
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                             
+.~~~~~~ Variables
+DAYS_DIF        FORM       5
+
+.~~~~~~ Sorting Fields     
+
+
+.~~~~~~ Mask Fields
+
+
+.~~~~~~ Accumulators
+
+
+
+.~~~~~~ Hold Fields
+
+MEME_PRD_HLD     DIM      5
+MEME_EFF_HLD     DIM      8
+MEME_TRM_HLD     DIM      8
+ 
+
+
+.~~~~~~ Screen Counters
+CNT_4            DIM       4
+CNT_3            DIM       3                             
+
+CNT_5            DIM       5
+CNT_2            DIM       2
+DISP5            DIM       5
+DISP4            DIM       4
+DISP3            DIM       3                  
+DISP2            DIM       2                  
+
+
+.~~~~~~ Flags
+WRITE_REC_YN     DIM       1
+ELG_RET_CODE     FORM      1
+MEME_RESULT      FORM      1                                      
+
+
+
+.~~~~~~ Date Manipulation Fields
+
+DATE            LIST 
+DT_MM            DIM       2
+DT_DD            DIM       2 
+DT_CCYY          DIM       4
+                LISTEND
+
+
+. --------------------------------------------------
+. ~~~~~~~~~~~~ << < Begin Program > >> ~~~~~~~~~~~~~
+. --------------------------------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                 TO  C_NEXT
+         MOVE      "Enr trm date for APS" TO  C_OPER    >Max. 20 bytes
+         MOVE      "A0509141"             TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      BLANKS                 TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+                                                                               
+         MOVE      "00000025" TO C_PRTUSR   ...sends file to disk               
+         CALL      PRINT_PICK               ...this routine gives the user      
+         RETURN    IF (RESULT = 2)            .a printer list                   
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+
+
++++++++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+
+. ...Initialize
+         CALL      INITIALIZE
+                
+. ...Open Files	
+         CALL      OPEN_FILES 
+
+. ...Read Mem and Meme Files
+         CALL      READ_APS_MEME_FILE
+
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+
++++++++++++++++++++++++++++<< END OF MAIN PROCESS >>+++++++++++++++++++++++++++
+
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	        MOVE      "Recs Read:        " TO X_CNTDESC1
+       	 MOVE      "Recs Writen:      " TO X_CNTDESC2
+         MOVE      "                  " TO X_CNTDESC3
+         MOVE      "                  " TO X_CNTDESC4
+	        MOVE      "                  " TO X_CNTDESC5
+	        MOVE      "                  " TO X_CNTDESC6
+	 
+	        CALL      X_DISPLAY_COUNTS
+
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+.~~Input Files                                                                  
+         MOVE APSHLTH_TXT TO C_FILE                 
+         CALL OPEN_OGBFILE USING APSHLTH_FD,APSHLTH_TXT
+
+
+                                                                                
+.~~I/O Files                                                                    
+                                                                                
+.~~Output Files 
+         MOVE ENRELG_TXT TO C_FILE                 
+         CALL PREP_OGBFILE USING ENRELG_FD,ENRELG_TXT
+
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------------------------------------------------------
+. This procedure will reads the mem and meme files to extract all enrollees 
+. and a count of their respective dependents which have health covereage.
+. 
+. ----------------------------------------------------------------------------
+
+READ_APS_MEME_FILE
+
+   debug
+
+     LOOP
+         MOVE "apshealth.prn" TO C_FILE
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL READ_OGBFILE USING APSHLTH_FD:
+                                 APSHLTH_TXT:
+                                 APSHLTH_LIST
+                                                      
+         MOVE RESULT TO ELG_RET_CODE
+         IF (ELG_RET_CODE <> 1)
+             BREAK 
+         ENDIF
+
+         ADD 1 TO X_CNT1
+
+.Call to determine if Enrollee has Health Coverage.
+         MOVE "N" TO WRITE_REC_YN
+         MOVE BLANKS TO MEME_PRD_HLD
+         MOVE BLANKS TO MEME_EFF_HLD
+         MOVE BLANKS TO MEME_TRM_HLD
+         CALL READ_MEME
+
+.  debug
+                     
+         IF (WRITE_REC_YN = "Y")
+             MOVE APSHLTH_OGBID TO ENRELG_OGBID 
+             MOVE APSHLTH_APSID TO ENRELG_APSID                                                    
+             MOVE APSHLTH_LNAME TO ENRELG_LNAME                                                    
+             MOVE APSHLTH_FNAME TO ENRELG_FNAME                                                   
+             MOVE APSHLTH_DOB TO ENRELG_DOB  
+         ELSE
+             CONTINUE
+         ENDIF
+
+
+         MOVE OGB_SEQ1 TO OGB_SEQ                                            
+         CALL WRITE_OGBREC USING ENRELG_FD:                                   
+                                ENRELG_TXT:                                   
+                               ENRELG_LIST                                            
+                                                                                
+         ADD 1 TO X_CNT2
+         UNPACK X_CNT2 INTO DISP4,DISP3
+         IF (DISP3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF
+        
+
+     REPEAT
+
+   RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+
+. ---------------------------------------------------------------------------
+. Determines if the member has health coverage or not and if it is an HMO 
+. or nothing at all then write out to file.
+. ---------------------------------------------------------------------------
+
+READ_MEME        
+
+.  debug
+
+    CLEAR MEME_FK11
+    PACK MEME_FK11 WITH APSHLTH_OGBID,BLANKS                                      
+    CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST      
+                         MEME_FN:             ...FILE NAME LIST             
+                         MEME_FC:             ...TYPE OF INDEX              
+.                                             ...(I)NDEX or (A)IMDEX        
+                         MEME_FV:             ...FILE KEY VARLIST           
+                         MEME_FK:             ...FILE KEY SIZES             
+                         MEME_LIST:           ...FILE RECORD (FIELD LIST)   
+                         MEME_REC:            ...FILE RECORD (PACKED)       
+                         MEME_OLD:            ...FILE SAVED WHEN READ       
+                         MEME_QTY:            ...NUMBER OF FILES            
+                         1                    ...FILE NUMBER FOR THIS READ  
+
+   LOOP                                                                    
+            CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST      
+                                 MEME_FN:         ...FILE NAME LIST             
+                                 MEME_FC:         ...TYPE OF INDEX              
+.                                                 ...(I)NDEX or (A)IMDEX        
+                                 MEME_FV:         ...FILE KEY VARLIST           
+                                 MEME_FK:         ...FILE KEY SIZES             
+                                 MEME_LIST:       ...FILE RECORD (FIELD LIST)   
+                                 MEME_REC:        ...FILE RECORD (PACKED)       
+                                 MEME_OLD:        ...FILE SAVED WHEN READ       
+                                 MEME_QTY:        ...NUMBER OF FILES            
+                                 1                ...FILE NUMBER FOR THIS READ  
+
+
+  debug                         
+                                                                                
+
+     MOVE RESULT TO MEME_RESULT                   
+     IF ((MEME_RESULT <> 1) OR (APSHLTH_OGBID <> MEME_ID1))
+         IF ((MEME_TRM_HLD <> "") AND (MEME_TRM_HLD <= TODAY))
+             MOVE "Y" TO WRITE_REC_YN
+             MOVE BLANKS TO ENRELG_NEWPROV   
+             CALL DATE_FORMAT USING MEME_TRM_HLD, ENRELG_TERM   
+             BREAK
+         ENDIF
+         BREAK
+     ENDIF
+
+
+     IF (SQUEEZE MEME_NET = "LIFE")
+         CONTINUE
+     ENDIF
+
+
+     IF ((MEME_TRM < MEME_EFF) AND (SQUEEZE MEME_TRM <> ""))
+         CONTINUE
+     ENDIF 
+
+
+.  debug
+
+     IF ((SQUEEZE MEME_TRM = ""):
+         AND ((MEME_PRD <> "HMO  ") AND (MEME_NET <> "DEFIN")))
+             BREAK
+     ENDIF                                                              
+
+
+     IF ((SQUEEZE MEME_TRM = "") AND ((MEME_PRD = "HMO  "):
+         OR (MEME_NET = "DEFIN")))
+         CALL DELTA_DAYS USING MEME_EFF,MEME_TRM_HLD,DAYS_DIF               
+         IF (DAYS_DIF = 1)
+             MOVE "Y" TO WRITE_REC_YN
+             MOVE MEME_NET TO ENRELG_NEWPROV   
+             CALL DATE_FORMAT USING MEME_TRM_HLD, ENRELG_TERM   
+             BREAK
+         ELSE
+             IF (DAYS_DIF > 1)
+                 MOVE "Y" TO WRITE_REC_YN
+                 MOVE MEME_NET TO ENRELG_NEWPROV   
+                 CALL DATE_FORMAT USING MEME_TRM_HLD, ENRELG_TERM   
+                 BREAK
+             ENDIF
+         ENDIF 
+     ENDIF                                                              
+     
+     MOVE MEME_PRD TO MEME_PRD_HLD
+     MOVE MEME_EFF TO MEME_EFF_HLD
+     MOVE MEME_TRM TO MEME_TRM_HLD
+
+
+    REPEAT
+
+  RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+.~INPUT FILES                                                                     
+         MOVE APSHLTH_TXT TO C_FILE                 
+         CALL CLOSE_OGBFILE USING APSHLTH_FD,APSHLTH_TXT
+
+
+
+.~I/O FILES                                                                     
+                                                                                
+.~OUTPUT FILES 
+         MOVE ENRELG_TXT TO C_FILE                 
+         CALL CLOSE_OGBFILE USING ENRELG_FD,ENRELG_TXT
+
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+                                                                                
+NORMAL_EOJ                                                                      
+                                                                                
+. ...Normal End-Of-Job                                                          
+       IF (RUN_MODE = "N")              ---Manual Run; Not Scheduled            
+           CALL X_BLANK_SCREEN                                                  
+           PACK      X_FINISH_STATUS WITH "   ", "NEOJ","   "                   
+           MOVE      "a0509141 Completed      " TO X_PROG_FINISH                 
+           CALL      X_END_OF_JOB                                                 
+       ENDIF                                                                    
+                                                                                
+                                                                                
+. ...Return Control Back to Chain - End of Program                              
+       TRAPREST  TRAP_DATA                                                      
+       MOVE      SCH_RTSUCC TO SCH@RTCODE                                       
+                                                                                
+  RETURN                                                                        
+                                                                                
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       PRINT.SR
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<<<<<<~END~>>>>>>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                               End of a0509141.ps
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

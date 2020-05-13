@@ -1,0 +1,322 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1002041.PS
++    Description    :  ADH - Loads East Carroll Emplyees into Impact    
++    APSJM A1002041 02/04/2010 - INITIAL VERSION                                
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+ECARROL_FD         FILE       VAR=200,TEXT
+ECARROL_NAME       INIT       "/w/ecarroll.txt"
+
+ECARROL_LIST       LIST
+ECARROL_FIL13      DIM         13
+ECARROL_ESSN       DIM         9
+ECARROLL_FIL1      DIM         1
+ECARROL_PSSN       DIM         9 
+ECARROL_FIL1       DIM         1
+ECARROL_LNAME      DIM         14
+ECARROL_FNAME      DIM         14
+ECARROL_DOB        DIM         8
+ECARROL_SEX        DIM         1
+ECARROL_FIL12      DIM         12
+ECARROL_REL        DIM         2
+ECARROL_FIL1_2     DIM         1
+ECARROL_DEPC       DIM         2
+ECARROL_FIL_DIM6   DIM         6
+ECARROL_ADDR1      DIM         31
+ECARROL_ADDR2      DIM         18
+ECARROL_CITY       DIM         19
+ECARROL_STATE      DIM         2
+ECARROL_FIL3       DIM         3
+ECARROL_ZIP        DIM         5
+                   LISTEND
+.Output Files
+U_ECAR_FD     FILE     VAR=3100,TEXT
+U_ECAR_NAME    INIT    "a1002041.txt"      
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+DIM_2         DIM  2
+DIM_3         DIM  3
+Y             INIT "Y"
+CMP_TRM       DIM  8
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "LOAD ECAR" TO  C_OPER
+         MOVE      "A1002041"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_FLX_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_FLX_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING ECARROL_FD,ECARROL_NAME,ECARROL_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    CLEAR MEM_REC
+    CLEAR MEME_REC
+    PACKLEN INM_REC WITH MEM_REC,MEME_REC
+    UNPACK INM_REC INTO INM_LIST
+    SWITCH ECARROL_REL
+        CASE "01"
+           CALL POP_ENR
+        DEFAULT
+           CALL POP_DEP 
+    ENDSWITCH
+ REPEAT
+ RETURN
+
+POP_ENR
+   MOVE ECARROL_ESSN TO INM_ESSN
+   MOVE ECARROL_PSSN TO INM_PSSN
+   MOVE ECARROL_LNAME TO INM_LNAME
+   MOVE ECARROL_FNAME TO INM_FNAME
+   MOVE "WAIVER" TO INM_LIFE
+   MOVE ECARROL_DOB TO INM_DOB
+   MOVE ECARROL_SEX TO INM_SEX
+   MOVE ECARROL_REL TO INM_REL
+   MOVE ECARROL_ADDR1 TO INM_ADDR1
+   MOVE ECARROL_ADDR2 TO INM_ADDR2
+   MOVE ECARROL_CITY TO INM_CITY
+   MOVE ECARROL_STATE TO INM_STATE
+   MOVE ECARROL_ZIP TO INM_ZIP
+   MOVE ECARROL_DEPC TO INME_DEPC
+   MOVE "2018" TO INME_LEV1
+   MOVE "00" TO INME_LEV2
+   MOVE "00008156" TO INME_CLIR
+   MOVE "NOCOV" TO INME_NET
+   MOVE "WAIVE" TO INME_PRD
+   MOVE "WAIV" TO INME_PLAN
+   MOVE "20100301" TO INME_EFF
+   MOVE "AC" TO INME_RT
+   MOVE "EAST CARROLL PARISH SCHOOL BOARD" TO INME_GRPN    
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING U_ECAR_FD,U_ECAR_NAME,INM_LIST
+   CLEAR INM_LIST
+   RETURN
+
+POP_DEP 
+   MOVE ECARROL_ESSN TO INM_ESSN
+   MOVE ECARROL_PSSN TO INM_PSSN
+   MOVE ECARROL_LNAME TO INM_LNAME
+   MOVE ECARROL_FNAME TO INM_FNAME
+   MOVE ECARROL_DOB TO INM_DOB
+   MOVE ECARROL_SEX TO INM_SEX
+   MOVE ECARROL_REL TO INM_REL
+   MOVE ECARROL_ADDR1 TO INM_ADDR1
+   MOVE ECARROL_ADDR2 TO INM_ADDR2
+   MOVE ECARROL_CITY TO INM_CITY
+   MOVE ECARROL_STATE TO INM_STATE
+   MOVE ECARROL_ZIP TO INM_ZIP
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING U_ECAR_FD,U_ECAR_NAME,INM_LIST
+   CLEAR INM_LIST
+   RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING ECARROL_FD,ECARROL_NAME
+         CALL      PREP_OGBFILE USING U_ECAR_FD,U_ECAR_NAME   
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1001284.PS
+. +++++++++++++++++++++++++++++++++++++

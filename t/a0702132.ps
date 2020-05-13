@@ -1,0 +1,320 @@
++    Program Name   :  EA0606232.PS
++    Description    :  Life Census                                      
++
++    NOTE: Program is designed for use with a0702131                      
++          Run a0702131 first, build FACE_LIFE file, run this program        
++          FACE_LIFE (/w/fl.txt and /w/fl.ix1) file built as follows
++          reformat /w/cen_inp.txt /w/newfile.txt 1-8 -p9=S -j -t
++          use newfile.txt as input for u_bilext; use current date
++          reformat output.txt /w/fl.txt -p368-371=LIFE 
++                   457-464 469-472 394-404 -t     (output in bild.rl layout)
++          index /w/fl.txt /w/fl.ix1 1-8 -d        (with dups)
++    apsjm 06/23/2006 a0606231 adh - initial version                      
++    
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    apeks 10/18/2012 changes for 2012 bid
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEME.RL              Member Enrollment/Elig File 
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+BIL_INP_FD      FILE      VAR=100,TEXT
+BIL_INP_NAME    INIT      "/w/cen_inp.txt"
+BIL_INP_LIST    LIST
+BIL_INP_ID1     DIM       8
+BIL_INP_DSW     DIM       1    -- S-SUB D-DEP
+BIL_INP_AR      DIM       1    -- A-ACT R-RET
+BIL_INP_SEX     DIM       1
+BIL_INP_DOB     DIM       8
+BIL_INP_FL      DIM       10
+BIL_INP_ADD     DIM       10
+                LISTEND
+.
+FACE_LIFE_FD    IFILE     VAR=32,TEXT,KEYL=8
+FACE_LIFE_NAME  INIT      "/w/fl.ix1"
+FACE_LIFE_LIST  LIST
+FACE_LIFE_ID1   DIM       8
+FACE_LIFE_TYPE  DIM       4
+FACE_LIFE_FL    DIM       10
+                LISTEND
+FACE_LIFE_KEY   DIM       8
+.
+CENSUS_FD       FILE      VAR=100,TEXT
+CENSUS_NAME     INIT      "/w/life_census.txt"
+CENSUS_LIST     LIST
+CENSUS_DSW     DIM       1    -- S-SUB D-DEP
+CENSUS_AR      DIM       1    -- A-ACT R-RET -- on subscriber records only
+CENSUS_SEX     DIM       1
+CENSUS_DOB     DIM       8
+CENSUS_FL      DIM       10
+CENSUS_ADD     DIM       10
+                LISTEND
+.----------------------------------------------------------------------------
+.Work File Declaration...this file is created by reformatting meme for eff cov
+.----------------------------------------------------------------------------
+.
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+...Work file variables
+WRK_CENSUS_FL DIM 10
+SPACE_3    DIM    3
+DIM_7         DIM  7
+DIM_2         DIM  2
+DIM_1        DIM   1
+RT_1          DIM  1
+CNT_4         DIM  4
+CNT_3         DIM  3
+LIFE           INIT      "LIFE "
+RET            INIT      "R"
+W_DIM1         DIM       1
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+FIRST_READ     DIM       1
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+SWT_UPS        DIM       1
+SWT_REL        DIM       2
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         DEBUG
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+         CALL MAIN_PROCESS
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+         CALL OPEN_FILES
+         CALL READ_INP     
+         CALL CLOSE_FILES
+         RETURN
+.
+READ_INP     
+ MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+   CALL READ_OGBFILE USING BIL_INP_FD,BIL_INP_NAME,BIL_INP_LIST
+     IF (RESULT <> 1)
+        BREAK
+     ENDIF
+   ADD 1 TO X_CNT1
+   UNPACK X_CNT1 INTO CNT_4,CNT_3
+   IF (CNT_3 = "000")
+     CALL X_DISPLAY_COUNTS
+   ENDIF
+   IF (BIL_INP_DSW = "D")
+      UNPACK BIL_INP_FL INTO DIM_7,DIM_1,DIM_2
+      IF (DIM_1 = ".")
+         MOVE DIM_7 TO CENSUS_FL
+         PACKLEN CENSUS_FL WITH SPACE_3,DIM_7
+         MOVE BLANKS TO CENSUS_ADD
+      ELSE
+         MOVE BIL_INP_FL TO CENSUS_FL
+         MOVE BLANKS TO CENSUS_ADD
+      ENDIF
+   ELSE
+      CALL READ_FACE 
+   ENDIF 
+   MOVE BIL_INP_DSW TO CENSUS_DSW
+   MOVE BIL_INP_AR  TO CENSUS_AR 
+   MOVE BIL_INP_SEX TO CENSUS_SEX
+   MOVE BIL_INP_DOB TO CENSUS_DOB
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING CENSUS_FD,CENSUS_NAME,CENSUS_LIST
+   CLEAR CENSUS_LIST
+ REPEAT 
+ RETURN
+.
+READ_FACE
+ debug
+ MOVE BLANKS TO WRK_CENSUS_FL
+ MOVE BIL_INP_ID1 TO FACE_LIFE_KEY
+ MOVE "Y" TO FIRST_READ
+ LOOP
+  IF (FIRST_READ = "Y")
+     CALL READ_OGBFILE_IX USING FACE_LIFE_FD,FACE_LIFE_NAME:
+                                FACE_LIFE_KEY,FACE_LIFE_LIST
+     MOVE "N" TO FIRST_READ
+  ELSE
+     CALL READKS_OGBFILE_IX USING FACE_LIFE_FD,FACE_LIFE_NAME:
+                                  FACE_LIFE_LIST
+  ENDIF
+  IF (RESULT <> 1)
+     BREAK
+  ENDIF
+  IF (FACE_LIFE_ID1 <> FACE_LIFE_KEY)
+     BREAK
+  ENDIF
+  UNPACK FACE_LIFE_FL INTO DIM_7,DIM_1,DIM_2
+  IF (DIM_1 = ".")
+       PACKLEN WRK_CENSUS_FL WITH SPACE_3,DIM_7
+  ELSE
+       MOVE FACE_LIFE_FL TO WRK_CENSUS_FL
+  ENDIF
+  IF (FACE_LIFE_TYPE = "PRAD")
+    MOVE WRK_CENSUS_FL TO CENSUS_ADD
+  ELSE
+    MOVE WRK_CENSUS_FL TO CENSUS_FL 
+  ENDIF
+ REPEAT
+ RETURN
+       
+.
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+    CALL OPEN_OGBFILE USING BIL_INP_FD,BIL_INP_NAME 
+    CALL OPEN_OGBFILE_IX USING FACE_LIFE_FD,FACE_LIFE_NAME 
+    CALL PREP_OGBFILE USING CENSUS_FD,CENSUS_NAME 
+    RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       CLOCK     TIMESTAMP INTO CURRDATE
+       MOVE      "menu"         TO C_NEXT
+       MOVE      "A0606231"  TO C_PROG
+       MOVE      "EXT CENSUS DATA" TO C_OPER
+       MOVE      1 TO C_LEVEL
+       MOVE      BLANKS TO C_LABEL
+       MOVE      BLANKS TO C_FILE
+       MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	 MOVE      "Records Read:     " TO X_CNTDESC1
+	 MOVE      "Records Written:  " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+	 
+       RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

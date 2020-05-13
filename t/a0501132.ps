@@ -1,0 +1,757 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0501132.ps
++    Description    :  This program extracts the following figures:   
++                      (1). Total # of Members who died >= 1-1-2002 and had
++                           health coverage when they died.
++                      (2). Total # of OGB Members who died >= 1-1-2002 and 
++                           incurred expenses in the 36-month period prior
++                           to their death & the total amount paid out.
++                      (3). Total # of Members who died >= 1-1-2002 and 
++                           incurred drug expenses the last 36 months + total
++                           amount paid out.
++                      (4). Total # of ASO Members who died >= 1-1-2002 and 
++                           incurred expenses in the 35-month period + total
++                           amount paid out.
++
++    Author         :  apajp
++    Date created   :  01/28/2005
++    Project Number :  A0501132
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++------------------------------------------------------------------------------
++  apajp 02/03/2005 A0501132 COR - Eliminate claims that are not Form Type 
++                                  'H' or 'U'.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       CLM.RL               ...Claims Header
+              INC       MEME.RL              ...Member Enrollment
+              INC       MEMX.RL              ...Member External Accums
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+REF_FILE         FILE  VAR=16,TEXT
+REF_NAME         INIT   "/w/a0501132.ref"
+
+REF_REC          LIST
+..<Begin>....................................................................
+REF_RECID        DIM     8        
+REF_DOD          DIM     8
+..<End>......................................................................
+                 LISTEND
+
+IDX_FILE         IFILE  VAR=24,KEYL=8,NODUP,TEXT
+IDX_NAME         INIT   "/w/a0501132.ix1"
+
+IDX_REC          LIST
+..<Begin>....................................................................
+IDX_KEY          DIM     8               -- Recid
+IDX_FROM         DIM     8
+IDX_DOD          DIM     8
+..<End>......................................................................
+                 LISTEND
+
+OUT_FILE         FILE   VAR=52,TEXT
+OUT_NAME         INIT   "/w/a0501132.out"
+OUT_SORT         INIT   "/w/a0501132.srt"
+OUT_SRTKEY       INIT   "1-8 -t"
+
+OUT_REC          LIST
+..<Begin>....................................................................
+OUT_RECID        DIM     8
+OUT_FROM         DIM     8
+OUT_DOD          DIM     8 
+OUT_CLMID        DIM     8
+OUT_TCHG         FORM    7.2
+OUT_PAID         FORM    7.2
+..<End>......................................................................
+                 LISTEND
+                 
+OUTX_FILE         FILE   VAR=48,TEXT
+OUTX_NAME         INIT   "/w/a0501132.memx"
+OUTX_SORT         INIT   "/w/a0501132.srtx"
+OUTX_SRTKEY       INIT   "5-12 -p1-4eq#"DRUG#" -t"
+OUTS_SORT         INIT   "/w/a0501132.srts"
+OUTS_SRTKEY       INIT   "5-12 -p1-4eq#"LIFE#" -t"
+
+OUTX_REC          LIST
+..<Begin>....................................................................
+OUTX_ACCTYP       DIM    4
+OUTX_RECID        DIM    8
+OUTX_FROM         DIM    8
+OUTX_DOD          DIM    8
+OUTX_TCHG         FORM   7.2
+OUTX_PAID         FORM   7.2
+..<End>......................................................................
+                 LISTEND
+
+TOT_FILE         FILE   VAR=34,TEXT
+TOT_NAME         INIT   "/w/a0501132.tot"
+
+TOT_REC         LIST
+..<Begin>....................................................................
+TOT_RECTYP       DIM     1   --"1"=Total Deceased Members (Charge will be 0.00)
+.                              "2"=Total Deceased w/OGB Claims Experience
+.                              "3"=Total Deceased w/Rx Claims Experience
+.                              "4"=Total Deceased w/ASO Claims Experience 
+TOT_DECMEMS      FORM    5
+TOT_TCHG         FORM    11.2 
+TOT_PAID         FORM    11.2
+..<End>......................................................................
+                 LISTEND
+
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       8
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+FIRST_READ       FORM      1
+FORM72           FORM      7.2
+HAS_HEALTH       FORM      1
+PREV_RECID       DIM       8
+WS_CNT           FORM      4
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+              
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "Deceased Members - Claim Expenses" TO  C_OPER
+         MOVE      "A0501132"            TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         DEBUG
+         CALL      INITIALIZE
+         CALL      REFORMAT_MEM
+         CALL      OPEN_FILES
+         CALL      CALC_36MONTHS
+         CALL      GET_OGB_CLAIMS
+         CALL      GET_MEMX_CLAIMS
+         CALL      CLOSE_FILES
+
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="25",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="  PROGRAM COMPLETED NORMALLY  ":
+                          TEXT="------------------------------":
+                          TEXT="  Press any key to continue   ":
+                          FIELD=WCHAR         
+         ENDIF
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Deceased Members   : " TO X_CNTDESC1
+       	 MOVE      "Clm Recs Read      : " TO X_CNTDESC2
+	        MOVE      "OGB Claims Counted : " TO X_CNTDESC3
+	        MOVE      "MEMX Recs Read     : " TO X_CNTDESC4
+      	  MOVE      "Rx Claims Counted  : " TO X_CNTDESC5
+	        MOVE      "ASO Claims COunted : " TO X_CNTDESC6
+
+         CALL X_DISPLAY_COUNTS
+
+         RETURN
+
+. ----------------------------
+. Reformat MEM for Deceased Dates
+. ----------------------------
+
+REFORMAT_MEM
+
+         MESSAGE   HORZ="22",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="Reformatting MEM.......please wait";
+                   
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "mem.dbf ", REF_NAME, " -t -j":
+                           " -p291-298ge#"20020101#"":
+                           " 1-8":       ...Claim Number
+                           " 291-298"    ...Date of Death
+         REFORMAT SCRATCH
+             
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED"
+             CHAIN     "menu"
+         ENDIF         
+
+         DISPLAY        *P19:20,*BGCOLOR=C_ERRB,*EL:
+                        *P19:21,*BGCOLOR=C_ERRB,*EL:
+                        *P19:22,*BGCOLOR=C_ERRB,*EL:
+                        *P19:23,*BGCOLOR=C_ERRB,*EL         
+
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+ 
+         MOVE REF_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING REF_FILE, REF_NAME
+
+         MOVE IDX_NAME TO C_FILE
+         CALL PREP_OGBFILE_IX USING IDX_FILE,IDX_NAME
+         
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         MOVE OUTX_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUTX_FILE,OUTX_NAME
+
+         MOVE TOT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING TOT_FILE,TOT_NAME
+
+         RETURN
+
+. ----------------------------
+. If the Deceased had Health at the time of death, calculate 36 Months
+. Prior to Date of Death
+. ----------------------------
+
+CALC_36MONTHS
+
+         LOOP
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             MOVE REF_NAME TO C_FILE
+             CALL READ_OGBFILE USING REF_FILE,REF_NAME,REF_REC
+             IF (RESULT <> 1) 
+                 MOVE "1" TO TOT_RECTYP
+                 CALL WRITE_TOT
+                 BREAK
+             ENDIF
+             ADD 1 TO X_CNT1                        ...Display Counters
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF 
+
+. Check for Health Coverage at time of Death
+             CLEAR HAS_HEALTH 
+             MOVE REF_RECID TO MEME_FK11
+             CALL FILE_READ USING MEME_FD:        ...FILE DECLARATION LIST
+                                  MEME_FN:        ...FILE NAME LIST
+                                  MEME_FC:        ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                                  MEME_FV:        ...FILE KEY VARLISTS
+                                  MEME_FK:        ...FILE KEY SIZES
+                                  MEME_LIST:      ...FILE RECORD (FIELD LIST)
+                                  MEME_REC:       ...FILE RECORD (PACKED)
+                                  MEME_OLD:       ...FILE SAVED WHEN READ
+                                  MEME_QTY:       ...NUMBER OF FILES
+                                  1               ...FILE NUMBER FOR THIS READ
+             LOOP
+                 CALL FILE_NEXT USING MEME_FD:   ...FILE DECLARATION LIST
+                                      MEME_FN:   ...FILE NAME LIST
+                                      MEME_FC:   ...TYPE OF INDEX
+.                                                ...(I)NDEX or (A)IMDEX
+                                      MEME_FV:   ...FILE KEY VARLISTS
+                                      MEME_FK:   ...FILE KEY SIZES
+                                      MEME_LIST: ...FILE RECORD (FIELD LIST)
+                                      MEME_REC:  ...FILE RECORD (PACKED)
+                                      MEME_OLD:  ...FILE SAVED WHEN READ
+                                      MEME_QTY:  ...NUMBER OF FILES
+                                      1          ...FILE NUMBER FOR THIS READ
+                 IF ((RESULT <> 1) OR (MEME_ID1 <> REF_RECID))
+                      BREAK                  
+                 ENDIF	
+
+                 IF (MEME_PRD = "LIFE ")
+                     CONTINUE
+                 ENDIF   
+
+                 IF (MEME_EFF > REF_DOD)
+                     CONTINUE
+                 ENDIF
+
+                 IF ((SQUEEZE MEME_TRM >"") AND (MEME_TRM <= REF_DOD))
+                      CONTINUE
+                 ENDIF
+
+                 SET HAS_HEALTH 
+                 BREAK
+
+             REPEAT  ...(MEME Loop)
+
+
+             IF (NOT HAS_HEALTH)
+                 CONTINUE
+             ENDIF
+
+             ADD 1 TO TOT_DECMEMS
+             MOVE REF_RECID TO IDX_KEY
+             MOVE REF_DOD TO IDX_DOD
+             CALL DATE_CALC USING REF_DOD,"SUB","MONTHS",36,IDX_FROM
+             
+             MOVE IDX_NAME TO C_FILE
+             MOVE IDX_KEY TO C_KEYS
+             CALL WRITE_OGBREC_IX USING IDX_FILE,IDX_NAME,IDX_KEY,IDX_REC                 
+
+         REPEAT   ...(REF_FILE Loop)
+
+         RETURN
+
+. ----------------------------
+. Extract OGB Claims Data for Deceased Members
+. ----------------------------
+
+GET_OGB_CLAIMS
+
+         DEBUG
+         PACK CLM_FK11 WITH BLANKS
+         CALL FILE_READ USING CLM_FD:          ...FILE DECLARATION LIST
+                              CLM_FN:          ...FILE NAME LIST
+                              CLM_FC:          ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                              CLM_FV:          ...FILE KEY VARLIST
+                              CLM_FK:          ...FILE KEY SIZES
+                              CLM_LIST:        ...FILE RECORD (FIELD LIST)
+                              CLM_REC:         ...FILE RECORD (PACKED)
+                              CLM_OLD:         ...FILE SAVED WHEN READ
+                              CLM_QTY:         ...NUMBER OF FILES
+                              1                ...FILE NUMBER FOR THIS READ
+
+         LOOP
+        	    CALL FILE_NEXT USING CLM_FD:
+             CLM_FN:			...File Name List
+		           CLM_FC:   ...(I)ndex or (A)imdex
+	            CLM_FV:   ...File Key Varlists
+             CLM_FK:	  ...File Key sizes
+             CLM_LIST:	...File record (field list)
+             CLM_REC:  ...File record (packed)
+             CLM_OLD:  ...File saved when read
+             CLM_QTY:  ...Number of files
+             1         ...File number for this read
+               
+             IF (RESULT <> 1)
+                 BREAK 
+             ENDIF 
+
+	            ADD 1 TO X_CNT2
+             UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF 
+
+             IF (CLM_FORM <> "H" AND CLM_FORM <> "U")
+                 CONTINUE
+             ENDIF
+                
+             IF (SQUEEZE CLM_ADJTO <> "") 
+                 CONTINUE
+             ENDIF
+
+             MOVE CLM_12 TO IDX_KEY
+             MOVE IDX_NAME TO C_FILE
+             CALL READ_OGBFILE_IX USING IDX_FILE,IDX_NAME,IDX_KEY,IDX_REC
+             IF (RESULT <> 1)
+                 CONTINUE
+             ENDIF 
+
+             IF ((CLM_6A >= IDX_FROM) AND (CLM_6A <= IDX_DOD))
+                  MOVE CLM_12 TO OUT_RECID
+                  MOVE CLM_6A TO OUT_FROM
+                  MOVE IDX_DOD TO OUT_DOD
+                  MOVE CLM_ID1 TO OUT_CLMID
+                  MOVE CLM_TCHG TO OUT_TCHG 
+                  MOVE CLM_PAYP TO FORM72
+                  MOVE CLM_PAYE TO OUT_PAID
+                  ADD  FORM72 TO OUT_PAID
+                  CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_REC
+             ENDIF
+                 
+         REPEAT
+
+
+. Sort the OUT file then read the sorted data accumulating a count 
+. of the members who incurred claims and the total amount charged.
+         MOVE OUT_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+         CALL SORT_OGBFILE  USING OUT_NAME,OUT_SORT,OUT_SRTKEY
+         
+         IF OVER
+             ERROR     HORZ="22",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="SORT FAILED"
+             CHAIN     "menu"
+         ELSE
+             DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL   
+         ENDIF
+
+         CALL OPEN_OGBFILE USING OUT_FILE,OUT_SORT
+
+         SET FIRST_READ
+
+         LOOP
+             MOVE OUT_SORT TO C_FILE
+             CALL READ_OGBFILE USING OUT_FILE, OUT_SORT, OUT_REC
+             IF (RESULT <> 1)
+                 BREAK
+             ENDIF
+
+	            ADD 1 TO X_CNT3
+             UNPACK X_CNT3 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF 
+
+             IF (FIRST_READ)
+                 CLEAR FIRST_READ
+                 MOVE OUT_RECID TO PREV_RECID
+                 MOVE 1 TO TOT_DECMEMS
+             ENDIF
+
+             IF (OUT_RECID = PREV_RECID)
+                 ADD OUT_TCHG TO TOT_TCHG
+                 ADD OUT_PAID TO TOT_PAID
+             ELSE
+                 ADD 1 TO TOT_DECMEMS
+                 ADD OUT_TCHG TO TOT_TCHG
+                 ADD OUT_PAID TO TOT_PAID
+                 MOVE OUT_RECID TO PREV_RECID
+             ENDIF
+
+         REPEAT
+
+         MOVE "2" TO TOT_RECTYP   
+         CALL WRITE_TOT
+  
+         RETURN
+
+. ----------------------------
+. Extract All Claim Types from MEMX for Deceased Members
+. ----------------------------
+
+GET_MEMX_CLAIMS
+
+         DEBUG
+         PACK MEMX_KEY WITH BLANKS
+         CALL MEMX_READ
+
+         LOOP
+        	    CALL MEMX_NEXT
+             IF (RESULT <> 1)
+                 BREAK 
+             ENDIF 
+
+****TESTING*******************
+*             IF (WS_CNT > 2999)
+*                 BREAK 
+*             ENDIF 
+******************************
+
+	            ADD 1 TO X_CNT4
+             UNPACK X_CNT4 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF 
+
+             MOVE MEMX_ID TO IDX_KEY
+             MOVE IDX_NAME TO C_FILE
+             CALL READ_OGBFILE_IX USING IDX_FILE,IDX_NAME,IDX_KEY,IDX_REC
+             IF (RESULT <> 1)
+                 CONTINUE
+             ENDIF 
+
+             IF ((MEMX_DOSF >= IDX_FROM) AND (MEMX_DOSF <= IDX_DOD))
+                  MOVE MEMX_ID TO OUTX_RECID
+                  MOVE MEMX_DOSF TO OUTX_FROM
+                  MOVE IDX_DOD TO OUTX_DOD
+                  MOVE MEMX_ACCU TO OUTX_ACCTYP
+                  MOVE MEMX_TCHG TO OUTX_TCHG 
+                  MOVE MEMX_AMT TO OUTX_PAID
+                  CALL WRITE_OGBREC USING OUTX_FILE,OUTX_NAME,OUTX_REC
+**TESTING************************
+*                  ADD 1 TO WS_CNT
+*********************************
+             ENDIF
+                 
+         REPEAT
+
+
+. Sort the .MEMX file into 2 Files -- a DRUG Claim file and an ASO Claim file.  For each, accumulate a count 
+. Accumulate the members who incurred claims and the total amount charged for
+. Each.
+         MOVE OUTX_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING OUTX_FILE,OUTX_NAME
+         CALL SORT_OGBFILE USING OUTX_NAME,OUTX_SORT,OUTX_SRTKEY
+         IF OVER
+             ERROR     HORZ="22",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="Rx SORT FAILED"
+             CHAIN     "menu"
+         ELSE
+             DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL   
+         ENDIF
+
+         CALL SORT_OGBFILE USING OUTX_NAME, OUTS_SORT, OUTS_SRTKEY 
+         IF OVER
+             ERROR     HORZ="22",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="ASO SORT FAILED"
+             CHAIN     "menu"
+         ELSE
+             DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL   
+         ENDIF
+
+
+. ----------------------------
+. Rx Drug Accumulation
+. ----------------------------
+         CALL OPEN_OGBFILE USING OUTX_FILE,OUTX_SORT
+
+         SET FIRST_READ
+
+         LOOP
+             MOVE OUTX_SORT TO C_FILE
+             CALL READ_OGBFILE USING OUTX_FILE, OUTX_SORT, OUTX_REC
+             IF (RESULT <> 1)
+                 BREAK
+             ENDIF
+
+	            ADD 1 TO X_CNT5
+             UNPACK X_CNT5 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF 
+
+             IF (FIRST_READ)
+                 CLEAR FIRST_READ
+                 MOVE OUTX_RECID TO PREV_RECID
+                 MOVE 1 TO TOT_DECMEMS
+             ENDIF
+
+             IF (OUTX_RECID = PREV_RECID)
+                 ADD OUTX_TCHG TO TOT_TCHG
+                 ADD OUTX_PAID TO TOT_PAID
+            ELSE
+                 ADD 1 TO TOT_DECMEMS
+                 ADD OUTX_TCHG TO TOT_TCHG
+                 ADD OUTX_PAID TO TOT_PAID
+                 MOVE OUTX_RECID TO PREV_RECID
+            ENDIF
+
+         REPEAT
+
+         MOVE "3" TO TOT_RECTYP   
+         CALL WRITE_TOT
+  
+. ----------------------------
+. ASO Claim Accumulation
+. ----------------------------
+         CALL OPEN_OGBFILE USING OUTX_FILE,OUTS_SORT
+
+         SET FIRST_READ
+
+         LOOP
+             MOVE OUTS_SORT TO C_FILE
+             CALL READ_OGBFILE USING OUTX_FILE, OUTS_SORT, OUTX_REC
+             IF (RESULT <> 1)
+                 BREAK
+             ENDIF
+
+	            ADD 1 TO X_CNT6
+             UNPACK X_CNT6 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF 
+
+             IF (FIRST_READ)
+                 CLEAR FIRST_READ
+                 MOVE OUTX_RECID TO PREV_RECID
+                 MOVE 1 TO TOT_DECMEMS
+             ENDIF
+
+             IF (OUTX_RECID = PREV_RECID)
+                 ADD OUTX_TCHG TO TOT_TCHG
+                 ADD OUTX_PAID TO TOT_PAID
+            ELSE
+                 ADD 1 TO TOT_DECMEMS
+                 ADD OUTX_TCHG TO TOT_TCHG
+                 ADD OUTX_PAID TO TOT_PAID
+                 MOVE OUTX_RECID TO PREV_RECID
+            ENDIF
+
+         REPEAT
+
+         MOVE "4" TO TOT_RECTYP   
+         CALL WRITE_TOT
+  
+         RETURN
+
+. ----------------------------
+. Write the Various Totals Records
+. ----------------------------
+
+WRITE_TOT
+         MOVE TOT_NAME TO C_FILE
+         CALL WRITE_OGBREC USING TOT_FILE, TOT_NAME, TOT_REC
+         CLEAR TOT_REC
+       
+         RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         MOVE REF_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING REF_FILE, REF_NAME
+
+         MOVE IDX_NAME TO C_FILE
+         CALL CLOSE_OGBFILE_IX USING IDX_FILE,IDX_NAME
+   
+         MOVE OUT_SORT TO C_FILE      
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_SORT
+
+         MOVE TOT_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING TOT_FILE,TOT_NAME
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       MEMX.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of a0501132.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,505 @@
++    Program Name   :  A0702131.PS
++    Description    :  Life Census                                      
++    apsjm 02/13/2007 a0702131 adh - initial version                      
++    
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEME.RL              Member Enrollment/Elig File 
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+BIL_INP_FD      FILE      VAR=100,TEXT
+BIL_INP_NAME    INIT      "/w/cen_inp.txt"
+BIL_INP_LIST    LIST
+BIL_INP_ID1     DIM       8
+BIL_INP_DSW     DIM       1    -- S-SUB D-DEP
+BIL_INP_AR      DIM       1    -- A-ACT R-RET
+BIL_INP_SEX     DIM       1
+BIL_INP_DOB     DIM       8
+BIL_INP_FL      DIM       10
+BIL_INP_ADD     DIM       10
+                LISTEND
+.
+.----------------------------------------------------------------------------
+.Work File Declaration...this file is created by reformatting meme for eff cov
+.----------------------------------------------------------------------------
+MEME_RF_FD       FILE      VAR=8,TEXT
+MEME_RF_NAME     INIT      "/w/meme.a0606231.txt"
+MEME_RF_LIST     LIST
+MEME_RF_ID1      DIM       8
+                 LISTEND
+.
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+...Work file variables
+DIM_3         DIM  3
+DIM_1         DIM  1
+W_RIDERS      DIM  40
+FIRST_READ    DIM  1
+CNT_4         DIM  4
+CNT_3         DIM  3
+LIFE           INIT      "LIFE "
+RET            INIT      "R"
+W_DIM1         DIM       1
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+SWT_UPS        DIM       1
+SWT_REL        DIM       2
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         DEBUG
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+         CALL MAIN_PROCESS
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+         CALL REFORMAT_MEME_FILE
+         CALL OPEN_FILES
+         CALL READ_RF_MEME
+         CALL CLOSE_FILES
+         RETURN
+.
+READ_RF_MEME
+ MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+   CALL READ_OGBFILE USING MEME_RF_FD,MEME_RF_NAME,MEME_RF_LIST
+     IF (RESULT <> 1)
+        BREAK
+     ENDIF
+   ADD 1 TO X_CNT1
+   UNPACK X_CNT1 INTO CNT_4,CNT_3
+   IF (CNT_3 = "000")
+     CALL X_DISPLAY_COUNTS
+   ENDIF
+   PACK      MEM_FK11 WITH MEME_RF_ID1
+   CALL      FILE_READ USING MEM_FD:    ...File declaration list
+        MEM_FN:   ...File name list
+        MEM_FC:   ...(I)ndex or (A)imdex
+        MEM_FV:   ...File key varlists
+        MEM_FK:   ...File key sizes
+        MEM_LIST: ...File record (field list)
+        MEM_REC:  ...File record (packed)
+        MEM_OLD:  ...File saved when read
+        MEM_QTY:  ...Number of files
+        1         ...File number for this read
+
+          IF (RESULT <> 1) 
+            CONTINUE
+          ENDIF
+          IF (MEM_REL <> "01")
+              CONTINUE
+          ENDIF
+
+          IF (SQUEEZE MEM_RETD = "")
+             PACK BIL_INP_AR WITH "A",BLANKS
+          ELSE
+             PACK BIL_INP_AR WITH "R",BLANKS
+          ENDIF
+
+        PACK MEME_FK11 WITH MEME_RF_ID1,BLANKS
+        CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              IF ((MEME_ID1 <> MEME_RF_ID1) OR (RESULT <> 1))
+                  BREAK       
+              ENDIF
+              IF (SQUEEZE MEME_NET <> "LIFE")
+                 CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_TRM <> "") 
+                IF (MEME_TRM < MEME_EFF)
+                   CONTINUE
+                ENDIF
+              ENDIF
+              IF ((SQUEEZE MEME_LEV2 =  "95") AND (SQUEEZE MEME_MODE = ""))
+                  CONTINUE
+              ENDIF
+              IF (MEME_EFF > CURRDATE)
+                  CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_TRM = "")
+                MOVE "99999999" TO MEME_TRM
+              ENDIF
+              IF ((CURRDATE < MEME_EFF) OR (CURRDATE > MEME_TRM))
+                CONTINUE
+              ENDIF
+              MOVE MEME_RF_ID1 TO BIL_INP_ID1
+              MOVE "S" TO BIL_INP_DSW
+              MOVE MEM_SEX TO BIL_INP_SEX
+              MOVE MEM_DOB TO BIL_INP_DOB
+              MOVE OGB_SEQ1 TO OGB_SEQ
+              CALL WRITE_OGBREC USING BIL_INP_FD,BIL_INP_NAME,BIL_INP_LIST
+              CLEAR BIL_INP_LIST
+              CLEAR W_RIDERS
+              PACKLEN W_RIDERS WITH MEME_RD01,MEME_RD02,MEME_RD03:
+                            MEME_RD04,MEME_RD05,MEME_RD06,MEME_RD07,MEME_RD08:
+                            MEME_RD09,MEME_RD10
+              IF ((SQUEEZE W_RIDERS = "DLBL") OR (SQUEEZE W_RIDERS = "DLBH"):
+                 OR (SQUEEZE W_RIDERS = "DLSL") OR (SQUEEZE W_RIDERS = "DLSH"):
+                 OR (SQUEEZE W_RIDERS = "DLG1") OR (SQUEEZE W_RIDERS = "DLG2"):
+                 OR (SQUEEZE W_RIDERS = "DLG3") OR (SQUEEZE W_RIDERS = "DLG4"):
+                 OR (SQUEEZE W_RIDERS = "DLG5"))                             
+                 CALL GET_DEPS
+                 BREAK
+              ENDIF
+         REPEAT
+ REPEAT 
+ RETURN
+.
+GET_DEPS   
+    MOVE      "Y" TO FIRST_READ
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+ LOOP
+    IF (FIRST_READ = "Y")
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+       MOVE "N" TO FIRST_READ
+    ELSE
+       CALL      FILE_NEXT USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+    ENDIF
+    IF (RESULT <> 1)
+       BREAK    
+    ENDIF
+    IF (MEM_REL = "01")
+       CONTINUE
+    ENDIF
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+	                   MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             LOOP
+                CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+                IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                      BREAK
+                ENDIF
+                IF (SQUEEZE MEME_NET <> "LIFE")
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM <> "") 
+                  IF (MEME_TRM < MEME_EFF)
+                     CONTINUE
+                  ENDIF
+                ENDIF
+                IF (MEME_EFF > CURRDATE)
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                  MOVE "99999999" TO MEME_TRM
+                ENDIF
+                IF ((CURRDATE < MEME_EFF) OR (CURRDATE > MEME_TRM))
+                   CONTINUE
+                ELSE
+                  MOVE MEME_ID1 TO BIL_INP_ID1
+                  MOVE "D" TO BIL_INP_DSW
+                  MOVE MEM_SEX TO BIL_INP_SEX
+                  MOVE MEM_DOB TO BIL_INP_DOB
+                  IF (SQUEEZE W_RIDERS = "DLBL")
+                     SWITCH MEM_REL
+                        CASE "02" 
+                           MOVE "      1000" TO BIL_INP_FL
+                        CASE "03"
+                           MOVE "       500" TO BIL_INP_FL
+                     ENDSWITCH
+                  ELSE
+                   IF (SQUEEZE W_RIDERS = "DLBH")
+                       SWITCH MEM_REL
+                          CASE "02" 
+                             MOVE "      2000" TO BIL_INP_FL
+                          CASE "03"
+                             MOVE "      1000" TO BIL_INP_FL
+                       ENDSWITCH
+                   ELSE
+                      IF (SQUEEZE W_RIDERS = "DLSL")
+                         SWITCH MEM_REL
+                            CASE "02" 
+                               MOVE "      2000" TO BIL_INP_FL
+                            CASE "03"
+                               MOVE "      1000" TO BIL_INP_FL
+                         ENDSWITCH
+                      ELSE
+                         IF (SQUEEZE W_RIDERS = "DLSH")
+                           SWITCH MEM_REL
+                              CASE "02" 
+                                 MOVE "      4000" TO BIL_INP_FL
+                              CASE "03"
+                                 MOVE "      2000" TO BIL_INP_FL
+                           ENDSWITCH
+                         ELSE
+                           UNPACK (CHOP W_RIDERS) INTO DIM_3,DIM_1
+                           SWITCH DIM_1
+                              CASE "1"
+                                MOVE "      1000" TO BIL_INP_FL
+                              CASE "2"
+                                MOVE "      2000" TO BIL_INP_FL
+                              CASE "3"
+                                MOVE "      3000" TO BIL_INP_FL
+                              CASE "4"
+                                MOVE "      4000" TO BIL_INP_FL
+                              CASE "5"
+                                MOVE "      5000" TO BIL_INP_FL
+                           ENDSWITCH   
+                         ENDIF  
+                      ENDIF
+                   ENDIF
+                  ENDIF
+                ENDIF
+                IF (SQUEEZE BIL_INP_FL <> "")
+                  MOVE OGB_SEQ1 TO OGB_SEQ
+                  CALL WRITE_OGBREC USING BIL_INP_FD,BIL_INP_NAME,BIL_INP_LIST
+                  CLEAR BIL_INP_LIST
+                ENDIF
+                BREAK    
+             REPEAT
+ REPEAT
+ RETURN
+
+.--------------------
+.Reformat MEME file
+.--------------------
+ DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+           *P30:21, "REFORMATTING MEME", *BOLDOFF
+REFORMAT_MEME_FILE
+ CLEAR SCRATCH
+ PACK SCRATCH WITH "/mcsapl/home/apsjm/meme.dbf"," ","/w/meme.a0606231.txt":
+ " -p112-116eq",LIFE:
+ " 1-8 -t -j"
+ REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(MEME.DBF)"
+         CHAIN     "MENU"
+     ENDIF
+ MOVE BLANKS TO SCRATCH
+ PACK     SCRATCH WITH MEME_RF_NAME," ",MEME_RF_NAME:
+          " 1-8 -u -t"
+ SORT     SCRATCH 
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="SORT FAILED"
+         CHAIN     "MENU"
+     ENDIF
+ RETURN
+.
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+    CALL OPEN_OGBFILE USING MEME_RF_FD,MEME_RF_NAME 
+    CALL PREP_OGBFILE USING BIL_INP_FD,BIL_INP_NAME
+    RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+    CALL CLOSE_OGBFILE USING MEME_RF_FD,MEME_RF_NAME 
+    CALL CLOSE_OGBFILE USING BIL_INP_FD,BIL_INP_NAME
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       CLOCK     TIMESTAMP INTO CURRDATE
+       MOVE      "menu"         TO C_NEXT
+       MOVE      "A0606231"  TO C_PROG
+       MOVE      "EXT CENSUS DATA" TO C_OPER
+       MOVE      1 TO C_LEVEL
+       MOVE      BLANKS TO C_LABEL
+       MOVE      BLANKS TO C_FILE
+       MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	 MOVE      "Records Read:     " TO X_CNTDESC1
+	 MOVE      "Records Written:  " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+	 
+       RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

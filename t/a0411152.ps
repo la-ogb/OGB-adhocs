@@ -1,0 +1,766 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0411152.PS
++    Description    :  Reads the file of SocSec sent by United Health and 
++                   :  searches the Mem file in order to find the Enrollee's   
++                   :  information then it reads the Mema file to find the     
++                   :  accum for Current Year Deductible for In and Out of 
++                   :  Network as well as the Out of Pocket In/Out of Network.
++                   :  This is also done for all dependents of each of the 
++                   :  Enrollees and all information is written to a file to 
++                   :  be sent to United Health.
++                   :  
++    Author         :  Alina Sanchez    
++    Date created   :  11/16/2004
++    Project Number :  A0411152  
+++++++++++++++++++++++++++++<< REVISIONS >>++++++++++++++++++++++++++++++++++++
++ apiii  mm/dd/ccyy    A-------  TYP - Remarks.....
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       PRT.RL               ...Printer Definition File
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member demographic Record       
+              INC       MEME.RL              ...Mem. Enr/Elig Record            
+              INC       MEMA.RL              ...Member Accumulators            
+
+
+
+. ---------------------------------------------
+. ~~~~~~~~~~   File  Declarations   ~~~~~~~~~~                                  
+. ---------------------------------------------                                 
+
+                                                                                
+.~~~~~~~~~~~~~INPUT FILES                                                       
+
+.~~~~~~DEFINITY ELIGIBILITY INCOMING FILE                                         
+UNITED_FILE       FILE      VAR=9,TEXT                           
+UNITED_NME        INIT      "/w/unitedssn.txt"                                     
+UNITED_REC            LIST                                                        
+..<BEGIN>..................................................................     
+UNITED_ESSN      DIM     9                                                   
+..<END>.....................................................................    
+                    LISTEND                                                     
+
+
+.~~~~~~~~~~~~~OUTPUT FILES                                                      
+
+
+.~~~~~~OUPUT FILE FOR THIS PROGRAM                                                
+UNITED_ACC_FILE       FILE      VAR=108,TEXT                           
+UNITED_ACC_NME        INIT      "/w/unitedaccm.txt"
+
+UNITED_ACC_REC            LIST                                                        
+..<BEGIN>..................................................................     
+UNITED_EMP_SSN         DIM     9                                                   
+UNITED_EMP_FNAME       DIM    15                                                   
+UNITED_EMP_LNAME       DIM    20                                                   
+UNITED_PAT_FNAME       DIM    15                                                   
+UNITED_PAT_DOB         DIM     8                                                   
+UNITED_PAT_REL         DIM     2                                                   
+UNITED_CYD_IN_AMT      FORM   10.2                                                 
+UNITED_CYD_OUT_AMT     FORM   10.2                                                 
+UNITED_CY_OUTOFP_AMT   FORM   10.2                                                 
+..<END>.....................................................................    
+                    LISTEND                                                     
+.                                   
+.                                            
+
+
+.~~~~~~DEFINITY ELIGIBILITY INCOMING FILE                                         
+SSN_ERR_FILE       FILE      VAR=9,TEXT                           
+SSN_ERR_NME        INIT      "/w/unitedssn.err"                                     
+SSN_ERR_REC            LIST                                                        
+..<BEGIN>..................................................................     
+SSN_ERR_ESSN      DIM     9                                                   
+..<END>.....................................................................    
+                    LISTEND                                                     
+
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+FIRST_PAGE       DIM       1
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+WRITE_COUNT      FORM      8
+TRAP_DATA        DIM       500
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+TODAY            DIM       8
+
+
+PARAM_LIST       LIST
+PARAM_XXX        DIM      10
+PARAM_YYY        DIM       5
+PARAM_DATE       DIM       8
+                 LISTEND
+
+
+
+. ...Printing Controls
+
+NORM_10          DIM      29
+BOLD_10          DIM      29
+NORM_12          DIM      26
+BOLD_12          DIM      26
+NORM_16          DIM      33
+BOLD_16          DIM      33
+
+ESC_CHAR         EQU      27
+XCAPE            INIT     ESC_CHAR
+
+
+. ...Report Fields
+PAGE_NO          FORM      5
+
+LINE_NO          FORM      2
+LINE_MAX         FORM     "56"
+
+R_PAGE_NO        DIM       5
+R_DATE           DIM      10
+R_TIME           DIM       8
+YES              INIT     "Y"
+NO               INIT     "N"
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                             
+.     Program Specific Variables                                                 
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                             
+.~~~~~~ Variables
+EFF_DATE         DIM      8
+PLAN             DIM      4
+RELATION         DIM      2
+COV_LEVEL        DIM      2
+DEFPLAN_YN       DIM      1
+
+
+.~~~~~~ Sorting Fields     
+OUT_SRTKEY       INIT      "48-56D -T"
+
+
+.~~~~~~ Mask Fields
+MASK1            INIT     "$$,$$$,$$9.99"
+MASK2            INIT     "$,$$$,$$$,$$9.99"
+
+
+.~~~~~~ Accumulators
+
+.~~~~~~ Hold Fields
+DIM3             DIM       3                                                       
+DIM5             DIM       5                                                       
+DIM20            DIM       20                                                      
+DIMTHREE         DIM       3                                                       
+DIMFIVE          DIM       5                                                       
+FORM2            FORM      2                                                       
+FORM_2           FORM      2                                                       
+FORMTWO          FORM      2                                                       
+
+
+
+.~~~~~~ Screen Counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+DISP5            DIM       5
+DISP4            DIM       4
+DISP3            DIM       3                  
+DISP2            DIM       2                  
+
+
+.~~~~~~ Flags
+BRK_FLAG         INIT     "N"
+UNITED_RESULT    FORM      1                                      
+MEM_RESULT       FORM      1                                      
+MEME_RESULT      FORM      1                                      
+DATE_RSLT        DIM       2
+W_DOB            DIM       1
+W_FIRST          DIM       1
+W_LAST           DIM       1 
+W_SEX            DIM       1 
+I_SEX            DIM       1
+W_OKAY           DIM       1 
+SSN_OK           DIM       1                                                       
+FOUND            DIM       1                                                       
+ERR_REC          DIM       1                                                       
+
+
+
+
+.~~~~~~ Date Manipulation Fields
+
+DATE            LIST 
+DT_MM           DIM       2
+DT_DD           DIM       2 
+DT_CCYY         DIM       4
+                LISTEND
+
+INB_CC          DIM       2
+INB_YY          DIM       2
+INB_MM          DIM       2
+INB_DD          DIM       2  
+
+DOB_CC          DIM       2
+DOB_YY          DIM       2
+DOB_MM          DIM       2
+DOB_DD          DIM       2  
+
+TMP_DOB         DIM       8
+
+
+. -----------------------------------------------------------------------------
+.                            << < Report Layout > >> 
+. -----------------------------------------------------------------------------
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+SRH_LEFT1     INIT      "Program name: "
+SRH_LEFT2     INIT      "Date Printed: "
+SRH_TITLE1    INIT      "   STATE OF LOUISIANA   "
+SRH_TITLE2    INIT      "OFFICE OF GROUP BENEFITS"
+SRH_RIGHT1    INIT      "Page Number: "
+SRH_RIGHT2    INIT      "Report Time: "
+SRH_DASH      INIT      "-"
+                                                   
+
+
+. ----------------------------
+. Header Definition
+. ----------------------------
+
+.~~~~Report Titles
+
+.~~~~Column Headers
+
+.~~~~Detail Lines
+
+
+. -----------------------------------------------------------------------------
+.                            << < Layout End > >> 
+. -----------------------------------------------------------------------------
+
+
+
+. --------------------------------------------------
+. ~~~~~~~~~~~~ << < Begin Program > >> ~~~~~~~~~~~~~
+. --------------------------------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                 TO  C_NEXT
+         MOVE      "United Health Accum " TO  C_OPER    >Max. 20 bytes
+         MOVE      "a0411152"             TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      BLANKS                 TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+                                                                               
+         MOVE      "00000025" TO C_PRTUSR   ...sends file to disk               
+         CALL      PRINT_PICK               ...this routine gives the user      
+         RETURN    IF (RESULT = 2)            .a printer list                   
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+
+
++++++++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+
+. ...Initialize
+         CALL      INITIALIZE
+                
+. ...Open Files	
+         CALL      OPEN_FILES 
+
+. ...Read Incoming SocSec File from Unied Health
+         CALL      READ_SOCSEC_FILE
+
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+
++++++++++++++++++++++++++++<< END OF MAIN PROCESS >>+++++++++++++++++++++++++++
+
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	        MOVE      "Recs Read:        " TO X_CNTDESC1
+       	 MOVE      "Recs Written:     " TO X_CNTDESC2
+         MOVE      "SSN NOT FOUND:    " TO X_CNTDESC3
+         MOVE      "            :     " TO X_CNTDESC4
+	        MOVE      "            :     " TO X_CNTDESC5
+	        MOVE      "            :     " TO X_CNTDESC6
+	 
+	        CALL      X_DISPLAY_COUNTS
+
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+.~~Input Files                                                                  
+         MOVE UNITED_NME TO C_FILE                 
+         CALL OPEN_OGBFILE USING UNITED_FILE,UNITED_NME
+
+                                                                                
+.~~I/O Files                                                                    
+
+                                                                                
+.~~Output Files 
+         MOVE UNITED_ACC_NME TO C_FILE                 
+         CALL PREP_OGBFILE USING UNITED_ACC_FILE,UNITED_ACC_NME
+
+         MOVE SSN_ERR_NME TO C_FILE                 
+         CALL PREP_OGBFILE USING SSN_ERR_FILE,SSN_ERR_NME
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+         UNPACK    TIMESTAMP   INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+         PACK      R_DATE      WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+         PACK      R_TIME      WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+         MOVE      0           TO  WRITE_COUNT
+         MOVE      "Y"         TO  FIRST_PAGE
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+...Landscape
+.        PACK      NORM_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s0b4099T"
+.        PACK      BOLD_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s3b4099T"
+.        PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+.        PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+.        PACK      NORM_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+.        PACK      BOLD_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+
+...Portrait
+.        PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+.        PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+.        PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+.        PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+.        PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+.        PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s3b0T"
+
+
+.~~~Portrait w/nice fonts-AS-
+.        PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s p10.00h12.0v0s0b4099T"   
+.        PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s p10.00h12.0v0s3b4099T"   
+.        PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"      
+.        PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"      
+.        PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"       
+.        PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"       
+.                                                                               
+
+     RETURN        
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.        
+
+
+
+. ----------------------------------------------------------------------------
+. This procedure will read the United SocSec file and will then use each ssn
+. to find the enrollee and its dependents from our files and get their Accums
+. and write this info to a file that will go back to United.
+. 
+. ----------------------------------------------------------------------------
+
+READ_SOCSEC_FILE
+
+   debug
+    LOOP          
+        MOVE "unitedssn.txt" TO C_FILE                                           
+        MOVE OGB_SEQ1 TO OGB_SEQ                                                
+        CALL READ_OGBFILE USING UNITED_FILE,UNITED_NME,UNITED_REC        
+        MOVE RESULT TO UNITED_RESULT                                          
+        IF (UNITED_RESULT <> 1)                                               
+            BREAK                                                               
+        ENDIF                                                                   
+                                                                                
+        ADD 1 TO X_CNT1                                                         
+        UNPACK X_CNT1 INTO DISP5,DISP2                                          
+        IF (DISP2 = "05")                                                      
+            CALL X_DISPLAY_COUNTS                                               
+        ENDIF                                                                   
+
+
+        CLEAR UNITED_ACC_REC
+
+... Read the MEM file for Enrollee (Plan Member) Only                           
+        CLEAR     MEM_AIM                                                           
+        PACK      MEM_AIM1 WITH "01X",UNITED_ESSN,BLANKS                           
+        PACK      MEM_AIM3 WITH "03X","01",BLANKS                                   
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST               
+                            MEM_FN:          ...FILE NAME LIST                      
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX                 
+                            MEM_FV:          ...FILE KEY VARLISTS                   
+                            MEM_AIM:         ...FILE KEY SIZES                      
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)            
+                            MEM_REC:         ...FILE RECORD (PACKED)                
+                            MEM_OLD:         ...FILE SAVED WHEN READ                
+                            MEM_QTY:         ...NUMBER OF FILES                     
+                            2                ...FILE NUMBER FOR THIS READ          
+
+
+        MOVE RESULT TO MEM_RESULT                                                   
+        IF (MEM_RESULT <> 1)
+            ADD 1 TO X_CNT3                                                         
+            MOVE UNITED_ESSN TO SSN_ERR_ESSN                                                   
+            CALL WRITE_OGBREC USING SSN_ERR_FILE:                                   
+                                     SSN_ERR_NME:                                   
+                                     SSN_ERR_REC                                            
+            CONTINUE
+        ELSE
+           MOVE MEM_ESSN     TO UNITED_EMP_SSN                                    
+           MOVE MEM_FNAME    TO UNITED_EMP_FNAME                                   
+           MOVE MEM_LNAME    TO UNITED_EMP_LNAME                                   
+
+           CALL MEMA_READ_WRITE                             
+        ENDIF
+
+
+        CALL GET_DEP_REC
+
+
+    REPEAT
+
+   RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+
+. ----------------------------------------------------------------------------
+. This procedure will read the MEM file to find the Dependent's record
+. 
+. ----------------------------------------------------------------------------
+GET_DEP_REC
+
+
+... Read the MEM file for Dependents                           
+   debug                                                                                
+
+       CLEAR     MEM_AIM                                                           
+       PACK      MEM_AIM1 WITH "01X",UNITED_ESSN,BLANKS                           
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST               
+                           MEM_FN:          ...FILE NAME LIST                      
+                           MEM_FC:          ...(I)NDEX OR (A)IMDEX                 
+                           MEM_FV:          ...FILE KEY VARLISTS                   
+                           MEM_AIM:         ...FILE KEY SIZES                      
+                           MEM_LIST:        ...FILE RECORD (FIELD LIST)            
+                           MEM_REC:         ...FILE RECORD (PACKED)                
+                           MEM_OLD:         ...FILE SAVED WHEN READ                
+                           MEM_QTY:         ...NUMBER OF FILES                     
+                           2                ...FILE NUMBER FOR THIS READ          
+                                                                                
+       MOVE RESULT TO MEM_RESULT                                                   
+       IF (MEM_RESULT <> 1)                                               
+           RETURN                                                
+       ENDIF                                                                  
+
+
+       IF ((UNITED_ESSN = MEM_ESSN) AND (MEM_REL <> "01"))                                                
+           CALL MEMA_READ_WRITE
+           CALL GET_NEXT_MEM                                                   
+       ELSE
+           IF ((UNITED_ESSN = MEM_ESSN) AND (MEM_REL = "01"))                                                
+               CALL GET_NEXT_MEM                                                   
+           ELSE
+              IF (UNITED_ESSN <> MEM_ESSN)  
+                  RETURN
+               ENDIF                                              
+           ENDIF                                              
+       ENDIF                                                                  
+
+
+   RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+. --------------------------                                                    
+.  Get next member                                                              
+. --------------------------                                                    
+                                                                                
+GET_NEXT_MEM                                                                    
+                                                                                
+       LOOP                                                                   
+
+           CALL      FILE_NEXT                                               
+
+           IF ((RESULT <> 1) OR (UNITED_ESSN <> MEM_ESSN))                                                
+               RETURN                                                          
+           ENDIF                                                                  
+
+
+           IF (MEM_REL = "01")
+               CONTINUE
+           ELSE
+               CALL MEMA_READ_WRITE
+           ENDIF
+
+
+       REPEAT                                                            
+
+   RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+. ------------------------------------------------------------------------------
+. Reading the MEMA file to find when mema_accu = "DEDE" and "DEDU" and "NEGO"
+. and output the mema_amt. for each one of the previous accum fields.   
+. ------------------------------------------------------------------------------
+MEMA_READ_WRITE
+
+
+.~~MEM File
+       MOVE MEM_FNAME TO UNITED_PAT_FNAME
+       MOVE MEM_DOB TO UNITED_PAT_DOB
+       MOVE MEM_REL TO UNITED_PAT_REL
+
+
+       CLEAR UNITED_CYD_IN_AMT:                               
+             UNITED_CYD_OUT_AMT:                               
+             UNITED_CY_OUTOFP_AMT                               
+
+
+...Read the mema file by member id                                              
+       PACK      MEMA_KEY WITH MEM_ID1,BLANKS                         
+       CALL      MEMA_READ                                             
+       LOOP                                                                
+           CALL MEMA_NEXT                                               
+                                                                                
+           BREAK IF (MEMA_ID <> MEM_ID1)                               
+                                                                                
+           IF ((MEMA_ACCU = "DEDE") AND (MEMA_EFF = "20040701"))                                          
+               MOVE MEMA_AMT TO UNITED_CYD_IN_AMT                               
+           ENDIF                                                            
+
+           IF ((MEMA_ACCU = "DEDU") AND (MEMA_EFF = "20040701"))                                         
+               MOVE MEMA_AMT TO UNITED_CYD_OUT_AMT                               
+           ENDIF                                                            
+
+           IF ((MEMA_ACCU = "NEGO") AND (MEMA_EFF = "20040701"))                                          
+               MOVE MEMA_AMT TO UNITED_CY_OUTOFP_AMT                               
+           ENDIF                                                            
+
+       REPEAT
+
+       CALL WRITE_OGBREC USING UNITED_ACC_FILE:                                   
+                                UNITED_ACC_NME:                                   
+                                UNITED_ACC_REC                                            
+                                                                                
+
+       ADD 1 TO X_CNT2
+       UNPACK X_CNT2 INTO DISP4,DISP3
+       IF (DISP3 = "000")
+           CALL X_DISPLAY_COUNTS
+       ENDIF
+
+    RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<< END >>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.    
+
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+
+.~INPUT FILES                                                                     
+         
+         MOVE UNITED_NME TO C_FILE                 
+         CALL CLOSE_OGBFILE USING UNITED_FILE,UNITED_NME
+
+.~I/O FILES                                                                     
+                                                                                
+.~OUTPUT FILES 
+
+         MOVE UNITED_ACC_NME TO C_FILE                 
+         CALL CLOSE_OGBFILE USING UNITED_ACC_FILE,UNITED_ACC_NME
+                                                                                
+         MOVE SSN_ERR_NME TO C_FILE                 
+         CALL CLOSE_OGBFILE USING SSN_ERR_FILE,SSN_ERR_NME
+
+     RETURN
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+                                                                                
+NORMAL_EOJ                                                                      
+                                                                                
+. ...Normal End-Of-Job                                                          
+       IF (RUN_MODE = "N")              ---Manual Run; Not Scheduled            
+           CALL X_BLANK_SCREEN                                                  
+           PACK      X_FINISH_STATUS WITH "   ", "NEOJ","   "                   
+           MOVE      "A0411152 Completed      " TO X_PROG_FINISH                 
+           CALL    X_END_OF_JOB                                                 
+       ENDIF                                                                    
+                                                                                
+                                                                                
+. ...Return Control Back to Chain - End of Program                              
+       TRAPREST  TRAP_DATA                                                      
+       MOVE      SCH_RTSUCC TO SCH@RTCODE                                       
+                                                                                
+  RETURN                                                                        
+                                                                                
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       PRINT.SR
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       MEMA.IO
+
+
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~<<<<<<~END~>>>>>>~~~~~~~~~~~~~~~~~~~~~~~~~~~~~.  
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                               End of A0411152.PS
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

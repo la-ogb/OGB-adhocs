@@ -1,0 +1,887 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0608281     
++    Description    :  CUS - Extracts NIC DATA FOR ACTUARIES             
++    Author         :  Stephen J. McDonald
++    apsjm 18/28/2006 a0608281 adh - initial version                       
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment   
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+NICC_FD_1          FILE    VAR=1000,TEXT
+NICC_NAME_1        INIT    "/w/nicc_ppo.txt"
+NICC_LIST_1        LIST
+NICC_HNET_1        DIM     20
+NICC_EE_AC_1       FORM    5
+NICC_EE_NM_1       FORM    5
+NICC_EE_1M_1       FORM    5
+NICC_EE_CB_1       FORM    5
+NICC_ES_AC_1       FORM    5
+NICC_ES_NM_1       FORM    5
+NICC_ES_1M_1       FORM    5
+NICC_ES_2M_1       FORM    5
+NICC_ES_CB_1       FORM    5
+NICC_EC_AC_1       FORM    5
+NICC_EC_NM_1       FORM    5
+NICC_EC_1M_1       FORM    5
+NICC_EC_2M_1       FORM    5
+NICC_EC_CB_1       FORM    5
+NICC_FM_AC_1       FORM    5
+NICC_FM_NM_1       FORM    5
+NICC_FM_1M_1       FORM    5
+NICC_FM_2M_1       FORM    5
+NICC_FM_CB_1       FORM    5
+NICC_TOT_1         FORM    7
+                   LISTEND
+.
+NICC_FD_2          FILE    VAR=1000,TEXT
+NICC_NAME_2        INIT    "/w/nicc_epo.txt"
+NICC_LIST_2        LIST
+NICC_HNET_2        DIM     20
+NICC_EE_AC_2       FORM    5
+NICC_EE_NM_2       FORM    5
+NICC_EE_1M_2       FORM    5
+NICC_EE_CB_2       FORM    5
+NICC_ES_AC_2       FORM    5
+NICC_ES_NM_2       FORM    5
+NICC_ES_1M_2       FORM    5
+NICC_ES_2M_2       FORM    5
+NICC_ES_CB_2       FORM    5
+NICC_EC_AC_2       FORM    5
+NICC_EC_NM_2       FORM    5
+NICC_EC_1M_2       FORM    5
+NICC_EC_2M_2       FORM    5
+NICC_EC_CB_2       FORM    5
+NICC_FM_AC_2       FORM    5
+NICC_FM_NM_2       FORM    5
+NICC_FM_1M_2       FORM    5
+NICC_FM_2M_2       FORM    5
+NICC_FM_CB_2       FORM    5
+NICC_TOT_2         FORM    7
+                   LISTEND
+.
+NICC_FD_3          FILE    VAR=1000,TEXT
+NICC_NAME_3        INIT    "/w/nicc_fara.txt"
+NICC_LIST_3        LIST
+NICC_HNET_3        DIM     20
+NICC_EE_AC_3       FORM    5
+NICC_EE_NM_3       FORM    5
+NICC_EE_1M_3       FORM    5
+NICC_EE_CB_3       FORM    5
+NICC_ES_AC_3       FORM    5
+NICC_ES_NM_3       FORM    5
+NICC_ES_1M_3       FORM    5
+NICC_ES_2M_3       FORM    5
+NICC_ES_CB_3       FORM    5
+NICC_EC_AC_3       FORM    5
+NICC_EC_NM_3       FORM    5
+NICC_EC_1M_3       FORM    5
+NICC_EC_2M_3       FORM    5
+NICC_EC_CB_3       FORM    5
+NICC_FM_AC_3       FORM    5
+NICC_FM_NM_3       FORM    5
+NICC_FM_1M_3       FORM    5
+NICC_FM_2M_3       FORM    5
+NICC_FM_CB_3       FORM    5
+NICC_TOT_3         FORM    7
+                   LISTEND
+.
+NICC_FD_4          FILE    VAR=1000,TEXT
+NICC_NAME_4        INIT    "/w/nicc_human.txt"
+NICC_LIST_4        LIST
+NICC_HNET_4        DIM     20   
+NICC_EE_AC_4       FORM    5
+NICC_EE_NM_4       FORM    5
+NICC_EE_1M_4       FORM    5
+NICC_EE_CB_4       FORM    5
+NICC_ES_AC_4       FORM    5
+NICC_ES_NM_4       FORM    5
+NICC_ES_1M_4       FORM    5
+NICC_ES_2M_4       FORM    5
+NICC_ES_CB_4       FORM    5
+NICC_EC_AC_4       FORM    5
+NICC_EC_NM_4       FORM    5
+NICC_EC_1M_4       FORM    5
+NICC_EC_2M_4       FORM    5
+NICC_EC_CB_4       FORM    5
+NICC_FM_AC_4       FORM    5
+NICC_FM_NM_4       FORM    5
+NICC_FM_1M_4       FORM    5
+NICC_FM_2M_4       FORM    5
+NICC_FM_CB_4       FORM    5
+NICC_TOT_4         FORM    7
+                   LISTEND
+.
+NICC_FD_5          FILE    VAR=1000,TEXT
+NICC_NAME_5        INIT    "/w/nicc_vant.txt"
+NICC_LIST_5        LIST
+NICC_HNET_5        DIM     20
+NICC_EE_AC_5       FORM    5
+NICC_EE_NM_5       FORM    5
+NICC_EE_1M_5       FORM    5
+NICC_EE_CB_5       FORM    5
+NICC_ES_AC_5       FORM    5
+NICC_ES_NM_5       FORM    5
+NICC_ES_1M_5       FORM    5
+NICC_ES_2M_5       FORM    5
+NICC_ES_CB_5       FORM    5
+NICC_EC_AC_5       FORM    5
+NICC_EC_NM_5       FORM    5
+NICC_EC_1M_5       FORM    5
+NICC_EC_2M_5       FORM    5
+NICC_EC_CB_5       FORM    5
+NICC_FM_AC_5       FORM    5
+NICC_FM_NM_5       FORM    5
+NICC_FM_1M_5       FORM    5
+NICC_FM_2M_5       FORM    5
+NICC_FM_CB_5       FORM    5
+NICC_TOT_5         FORM    7
+                   LISTEND
+.
+NICD_FD          FILE VAR=200,TEXT
+NICD_NAME        INIT "/w/nicd.txt"
+NICD_LIST        LIST
+NICD_HNET        DIM 20
+NICD_DOB         DIM 8
+NICD_ZIP         DIM 5
+NICD_DEPC        DIM 2
+NICD_RT          DIM 2
+                 LISTEND
+.
+MEM_WRK_FD      FILE VAR=25,TEXT
+MEM_WRK_NME     INIT "/w/mem.a0608281.txt"
+MEM_WRK_LIST    LIST
+MEM_WRK_ID1     DIM  8
+MEM_WRK_ESSN    DIM  9
+MEM_WRK_TRM     DIM  8
+                LISTEND
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+W_HNET        DIM  20
+FIRST_READ    DIM  1
+ZIP_5         DIM  5
+MEM_01        INIT "01"               
+FORM2         FORM 2
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+YN_ANS        DIM  1
+WS_AR_SW      DIM  1
+WS_AGENCY     DIM  4
+WS_AGY1       DIM  1
+WS_AGY4       DIM  1
+WS_DIM1       DIM  1
+WS_DIM4       DIM  4
+SSN2          DIM  2          
+SSN3          DIM  3
+SSN4          DIM  4
+DIM7          DIM  7
+DIM2          DIM  2
+DIM19         DIM  19
+DIMMM         DIM  2
+DIMDD         DIM  2
+DIMCCYY       DIM  4
+FPTR          FORM 2  
+BUMP_SW       FORM "0"
+SLASH_SW      FORM "0"
+CNT_4         DIM  4
+CNT_3         DIM  3
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+ACCUM_LIST    LIST
+ACC_CLM_CNT  FORM 9
+ACC_BIL      FORM 10.2
+ACC_PAYP     FORM  10.2
+ACC_PAYE     FORM  10.2
+ACC_PAID     FORM  10.2
+ACC_DRUGS    FORM  10.2
+ACC_CONT     FORM 9
+ACC_MHSA_AMT FORM 8.2
+              LISTEND
+
+FORM_LIST  LIST
+FORM_PAYP  FORM 7.2
+FORM_PAYE  FORM 7.2
+FORM_TCHG  FORM 7.2
+           LISTEND
+
+W_RT          DIM       2
+W_DEPC        DIM       2
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+W_PAID        FORM      7.2
+W_CHARGE      FORM      7.2
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "CLASS/STAT EXT" TO  C_OPER
+         MOVE      "A0608281"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL REFORMAT_MEM
+   CALL OPEN_FILES
+   CALL INITIALIZE
+   CALL PROCESS_MEME
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   MOVE "OGB PPO" TO NICC_HNET_1
+   CALL WRITE_OGBREC USING NICC_FD_1,NICC_NAME_1: 
+                           NICC_LIST_1  
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   MOVE "UNITED EPO" TO NICC_HNET_2
+   CALL WRITE_OGBREC USING NICC_FD_2,NICC_NAME_2: 
+                           NICC_LIST_2  
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   MOVE "FARA ASO" TO NICC_HNET_3
+   CALL WRITE_OGBREC USING NICC_FD_3,NICC_NAME_3: 
+                           NICC_LIST_3  
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   MOVE "HUMANA ASO" TO NICC_HNET_4
+   CALL WRITE_OGBREC USING NICC_FD_4,NICC_NAME_4: 
+                           NICC_LIST_4  
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   MOVE "VANTAGE HMO" TO NICC_HNET_5
+   CALL WRITE_OGBREC USING NICC_FD_5,NICC_NAME_5: 
+                           NICC_LIST_5  
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_MEME
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            LOOP
+              CALL READ_OGBFILE USING MEM_WRK_FD,MEM_WRK_NME,MEM_WRK_LIST
+                BREAK IF (RESULT <> 1)
+                ADD 1 TO X_CNT1
+                UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+                IF (CNT1_3 = "000")
+                   CALL X_DISPLAY_COUNTS
+                ENDIF
+                IF ((SQUEEZE MEM_WRK_TRM <> "") AND (MEM_WRK_TRM < "20060801"))
+                  CONTINUE
+                ENDIF
+                PACK MEME_FK11 WITH MEM_WRK_ID1,BLANKS
+                CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                     MEME_FN:   ...File name list
+                     MEME_FC:   ...(I)ndex or (A)imdex
+                     MEME_FV:   ...File key varlists
+                     MEME_FK:   ...File key sizes
+                     MEME_LIST: ...File record (field list)
+                     MEME_REC:  ...File record (packed)
+                     MEME_OLD:  ...File saved when read
+                     MEME_QTY:  ...Number of files
+                     1         ...File number for this read
+              LOOP
+                CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                       MEME_FN:   ...File name list
+                       MEME_FC:   ...(I)ndex or (A)imdex
+                       MEME_FV:   ...File key varlists
+                       MEME_FK:   ...File key sizes
+                       MEME_LIST: ...File record (field list)
+                       MEME_REC:  ...File record (packed)
+                       MEME_OLD:  ...File saved when read
+                       MEME_QTY:  ...Number of files
+                       1         ...File number for this read
+                BREAK IF (RESULT <> 1)
+                BREAK IF (MEM_WRK_ID1 <> MEME_ID1)
+                IF (SQUEEZE MEME_NET = "DEFIN")
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_NET = "LIFE")
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                   MOVE "99999999" TO MEME_TRM
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                   CONTINUE
+                ENDIF 
+                IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+                  CONTINUE
+                ENDIF
+                IF (MEME_EFF > "20060801")
+                   CONTINUE
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < "20060801"))
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_PRD = "PPO")
+                  MOVE "OGB PPO" TO W_HNET
+                  ADD 1 TO NICC_TOT_1
+                  SWITCH MEME_DEPC
+                    CASE "EE"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EE_AC_1
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EE_NM_1
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EE_1M_1
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EE_CB_1
+                      ENDSWITCH        
+                    CASE "ES"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_ES_AC_1
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_ES_NM_1
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_ES_1M_1
+                        CASE "R2"
+                           ADD 1 TO NICC_ES_2M_1
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_ES_CB_1
+                      ENDSWITCH        
+                    CASE "EC"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EC_AC_1
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EC_NM_1
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EC_1M_1
+                        CASE "R2"
+                           ADD 1 TO NICC_EC_2M_1
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EC_CB_1
+                      ENDSWITCH        
+                    CASE "FM"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_FM_AC_1
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_FM_NM_1
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_FM_1M_1
+                        CASE "R2"
+                           ADD 1 TO NICC_FM_2M_1
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_FM_CB_1
+                      ENDSWITCH        
+                  ENDSWITCH        
+                ENDIF                                
+                IF (SQUEEZE MEME_PRD = "EPO")
+                  MOVE "UNITED EPO" TO W_HNET
+                  ADD 1 TO NICC_TOT_2
+                  SWITCH MEME_DEPC
+                    CASE "EE"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EE_AC_2
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EE_NM_2
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EE_1M_2
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EE_CB_2
+                      ENDSWITCH        
+                    CASE "ES"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_ES_AC_2
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_ES_NM_2
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_ES_1M_2
+                        CASE "R2"
+                           ADD 1 TO NICC_ES_2M_2
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_ES_CB_2
+                      ENDSWITCH        
+                    CASE "EC"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EC_AC_2
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EC_NM_2
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EC_1M_2
+                        CASE "R2"
+                           ADD 1 TO NICC_EC_2M_2
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EC_CB_2
+                      ENDSWITCH        
+                    CASE "FM"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_FM_AC_2
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_FM_NM_2
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_FM_1M_2
+                        CASE "R2"
+                           ADD 1 TO NICC_FM_2M_2
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_FM_CB_2
+                      ENDSWITCH        
+                  ENDSWITCH        
+                ENDIF                                
+                IF (SQUEEZE MEME_NET = "FARA")
+                  MOVE "FARA ASO" TO W_HNET
+                  ADD 1 TO NICC_TOT_3
+                  SWITCH MEME_DEPC
+                    CASE "EE"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EE_AC_3
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EE_NM_3
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EE_1M_3
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EE_CB_3
+                      ENDSWITCH        
+                    CASE "ES"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_ES_AC_3
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_ES_NM_3
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_ES_1M_3
+                        CASE "R2"
+                           ADD 1 TO NICC_ES_2M_3
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_ES_CB_3
+                      ENDSWITCH        
+                    CASE "EC"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EC_AC_3
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EC_NM_3
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EC_1M_3
+                        CASE "R2"
+                           ADD 1 TO NICC_EC_2M_3
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EC_CB_3
+                      ENDSWITCH        
+                    CASE "FM"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_FM_AC_3
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_FM_NM_3
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_FM_1M_3
+                        CASE "R2"
+                           ADD 1 TO NICC_FM_2M_3
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_FM_CB_3
+                      ENDSWITCH        
+                  ENDSWITCH        
+                ENDIF                                
+                IF (SQUEEZE MEME_NET = "HUMAN")
+                  MOVE "HUMANA ASO" TO W_HNET
+                  ADD 1 TO NICC_TOT_4
+                  SWITCH MEME_DEPC
+                    CASE "EE"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EE_AC_4
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EE_NM_4
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EE_1M_4
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EE_CB_4
+                      ENDSWITCH        
+                    CASE "ES"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_ES_AC_4
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_ES_NM_4
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_ES_1M_4
+                        CASE "R2"
+                           ADD 1 TO NICC_ES_2M_4
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_ES_CB_4
+                      ENDSWITCH        
+                    CASE "EC"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EC_AC_4
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EC_NM_4
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EC_1M_4
+                        CASE "R2"
+                           ADD 1 TO NICC_EC_2M_4
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EC_CB_4
+                      ENDSWITCH        
+                    CASE "FM"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_FM_AC_4
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_FM_NM_4
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_FM_1M_4
+                        CASE "R2"
+                           ADD 1 TO NICC_FM_2M_4
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_FM_CB_4
+                      ENDSWITCH        
+                  ENDSWITCH        
+                ENDIF                                
+                IF (SQUEEZE MEME_PRD = "HMO")
+                  MOVE "VANTAGE HMO" TO W_HNET
+                  ADD 1 TO NICC_TOT_5
+                  SWITCH MEME_DEPC
+                    CASE "EE"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EE_AC_5
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EE_NM_5
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EE_1M_5
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EE_CB_5
+                      ENDSWITCH        
+                    CASE "ES"
+                     SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_ES_AC_5
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_ES_NM_5
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_ES_1M_5
+                        CASE "R2"
+                           ADD 1 TO NICC_ES_2M_5
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_ES_CB_5
+                      ENDSWITCH        
+                    CASE "EC"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_EC_AC_5
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_EC_NM_5
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_EC_1M_5
+                        CASE "R2"
+                           ADD 1 TO NICC_EC_2M_5
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_EC_CB_5
+                      ENDSWITCH        
+                    CASE "FM"
+                      SWITCH MEME_RT
+                        CASE "AC"
+                           ADD 1 TO NICC_FM_AC_5
+                        CASE "RN" OR "DN"
+                           ADD 1 TO NICC_FM_NM_5
+                        CASE "R1" OR "D1"
+                           ADD 1 TO NICC_FM_1M_5
+                        CASE "R2"
+                           ADD 1 TO NICC_FM_2M_5
+                        CASE "CB" OR "CP"
+                           ADD 1 TO NICC_FM_CB_5
+                      ENDSWITCH        
+                  ENDSWITCH        
+                ENDIF                                
+                MOVE MEME_DEPC TO W_DEPC
+                MOVE MEME_RT TO W_RT  
+                CALL GET_FAM
+                BREAK
+              REPEAT
+            REPEAT
+            RETURN
+
+GET_FAM
+  MOVE "Y" TO FIRST_READ
+  LOOP
+     IF (FIRST_READ = "Y")
+       CLEAR MEM_AIM
+       PACK  MEM_AIM1 WITH "01X",MEM_WRK_ESSN,BLANKS
+       CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                             MEM_FN:        ...FILE NAME LIST
+                             MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                             MEM_FV:        ...FILE KEY VARLISTS
+                             MEM_AIM:       ...FILE KEY SIZES
+                             MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                             MEM_REC:       ...FILE RECORD (PACKED)
+                             MEM_OLD:       ...FILE SAVED WHEN READ
+                             MEM_QTY:       ...NUMBER OF FILES
+                             2              ...FILE NUMBER FOR THIS READ
+       MOVE "N" TO FIRST_READ
+       IF ((SQUEEZE MEM_TRM <> "") AND (MEM_TRM < "20060801"))
+          CONTINUE
+       ENDIF
+     ELSE                        
+       CALL  FILE_NEXT USING MEM_FD:        ...FILE DECLARATION LIST
+                             MEM_FN:        ...FILE NAME LIST
+                             MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                             MEM_FV:        ...FILE KEY VARLISTS
+                             MEM_AIM:       ...FILE KEY SIZES
+                             MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                             MEM_REC:       ...FILE RECORD (PACKED)
+                             MEM_OLD:       ...FILE SAVED WHEN READ
+                             MEM_QTY:       ...NUMBER OF FILES
+                             2              ...FILE NUMBER FOR THIS READ
+     ENDIF
+     IF (RESULT <> 1)
+        BREAK
+     ENDIF
+     IF ((SQUEEZE MEM_TRM <> "") AND (MEM_TRM < "20060801"))
+          CONTINUE
+     ENDIF
+     PACK MEME_FK11 WITH MEM_ID1,BLANKS
+     CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              IF ((MEM_ID1 <> MEME_ID1) OR (RESULT <> 1))
+                BREAK       
+              ENDIF
+              IF (SQUEEZE MEME_NET = "DEFIN")
+                   CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_NET = "LIFE")
+                   CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_TRM = "")
+                   MOVE "99999999" TO MEME_TRM
+              ENDIF
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                  CONTINUE
+              ENDIF 
+              IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+                  CONTINUE
+              ENDIF
+              IF (MEME_EFF > "20060801")
+                   CONTINUE
+              ENDIF
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < "20060801"))
+                   CONTINUE
+              ENDIF
+              MOVE W_HNET TO NICD_HNET 
+              MOVE MEM_DOB TO NICD_DOB
+              UNPACK MEM_ZIP INTO ZIP_5
+              MOVE ZIP_5 TO NICD_ZIP
+              MOVE W_DEPC TO NICD_DEPC
+              MOVE W_RT TO NICD_RT
+              MOVE OGB_SEQ1 TO OGB_SEQ
+              CALL WRITE_OGBREC USING NICD_FD,NICD_NAME,NICD_LIST
+              CLEAR NICD_LIST
+              BREAK
+         REPEAT
+  REPEAT
+  RETURN    
+
+REFORMAT_MEM
+   DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+             *P30:21, "REFORMATTING MEM", *BOLDOFF
+
+   PACK     SCRATCH WITH BLANKS
+   PACK     SCRATCH WITH "mem.dbf"," ",MEM_WRK_NME:
+              " -p27-28eq#"",MEM_01,"#" 1-8 9-17 344-351 -t -j"
+   REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(MEM.DBF)"
+        CHAIN     "MENU"
+     ENDIF
+   RETURN
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "MEM  Recs Read:     " TO X_CNTDESC1
+	 MOVE      "MEME  Recs Read:     " TO X_CNTDESC2
+	 MOVE      "Recs Written  :    " TO X_CNTDESC3
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING MEM_WRK_FD,MEM_WRK_NME
+         CALL      PREP_OGBFILE USING NICC_FD_1,NICC_NAME_1
+         CALL      PREP_OGBFILE USING NICC_FD_2,NICC_NAME_2
+         CALL      PREP_OGBFILE USING NICC_FD_3,NICC_NAME_3
+         CALL      PREP_OGBFILE USING NICC_FD_4,NICC_NAME_4
+         CALL      PREP_OGBFILE USING NICC_FD_5,NICC_NAME_5
+         CALL      PREP_OGBFILE USING NICD_FD,NICD_NAME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING NICC_FD_1,NICC_NAME_1
+         CALL      CLOSE_OGBFILE USING NICC_FD_2,NICC_NAME_2
+         CALL      CLOSE_OGBFILE USING NICC_FD_3,NICC_NAME_3
+         CALL      CLOSE_OGBFILE USING NICC_FD_4,NICC_NAME_4
+         CALL      CLOSE_OGBFILE USING NICC_FD_5,NICC_NAME_5
+         CALL      CLOSE_OGBFILE USING NICD_FD,NICD_NAME
+         RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0608281.PS
+. +++++++++++++++++++++++++++++++++++++

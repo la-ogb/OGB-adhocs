@@ -1,0 +1,615 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++  Program Name : A1611291
++   Description : Create a new Jan 01, 2017 health and life plan record
++                 for all LaGov Agency Employees prior to the 834
++                 process going live.
++ ......................................................................
++  apjwh - 11/29/2016 - DEV - Initial Version
++ .............................Revisions................................
++  apjwh - 12/27/2016 - FIX - Account for future records and already
++                             existing 1/1 records
++  apjwh - 05/17/2017 - MOD - consolidated includes into new UTILs
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++ -------------------------
++ Required Program Includes
++ -------------------------
+    INC  UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+
++ -------------------------
++ Program Specific Includes
++ -------------------------
+    INC  CLI.RL          ... Client Information
+    INC  UTIL_MEMMEM.CB  ... INM Variables
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ File & Global Variable Declarations
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Test Variables
++IS_TEST           INIT   "Y" ... Run under test limitations
+IS_TEST           INIT   "N" ... Run normally
+TEST_LIMIT        NUM    "10000"
+TEST_THIS         CHAR   1
+
+... Work Files
+RF_ACTV_FILE      FILE   VAR=8, TEXT ... List of active members
+RF_ACTV_NAME      INIT   "/w/a1611291.rft"
+RF_ACTV_LIST      LIST
+..............................
+RF_ACTV_ID1       CHAR   8
+..............................
+                  LISTEND
+
+... Output Files
+UPDT_IMP_FILE     FILE   VAR=4800, TEXT ... D_MEMMEM update rec
+UPDT_IMP_NAME     INIT   "a1611291.txt"
+
+... Useful Program Variables
+UPDT_PROG         INIT   "LGOV17"
+END_OF_YEAR       INIT   "20161231"
+START_OF_YEAR     INIT   "20170101"
+TRM_DATE_HLTH     CHAR   8
+TRM_DATE_LIFE     CHAR   8
+IS_LAGOV          CHAR   1
+IS_VALID          CHAR   1
+IS_HLTH           CHAR   1
+IS_LIFE           CHAR   1
+SKIP_HLTH         CHAR   1
+SKIP_LIFE         CHAR   1
+TST_CNT           NUM    10
+
+... Required DBC variables
+CAL_CLOCK         CHAR   21
+TODAY             CHAR   8
+
+PARAM_LIST        LIST WITH NAMES
+..............................
+PARAM_FILE        CHAR   12
+PARAM_FROM        CHAR   8
+PARAM_THRU        CHAR   8
+..............................
+                  LISTEND
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Begin Program
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+... Start here. If completed successfully, continue to the next program
+  CALL  RUN_NOW
+  CHAIN C_NEXT
+
+... Scheduler routines. You cannot include both; use NP unless the
+... program requires Impact's printer functions
+...     WP - with printer
+...     NP - no printer
+
+  INC  SCHED_NP.SR
+
+.#######################################################################
+RUN_NOW
+.#######################################################################
+
+... Save return stack
+    RETCOUNT ORIG_RETURN
+
+... Check if the program was called from the command line
+    MOVE  "A1611291" TO C_PROG
+    MOVE  "MAKE NEW LAGOV 2017" TO C_OPER
+    IF (C_CMDPAR)
+        CALL  CMD_START USING C_PROG
+    ENDIF
+
+... Fill top of screen
+
+    MOVE  "MENU" TO C_NEXT
+    MOVE  BLANKS TO C_LABEL
+    MOVE  BLANKS TO C_FILE
+    MOVE  BLANKS TO C_KEYS
+    CLOCK CALENDAR INTO CAL_CLOCK
+
+    IF (NOT C_CMDPAR)
+        CALL  X_BLANK_SCREEN
+    ENDIF
+
+... Set applicable traps
+    TRAPSAVE  TRAP_DATA
+    TRAPCLR   ALL
+    TRAP      QUIT NORESET IF F9
+
+... Get scheduler information
+    CALL  SCHED_PICK
+
+    IF ((RUN_MODE = "B") OR (RUN_MODE = "N"))
+        CALL  MAIN_PROCESS
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+MAIN_PROCESS
+.#######################################################################
+    debug
+    CALL  INITIALIZE
+    CALL  GET_ACTV_MEMBERS
+    CALL  PREPARE_FILES
+    CALL  PROCESS_ACTV_MEMBERS
+    CALL  CLEANUP
+    CALL  NORMAL_EOJ
+
+  RETURN
+
+.#######################################################################
+INITIALIZE
+.#######################################################################
+. -----------------------------------------------------------------
+... Initialize program time variables and draw the counters, unless
+... the program is invoked from the command line
+. -----------------------------------------------------------------
+    CLOCK  TIMESTAMP  INTO  TODAY
+
+... Display Counters
+    IF ((C_RMODE = "I") AND (NOT C_CMDPAR))
+        MOVE  "Active Members:"      TO X_CNTDESC1
+        MOVE  "LAGOV Members Found:" TO X_CNTDESC2
+        MOVE  "Not Used"             TO X_CNTDESC3
+        MOVE  "Not Used"             TO X_CNTDESC4
+        MOVE  "Not Used"             TO X_CNTDESC5
+        MOVE  "Not Used"             TO X_CNTDESC6
+
+        CALL  X_ZERO_COUNTS
+        CALL  X_DISPLAY_COUNTS
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+GET_ACTV_MEMBERS
+.#######################################################################
+. --------------------------------------------------------------
+... Reformat Impact data to find a unique list of all OGB IDs of
+... members with MEME records active as of Jan 01, 2017
+. --------------------------------------------------------------
+BLANK_TRM        INIT   "        "  ... a blank term field
+.---------------------------------------------------------
+... Get the OGB ID of all active MEME records
+    IF (NOT C_CMDPAR)
+        CALL  X_BLANK_SCREEN
+
+        MESSAGE  HORZ="24", VERT="20":
+                 BGCOL=C_DLGB, FGCOL=C_DLGF:
+                 LNCOL=C_DLGL, SHADE="y":
+                 TEXT="Retrieving Active ID's... Please Wait";
+    ENDIF
+
+... Term date is blank or after Jan 01, 2017
+    PACK  SCRATCH WITH "meme.dbf ", RF_ACTV_NAME, " 1-8 ":
+                       "-p104-111=#"", BLANK_TRM, "#" or ":
+                       "-p104-111gt=#"", START_OF_YEAR, "#" -t -j"
+    REFORMAT  SCRATCH
+    IF (OVER)
+        PACK  SCRATCH WITH "Active REFORMAT Failed!"
+        CALL  UTIL_ERRORMSG USING SCRATCH
+    ENDIF
+
+... Sort the file for uniques to remove duplicates
+    PACK  SCRATCH WITH RF_ACTV_NAME, " ", RF_ACTV_NAME, " ":
+                       "001-008 -t -u"
+    SORT  SCRATCH
+    IF (OVER)
+        PACK  SCRATCH WITH "Unique SORT Failed!"
+        CALL  UTIL_ERRORMSG USING SCRATCH
+    ENDIF
+
+    CALL  UTIL_SCREEN_CLEAN USING 20, 22
+
+  RETURN
+
+.#######################################################################
+PROCESS_ACTV_MEMBERS
+.#######################################################################
+. -----------------------------
+... Process all active members.
+. -----------------------------
+    IF (NOT C_CMDPAR)
+        CALL  X_BLANK_SCREEN
+
+        MESSAGE  HORZ="24", VERT="20":
+                 BGCOL=C_DLGB, FGCOL=C_DLGF:
+                 LNCOL=C_DLGL, SHADE="y":
+                 TEXT="Processing Active Members ... Please Wait";
+    ENDIF
+
+    CLEAR  TST_CNT
+
+... Read the next record on the list of actives
+    LOOP
+
+... TEST limit
+        IF (IS_TEST = YES)
+            IF (TST_CNT > TEST_LIMIT)
+                RETURN
+            ELSE
+                MOVE  (TST_CNT + 1) TO TST_CNT
+            ENDIF
+        ENDIF
+
+        debug
+        CLEAR  MEM_LIST, MEME_LIST, CLI_LIST
+
+        MOVE  OGB_SEQ1 TO OGB_SEQ
+        CALL  READ_OGBFILE USING RF_ACTV_FILE:
+                                 RF_ACTV_NAME:
+                                 RF_ACTV_LIST
+        IF (RESULT != 1)
+            BREAK
+        ENDIF
+
+        CALL  UTIL_XCOUNTER USING X_CNT1, 1000
+
+... Find LaGov status, and do work accordingly.
+        CALL  PROCESS_LAGOV_MEMBER
+
+    REPEAT
+
+    CALL  UTIL_SCREEN_CLEAN USING 20, 22
+
+  RETURN
+
+.#######################################################################
+PROCESS_LAGOV_MEMBER
+.#######################################################################
+. ------------------------------------------------------------------
+... Process the argument ID. If they are of a LaGov agency, term
+... all health and life records that are effective prior to 1/1/17,
+... and create new Jan 01, 2017 records for those records. If there
+... are future records of the same type, create a term date in the
+... new record 1 day prior to the future rec.
+. ------------------------------------------------------------------
+MEME_FIRST_READ CHAR   1 ... MEME read tracking flag
+. --------------------------------------------
+
+    IF (RF_ACTV_ID1 = "00093455")
+        debug
+    ENDIF
+
+    CLEAR  IS_LAGOV, IS_VALID, MEME_FIRST_READ, MEME_LIST, MEME_REC
+    MOVE  NO TO SKIP_HLTH, SKIP_LIFE
+
+    LOOP
+        CLEAR  IS_VALID, IS_HLTH, IS_LIFE
+
+... Read the next MEME record for the member
+        IF (MEME_FIRST_READ != FALSE)
+            CALL  FIND_FUTURE_RECS
+            IF ((SKIP_LIFE = TRUE) AND (SKIP_HLTH = TRUE))
+                BREAK ... No records to update
+            ENDIF
+
+            CALL  UTIL_MEME_FIND USING RF_ACTV_ID1
+            IF (NOT EQUAL)
+                debug
+                PACK  SCRATCH WITH RF_ACTV_ID1, " has no MEME recs!"
+                CALL  UTIL_ERRORMSG USING SCRATCH
+            ENDIF
+
+            MOVE  FALSE TO MEME_FIRST_READ
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+
+        BREAK IF (NOT EQUAL) ... No more MEME recs for member
+
+... Is the plan both LAGOV and either Health or Life?
+        CALL  IS_PLAN_VALID
+
+        IF (IS_LAGOV = FALSE) ... Member is part of a non-LAGOV agency
+            BREAK             ... No need to continue exploring.
+        ENDIF
+
+... Term the current rec and create the new one
+        IF (IS_VALID = TRUE)
+            IF ((IS_LIFE = TRUE) AND (IS_HLTH = TRUE))
+                debug
+                CALL  UTIL_ERRORMSG USING "TERM DATE Error!"
+            ELSE IF (IS_LIFE = TRUE)
+                CALL  CREATE_UPDT_RECS USING TRM_DATE_LIFE
+            ELSE
+                CALL  CREATE_UPDT_RECS USING TRM_DATE_HLTH
+            ENDIF
+        ENDIF
+    REPEAT
+
+    CLEAR  MEME_LIST, MEME_REC
+
+  RETURN
+  ENDROUTINE
+
+.#######################################################################
+FIND_FUTURE_RECS
+.#######################################################################
+. ----------------------------------------------------------------
+... Check for future health/life plans. If the future plan begins
+... on 1/1, then we can skip all plans of that type. Otherwise,
+... use the future eff date - 1 as the term date of the new record
+. ----------------------------------------------------------------
+    debug
+    CLEAR  MEME_LIST, MEME_REC
+    MOVE  FALSE TO TEST_THIS
+    MOVE  BLANKS TO TRM_DATE_HLTH, TRM_DATE_LIFE
+
+    LOOP
+
+... Read through the MEME recs for the member. Find future recs
+        IF (SQUEEZE MEME_REC = "")
+            CALL  UTIL_MEME_FIND USING RF_ACTV_ID1
+            IF (NOT EQUAL)
+                debug
+                PACK  SCRATCH WITH RF_ACTV_ID1, " has no MEME recs!"
+                CALL  UTIL_ERRORMSG USING SCRATCH
+            ENDIF
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+
+        BREAK IF (NOT EQUAL) ... No more MEME recs for member
+
+... Skip non-health and non-life records
+        IF ((MEME_NET = "NOCOV"):          ... waived coverage
+           OR (SQUEEZE MEME_PRD = "EGWP"): ... Medicare record
+           OR (MEME_PRD = "HRFEE"):        ... OneExchange Billing Rec
+           OR (SQUEEZE MEME_PRD = "HSA"):  ... HSA Billing Rec
+           OR (SQUEEZE MEME_PRD = "LBLA"): ... BCBS Wellness Record
+           OR (MEME_PLAN = "HRA1"):        ... HRA Billing Rec
+           OR (MEME_RT = "01"))            ... Billing Record
+
+            CONTINUE
+        ENDIF
+
+... Skip current and past records
+        IF (MEME_EFF <= TODAY)
+            CONTINUE
+        ENDIF
+
+        MOVE  TRUE TO TEST_THIS
+        debug
+
+... Skip void recs
+        IF ((SQUEEZE MEME_TRM != ""):
+           AND (MEME_TRM < MEME_EFF))
+
+            IF (MEME_TLET != "V")) ... Catch weird recs
++                debug
+            ENDIF
+
+            CONTINUE
+        ENDIF
+
+... If the eff date is 1/1/17, then that type of plan can be safely
+.   ignored. Otherwise, find a term date for the new lagov record that
+.   is one day less than the eff date of the future plan
+        IF (SQUEEZE MEME_PRD = "LIFE")
+            IF (MEME_EFF = START_OF_YEAR)
+                MOVE  TRUE TO SKIP_LIFE
+            ELSE
+                CALL  DATE_CALC USING MEME_EFF:
+                                      "SUB":
+                                      "DAYS":
+                                      1:
+                                      TRM_DATE_LIFE
+            ENDIF
+        ELSE
+            IF (MEME_EFF = START_OF_YEAR)
+                MOVE  TRUE TO SKIP_HLTH
+            ELSE
+                CALL  DATE_CALC USING MEME_EFF:
+                                      "SUB":
+                                      "DAYS":
+                                      1:
+                                      TRM_DATE_HLTH
+            ENDIF
+        ENDIF
+
+        IF ((SKIP_LIFE = TRUE) AND (SKIP_HLTH = TRUE))
+            BREAK
+        ENDIF
+    REPEAT
+    CLEAR  MEME_LIST, MEME_REC
+
+
+  RETURN
+
+.#######################################################################
+IS_PLAN_VALID
+.#######################################################################
+. ---------------------------------------------------------------
+... Set IS_LAGOV and IS_VALID and checks the SKIP_HTLH/LIFE flags
+... to drive whether a new set of plans need be created for this
+... member.
+. ---------------------------------------------------------------
+    MOVE  TRUE TO IS_VALID
+    MOVE  FALSE TO IS_LIFE, IS_HLTH
+
+... Is the member is a retirement system
+    SCAN  "R" IN MEME_LEV1
+    IF (EQUAL)
+        MOVE  FALSE TO IS_VALID
+
+... Is the plan inactive?
+        ELSE IF (((SQUEEZE MEME_TRM != ""):
+             AND (MEME_TRM <= START_OF_YEAR)):
+             OR (MEME_EFF >= START_OF_YEAR))
+
+            MOVE  FALSE TO IS_VALID
+
+... Is the plan not health or life?
+        ELSE IF ((MEME_NET = "NOCOV"):       ... waived coverage
+             OR (SQUEEZE MEME_PRD = "EGWP"): ... Medicare record
+             OR (MEME_PRD = "HRFEE"):        ... OneExchange Billing Rec
+             OR (SQUEEZE MEME_PRD = "HSA"):  ... HSA Billing Rec
+             OR (SQUEEZE MEME_PRD = "LBLA"): ... BCBS Wellness Record
+             OR (MEME_PLAN = "HRA1"):        ... HRA Billing Rec
+             OR (MEME_RT = "01"))            ... Billing Record
+
+            MOVE  FALSE TO IS_VALID
+
+... If a valid plan is found, then check if the member is a retiree.
+.   If not, then compare against the client file to see if the agency
+.   is LAGOV. If it's not, no more records from this member will be
+.   checked.
+.
+.   This read should only occur once per member.
+
+    ELSE IF (IS_LAGOV != TRUE)
+
+... Retiree?
+        IF ((MEME_LEV2 >= "90"):   ... Retiree not yet in retirement sys
+           AND (MEME_LEV2 != "92")) ... Is not a rehired Retiree
+
+            MOVE  FALSE TO IS_LAGOV
+        ELSE
+
+... Set flags driving health or life
+            IF ((SQUEEZE MEME_NET = "LIFE"):
+               OR (SQUEEZE MEME_PRD = "LIFE"))
+
+                MOVE  TRUE TO IS_LIFE
+            ELSE
+                MOVE  TRUE TO IS_HLTH
+            ENDIF
+
+... Skip record if a future 1/1 rec already exists for either health
+.   or life
+            IF (TEST_THIS = TRUE)
+                debug
+            ENDIF
+
+            IF (((SKIP_HLTH = TRUE) AND (IS_HLTH = TRUE)):
+               OR ((SKIP_LIFE = TRUE) AND (IS_LIFE = TRUE)))
+
+                MOVE  FALSE TO IS_VALID
+            ELSE
+
+... In LAGOV?
+                CALL  GET_CLIENT_DATA
+
+                IF (CLI_US02 = "U")   ... Unified Payroll Sys, ie. LAGOV
+                    debug
+                    MOVE  TRUE TO IS_LAGOV
+                ELSE
+                    MOVE  FALSE TO IS_LAGOV
+                ENDIF
+            ENDIF
+        ENDIF
+    ENDIF
+
+  RETURN
+
+.#######################################################################
+GET_CLIENT_DATA
+.#######################################################################
+. --------------------------------------------------
+... Read the client file for the current MEME record
+. --------------------------------------------------
+    CLEAR  CLI_AIM
+    PACK  CLI_AIM1 WITH "01X", MEME_LEV1, BLANKS
+    PACK  CLI_AIM2 WITH "02X", MEME_LEV2 ,BLANKS
+    CALL  FILE_READ USING CLI_FD:    ... File Declaration List
+                          CLI_FN:    ... File Name List
+                          CLI_FC:    ... (I)ndex Or (A)imdex
+                          CLI_FV:    ... File Key Varlists
+                          CLI_AIM:   ... File Key Sizes
+                          CLI_LIST:  ... File Record (Field List)
+                          CLI_REC:   ... File Record (Packed)
+                          CLI_OLD:   ... File Saved When Read
+                          CLI_QTY:   ... Number Of Files
+                          2          ... File Number For This Read
+  RETURN
+
+.#######################################################################
+CREATE_UPDT_RECS        ROUTINE TERM_DATE
+.#######################################################################
+. ------------------------------------------------------------------
+... Create the term and creation INM records for the D_MEMMEM update
+... program.
+. ------------------------------------------------------------------
+TERM_DATE        CHAR   @
+. -----------------------
+... Read MEM
+    CALL  UTIL_MEM_FIND USING RF_ACTV_ID1
+    IF (NOT EQUAL) ... found an orphan MEME record
+        debug
+        RETURN
+    ENDIF
+
+    CALL  UTIL_XCOUNTER USING X_CNT2, 1000
+
+... Term the current record
+    PACKLEN  INM_REC WITH MEM_LIST, MEME_LIST
+    UNPACK  INM_REC INTO INM_LIST
+
+    MOVE  END_OF_YEAR TO INME_TRM  ... Term the record
+
+    MOVE  UPDT_PROG TO INME_CHGBY  ... Clear the "Updated By" fields
+    MOVE  BLANKS TO INME_CHGDT
+
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+    MOVE  UPDT_IMP_NAME TO C_FILE
+    CALL  WRITE_OGBREC USING UPDT_IMP_FILE:
+                             UPDT_IMP_NAME:
+                             INM_LIST
+
+... Create the new record
+    PACKLEN  INM_REC WITH MEM_LIST, MEME_LIST
+    UNPACK  INM_REC INTO INM_LIST
+
+    MOVE  START_OF_YEAR TO INME_EFF ... Start the new record
+    MOVE  TERM_DATE TO INME_TRM     ... Term the new record if needed
+    MOVE  BLANKS TO INME_ID2
+
+    MOVE  UPDT_PROG TO INME_NEWBY, INME_CHGBY ... Clear "New By" fields
+    MOVE  BLANKS TO INME_NEWDT, INME_CHGDT
+
+    MOVE  OGB_SEQ1 TO OGB_SEQ
+    MOVE  UPDT_IMP_NAME TO C_FILE
+    CALL  WRITE_OGBREC USING UPDT_IMP_FILE:
+                             UPDT_IMP_NAME:
+                             INM_LIST
+
+  RETURN
+
+.#######################################################################
+PREPARE_FILES
+.#######################################################################
+    MOVE  RF_ACTV_NAME INTO C_FILE
+    CALL  OPEN_OGBFILE USING RF_ACTV_FILE:
+                             RF_ACTV_NAME
+
+    MOVE  UPDT_IMP_NAME INTO C_FILE
+    CALL  PREP_OGBFILE USING UPDT_IMP_FILE:
+                             UPDT_IMP_NAME
+  RETURN
+
+.#######################################################################
+CLEANUP
+.#######################################################################
+    CALL  CLOSE_OGBFILE USING RF_ACTV_FILE:
+                              RF_ACTV_NAME
+
+    CALL  CLOSE_OGBFILE USING UPDT_IMP_FILE:
+                              UPDT_IMP_NAME
+
+  RETURN
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Subroutines and Other Includes
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+./* MCSI includes found in /nfsgb2/mcsprd/i
+. * OGB includes found in /mcsapl/i
+. */
+    INC  UTIL_COMMON.SR   ... OGB Compilation of Standard UTIL routines
+    INC  UTIL_MEMMEM.SR
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ End of A1611291.PS
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

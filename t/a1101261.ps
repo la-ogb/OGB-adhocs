@@ -1,0 +1,517 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : A1101261.PS
++    Description    : LACHIP DHH/OGB RECONCILIATION UPDATE                  
++                     THIS PROGRAM WILL UPDATE DHH/OGB RECONCILIATION RECORDS 
++                     NOT MATCHING WITH DHH DATA & RECORDS ON DHH NOT ON OGB
++    Date created   : 01/27/2011
++    APSJM  A1101261 DEV - Initial Version 
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
++    apazw 06/12/2017 - mod - increase file size
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC   COMMON.CB          ...Common work area
+              INC   X_COMMON.CB        ...OGB Common Work Area
+              INC   VALID.RL           ...Valid codes
+              INC   X_OGBFILE.CB       ...OGB Custom File Handler
+              INC   PRT.RL             ...Printer definition file
+              INC   XALID.RL           ...Xalid codes
+              INC   CMDPARAM.CB        ...Command Line Routines
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC   DHH_RECP.RL        ...Records layout for Match of DHH/OGB
+              INC   D_MEMMEM.CB        ...Impact Eligiblity Update Layout
+              INC   MEM.RL             ...Member Demographics
+              INC   MEME.RL            ...Member Enrollment   
+. ---------------------------
+...Input file
+. ---------------------------
+
+OGB_DHH_FILE    FILE    VAR=511,TEXT
+OGB_DHH_NAME    INIT    "/w/dhh_recp_chip5.txt"
+
+. ---------------------------
+...Output file
+. ---------------------------
+UPD_CHP5_FD     FILE    VAR=X_INM_SIZE,TEXT
+UPD_CHP5_NAME   INIT    "a1101261.txt"
+.
+NOD_ERR_FD      FILE    VAR=511,TEXT
+NOD_ERR_NAME    INIT    "/w/a1101261.err"
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+DIM_85_OGB           DIM       85
+DIM_85_DHH           DIM       85
+DIM_32_OGB           DIM       32
+DIM_32_DHH           DIM       32
+DIM_6            DIM       6
+FORM_72          FORM      7.2
+FIRST_PAGE       DIM       1
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       8
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+REC_DATE         DIM       10
+PDF_DATE         DIM       8
+AREA             DIM       3
+PHN3             DIM       3
+PHN4             DIM       4
+DASH             INIT      "-"
+SSN3             DIM       3
+SSN2             DIM       2
+SSN4             DIM       4
+YEAR             DIM       4
+MM               DIM       2
+DD               DIM       2
+SLASH            INIT      "/"
+JUNK1            DIM       2
+JUNK2            DIM       2
+JUNK4            DIM       4
+S1               DIM       1
+S2               DIM       1
+                         
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.     Program Specific Varibles
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+FIRST_READ       INIT      "Y"
+PRO_RET_CODE     FORM      1
+DUP_RET_CODE     FORM      1
+WRITE_COUNT      FORM      8
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+
+.-------------------------------------
+... Scheduler Fields for Autosys
+.-------------------------------------
+
+PARAM_LIST        LIST     WITH NAMES
+PARAM_FILE        DIM      12
+PARAM_FROM        DIM      8
+PARAM_THRU        DIM      8
+                  LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "CHP5 RECON UPDATE" TO  C_OPER  ...(20-bytes Max)
+         MOVE      "A1101261"             TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+            CALL X_BLANK_SCREEN
+
+. ---------------------------------
+... Adding CMD_START for autosys
+. ---------------------------------
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. ~~~~~~~ Main Process ~~~~~~~
+. ----------------------------
+
+MAIN_PROCESS
+
+  DEBUG
+
+. ...Initialize
+        CALL      INITIALIZE
+        CALL      OPEN_FILES 
+        CALL      PROCESS_RECON   
+
+. ...Close Files
+        CALL      CLOSE_FILES
+ 
+. ...Normal End-Of-Job
+        CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         IF (NOT C_CMDPAR)
+             MOVE SCH_RTSUCC TO SCH@RTCODE
+         ENDIF
+
+     RETURN                                   
+
+++++++++++++++++++<< END OF MAIN PROCESS >>++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+    CLOCK     TIMESTAMP   INTO  TIMESTAMP
+    CLOCK     TIMESTAMP   INTO  CURRDATE
+    CLOCK     TIMESTAMP     TO  TODAY
+
+
+. ...Display Counters
+
+     MOVE      "Recs Read  : " TO X_CNTDESC1
+     MOVE      "Recs Found : " TO X_CNTDESC2
+     MOVE      "Not Used   : " TO X_CNTDESC3
+     MOVE      "Not Used   : " TO X_CNTDESC4
+     MOVE      "Not Used   : " TO X_CNTDESC5  
+     MOVE      "Not Used   : " TO X_CNTDESC6
+	 
+     IF (NOT C_CMDPAR)
+        CALL      X_DISPLAY_COUNTS
+     ENDIF
+
+     RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+     CALL OPEN_OGBFILE USING OGB_DHH_FILE,OGB_DHH_NAME
+     CALL PREP_OGBFILE USING UPD_CHP5_FD,UPD_CHP5_NAME
+     CALL PREP_OGBFILE USING NOD_ERR_FD,NOD_ERR_NAME                    
+
+  RETURN
+
+. ----------------------------
+. Extract Data
+. ----------------------------
+
+PROCESS_RECON     
+
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING OGB_DHH_FILE,OGB_DHH_NAME,DHHP_LIST
+    IF (RESULT <> 1) 
+        BREAK
+    ENDIF
+
+    ADD 1 TO X_CNT1                        ...Display Counters
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+....Compare OGB & DHH Records
+
+    SWITCH DHHP_RECT
+        CASE "2" OR "4"
+           IF (DHHP_RECT = "4")
+              CALL PROCESS_4
+           ENDIF
+           IF (DHHP_RECT = "2")
+              IF ((DHHP_OGB_PLAN = DHHP_DHH_PLAN) AND:               
+                 (DHHP_OGB_PROD = DHHP_DHH_PROD)) 
+                   IF (DHHP_DHH_EFF <> DHHP_OGB_EFF)
+                        CLEAR DHHP_ERROR
+                        MOVE "EFF/TRM DATE MISMATCH" TO DHHP_ERROR
+                        MOVE OGB_SEQ1 TO OGB_SEQ
+                        CALL WRITE_OGBREC USING NOD_ERR_FD,NOD_ERR_NAME,DHHP_LIST
+                   ELSE
+                      IF (DHHP_DHH_TRM <> DHHP_OGB_TRM)
+                        CLEAR DHHP_ERROR
+                        MOVE "EFF/TRM DATE MISMATCH" TO DHHP_ERROR
+                        MOVE OGB_SEQ1 TO OGB_SEQ
+                        CALL WRITE_OGBREC USING NOD_ERR_FD,NOD_ERR_NAME,DHHP_LIST
+                      ELSE
+                          CALL PROCESS_2
+                      ENDIF
+                   ENDIF
+              ELSE
+                 CALL PROCESS_2
+              ENDIF
+           ENDIF
+        DEFAULT
+           CONTINUE
+    ENDSWITCH
+
+  REPEAT
+  RETURN 
+.
+. ON OGB AND DHH, DON'T MATCH
+
+PROCESS_2
+    CLEAR INM_REC
+    CLEAR MEM_AIM
+    PACK  MEM_AIM1 WITH "01X",DHHP_ESSN,BLANKS
+    PACK  MEM_AIM2 WITH "02X",DHHP_MSSN,BLANKS
+    CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                           MEM_FN:        ...FILE NAME LIST
+                           MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                           MEM_FV:        ...FILE KEY VARLISTS
+                           MEM_AIM:       ...FILE KEY SIZES
+                           MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                           MEM_REC:       ...FILE RECORD (PACKED)
+                           MEM_OLD:       ...FILE SAVED WHEN READ
+                           MEM_QTY:       ...NUMBER OF FILES
+                           2              ...FILE NUMBER FOR THIS READ
+  IF (RESULT <> 1)
+    RETURN
+  ENDIF
+  CALL MOVE_MEM
+  PACKLEN MEM_REC WITH MEM_LIST
+  CLEAR DIM_32_DHH
+  CLEAR DIM_32_OGB
+  PACKLEN DIM_32_DHH WITH DHHP_DHH_EFF,DHHP_DHH_TRM,DHHP_DHH_T_RES:
+          DHHP_DHH_PLAN,DHHP_DHH_PROD
+  PACKLEN DIM_32_OGB WITH DHHP_OGB_EFF,DHHP_OGB_TRM,DHHP_OGB_T_RES:
+          DHHP_OGB_PLAN,DHHP_OGB_PROD
+  MATCH DIM_32_DHH,DIM_32_OGB
+     IF NOT EQUAL
+         CALL MOVE_MEME
+         PACKLEN MEME_REC WITH MEME_LIST
+     ELSE
+         CLEAR MEME_REC
+     ENDIF
+  PACKLEN INM_REC WITH MEM_REC,MEME_REC  
+  UNPACK INM_REC INTO INM_LIST
+  CLEAR INM_CHGBY
+  CLEAR INME_CHGBY
+  IF (INM_REL <> "01")
+      CLEAR INME_DEPC
+      CLEAR INME_RT
+  ENDIF 
+  CALL WRITE_OGBREC USING UPD_CHP5_FD,UPD_CHP5_NAME,INM_LIST
+  CLEAR INM_LIST
+  RETURN
+
+.. ON DHH NOT ON OGB
+PROCESS_4
+  CLEAR INM_REC
+  CLEAR MEM_AIM
+  PACK  MEM_AIM1 WITH "01X",DHHP_ESSN,BLANKS
+  PACK  MEM_AIM2 WITH "02X",DHHP_MSSN,BLANKS
+  CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                           MEM_FN:        ...FILE NAME LIST
+                           MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                           MEM_FV:        ...FILE KEY VARLISTS
+                           MEM_AIM:       ...FILE KEY SIZES
+                           MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                           MEM_REC:       ...FILE RECORD (PACKED)
+                           MEM_OLD:       ...FILE SAVED WHEN READ
+                           MEM_QTY:       ...NUMBER OF FILES
+                           2              ...FILE NUMBER FOR THIS READ
+  IF (RESULT <> 1)
+      CLEAR MEM_REC
+      CLEAR MEM_LIST
+  ENDIF
+  CALL MOVE_MEM
+  CLEAR MEM_CHGBY
+  PACKLEN MEM_REC WITH MEM_LIST
+  CALL MOVE_MEME
+  PACKLEN MEME_REC WITH MEME_LIST
+  PACKLEN INM_REC WITH MEM_REC,MEME_REC  
+  UNPACK INM_REC INTO INM_LIST
+  IF (INM_REL <> "01")
+      CLEAR INME_DEPC
+      CLEAR INME_RT
+  ENDIF 
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  CALL WRITE_OGBREC USING UPD_CHP5_FD,UPD_CHP5_NAME,INM_LIST
+  CLEAR INM_LIST
+  RETURN 
+.
+MOVE_MEM
+  IF (SQUEEZE DHHP_MSSN = "")
+    IF (DHHP_DHH_REL = "01")
+      MOVE DHHP_ESSN TO DHHP_MSSN
+    ENDIF
+  ENDIF
+  MOVE DHHP_MSSN TO MEM_PSSN
+  MOVE DHHP_ESSN TO MEM_ESSN
+  SWITCH DHHP_DHH_REL
+     CASE "18"
+        MOVE "01" TO MEM_REL
+     DEFAULT
+        MOVE "03" TO MEM_REL
+  ENDSWITCH
+  MOVE DHHP_DHH_LNAME TO MEM_LNAME
+  MOVE DHHP_DHH_FNAME TO MEM_FNAME
+  IF (DHHP_DHH_MI <> DHHP_OGB_MI)
+     IF (SQUEEZE DHHP_DHH_MI = "")
+       IF (SQUEEZE DHHP_OGB_MI <> "")
+          FILL "~" IN DHHP_DHH_MI 
+       ENDIF
+     ENDIF
+  ENDIF
+  MOVE DHHP_DHH_MI TO MEM_MINIT
+  MOVE DHHP_DHH_ADDR1 TO MEM_ADDR1
+  MOVE DHHP_DHH_ADDR2 TO MEM_ADDR2
+  MOVE DHHP_DHH_CITY TO MEM_CITY
+  MOVE DHHP_DHH_STATE TO MEM_STATE
+  MOVE DHHP_DHH_ZIP TO MEM_ZIP
+  IF (MEM_REL = "01")
+     MOVE DHHP_DHH_E_PHONE TO MEM_WPHN
+  ENDIF
+  MOVE DHHP_DHH_SEX TO MEM_SEX      
+  MOVE DHHP_DHH_DOB TO MEM_DOB   
+  IF (INM_REL <> "01")
+      MOVE "Y" TO MEM_US05
+  ENDIF
+  RETURN
+.
+MOVE_MEME
+  MOVE "EC" TO MEME_DEPC
+  MOVE "AC" TO MEME_RT   
+  MOVE "5005" TO MEME_LEV1
+  MOVE DHHP_DHH_EFF TO MEME_EFF     
+  MOVE DHHP_DHH_TRM TO MEME_TRM      
+  MOVE DHHP_DHH_T_RES TO MEME_TLET     
+  MOVE DHHP_DHH_PLAN TO MEME_PLAN
+  IF (SQUEEZE MEME_PLAN = "LEV0")  
+    MOVE "00" TO MEME_LEV2
+  ELSE
+    MOVE "01" TO MEME_LEV2
+  ENDIF
+  MOVE DHHP_DHH_PROD TO MEME_PRD
+  MOVE "DHH" TO MEME_NET
+  IF (INM_REL = "01")
+     MOVE "M" TO MEME_MODE
+     MOVE INME_EFF TO MEME_BILLD
+     MOVE "S" TO MEME_DUERU
+     MOVE "5" TO MEME_DUEDA
+     MOVE "B103" TO MEME_BFORM
+  ENDIF
+  MOVE "N" TO MEME_US06
+  RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+    UNLOAD    "schema"
+         
+    IF (C_RMODE = "I")
+       error     horz="23",vert="19":
+                 bgcol=C_ERRB,fgcol=C_ERRF:
+                 lncol=C_ERRL,shade="Y":
+                 text=" Process Aborted by Operator ":
+                 text="-----------------------------"
+        messageerase
+    ENDIF
+
+    CLEAR     C_NOHIST
+
+    TRAPREST  TRAP_DATA
+
+    IF (RUN_MODE = "B")
+        LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE     (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+          REPEAT
+          MOVE      SCH_RTABRT  TO  SCH@RTCODE
+         RETURN
+    ENDIF
+        CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+   RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+      IF (C_CMDPAR)
+         CALL CMD_END
+         STOP
+      ENDIF
+
+         IF (RUN_MODE = "N")
+             DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL
+             MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         ENDIF 
+         CALL        X_DISPLAY_COUNTS
+     RETURN
+
+. --------------------------------
+. Subroutines and other includes
+. --------------------------------
+
+              INC       UTIL.SR      
+              INC       PRINT.SR
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       CMDPARAM.SR
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             End of A1101261.PS
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

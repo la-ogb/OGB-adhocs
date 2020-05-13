@@ -1,0 +1,635 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1411141.ps
++    Description    :  AE Listing for members moving from non-Blue Cross to BC
++
++    apeks 11/14/2014 a1411141 DEV - Initial Version. 
++..............................REVISIONS.......................................
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_OGBFILE.CB
+              INC       PRT.RL               ...Printer Definition File
+              INC       MEM.RL               ...Member Demographics
+              INC       MEME.RL              ...Member Eligibility
+              INC       VALID.RL             ...Valid codes
+              INC       CMDPARAM.CB          ...Command line variables
+
+. --------------------------------------------------------------------------
+.
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+TIMESTAMP     DIM       14
+FROM_DATE     DIM       8
+THRU_DATE     DIM       8
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM_3         DIM       3
+DIM4          DIM       4
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM8          DIM       8
+DIM9          DIM       9
+DIM_9         DIM       9
+DIM10         DIM       10
+DIM12         DIM       12
+DIM13         DIM       13
+DIMTWO        DIM       2
+
+FORM1         FORM      1
+FORM2         FORM      2
+FORM3         FORM      3
+FORM4         FORM      4
+FORM_2        FORM      2
+FORMTWO       FORM      2
+
+READ_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+
+. Program specific working fields
+
+CURRDATE      DIM       8
+
+HLD_MEM       DIM       1500
+HLD_MEME      DIM       600 
+
+DATE_RSLT     DIM       2
+
+WS_ERR        DIM       1
+
+WS_CCYY       DIM       4   .> ccyy
+WS_CC         DIM       2   .> cc  
+WS_YY         DIM       2   .> yy  
+WS_MM         DIM       2   .> mm  
+WS_DD         DIM       2   .> dd
+
+CONT_EFF      DIM       8
+
+..INPUT FILES
+WRK_FILE      FILE      VAR=8,TEXT
+WRK_NAME      INIT      "/w/a1411141.wrk"
+WRK_LIST      LIST
+WRK_MEM       DIM       8  
+              LISTEND
+
+..OUTPUT FILES
+OUT_FILE      FILE      VAR=450,TEXT
+OUT_NAME      INIT      "/w/a1411141.csv"
+OUT_LIST      LIST
+OUT_MEM       DIM       8
+OUT_CM1       INIT      ","
+OUT_SSN       DIM       9
+OUT_CM2       INIT      ","
+OUT_LNM       DIM       20
+OUT_CM3       INIT      ","
+OUT_FNM       DIM       15
+OUT_CM4       INIT      ","
+OUT_AD1       DIM       35
+OUT_CM5       INIT      ","
+OUT_AD2       DIM       35
+OUT_CM6       INIT      ","
+OUT_CTY       DIM       30
+OUT_CM7       INIT      ","
+OUT_STA       DIM       2
+OUT_CM8       INIT      ","
+OUT_ZIP       DIM       13
+OUT_CM9       INIT      ","
+OUT_WPH       DIM       10
+OUT_C10       INIT      ","
+OUT_HPH       DIM       10
+OUT_C11       INIT      ","
+OUT_CRA       DIM       40
+OUT_C12       INIT      ","
+OUT_CRN       DIM       5
+OUT_C13       INIT      ","
+OUT_CRP       DIM       5
+OUT_C14       INIT      ","
+OUT_CRL       DIM       5
+OUT_C15       INIT      ","
+OUT_CRE       DIM       8
+OUT_C16       INIT      ","
+OUT_CRT       DIM       8
+OUT_C17       INIT      ","
+OUT_AEN       DIM       5
+OUT_C18       INIT      ","
+OUT_AEP       DIM       5
+OUT_C19       INIT      ","
+OUT_AEL       DIM       5
+OUT_C20       INIT      ","
+OUT_AEE       DIM       8
+OUT_C21       INIT      ","
+OUT_AET       DIM       8
+OUT_C22       INIT      ","
+OUT_JFN       DIM       5
+OUT_C23       INIT      ","
+OUT_JFP       DIM       5
+OUT_C24       INIT      ","
+OUT_JFL       DIM       5
+OUT_C25       INIT      ","
+OUT_JFE       DIM       8
+OUT_C26       INIT      ","
+OUT_JFT       DIM       8
+              LISTEND
+
+
+HDR_LIST      LIST
+HDR_MEM       INIT      "MEMBER ID"
+HDR_CM1       INIT      ","
+HDR_SSN       INIT      "SSN"
+HDR_CM2       INIT      ","
+HDR_LNM       INIT      "LAST NAME"
+HDR_CM3       INIT      ","
+HDR_FNM       INIT      "FIRST NAME"
+HDR_CM4       INIT      ","
+HDR_AD1       INIT      "ADDRESS1"
+HDR_CM5       INIT      ","
+HDR_AD2       INIT      "ADDRESS2"
+HDR_CM6       INIT      ","
+HDR_CTY       INIT      "CITY"
+HDR_CM7       INIT      ","
+HDR_STA       INIT      "STATE"
+HDR_CM8       INIT      ","
+HDR_ZIP       INIT      "ZIPCODE"
+HDR_CM9       INIT      ","
+HDR_WPH       INIT      "WORK PHONE"
+HDR_C10       INIT      ","
+HDR_HPH       INIT      "HOME PHONE"
+HDR_C11       INIT      ","
+HDR_CRA       INIT      "CURR AGENCY"
+HDR_C12       INIT      ","
+HDR_CRN       INIT      "CURR NETWORK"
+HDR_C13       INIT      ","
+HDR_CRP       INIT      "CURR PROD"
+HDR_C14       INIT      ","
+HDR_CRL       INIT      "CURR PLAN"
+HDR_C15       INIT      ","
+HDR_CRE       INIT      "CURR EFF"
+HDR_C16       INIT      ","
+HDR_CRT       INIT      "CURR TRM"
+HDR_C17       INIT      ","
+HDR_AEN       INIT      "AE NETWORK"
+HDR_C18       INIT      ","
+HDR_AEP       INIT      "AE PROD"
+HDR_C19       INIT      ","
+HDR_AEL       INIT      "AE PLAN"
+HDR_C20       INIT      ","
+HDR_AEE       INIT      "AE EFF"
+HDR_C21       INIT      ","
+HDR_AET       INIT      "AE TRM"
+HDR_C22       INIT      ","
+HDR_JFN       INIT      "JAN NETWORK"
+HDR_C23       INIT      ","
+HDR_JFP       INIT      "JAN PROD"
+HDR_C24       INIT      ","
+HDR_JFL       INIT      "JAN PLAN"
+HDR_C25       INIT      ","
+HDR_JFE       INIT      "JAN EFF"
+HDR_C26       INIT      ","
+HDR_JFT       INIT      "JAN TRM"
+              LISTEND
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST      WITH NAMES
+PARAM_FILE    DIM       12
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+.RUN_CLIPCALC    EXTERNAL
+
+. -----------------
+.   Begin Program
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         IF (C_CMDPAR)
+            CALL CMD_START USING "a1411141"
+         ENDIF
+
+         MOVE      "MENU"               TO  C_NEXT
+         MOVE      "AE NON-BC --> BC LISTING" TO  C_OPER
+         MOVE      "a1411141"           TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+         LOADMOD   "clipcalc"
+
+. --------------------------------------------------------------------------------
+.   1-Help  2-Srch  3-Prev  4-Next  5-New   6-Serv  7-Code  8-Note  9-Quit 10-More
+. --------------------------------------------------------------------------------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+         CLOCK     TIMESTAMP INTO PARAM_FROM
+
+         RETURN    IF (SQUEEZE PARAM_FROM = "")
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         CALL      INITIALIZE    
+         CALL      PROCESS_FILE
+         CALL      NEOJ
+
+         TRAPREST  TRAP_DATA
+
+         IF (NOT C_CMDPAR)
+            MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.  Prepare for extract
+. -----------------------------------
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+         MOVE      0           TO  READ_COUNT
+         MOVE      0           TO  WRITE_COUNT
+
+         IF (C_RMODE = "I" AND NOT C_CMDPAR)
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" Records In          ":
+                      text=" Records Out         " 
+         ENDIF
+
+. Reformat MEME
+         CLEAR SCRATCH
+. Current Records where:
+. Network is LSUSH, VANTA, EXTND, PPLSH
+         PACK DIM2 WITH BLANKS
+         PACK SCRATCH WITH "meme.dbf ",WRK_NAME," 1-8 -j -t":
+                           " -p112-114neDHH":              .Network            
+                           " -p112-115neBLUE":             .Network            
+                           " -p112-115neEGWP":             .Network            
+                           " -p112-115neLIFE":             .Network            
+                           " -p112-116neNOCOV":            .Network            
+                           " -p130-131ne#"",DIM2,"#"":     .Rate table
+                           " -p104-111ge20141231",BLANKS   .Term date 
+
+         REFORMAT SCRATCH                   
+
+         PACK SCRATCH WITH WRK_NAME," ",WRK_NAME," 1-8 -j -u -t",BLANKS 
+         SORT SCRATCH
+
+         CALL      OPEN_OGBFILE USING WRK_FILE,WRK_NAME
+         CALL      PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      WRITE_OGBREC USING OUT_FILE,OUT_NAME,HDR_LIST
+
+         RETURN
+
+. -----------------------------------
+. Read through MEM File
+. -----------------------------------
+PROCESS_FILE
+
+         LOOP
+            MOVE      OGB_SEQ1 TO OGB_SEQ
+            CALL      READ_OGBFILE USING WRK_FILE,WRK_NAME,WRK_LIST  
+            IF        (RESULT <> 1) 
+                      BREAK 
+            ENDIF
+
+            ADD       1 TO READ_COUNT
+            MOVE      READ_COUNT TO WORK_COUNT
+            UNPACK    WORK_COUNT INTO FRONT,BACK
+            IF (BACK = "000")
+               IF (C_RMODE = "I" AND NOT C_CMDPAR)
+                  DISPLAY   *P41:20,READ_COUNT
+               ENDIF
+            ENDIF
+
+            CLEAR WS_ERR
+
+            debug
+            CALL READ_MEM            
+            CONTINUE IF (SQUEEZE WS_ERR <> "")
+
+            debug
+            CALL GET_MEME
+            CONTINUE IF (SQUEEZE OUT_AEN = "")
+            CONTINUE IF (SQUEEZE OUT_AEN <> "BLUE")
+            IF (SQUEEZE OUT_CRN = "BLUE" AND SQUEEZE OUT_AEN = "BLUE")
+               IF (SQUEEZE OUT_JFN = "BLUE" OR SQUEEZE OUT_JFN = "")
+                  CONTINUE
+               ENDIF
+            ENDIF
+
+            debug
+            CALL WRITE_OUT
+
+PROCESS_FILE_CONT
+         REPEAT
+
+         RETURN
+
+. ---------------------------------
+.   Get Member Record     
+. ---------------------------------
+
+READ_MEM 
+
+         PACK      MEM_FK11 WITH WRK_MEM,BLANKS
+         CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                       MEM_FN:          ...FILE NAME LIST
+                       MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                       MEM_FV:          ...FILE KEY VARLISTS
+                       MEM_FK:          ...FILE KEY SIZES
+                       MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                       MEM_REC:         ...FILE RECORD (PACKED)
+                       MEM_OLD:         ...FILE SAVED WHEN READ
+                       MEM_QTY:         ...NUMBER OF FILES
+                       1                ...FILE NUMBER FOR THIS READ
+         IF (RESULT <> 1)
+            PACK WS_ERR WITH "1"
+            GOTO READ_MEM_END
+         ENDIF
+
+READ_MEM_END
+         RETURN
+
+. ------------------------------------------------------------------
+.  Get MEME records
+. ------------------------------------------------------------------
+
+GET_MEME
+
+         CLEAR OUT_CRN
+         CLEAR OUT_CRP
+         CLEAR OUT_CRL
+         CLEAR OUT_CRE
+         CLEAR OUT_CRT
+         CLEAR OUT_AEN
+         CLEAR OUT_AEP
+         CLEAR OUT_AEL
+         CLEAR OUT_AEE
+         CLEAR OUT_AET
+         CLEAR OUT_JFN
+         CLEAR OUT_JFP
+         CLEAR OUT_JFL
+         CLEAR OUT_JFE
+         CLEAR OUT_JFT
+
+         CLEAR MEME_FK11
+         PACK      MEME_FK11 WITH WRK_MEM,BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...FILE DECLARATION LIST
+                       MEME_FN:          ...FILE NAME LIST
+                       MEME_FC:          ...(I)NDEX OR (A)IMDEX
+                       MEME_FV:          ...FILE KEY VARLISTS
+                       MEME_FK:          ...FILE KEY SIZES
+                       MEME_LIST:        ...FILE RECORD (FIELD LIST)
+                       MEME_REC:         ...FILE RECORD (PACKED)
+                       MEME_OLD:         ...FILE SAVED WHEN READ
+                       MEME_QTY:         ...NUMBER OF FILES
+                       1                 ...FILE NUMBER FOR THIS READ
+
+NEXT_MEME
+         LOOP
+            CALL      FILE_NEXT USING MEME_FD:
+                                      MEME_FN:  ...FILE NAME LIST
+                                      MEME_FC:  ...(I)NDEX OR (A)IMDEX
+                                      MEME_FV:     ...FILE KEY VARLISTS
+                                      MEME_FK:     ...FILE KEY SIZES
+                                      MEME_LIST:   ...FILE RECORD (FIELD LIST)
+                                      MEME_REC:    ...FILE RECORD (PACKED)
+                                      MEME_OLD:    ...FILE SAVED WHEN READ
+                                      MEME_QTY:    ...NUMBER OF FILES
+                                      1            ...FILE NUMBER FOR THIS READ
+
+             IF (WRK_MEM <> MEME_ID1)
+                GOTO GET_MEME_END
+             ENDIF
+
+. Need current and future records
+. Skip voided records
+             CONTINUE IF (SQUEEZE MEME_TRM <> "" AND MEME_TRM < MEME_EFF)
+. Skip termed record prior to 12/31/14
+             CONTINUE IF (SQUEEZE MEME_TRM <> "" AND MEME_TRM < "20141231")
+. Skip non-health records,DHH plans
+             CONTINUE IF (SQUEEZE MEME_NET = "LIFE")
+             CONTINUE IF (SQUEEZE MEME_NET = "EGWP")
+             CONTINUE IF (SQUEEZE MEME_NET = "NOCOV")
+             CONTINUE IF (SQUEEZE MEME_NET = "DHH")
+             CONTINUE IF (SQUEEZE MEME_PLAN = "HRA1")
+             CONTINUE IF (SQUEEZE MEME_PRD = "HSA")
+. Skip those who last record is not Blue Cross
+             CONTINUE IF (SQUEEZE MEME_TRM = "" AND SQUEEZE MEME_NET <> "BLUE")
+
+             IF (MEME_EFF < "20150101")
+                PACK OUT_CRN WITH MEME_NET,BLANKS
+                PACK OUT_CRP WITH MEME_PRD,BLANKS
+                PACK OUT_CRL WITH MEME_PLAN,BLANKS
+                PACK OUT_CRE WITH MEME_EFF,BLANKS
+                PACK OUT_CRT WITH MEME_TRM,BLANKS
+                PACK OUT_CRA WITH MEME_LEV1,MEME_GRPN,BLANKS
+             ENDIF
+
+             IF (MEME_EFF = "20150101")
+                PACK OUT_JFN WITH MEME_NET,BLANKS
+                PACK OUT_JFP WITH MEME_PRD,BLANKS
+                PACK OUT_JFL WITH MEME_PLAN,BLANKS
+                PACK OUT_JFE WITH MEME_EFF,BLANKS
+                PACK OUT_JFT WITH MEME_TRM,BLANKS
+             ENDIF
+
+             IF (MEME_EFF = "20150301")
+                PACK OUT_AEN WITH MEME_NET,BLANKS
+                PACK OUT_AEP WITH MEME_PRD,BLANKS
+                PACK OUT_AEL WITH MEME_PLAN,BLANKS
+                PACK OUT_AEE WITH MEME_EFF,BLANKS
+                PACK OUT_AET WITH MEME_TRM,BLANKS
+             ENDIF
+
+         REPEAT
+        
+GET_MEME_END
+         RETURN
+
+. -----------------------
+. Output update record
+. -----------------------
+
+WRITE_OUT
+
+         PACK OUT_MEM WITH WRK_MEM,BLANKS
+         PACK OUT_SSN WITH MEM_ESSN,BLANKS
+         PACK OUT_FNM WITH MEM_FNAME,BLANKS
+         REPLACE ", " IN OUT_FNM
+         PACK OUT_LNM WITH MEM_LNAME,BLANKS
+         REPLACE ", " IN OUT_LNM
+         PACK OUT_AD1 WITH MEM_ADDR1,BLANKS 
+         REPLACE ", " IN OUT_AD1
+         PACK OUT_AD2 WITH MEM_ADDR2,BLANKS 
+         REPLACE ", " IN OUT_AD2
+         PACK OUT_CTY WITH MEM_CITY,BLANKS
+         REPLACE ", " IN OUT_CTY
+         PACK OUT_STA WITH MEM_STATE,BLANKS
+         REPLACE ", " IN OUT_STA
+         PACK OUT_ZIP WITH MEM_ZIP,BLANKS
+         REPLACE ", " IN OUT_ZIP
+         PACK OUT_HPH WITH MEM_HPHN,BLANKS
+         REPLACE ", " IN OUT_HPH
+         PACK OUT_WPH WITH MEM_WPHN,BLANKS
+         REPLACE ", " IN OUT_WPH
+
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+ 
+         RETURN
+
+. -----------------------
+.   Normal End of Job  
+. -----------------------
+NEOJ
+         IF (C_RMODE = "I" AND NOT C_CMDPAR)
+            DISPLAY   *P41:20,READ_COUNT
+            DISPLAY   *P41:21,WRITE_COUNT
+            error     horz="22",vert="09":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" a1411141 Complete ":
+                      text="-------------------"
+         ENDIF
+
+         IF (C_CMDPAR)
+            CALL CMD_END
+            STOP
+         ENDIF
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       UTIL.SR
+         INC       JULIAN.EX
+         INC       FILE.IO
+         INC       VALID.IO
+         INC       CMDPARAM.SR
+         INC       X_OGBFILE.IO
+

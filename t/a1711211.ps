@@ -1,0 +1,306 @@
+./* ====================================================================
+. *          Name : a1711211.ps
+. *   Description : Migrates members covered under the Vantage Medicare
+. *     Advantage HMO-POS (VANTA/HMO65/PRSH) to its replacement, Vantage
+. *     Standard (VANTA/HMO65/STAN) for 1/1/18
+. * ...........................CHANGE LOG...............................
+. *  apjwh - 11/21/2017 - DEV - Initial Version
+. * ================================================================= */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC MEM.RL ...demographic
+    INC MEME.RL ...enrollment
+    INC D_MEMMEM.CB ...Impact update record
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+WORK_FD         FILE VAR=X_MEME_SIZE,TEXT ...filled with MEME_LIST
+WORK_FILE       INIT "/w/a1711211.prsh.wrk"
+
+ACTIVE_FD       FILE VAR=X_MEME_SIZE,TEXT ...filled with MEME_LIST
+ACTIVE_FILE     INIT "/w/a1711211.actives.wrk"
+
+IMP_UPDT_FD     FILE VAR=X_INM_SIZE,TEXT ...update rec. Filled with INM_LIST
+IMP_UPDT_FILE   INIT "a1711211.inm"
+
+MSG_HEIGHT      NUM  "20"
+
+PROCESS_NAME    INIT "NEWSTN"
+NEWYEAR18       INIT "20180101"
+NEWYEAREVE18    INIT "20171231"
+NODATE          INIT "        "
+
+PARAM_LIST      LIST WITH NAMES
+.// add parameter variables here
+                LISTEND
+
+./* =============
+. * Begin Program
+. * ============= */
+
+.// Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+.// Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW ROUTINE
+
+... Check return stack
+    RETCOUNT  ORIG_RETURN
+
+.   // Set runtime variables
+    MOVE "a1711211" TO C_PROG
+    MOVE "Migrate PRSH to STAN" TO C_OPER
+    MOVE "menu" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG // signal start TO Autosys
+    ELSE
+        CALL X_BLANK_SCREEN // draw the standard screen
+    ENDIF
+
+.   // Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.   // Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+MAIN_PROCESS ROUTINE
+    debug
+    CALL DRAW_COUNTERS
+    CALL GET_BASE_DATA
+    CALL IO_PREP
+    CALL PROCESS_DATA
+    CALL IO_CLEAN
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+DRAW_COUNTERS ROUTINE
+    RETURN IF (C_CMDPAR)
+
+    MOVE "Current PRSH Enrollees" TO X_CNTDESC1
+    MOVE "Future PRSH Recs" TO X_CNTDESC2
+    MOVE "Total PRSH Recs" TO X_CNTDESC3 ...1 + 2
+    MOVE "Updated STAN Recs" TO X_CNTDESC4 ...should DEPC_NEW 3
+    MOVE "Not Used" TO X_CNTDESC5
+    MOVE "Not Used" TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    CALL X_DISPLAY_COUNTS
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+GET_BASE_DATA ROUTINE
+./* We need a list of PRSH plans that have no term date or one beyond
+. * 1/1/18.
+. */
+POS_MEME_TRM        INIT "104-111"
+POS_MEME_NET        INIT "112-116"
+POS_MEME_PRD        INIT "117-121"
+POS_MEME_PLAN       INIT "126-129"
+...
+    debug
+    ERASE WORK_FILE
+    MOVE ("meme.dbf "+WORK_FILE+" ":
+          +"-p"+POS_MEME_NET+"eq#"VANTA#" ":
+          +"-p"+POS_MEME_PRD+"eq#"HMO65#" ":
+          +"-p"+POS_MEME_PLAN+"eq#"PRSH#" -t -j") TO SCRATCH
+
+    CALL UTIL_XMESSAGE USING "Finding VANTA/PRSH enrollees...",MSG_HEIGHT
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "PRSH Reformat Failed","GET_BASE_DATA"
+    ENDIF
+
+... Find PRSH recs that are active for at least a single day in 2018
+    MOVE (WORK_FILE+" "+ACTIVE_FILE+" ":
+         +"-p"+POS_MEME_TRM+"gt#""+NEWYEAREVE18+"#" or ":
+         +"-p"+POS_MEME_TRM+"eq#""+NODATE+"#" -t") TO SCRATCH
+
+    CALL UTIL_XMESSAGE USING ("Get only the records active as of "+NEWYEAR18),MSG_HEIGHT
+    REFORMAT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Active Plan Reformat Failed","GET_BASE_DATA"
+    ENDIF
+
+... Sort by member ID
+    MOVE (ACTIVE_FILE+" "+ACTIVE_FILE+" 1-8 -t") TO SCRATCH
+
+    CALL UTIL_XMESSAGE USING ("Sorting Data..."),MSG_HEIGHT
+    SORT SCRATCH
+    IF (OVER)
+        CALL UTIL_ERRORMSG USING "Sort Failed","GET_BASE_DATA"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_PREP ROUTINE
+    CALL PREP_OGBFILE USING IMP_UPDT_FD,IMP_UPDT_FILE
+    CALL OPEN_OGBFILE USING ACTIVE_FD,ACTIVE_FILE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+PROCESS_DATA ROUTINE
+./* We have a list of all PRSH records that haven't termed prior to
+. * 1/1/18. Ignore voids. Now we take one of two actions:
+. *     1. Term and make a new STAN record if the plan has been
+. *        active prior to 1/1/18
+. *     2. Transform the rec to STAN if it's effective 1/1/18 onward
+. */
+ISERROR         NUM  1
+LAST_ID1        CHAR 8
+NEW_REC         CHAR X_MEME_SIZE
+UPDATE_REC      CHAR X_MEME_SIZE
+...
+    debug
+    CALL UTIL_XMESSAGE USING "Determining the fate of hundreds...Please Wait",MSG_HEIGHT
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    FILL " " IN MEM_LIST,MEME_LIST,LAST_ID1
+
+    LOOP
+        CALL READ_OGBFILE USING ACTIVE_FD,ACTIVE_FILE,MEME_LIST
+        BREAK IF (RESULT != 1) ...all done
+
+        IF (SQUEEZE MEME_PLAN != "PRSH")
+            CALL UTIL_ERRORMSG USING ("Reformat is broken. Non-PRSH Found (ID1 = "+MEME_ID1+")"),"PROCESS_DATA"
+        ENDIF
+
+        CONTINUE IF (SQUEEZE MEME_TRM & MEME_TRM < MEME_EFF)
+
+        IF (SQUEEZE LAST_ID1 != MEME_ID1) ... New Person?
+            FILL " " IN MEM_LIST
+            CLEAR MEM_LIST,ISERROR
+            MOVE MEME_ID1 TO LAST_ID1
+
+            CALL UTIL_MEM_FIND USING MEME_ID1
+            IF (NOT EQUAL)
+                SET ISERROR ... no linking MEME
+                CONTINUE
+            ENDIF
+        ELSE
+            CONTINUE IF (ISERROR) ... Same Person, still an error?
+        ENDIF
+
+        CONTINUE IF (NOT SQUEEZE MEME_EFF) ...never gonna happen, maybe
+
+./* If the plan is already active, term it and create a new copy, but
+. * STAN instead. Otherwise, just change the CLIP
+. */
+        IF (MEME_EFF < NEWYEAR18)
+            CALL UTIL_XCOUNTER USING X_CNT1,1000
+            PACK NEW_REC WITH MEME_LIST ...perserve prior term date, if it exists
+            MOVE NEWYEAREVE18 TO MEME_TRM ...term current PRSH plan
+            PACK UPDATE_REC WITH MEME_LIST
+            CALL BUILD_UPDATE_REC USING UPDATE_REC
+
+... Initialize the new STAN plan. No MEME and clear our old QLE Add data
+            UNPACK NEW_REC INTO MEME_LIST
+
+            IF (SQUEEZE MEME_TRM)
+                debug ...current TRM exists. Check context for bugs
+            ENDIF
+
+            MOVE NEWYEAR18 TO MEME_EFF
+            FILL " " IN MEME_ID2:
+                        MEME_NEWDT
+            FILL "~" IN MEME_QLEA:
+                        MEME_QLADD
+            MOVE PROCESS_NAME TO MEME_NEWBY
+        ELSE
+            CALL UTIL_XCOUNTER USING X_CNT2,1000 ...future PRSH
+        ENDIF
+        MOVE (X_CNT1 + X_CNT2) TO X_CNT3
+
+... Initialize the new STAN plan
+        MOVE ("STAN"+BLANKS) TO MEME_PLAN
+        PACK UPDATE_REC WITH MEME_LIST
+        CALL BUILD_UPDATE_REC USING UPDATE_REC
+    REPEAT
+
+    IF (X_CNT3 = 0)
+        CALL UTIL_ERRORMSG USING "No PRSH MEME Recs Found...Quite Odd","PROCESS_DATA"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+BUILD_UPDATE_REC ROUTINE MEME@
+./* Finish and write the update rec
+. */
+MEME@       CHAR @
+SAVE_MEME   CHAR X_MEME_SIZE
+...
+
+... MEME is now complete. Let's update!
+        PACK SAVE_MEME WITH MEME_LIST
+        UNPACK MEME@ INTO MEME_LIST
+        MOVE PROCESS_NAME TO MEME_CHGBY
+
+... Write an update record
+        PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+        UNPACK INM_REC INTO INM_LIST
+        CALL WRITE_OGBREC USING IMP_UPDT_FD,IMP_UPDT_FILE,INM_LIST
+        CALL UTIL_XCOUNTER USING X_CNT4, 1000
+        UNPACK SAVE_MEME INTO MEME_LIST
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+IO_CLEAN ROUTINE
+...
+    MESSAGEERASE
+    CALL CLOSE_OGBFILE USING IMP_UPDT_FD,IMP_UPDT_FILE
+    CALL CLOSE_OGBFILE USING ACTIVE_FD,ACTIVE_FILE
+    ERASE ACTIVE_FILE
+    ERASE WORK_FILE
+    IF (OVER)
+        debug
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+
+    INC UTIL_MEM.SR     // MEM read routines
+    INC UTIL_MEME.SR    // MEME read routines
+    INC UTIL_COMMON.SR  // OGB Compilation of Standard UTIL routines
+
+./* ==============
+. * End of program
+. * ============== */

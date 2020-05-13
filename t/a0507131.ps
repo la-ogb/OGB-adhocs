@@ -1,0 +1,1117 @@
++    Program Name   :  A0507131.ps
++    Description    :  EXT   - Creates an indexed file of all active people 
++                              in ISIS agencies who have health/life coverage
++                              Used in creating the daily Outbound file. 
++
++    Author         :  Deborah Mohammad
++    Date created   :  07/25/2005
++
++    REVISIONS
++    
++    
++    
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEME.RL              Member Enrollment/Elig File 
+              INC       MEMS.RL              Member Salaries
+              INC       CLI.RL               Client Demographics File
+              INC       BIL.RL
+              INC       BILD.RL
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+ISISTST_FILE     FILE     FIX=10,TEXT
+ISISTST_NAME     INIT      "/w/elg0901tst.txt"
+ISISTST_LIST     LIST 
+ISISTST_ID       DIM      8
+ISISTST_RT       DIM      2
+                 LISTEND
+
+ISISWRK_FILE     IFILE     FIX=65,KEYL=13,TEXT
+ISISWRK_NAME     INIT      "elg0901wrk.ix1"
+
+ISISWRK_REC           LIST
+..<BEGIN>....................................................................
+ISISWRK_TYPE          DIM       4     001-004      Determined from table below 
+ISISWRK_EMP_SSN       DIM       9     005-013      MEM_ESSN 
+ISISWRK_AGENCY        DIM       4     014-017      MEME_LEV1 
+ISISWRK_EFFDATE       DIM       8     018-025      MEME_EFF 
+ISISWRK_TRMDATE       DIM       8     026-033      MEME_TRM 
+ISISWRK_NETWORK       DIM       5     034-038      MEME_NET 
+ISISWRK_PRODUCT       DIM       5     039-043      MEME_PRD 
+ISISWRK_PLANCODE      DIM       4     044-047      MEME_PLAN 
+ISISWRK_COVLEVEL      DIM       2     048-049      MEME_DEPC 
+ISISWRK_RIDER         DIM       4     050-053      MEME_RD01 thru MEME_RD10 
+ISISWRK_FACELIFE      DIM       5     054-058      BILD_IVOL 
+ISISWRK_PREMIUM       DIM       7     059-065      BILD_RATE 
+..<END>......................................................................
+                      LISTEND
+
+.----------------------------------------------------------------------------
+.Work File Declaration...this file is created by reformatting meme for eff cov
+.----------------------------------------------------------------------------
+
+MYMEME_FILE     FILE      VAR=56,TEXT
+MYMEME_NAME     INIT      "elg0901meme.txt"
+
+MYREC            LIST
+..<BEGIN>..................................................................
+MYMEME_ID1       DIM     8                Member ID for enrollee
+MYMEME_ID2       DIM     4                Member ID2
+MYMEME_LEV1      DIM     5                Client Code 1
+MYMEME_LEV2      DIM     5                Client Code 2
+MYMEME_EFF       DIM     8                Member Effective Date
+MYMEME_TRM       DIM     8                Member Term Date
+MYMEME_NET       DIM     5                Network
+MYMEME_PRD       DIM     5                Product
+MYMEME_CARR      DIM     4                Carrier
+MYMEME_PLAN      DIM     4                Plan Code
+..<END>....................................................................
+                    LISTEND
+
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+...Work file variables
+ISISWRK_NAME1  DIM       30
+MYMEME_NAME1   DIM       30
+
+
+ISISWRK_KEY    DIM       13
+MYMEME_SRTKEY  INIT      "1-8 -t -u"
+
+ISISWRK_RESULT FORM      1
+WORK_RESULT    FORM      1
+MEM_RESULT     FORM      1
+BIL_RESULT     FORM      1
+BILD_RESULT    FORM      1
+
+WRK_PLAN       DIM       2
+WRK_RIDER      DIM       2
+
+WRK_EMP_SSN    DIM       9
+WRK_FACELIFE   DIM       5  
+ISISDATE       INIT      "20030701"
+INFINITY       INIT      "99991231"
+
+SWT_REL        DIM       2
+SWT_UPS        DIM       1
+SWT_RIDER      DIM       1
+WRK_HRIDER     DIM       4
+
+FIRST_TIME     FORM      "1"
+
+DIM49          DIM       49
+BLANK8         INIT      "        "
+SPACES         INIT      "     "
+
+WRK_BEGFL      DIM       5
+WRK_ENDFL      DIM       5
+
+WRK_BEGPREM    DIM       3
+WRK_ENDPREM    DIM       7
+
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+
+WRK_TYPE       DIM       2
+DIM2           DIM       2
+
+W_EFF_H        DIM       8
+W_EFF_L        DIM       8
+H_EFF          DIM       8
+L_EFF          DIM       8
+BILL_DATE      DIM       8
+
+FORM_EEPOR     FORM      7.2
+EMPH_PORTION   FORM      7.2
+EMPL_PORTION   FORM      7.2
+
+WORK_DATEMM    DIM       2
+WORK_DATEDD    DIM       2
+WORK_DATECCYY  DIM       4
+
+STAR10        INIT      "**********"
+STAR5         INIT      "*****"
+STAR4         INIT      "****"
+STAR2         INIT      "**"
+STAR1         INIT      "*"
+
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+
+ASK_OPTION
+
+         MOVE      BLANKS TO WCHAR
+         dialog    horz="20",vert="08":
+                   bgcol=C_DLGB,fgcol=C_DLGF:
+                   lncol=C_DLGL,shade="Y":
+                   text="This program builds the ISIS outbound file": 
+                   text="Ready to go (Y/N): ":
+                   field=WCHAR
+         GOTO      QUIT IF (WCHAR <> "Y")
+
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+
+         CALL MAIN_PROCESS
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+         DEBUG
+         CALL REFORMAT_MEME_FILE
+         CALL OPEN_FILES
+         CALL READ_MYMEME
+         CALL CLOSE_FILES
+
+         RETURN
+
+.--------------------
+.Reformat MEME file
+.--------------------
+REFORMAT_MEME_FILE
+
+         DISPLAY   *BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+                   *P30:21, "REFORMATTING MEME FILE", *BOLDOFF
+    
+. Reformat meme records into work file not termed 
+.MEMEID1, MEMEID2, MEMELEV1, MEMELEV2, MEMEEFF, MEMETRM, MEMENET
+.MEMEPRD, MEMECARR, MEMEPLAN
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "meme.dbf ",MYMEME_NAME1," 1-12 21-30 96-129":
+                      " -p104-111eq#"",BLANK8,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED meme TO ELG0901MEME.TXT"
+        CHAIN "MENU"
+    ENDIF
+
+.Append to reformat for records with termed date greater than run date
+         DISPLAY   *BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+                   *P30:21, "APPENDING TO /w/ELG0901MEME.TXT", *BOLDOFF
+    
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "meme.dbf ",MYMEME_NAME1," 1-12 21-30 96-129":
+                      " -p104-111gt#"",CURRDATE,"#" -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED APPEND TO ELG0901MEME.TXT"
+        CHAIN "MENU"
+    ENDIF
+ 
+...Sorting file by member ID
+
+        DISPLAY   *BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+                   *P30:21, "SORTING FILE PLEASE WAIT       ", *BOLDOFF
+        CALL      SORT_OGBFILE USING MYMEME_NAME1, MYMEME_NAME1:  
+                                     MYMEME_SRTKEY
+        IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED"
+        CHAIN     "menu"
+        ENDIF
+        DISPLAY   *P30:21, *BGCOLOR=*CYAN, *EL
+
+    RETURN
+
+. -------------------------------
+.Reads meme file created from reformat
+. -------------------------------
+READ_MYMEME
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        MOVE MYMEME_NAME TO C_FILE
+        CALL READ_OGBFILE USING MYMEME_FILE, MYMEME_NAME1, MYREC
+
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+
+        CALL READ_CLI 
+
+        IF (SWT_UPS = "U")
+            CALL READ_MEM
+        ELSE
+            CONTINUE
+        ENDIF
+
+...If it is a UPS enrollee record we read meme to get their
+...most current record then we prepare the record for index file
+        CLEAR W_EFF_H
+        CLEAR W_EFF_L 
+        CLEAR MEME_SAV
+        CLEAR MEME_SAV2
+
+        IF (SWT_REL <> "01")
+            CLEAR ISISWRK_EMP_SSN  
+            CONTINUE
+        ENDIF
+
+        CALL READ_MEME
+        
+        IF ((SQUEEZE MEME_SAV = "") AND (SQUEEZE MEME_SAV2 = ""))
+            CONTINUE
+        ENDIF
+
+        CLEAR EMPL_PORTION
+        CLEAR EMPH_PORTION
+        CLEAR WRK_HRIDER
+
+        UNPACK MEME_SAV INTO MEME_LIST
+        MOVE MEME_EFF TO H_EFF
+        UNPACK MEME_SAV2 INTO MEME_LIST
+        MOVE MEME_EFF TO L_EFF
+
+        IF ((H_EFF <= CURRDATE) AND (L_EFF <= CURRDATE))
+            CLEAR BIL_AIM
+            PACK BIL_AIM6 WITH "06X",BILL_DATE  	
+            CALL GET_PREMIUMS
+        ELSE
+            IF (H_EFF > CURRDATE)
+                CLEAR BIL_AIM
+                PACK BIL_AIM6 WITH "06X",H_EFF 
+                CALL GET_PREMIUM_H
+            ELSE
+                CLEAR BIL_AIM
+                PACK BIL_AIM6 WITH "06X",L_EFF 
+                CALL GET_PREMIUM_L
+            ENDIF
+        ENDIF
+        
+...Health record
+        IF ((EMPH_PORTION <> 0) AND (SQUEEZE MEME_SAV <> ""))
+            UNPACK MEME_SAV INTO MEME_LIST
+            UNPACK EMPH_PORTION INTO WRK_BEGPREM,WRK_ENDPREM
+            MOVE WRK_ENDPREM  TO ISISWRK_PREMIUM
+            MOVE "HLPN" TO ISISWRK_TYPE
+            CALL WRITE_RECORD
+        ENDIF
+
+...Life record
+        IF ((EMPL_PORTION <> 0) AND (SQUEEZE MEME_SAV2 <> "")) 
+            UNPACK MEME_SAV2 INTO MEME_LIST
+            UNPACK EMPL_PORTION INTO WRK_BEGPREM,WRK_ENDPREM
+            MOVE WRK_ENDPREM  TO ISISWRK_PREMIUM
+            MOVE STAR4 TO ISISWRK_RIDER
+            MOVE "LF" TO WRK_PLAN
+            MOVE "PN" TO WRK_RIDER
+            PACK ISISWRK_TYPE WITH WRK_PLAN, WRK_RIDER
+            CALL WRITE_RECORD
+        ENDIF
+
+      REPEAT
+
+    RETURN
+
+. -------------------------------
+. Reads Client File to see if
+. it is an ISIS member 
+. -------------------------------
+
+READ_CLI
+
+    CLEAR SWT_UPS
+    CLEAR CLI_AIM
+    PACK CLI_AIM1 WITH "01X",MYMEME_LEV1
+    PACK CLI_AIM2 WITH "02X",MYMEME_LEV2
+    CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                             CLI_FN:      ...File Name List
+                             CLI_FC:      ...(I)ndex Or (A)imdex
+                             CLI_FV:      ...File Key Varlists
+                             CLI_AIM:     ...File Key Sizes
+                             CLI_LIST:    ...File Record (Field List)
+                             CLI_REC:     ...File Record (Packed)
+                             CLI_OLD:     ...File Saved When Read
+                             CLI_QTY:     ...Number Of Files
+                             2            ...File Number For This Read
+    IF (RESULT = 1)
+        MOVE CLI_US02 TO SWT_UPS
+    ENDIF
+
+    RETURN
+
+. ----------------------------
+. Read mem.dbf to get SSN  
+. ----------------------------
+READ_MEM
+
+    PACK      MEM_FK11 WITH MYMEME_ID1
+
+    CALL      FILE_READ USING MEM_FD:    ...File declaration list
+        MEM_FN:   ...File name list
+        MEM_FC:   ...(I)ndex or (A)imdex
+        MEM_FV:   ...File key varlists
+        MEM_FK:   ...File key sizes
+        MEM_LIST: ...File record (field list)
+        MEM_REC:  ...File record (packed)
+        MEM_OLD:  ...File saved when read
+        MEM_QTY:  ...Number of files
+        1         ...File number for this read
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1) 
+            RETURN
+        ENDIF
+
+        MOVE MEM_REL TO SWT_REL
+        MOVE MEM_ESSN  TO WRK_EMP_SSN
+
+    RETURN
+
+. ----------------------------
+. Read Meme File for Termed records
+. Only want Termed with "Cancel"
+. ----------------------------
+
+READ_MEME
+
+   PACK MEME_FK11 WITH MYMEME_ID1,BLANKS
+   CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              IF ((MEME_ID1 <> MYMEME_ID1) OR (RESULT <> 1))
+                  BREAK       
+              ENDIF
+
+...Do we ever retro term???
+...If so then we need this record.
+...We need this record as the last record that ISIS has 
+...Also, need this record for future runs if ISIS doesn't already have it
+...           IF (MEME_TRM < CURRDATE)
+...               CONTINUE
+...           ENDIF
+
+...We don't want retirees!!!
+              IF ((SQUEEZE MEME_LEV2 = "95") OR (SQUEEZE MEME_LEV2 = "93"):
+                  OR (SQUEEZE MEME_LEV2 = "99") OR (SQUEEZE MEME_LEV2 = "92"):
+                  OR (SQUEEZE MEME_LEV2 = "94"))
+                 CONTINUE
+              ENDIF
+
+              UNPACK MEME_LEV1 INTO DIM1
+              IF (DIM1 = "R")
+                  CONTINUE
+              ENDIF
+
+...NULL RECORDS
+...We need to send the Null records on a daily basis
+...Coverage could have been keyed on day 1 and term keyed on day 2
+...ISIS would need to know on day 2 to null this record
+...We have no way of knowing if it was all done on the same day or not
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_EFF > MEME_TRM))
+                  CONTINUE
+              ENDIF
+
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < CURRDATE))
+                  CONTINUE
+              ENDIF
+
+              IF (SQUEEZE MEME_NET = "LIFE")
+                 IF (SQUEEZE W_EFF_L = "")
+                    MOVE MEME_EFF TO W_EFF_L
+                    PACK MEME_SAV2 WITH MEME_LIST
+                 ELSE
+                    IF (MEME_EFF > W_EFF_L)
+                       MOVE MEME_EFF TO W_EFF_L
+                       PACK MEME_SAV2 WITH MEME_LIST
+                    ENDIF
+                 ENDIF
+              ELSE
+                 IF (SQUEEZE W_EFF_H = "")
+                    MOVE MEME_EFF TO W_EFF_H
+                    PACK MEME_SAV WITH MEME_LIST
+                 ELSE
+                    IF (MEME_EFF > W_EFF_H)
+                       MOVE MEME_EFF TO W_EFF_H
+                       PACK MEME_SAV WITH MEME_LIST
+                    ENDIF
+                 ENDIF
+              ENDIF
+
+        REPEAT
+
+    RETURN
+
+. ----------------------------
+. Gets current premiums
+. ----------------------------
+GET_PREMIUMS
+
+        CLEAR WRK_PLAN
+        CLEAR WRK_RIDER
+.Reads billing data
+...if the record is already effective, use 1st of current month
+...if it is a future effective date, use meme_eff
+
+        SET FIRST_TIME
+
+    LOOP
+         IF (FIRST_TIME)
+            CLEAR BIL_AIM
+
+            PACK BIL_AIM1 WITH "01X",CLI_LEV1,BLANKS
+            PACK BIL_AIM2 WITH "02X","BILL",BLANKS
+            CALL     FILE_READ USING BIL_FD:      ...File Declaration List
+                                  BIL_FN:      ...File Name List
+                                  BIL_FC:      ...(I)ndex Or (A)imdex
+                                  BIL_FV:      ...File Key Varlists
+                                  BIL_AIM:     ...File Key Sizes
+                                  BIL_LIST:    ...File Record (Field List)
+                                  BIL_REC:     ...File Record (Packed)
+                                  BIL_OLD:     ...File Saved When Read
+                                  BIL_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+                BREAK                 
+            ENDIF
+            CLEAR FIRST_TIME
+         ELSE
+            CALL     FILE_NEXT USING BIL_FD:      ...File Declaration List
+                                     BIL_FN:      ...File Name List
+                                     BIL_FC:      ...(I)ndex Or (A)imdex
+                                     BIL_FV:      ...File Key Varlists
+                                     BIL_AIM:     ...File Key Sizes
+                                     BIL_LIST:    ...File Record (Field List)
+                                     BIL_REC:     ...File Record (Packed)
+                                     BIL_OLD:     ...File Saved When Read
+                                     BIL_QTY:     ...Number Of Files
+                                     2            ...File Number For This Read
+         
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+               BREAK 
+            ENDIF
+         ENDIF
+         
+         IF  ((BIL_STAT = "POST") OR (BIL_STAT = "PAID"))
+         ELSE
+             CONTINUE
+         ENDIF
+
+         PACK      BILD_FK11 WITH BIL_ID1,BLANKS
+         CALL      FILE_READ USING BILD_FD:    ...File declaration list
+                             BILD_FN:          ...File name list
+                             BILD_FC:          ...(I)ndex or (A)imdex
+                             BILD_FV:          ...File key varlists
+                             BILD_FK:          ...File key sizes
+                             BILD_LIST:        ...File record (field list)
+                             BILD_REC:         ...File record (packed)
+                             BILD_OLD:         ...File saved when read
+                             BILD_QTY:         ...Number of files
+                             1                 ...File number for this read
+         LOOP
+           CALL      FILE_NEXT USING BILD_FD:    ...File declaration list
+                               BILD_FN:          ...File name list
+                               BILD_FC:          ...(I)ndex or (A)imdex
+                               BILD_FV:          ...File key varlists
+                               BILD_FK:          ...File key sizes
+                               BILD_LIST:        ...File record (field list)
+                               BILD_REC:         ...File record (packed)
+                               BILD_OLD:         ...File saved when read
+                               BILD_QTY:         ...Number of files
+                               1                 ...File number for this read
+           MOVE RESULT TO BILD_RESULT
+           IF ((BILD_RESULT <> 1) OR (BILD_ID1 <> BIL_ID1))
+              BREAK
+           ENDIF                  
+              
+           IF ((SQUEEZE BILD_LEV2 = "95") OR (SQUEEZE BILD_LEV2 = "93"):
+               OR (SQUEEZE BILD_LEV2 = "99") OR (SQUEEZE BILD_LEV2 = "92"):
+               OR (SQUEEZE BILD_LEV2 = "94"))
+               CONTINUE
+           ENDIF
+
+           UNPACK BILD_LEV1 INTO DIM1
+           IF (DIM1 = "R")
+               CONTINUE
+           ENDIF
+
+           IF ((SQUEEZE BILD_TRAN = "BILL") OR (SQUEEZE BILD_TRAN = "PAID"))
+           ELSE
+              CONTINUE
+           ENDIF
+           IF (BILD_ESSN <> WRK_EMP_SSN)
+              CONTINUE
+           ENDIF
+
+                   UNPACK BILD_TYPE INTO WRK_TYPE,DIM2
+                   IF (SQUEEZE BILD_NET = "LIFE")        
+                       IF (WRK_TYPE = "DL")
+                           UNPACK MEME_SAV2 INTO MEME_LIST
+                           UNPACK BILD_EEPOR TO WRK_BEGPREM,WRK_ENDPREM
+                           MOVE WRK_ENDPREM TO ISISWRK_PREMIUM
+                           MOVE BILD_TYPE TO ISISWRK_RIDER
+                           MOVE "LF" TO WRK_PLAN
+                           MOVE "01" TO WRK_RIDER
+                           PACK ISISWRK_TYPE WITH WRK_PLAN, WRK_RIDER
+                           CALL WRITE_RECORD
+                       ELSE
+                           CLEAR FORM_EEPOR
+                           MOVE BILD_EEPOR TO FORM_EEPOR
+                           ADD FORM_EEPOR TO EMPL_PORTION
+                           CLEAR WRK_FACELIFE
+                           UNPACK BILD_IVOL INTO WRK_BEGFL,WRK_ENDFL
+                           MOVE WRK_ENDFL TO WRK_FACELIFE
+                       ENDIF
+                   ELSE
+                       IF (WRK_TYPE <> "PR")
+                           MOVE BILD_TYPE TO WRK_HRIDER
+                           CLEAR FORM_EEPOR
+                           MOVE BILD_EEPOR TO FORM_EEPOR
+                           ADD FORM_EEPOR TO EMPH_PORTION
+                       ELSE
+                           CLEAR FORM_EEPOR
+                           MOVE BILD_EEPOR TO FORM_EEPOR
+                           ADD FORM_EEPOR TO EMPH_PORTION
+                       ENDIF
+                   ENDIF
+
+            REPEAT
+        REPEAT
+
+    RETURN
+
+. ----------------------------
+. Gets LIFE current premiums
+. ----------------------------
+GET_PREMIUM_L
+
+        CLEAR WRK_PLAN
+        CLEAR WRK_RIDER
+.Reads billing data
+...if the record is already effective, use 1st of current month
+...if it is a future effective date, use meme_eff
+
+        SET FIRST_TIME
+
+    LOOP
+         IF (FIRST_TIME)
+
+            PACK BIL_AIM1 WITH "01X",CLI_LEV1,BLANKS
+            PACK BIL_AIM2 WITH "02X","BILL",BLANKS
+            CALL     FILE_READ USING BIL_FD:      ...File Declaration List
+                                  BIL_FN:      ...File Name List
+                                  BIL_FC:      ...(I)ndex Or (A)imdex
+                                  BIL_FV:      ...File Key Varlists
+                                  BIL_AIM:     ...File Key Sizes
+                                  BIL_LIST:    ...File Record (Field List)
+                                  BIL_REC:     ...File Record (Packed)
+                                  BIL_OLD:     ...File Saved When Read
+                                  BIL_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+                BREAK                 
+            ENDIF
+            CLEAR FIRST_TIME
+         ELSE
+            CALL     FILE_NEXT USING BIL_FD:      ...File Declaration List
+                                     BIL_FN:      ...File Name List
+                                     BIL_FC:      ...(I)ndex Or (A)imdex
+                                     BIL_FV:      ...File Key Varlists
+                                     BIL_AIM:     ...File Key Sizes
+                                     BIL_LIST:    ...File Record (Field List)
+                                     BIL_REC:     ...File Record (Packed)
+                                     BIL_OLD:     ...File Saved When Read
+                                     BIL_QTY:     ...Number Of Files
+                                     2            ...File Number For This Read
+         
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+               BREAK 
+            ENDIF
+         ENDIF
+         
+         IF  ((BIL_STAT = "POST") OR (BIL_STAT = "PAID"))
+         ELSE
+             CONTINUE
+         ENDIF
+
+         PACK      BILD_FK11 WITH BIL_ID1,BLANKS
+         CALL      FILE_READ USING BILD_FD:    ...File declaration list
+                             BILD_FN:          ...File name list
+                             BILD_FC:          ...(I)ndex or (A)imdex
+                             BILD_FV:          ...File key varlists
+                             BILD_FK:          ...File key sizes
+                             BILD_LIST:        ...File record (field list)
+                             BILD_REC:         ...File record (packed)
+                             BILD_OLD:         ...File saved when read
+                             BILD_QTY:         ...Number of files
+                             1                 ...File number for this read
+         LOOP
+           CALL      FILE_NEXT USING BILD_FD:    ...File declaration list
+                               BILD_FN:          ...File name list
+                               BILD_FC:          ...(I)ndex or (A)imdex
+                               BILD_FV:          ...File key varlists
+                               BILD_FK:          ...File key sizes
+                               BILD_LIST:        ...File record (field list)
+                               BILD_REC:         ...File record (packed)
+                               BILD_OLD:         ...File saved when read
+                               BILD_QTY:         ...Number of files
+                               1                 ...File number for this read
+           MOVE RESULT TO BILD_RESULT
+           IF ((BILD_RESULT <> 1) OR (BILD_ID1 <> BIL_ID1))
+              BREAK
+           ENDIF                  
+              
+           IF ((SQUEEZE BILD_LEV2 = "95") OR (SQUEEZE BILD_LEV2 = "93"):
+               OR (SQUEEZE BILD_LEV2 = "99") OR (SQUEEZE BILD_LEV2 = "92"):
+               OR (SQUEEZE BILD_LEV2 = "94"))
+               CONTINUE
+           ENDIF
+
+           UNPACK BILD_LEV1 INTO DIM1
+           IF (DIM1 = "R")
+               CONTINUE
+           ENDIF
+
+           IF ((SQUEEZE BILD_TRAN = "BILL") OR (SQUEEZE BILD_TRAN = "PAID"))
+           ELSE
+              CONTINUE
+           ENDIF
+           IF (BILD_ESSN <> WRK_EMP_SSN)
+              CONTINUE
+           ENDIF
+
+                   UNPACK BILD_TYPE INTO WRK_TYPE,DIM2
+                   IF (SQUEEZE BILD_NET = "LIFE")        
+                       IF (WRK_TYPE = "DL")
+                           UNPACK MEME_SAV2 INTO MEME_LIST
+                           UNPACK BILD_EEPOR TO WRK_BEGPREM,WRK_ENDPREM
+                           MOVE WRK_ENDPREM TO ISISWRK_PREMIUM
+                           MOVE BILD_TYPE TO ISISWRK_RIDER
+                           MOVE "LF" TO WRK_PLAN
+                           MOVE "01" TO WRK_RIDER
+                           PACK ISISWRK_TYPE WITH WRK_PLAN, WRK_RIDER
+                           CALL WRITE_RECORD
+                       ELSE
+                           CLEAR FORM_EEPOR
+                           MOVE BILD_EEPOR TO FORM_EEPOR
+                           ADD FORM_EEPOR TO EMPL_PORTION
+                           CLEAR WRK_FACELIFE
+                           UNPACK BILD_IVOL INTO WRK_BEGFL,WRK_ENDFL
+                           MOVE WRK_ENDFL TO WRK_FACELIFE
+                       ENDIF
+                   ELSE
+                   ENDIF
+
+            REPEAT
+        REPEAT
+
+    RETURN
+
+. ----------------------------
+. Gets HEALTH current premiums
+. ----------------------------
+GET_PREMIUM_H
+
+        CLEAR WRK_PLAN
+        CLEAR WRK_RIDER
+.Reads billing data
+...if the record is already effective, use 1st of current month
+...if it is a future effective date, use meme_eff
+
+        SET FIRST_TIME
+
+    LOOP
+         IF (FIRST_TIME)
+
+            PACK BIL_AIM1 WITH "01X",CLI_LEV1,BLANKS
+            PACK BIL_AIM2 WITH "02X","BILL",BLANKS
+            CALL     FILE_READ USING BIL_FD:      ...File Declaration List
+                                  BIL_FN:      ...File Name List
+                                  BIL_FC:      ...(I)ndex Or (A)imdex
+                                  BIL_FV:      ...File Key Varlists
+                                  BIL_AIM:     ...File Key Sizes
+                                  BIL_LIST:    ...File Record (Field List)
+                                  BIL_REC:     ...File Record (Packed)
+                                  BIL_OLD:     ...File Saved When Read
+                                  BIL_QTY:     ...Number Of Files
+                                  2            ...File Number For This Read
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+                BREAK                 
+            ENDIF
+            CLEAR FIRST_TIME
+         ELSE
+            CALL     FILE_NEXT USING BIL_FD:      ...File Declaration List
+                                     BIL_FN:      ...File Name List
+                                     BIL_FC:      ...(I)ndex Or (A)imdex
+                                     BIL_FV:      ...File Key Varlists
+                                     BIL_AIM:     ...File Key Sizes
+                                     BIL_LIST:    ...File Record (Field List)
+                                     BIL_REC:     ...File Record (Packed)
+                                     BIL_OLD:     ...File Saved When Read
+                                     BIL_QTY:     ...Number Of Files
+                                     2            ...File Number For This Read
+         
+            MOVE RESULT TO BIL_RESULT
+            IF (BIL_RESULT <> 1)
+               BREAK 
+            ENDIF
+         ENDIF
+         
+         IF  ((BIL_STAT = "POST") OR (BIL_STAT = "PAID"))
+         ELSE
+             CONTINUE
+         ENDIF
+
+         PACK      BILD_FK11 WITH BIL_ID1,BLANKS
+         CALL      FILE_READ USING BILD_FD:    ...File declaration list
+                             BILD_FN:          ...File name list
+                             BILD_FC:          ...(I)ndex or (A)imdex
+                             BILD_FV:          ...File key varlists
+                             BILD_FK:          ...File key sizes
+                             BILD_LIST:        ...File record (field list)
+                             BILD_REC:         ...File record (packed)
+                             BILD_OLD:         ...File saved when read
+                             BILD_QTY:         ...Number of files
+                             1                 ...File number for this read
+         LOOP
+           CALL      FILE_NEXT USING BILD_FD:    ...File declaration list
+                               BILD_FN:          ...File name list
+                               BILD_FC:          ...(I)ndex or (A)imdex
+                               BILD_FV:          ...File key varlists
+                               BILD_FK:          ...File key sizes
+                               BILD_LIST:        ...File record (field list)
+                               BILD_REC:         ...File record (packed)
+                               BILD_OLD:         ...File saved when read
+                               BILD_QTY:         ...Number of files
+                               1                 ...File number for this read
+           MOVE RESULT TO BILD_RESULT
+           IF ((BILD_RESULT <> 1) OR (BILD_ID1 <> BIL_ID1))
+              BREAK
+           ENDIF                  
+              
+           IF ((SQUEEZE BILD_LEV2 = "95") OR (SQUEEZE BILD_LEV2 = "93"):
+               OR (SQUEEZE BILD_LEV2 = "99") OR (SQUEEZE BILD_LEV2 = "92"):
+               OR (SQUEEZE BILD_LEV2 = "94"))
+               CONTINUE
+           ENDIF
+
+           UNPACK BILD_LEV1 INTO DIM1
+           IF (DIM1 = "R")
+               CONTINUE
+           ENDIF
+
+           IF ((SQUEEZE BILD_TRAN = "BILL") OR (SQUEEZE BILD_TRAN = "PAID"))
+           ELSE
+              CONTINUE
+           ENDIF
+           IF (BILD_ESSN <> WRK_EMP_SSN)
+              CONTINUE
+           ENDIF
+
+                   UNPACK BILD_TYPE INTO WRK_TYPE,DIM2
+                   IF (SQUEEZE BILD_NET <> "LIFE")        
+                       IF (WRK_TYPE <> "PR")
+                           MOVE BILD_TYPE TO WRK_HRIDER
+                           CLEAR FORM_EEPOR
+                           MOVE BILD_EEPOR TO FORM_EEPOR
+                           ADD FORM_EEPOR TO EMPH_PORTION
+                       ELSE
+                           CLEAR FORM_EEPOR
+                           MOVE BILD_EEPOR TO FORM_EEPOR
+                           ADD FORM_EEPOR TO EMPH_PORTION
+                       ENDIF
+                   ENDIF
+
+            REPEAT
+        REPEAT
+
+    RETURN
+
+. ----------------------------
+. Write output record 
+. ----------------------------
+WRITE_RECORD
+
+        MOVE WRK_EMP_SSN TO ISISWRK_EMP_SSN
+        MOVE MEME_LEV1 TO ISISWRK_AGENCY
+
+        IF (MEME_EFF < ISISDATE)
+            MOVE ISISDATE TO ISISWRK_EFFDATE
+        ELSE
+            MOVE MEME_EFF  TO ISISWRK_EFFDATE
+        ENDIF
+
+        IF (SQUEEZE MEME_TRM = "") 
+            MOVE INFINITY TO ISISWRK_TRMDATE
+        ELSE
+            MOVE MEME_TRM  TO ISISWRK_TRMDATE
+        ENDIF
+        MOVE MEME_NET  TO ISISWRK_NETWORK
+        MOVE MEME_PRD  TO ISISWRK_PRODUCT
+        MOVE MEME_PLAN TO ISISWRK_PLANCODE
+        MOVE MEME_DEPC TO ISISWRK_COVLEVEL
+
+        IF (SQUEEZE ISISWRK_TYPE = "LFPN")
+            MOVE WRK_FACELIFE TO ISISWRK_FACELIFE
+        ELSE
+            MOVE SPACES TO ISISWRK_FACELIFE
+        ENDIF
+
+        IF (SQUEEZE ISISWRK_TYPE = "HLPN")
+            MOVE WRK_HRIDER TO ISISWRK_RIDER
+        ENDIF
+
+        IF (SQUEEZE ISISWRK_RIDER = "")
+            MOVE STAR4 TO ISISWRK_RIDER
+        ENDIF
+
+        REPLACE " *" IN ISISWRK_TYPE
+        REPLACE " *" IN ISISWRK_EMP_SSN
+        REPLACE " *" IN ISISWRK_AGENCY
+        REPLACE " *" IN ISISWRK_EFFDATE
+        REPLACE " *" IN ISISWRK_TRMDATE
+        REPLACE " *" IN ISISWRK_NETWORK
+        REPLACE " *" IN ISISWRK_PRODUCT
+        REPLACE " *" IN ISISWRK_PLANCODE
+        REPLACE " *" IN ISISWRK_COVLEVEL
+        REPLACE " *" IN ISISWRK_RIDER
+        REPLACE " 0" IN ISISWRK_FACELIFE
+        REPLACE " 0" IN ISISWRK_PREMIUM 
+
+        PACK ISISWRK_KEY WITH ISISWRK_TYPE, ISISWRK_EMP_SSN
+ 
+        CALL READ_OGBFILE_IX USING ISISWRK_FILE,ISISWRK_NAME1:
+                                     ISISWRK_KEY,ISISWRK_REC
+
+...Don't want to write record if it already exists.
+        IF (RESULT <> 1)
+            CALL WRITE_OGBREC_IX USING ISISWRK_FILE,ISISWRK_NAME1:
+                                       ISISWRK_KEY,ISISWRK_REC
+        ENDIF
+
+        ADD 1 TO X_CNT2
+        UNPACK X_CNT2 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+
+        CLEAR ISISWRK_REC
+
+        MOVE MEME_RT TO ISISTST_RT
+        MOVE MEME_ID1 TO ISISTST_ID
+        CALL WRITE_OGBREC USING ISISTST_FILE,ISISTST_NAME:
+                                       ISISTST_LIST
+    RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+
+...input file
+    CALL PREP_OGBFILE USING ISISTST_FILE,ISISTST_NAME
+    CALL OPEN_OGBFILE USING MYMEME_FILE,MYMEME_NAME1
+...indexed file of what ISIS already has
+    CALL PREP_OGBFILE_IX USING ISISWRK_FILE,ISISWRK_NAME1
+
+    RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+
+...input file
+    CALL CLOSE_OGBFILE USING MYMEME_FILE,MYMEME_NAME1
+...indexed file of what ISIS already has
+    CALL CLOSE_OGBFILE_IX USING ISISWRK_FILE,ISISWRK_NAME1
+    CALL CLOSE_OGBFILE USING ISISTST_FILE,ISISTST_NAME
+
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+    
+       CLOCK     TIMESTAMP INTO CURRDATE
+       MOVE      "menu"         TO C_NEXT
+       MOVE      "ELG0901"  TO C_PROG
+       MOVE      "EXT ISIS CHGS     " TO C_OPER
+       MOVE      1 TO C_LEVEL
+       MOVE      BLANKS TO C_LABEL
+       MOVE      BLANKS TO C_FILE
+       MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	 MOVE      "Records Read:     " TO X_CNTDESC1
+	 MOVE      "Records Written:  " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+	 
+       UNPACK CURRDATE INTO WORK_DATECCYY,WORK_DATEMM,WORK_DATEDD
+       PACK   BILL_DATE WITH WORK_DATECCYY,WORK_DATEMM,"01"
+
+       PACK    ISISWRK_NAME1 WITH OGB_PATH,ISISWRK_NAME
+       PACK    MYMEME_NAME1 WITH OGB_PATH,MYMEME_NAME
+
+       RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR
+

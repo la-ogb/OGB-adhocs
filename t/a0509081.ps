@@ -1,0 +1,447 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  A0509081    
++    Description    :  Extract Member Record Id's form Members living in                 
++                   :  the Hurricane Katrina affected areas at the time of
++                   :  the storm.
++ 
++    Author         :  Amy Poole
++    Project #      :  A0509081
++    Date created   :  09/08/2005
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                             Revisions
++ apajp  A0509081  09/12/2005 - ENH - Another run of this program is needed 
++                                     but this time, MCSI wants the entire
++                                     mem record output rather than just the
++                                     record id.
++ apajp  A0509081  09/14/2005 - COR - Shouldn't have limited this to just 
++                                     PPO members.
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       VALID.RL
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL                Member Demographics File
+              INC       MEME.RL          
+              INC       MEMO.RL          
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+REF_FILE     FILE      VAR=34,TEXT      
+REF_NAME     INIT	     "/w/a0509081.meme"
+REF_LIST     LIST
+REF_ID       DIM       8
+REF_EFF      DIM       8
+REF_TERM     DIM       8
+REF_NET      DIM       5
+REF_PROD     DIM       5
+             LISTEND
+
+ 	    	 
+OUT_FILE     FILE      VAR=26,TEXT
+OUT_NAME     INIT      "/w/a0509081.out"
+OUT_LIST     LIST
+OUT_ID       DIM       8
+OUT_DEL1     INIT      ","
+OUT_ZIP      DIM       5
+OUT_DEL2     INIT      ",Y"    
+OUT_FILL     DIM       10
+             LISTEND
+FIRST_LIST   LIST
+FIRST_REC    INIT      "MEM_ID1,MEM_STATUS,MEM_MOM"  
+             LISTEND     
+ 	    	 
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+MEM_ZIP3        DIM       3
+MEM_ZIP10       DIM       10
+DISP3           DIM       3
+DISP4           DIM       4
+ACT_RESULT      FORM      1 
+MEM_RESULT      FORM      1 
+MEME_RESULT     FORM      1 
+MEMO_RESULT     FORM      1 
+VAL_RESULT      FORM      1 
+LABEL_SRTKEY    INIT      "139-143 1-36 -T -U"
+LPTR            FORM      2
+WRK_DIM1        DIM       1
+WRK_DIM4        DIM       4
+DATE1           DIM       8
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+SPACES          DIM       8
+WS_MEME_ID1     DIM       8
+WS_MEME_ID2     DIM       4
+PREV_MEME_ID1   DIM       8
+PREV_MEME_PRD   DIM       5
+PREV_MEME_PLAN  DIM       4
+VALID_HEALTH_CODE  DIM    1        
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+VALID_DATE      DIM       1          
+YN_ANS          DIM       1          
+BLANK8          INIT      "        "
+SPACE1          INIT      " "
+SPACE30         DIM       30 
+LIFE            INIT      "LIFE "
+MEDD_ELG        FORM      1
+HOLD_ESSN       DIM       9
+HOLD_LNAME      DIM       20        .>enrollee last name
+HOLD_FNAME      DIM       15        .>enrollee first name
+HOLD_MINIT      DIM       1         .>enrollee middle initial 
+HOLD_ADDR1      DIM       35        .>address line 1           
+HOLD_ADDR2      DIM       35        .>address line 2           
+HOLD_CITY       DIM       30        .>city                     
+HOLD_STATE      DIM       2         .>state        
+HOLD_ZIP        DIM       13        .>zip code     
+
+CMDLAB          INIT    "cp /ogb/work/label.txt /ogb/work/ftp/label.txt"
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Extract Hurricane Victims" TO  C_OPER
+         MOVE      "A0509081"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         MOVE "N" TO RUN_MODE
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         debug
+         CALL      INITIALIZE
+         CALL      REFORMAT_MEME
+         CALL      OPEN_FILES 
+       	 CALL      EXTRACT_IDS 
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+INITIALIZE
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Records Read:  " TO X_CNTDESC1
+       	 MOVE      "Records Found: " TO X_CNTDESC2
+       	 MOVE      "" TO X_CNTDESC3
+       	 MOVE      "" TO X_CNTDESC4
+       	 MOVE      "" TO X_CNTDESC5
+       	 MOVE      "" TO X_CNTDESC6
+	 
+       	 CALL      X_DISPLAY_COUNTS
+
+         RETURN
+
+
+.-------------------------------
+. Reformat MEME file for Members
+. currently active with OGB PPO
+. Health coverage
+.-------------------------------
+REFORMAT_MEME
+         MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+. ...Layout
+. ...096-103 Effective Date
+. ...104-111 Term Date
+. ...112-116 Network
+. ...117-121 Product
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf /ogb/work/a0509081.meme": 
+                      " -p112-115ne#"LIFE#"":
+                      " -p96-103le#"20050828#"": 
+                      " -p104-111eq#"",BLANK8,"#"":
+                      " or":
+                      " -p112-115ne#"LIFE#"":
+                      " -p96-103le#"20050828#"": 
+                      " -p104-111ge#"20050828#"":
+                      " 1-8 96-121 -t -j"
+
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(meme.dbf)"
+             CHAIN "MENU"
+         ENDIF
+ 
+. ...Unique Sort (Eliminate duplicate enrollment records for 95's)
+         SORT "/w/a0509081.meme /w/a0509081.meme":
+              " 1-8 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(a0509081.meme)"
+               CHAIN     "MENU"
+         ENDIF
+
+         MESSAGE HORZ="22",VERT="20":
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:
+                 LNCOL=C_DLGL,SHADE="y": 
+                 TEXT="******* REFORMAT COMPLETE *******";
+ 
+         RETURN   
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+       	 MOVE      REF_NAME TO C_FILE
+	        CALL  	   OPEN_OGBFILE USING REF_FILE,REF_NAME
+
+       	 MOVE      OUT_NAME TO C_FILE
+	        CALL 	    PREP_OGBFILE USING OUT_FILE,OUT_NAME  
+
+         RETURN
+
+
+. ----------------------------
+. Extract Record Id's Members with 
+. Health coverage living in the Hurricane
+. Path on 08/28/2005
+. ----------------------------
+EXTRACT_IDS
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         MOVE OUT_NAME TO C_FILE
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,FIRST_LIST 
+         ADD   1  TO X_CNT2
+
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING REF_FILE,REF_NAME,REF_LIST
+            MOVE RESULT TO ACT_RESULT
+            IF (ACT_RESULT <> 1)
+                BREAK   
+            ENDIF
+
+            ADD 1 TO X_CNT1
+            UNPACK X_CNT1 INTO DISP4,DISP3
+            IF (DISP3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF
+
+            PACK MEM_FK11 WITH REF_ID
+            CALL FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+	 	                              MEM_FN:  ...FILE NAME LIST  
+		                               MEM_FC:  ...TYPE OF INDEX   
+.		                                       ...(I)NDEX OR (A)IMDEX
+		                               MEM_FV:  ...FILE KEY VARLISTS
+		                               MEM_FK:  ...FILE KEY SIZES  
+		                               MEM_LIST:...FILE RECORD (FIELD LIST)
+        	                        MEM_REC: ...FILE RECORD (PACKED)
+		                               MEM_OLD: ...FILE SAVED WHEN READ
+		                               MEM_QTY: ...NUMBER OF FILES 
+		                               1        ...FILE NUMBER FOR THIS READ
+
+            MOVE RESULT TO MEM_RESULT
+            IF ((REF_ID <> MEM_ID1) OR (MEM_RESULT <> 1))
+                 CONTINUE    
+            ENDIF
+
+            UNPACK MEM_ZIP INTO MEM_ZIP3,MEM_ZIP10
+            SWITCH MEM_ZIP3
+                CASE "700" 
+                    CALL WRITE_OUT
+                CASE "701" 
+                    CALL WRITE_OUT
+                CASE "704" 
+                    CALL WRITE_OUT
+                CASE "369" 
+                    CALL WRITE_OUT
+                CASE "393" 
+                    CALL WRITE_OUT
+                CASE "394" 
+                    CALL WRITE_OUT
+                CASE "395" 
+                    CALL WRITE_OUT
+                CASE "396" 
+                    CALL WRITE_OUT
+            ENDSWITCH
+
+         REPEAT  
+
+         RETURN
+
+. ----------------------------
+. Write out the Record ID's
+. ----------------------------
+WRITE_OUT
+         PACK OUT_ID WITH MEM_ID1 
+         PACK OUT_ZIP WITH MEM_ZIP
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         MOVE OUT_NAME TO C_FILE
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST 
+         ADD   1  TO X_CNT2
+    
+         RETURN
+
+
+.............................................................................
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+
+. ----------------------------
+CLOSE_FILES
+. ----------------------------
+       	 MOVE      REF_NAME TO C_FILE
+	        CALL  	   CLOSE_OGBFILE USING REF_FILE,REF_NAME
+
+       	 MOVE      OUT_NAME TO C_FILE
+	        CALL  	   CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+    RETURN
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+       	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	        MOVE      "   A0509081 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       VALID.IO
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of A0509081.PS          
+.----------------------------------------------------------------------------

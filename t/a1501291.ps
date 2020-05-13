@@ -1,0 +1,863 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1501291.PS
++    Description    :  Correct records of Plan Members in Location "95" that
++                   :  have dependents that have only one "95" record.  Also    
++                   :  term records that have 2 active coverages.               
++    Author         :  Lisa Spurlock 
++    Date created   :  01/29/2015 
++    Project #      :  a1501291
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                               REVISIONS                                     +
++    apazw 06/12/2017 - mod - increase file size
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       XALID.RL             ...Xalid codes
+    INC       ZIPCODE.RL
+    INC       CMDPARAM.CB          ...OGB Custom File Handler         
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       MEMO.RL           
+    INC       MEMF.RL              ...Flex
+    INC       ENR_UPD.RL           ...Enrollment Web Update 
+    INC       D_MEMMEM.CB          ...Member Import Layout
+    INC       X_RGNXREF.WS          Region/Zipcode Cross Reference
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+
+INPUT_FILE             FILE      VAR=55,TEXT
+INPUT_NAME             INIT      "/w/a1501291_ref.txt"
+ 
+INPUT_LIST         LIST
+INPUT_ID1              DIM       08
+INPUT_ID2              DIM       04
+INPUT_LEV1             DIM       05
+INPUT_LEV2             DIM       05
+INPUT_EFF              DIM       08
+INPUT_TRM              DIM       08
+INPUT_NET              DIM       05
+INPUT_PRD              DIM       05
+INPUT_PLAN             DIM       04
+                   LISTEND
+
+.
+.~~~~~~~~~~OUTPUT FILES
+
+OUTPUT_FILE       FILE      VAR=X_INM_SIZE,TEXT
+OUTPUT_NAME       INIT      "a1501291.txt"
+ 
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+DIM5                    DIM      5
+ZIP_FAIL                FORM     1
+
+TRAP_DATA       	DIM      500
+TODAY           	DIM      8
+TODAY_CCYYMM           	DIM      6
+WS_CCYY                	DIM      4
+WS_MM                  	DIM      2
+WS_DD                  	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+
+OUT_NET                 DIM      05
+OUT_PRD                 DIM      05
+OUT_PLAN                DIM      04
+OUT_RT                  DIM      02
+OUT_DEPC                DIM      02
+OUT_EFF                 DIM      08
+
+HOLD_OUT_ID1            DIM      08
+BLUE                    INIT "BLUE "
+PELCN                   INIT "PELCN"
+MAGNO                   INIT "MAGNO"
+LEV2_95                 INIT "95   "
+STAT                    INIT "STAT"
+BLANK8                  INIT  "        "
+EFF_01                  INIT "20150101"
+
+HLD_MEME_DEPC           DIM      02  
+HLD_MEME_NET            DIM      05  
+
+SAV_SWT                 DIM       1
+SAV2_SWT                DIM       1
+FIRST_MEME_READ         DIM       1 
+FIRST_REC               DIM       1 
+HOLD_SSN                DIM       9
+HOLD_OPT                DIM       1
+ENR_SSN                 DIM       9
+FOUND_MEM               DIM       1 
+INPUT_RESULT            FORM      1
+IDX_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+
+
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+
+EFF_DD                  DIM      2
+
+.TICKEY                  INIT     "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+
+
+
+DIM_2                   DIM      2
+DIM_3                   DIM      3
+
+HSA_3                   DIM      3
+HSA_2                   DIM      2
+
+
+SWT_1ST_RUN             DIM      1
+VAL_CCYY                DIM      4
+VAL_MMDD                DIM      4
+
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 			    chains to back to the menu
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "menu"                     TO    C_NEXT
+      MOVE      "95 Deps. Recs. correct"   TO    C_OPER
+      MOVE      "a1501291"                 TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+  DEBUG
+  CALL      INITIALIZE
+  CALL      REFORMAT_MEME
+  CALL      OPEN_FILES
+  CALL      EXTRACT_OUTPUT_FILE    
+  CALL      CLOSE_FILES
+
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+  UNPACK TODAY INTO WS_CCYY,WS_MM,WS_DD
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "menu"                     TO    C_NEXT
+  MOVE      "Correct 95's"             TO    C_OPER
+  MOVE      "a1501291"                 TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Records Read:   "    TO X_CNTDESC1
+  MOVE "Records Termed: "    TO X_CNTDESC2
+  MOVE "Records Added:  "    TO X_CNTDESC3
+  MOVE "                   " TO X_CNTDESC4
+  MOVE "                   " TO X_CNTDESC5
+  MOVE "                   " TO X_CNTDESC6
+  DISPLAY *ES
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+ RETURN
+
+.##############################################################################
+REFORMAT_MEME
+.##############################################################################
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /w/a1501291_ref.text":
+                      " -p112-116eq#"",BLUE,"#"":
+                      " -p117-121eq#"",MAGNO,"#"":
+                      " -p26-30eq#"",LEV2_95,"#"":
+                      " -p096-103ge#"",EFF_01,"#"":
+                      " 1-12 21-30 96-121 126-129 -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(a1501291_ref.text)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+            CALL CMD_ERROR USING "a1501291_ref.text"
+            STOP
+        ENDIF
+      ENDIF
+    ENDIF
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /w/a1501291_ref.text":
+                      " -p112-116eq#"",BLUE,"#"":
+                      " -p117-121eq#"",PELCN,"#"":
+                      " -p26-30eq#"",LEV2_95,"#"":
+                      " -p096-103ge#"",EFF_01,"#"":
+                      " 1-12 21-30 96-121 126-129 -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT APPEND FAILED(a1501291_ref.text)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+            CALL CMD_ERROR USING "a1501291_ref.text-append"
+            STOP
+        ENDIF
+      ENDIF
+    ENDIF
+
+    SORT "/w/a1501291_ref.text /w/a1501291_ref.txt 1-8 -u -t"
+         IF OVER
+           IF (NOT C_CMDPAR)
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(a1501291_ref.txt)"
+               CHAIN     "MENU"
+           ELSE
+               CALL CMD_ERROR USING "SORT FAILED (a1501291_ref.txt)"
+               STOP
+           ENDIF
+         ENDIF
+
+    RETURN
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+    CALL OPEN_OGBFILE USING INPUT_FILE,INPUT_NAME
+ 
+    CALL PREP_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  RETURN
+
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file (a1501291.inp)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING INPUT_FILE,INPUT_NAME,INPUT_LIST
+        MOVE RESULT TO INPUT_RESULT
+        IF (INPUT_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+. ----------------------------------
+... Read the MEM file for the Member 
+. ----------------------------------
+
+... Read the MEM file for Enrollee (Plan Member) Only
+
+        CLEAR     ENR_SSN
+        CLEAR     FOUND_MEM
+        CLEAR     INM_REC
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH INPUT_ID1  
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+
+... If the Member is not found, the program continues to the next record 
+... to be read.
+
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+           CONTINUE
+        ENDIF
+
+        IF (MEM_REL <> "01")
+          CONTINUE
+        ENDIF
+
+        PACKLEN MEM_SAV WITH MEM_REC
+
+        MOVE "Y" TO FOUND_MEM
+
+        MOVE MEM_ESSN  TO ENR_SSN
+           
+        PACK MEM_SAV WITH MEM_REC
+
+... Clearing the FIRST_MEME_READ Switch and Read the MEME record with the
+... Plan Member's Record ID
+
+        MOVE " " TO FIRST_MEME_READ
+        CLEAR HLD_MEME_NET   
+        CLEAR MEME_SAV
+        CLEAR MEME_SAV2
+        PACK MEME_FK11 WITH MEM_ID1,BLANKS
+ 
+        CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                             MEME_FN:             ...FILE NAME LIST
+                             MEME_FC:             ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                             MEME_FV:             ...FILE KEY VARLIST
+                             MEME_FK:             ...FILE KEY SIZES
+                             MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                             MEME_REC:            ...FILE RECORD (PACKED)
+                             MEME_OLD:            ...FILE SAVED WHEN READ
+                             MEME_QTY:            ...NUMBER OF FILES
+                             1                    ...FILE NUMBER FOR THIS READ
+
+        LOOP
+            CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST
+                                 MEME_FN:         ...FILE NAME LIST
+                                 MEME_FC:         ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                                 MEME_FV:         ...FILE KEY VARLIST
+                                 MEME_FK:         ...FILE KEY SIZES
+                                 MEME_LIST:       ...FILE RECORD (FIELD LIST)
+                                 MEME_REC:        ...FILE RECORD (PACKED)
+                                 MEME_OLD:        ...FILE SAVED WHEN READ
+                                 MEME_QTY:        ...NUMBER OF FILES
+                                 1                ...FILE NUMBER FOR THIS READ
+
+... If NO MEME record is found then writes to the Error file
+
+            IF (RESULT <> 1) 
+                 GOTO GET_MEM_RET
+            ENDIF 
+
+... If not equal and the FIRST_MEME_READ switch is blank then writes
+... to the Error file (a1501291.err)
+
+            IF (MEM_ID1 <> MEME_ID1)
+                IF (FIRST_MEME_READ = " ")
+                    GOTO GET_MEM_RET
+                ELSE 
+                    IF (HLD_MEME_NET = "")
+                        GOTO GET_MEM_RET
+                    ELSE 
+                        BREAK 
+                    ENDIF
+                ENDIF
+            ELSE
+                MOVE "N" TO FIRST_MEME_READ
+            ENDIF
+
+... Excludes all records < 20150101                       
+            IF (SQUEEZE MEME_EFF < EFF_01)
+               CONTINUE
+            ENDIF
+
+... Excludes all except Location '95" records             
+            IF (SQUEEZE MEME_LEV2 <> "95")
+               CONTINUE
+            ENDIF
+
+... Excludes LIFE Plans              
+            IF (SQUEEZE MEME_NET = "LIFE")
+               CONTINUE
+            ENDIF
+
+... Excludes EGWP Plans              
+            IF (SQUEEZE MEME_NET = "EGWP")
+               CONTINUE
+            ENDIF
+
+... Excludes No Coverage records     
+            IF (SQUEEZE MEME_NET = "NOCOV")
+               CONTINUE
+            ENDIF
+
+... Excludes HRA1 records 
+            IF (SQUEEZE MEME_PLAN = "HRA1")
+                CONTINUE
+            ENDIF
+
+... Excludes STAT 
+            IF (SQUEEZE MEME_PLAN = "STAT")
+                CONTINUE
+            ENDIF
+
+... Excludes Blank Fields              
+            IF (SQUEEZE MEME_NET = "") 
+               CONTINUE
+            ENDIF
+
+... Excludes "EE" Dependent Coverage   
+            IF (SQUEEZE MEME_DEPC = "EE") 
+               CONTINUE
+            ENDIF
+
+            IF (SQUEEZE MEME_TRM = "")
+               PACK MEME_SAV WITH MEME_REC
+               PACK HLD_MEME_NET WITH MEME_NET
+               BREAK 
+            ENDIF
+
+        REPEAT
+
+        UNPACK MEME_SAV INTO MEME_LIST
+.
+        IF (MEME_DEPC <> "EE")   
+            CALL GET_FIRST_DEP_INFO
+        ENDIF
+     
+...     IF (SQUEEZE MEME_LEV2 = "95")
+...         CALL GET_NEXT_95_REC     
+...     ENDIF
+
+GET_MEM_RET  
+  REPEAT
+  RETURN
+
+.******************************************************************************
+.##############################################################################
+GET_FIRST_DEP_INFO
+.##############################################################################
+... Extracts all active dependents that are listed for each Plan Member.   
+ 
+     CLEAR     INM_REC
+     CLEAR     MEM_SAV
+     CLEAR     MEM_AIM
+     PACK      MEM_AIM1 WITH "01X",ENR_SSN,BLANKS
+     CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                         MEM_FN:          ...FILE NAME LIST
+                         MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                         MEM_FV:          ...FILE KEY VARLISTS
+                         MEM_AIM:         ...FILE KEY SIZES
+                         MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                         MEM_REC:         ...FILE RECORD (PACKED)
+                         MEM_OLD:         ...FILE SAVED WHEN READ
+                         MEM_QTY:         ...NUMBER OF FILES
+                         2                ...FILE NUMBER FOR THIS 
+
+     MOVE RESULT TO MEM_RESULT
+     IF (MEM_RESULT <> 1)
+         GOTO GET_FIRST_DEP_INFO_RET
+     ENDIF
+
+     CALL GET_REST_DEPS_INFO
+
+     LOOP
+         CALL FILE_NEXT USING MEM_FD:         ...FILE DECLARATION LIST
+                              MEM_FN:         ...FILE NAME LIST
+                              MEM_FC:         ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                              MEM_FV:         ...FILE KEY VARLIST
+                              MEM_AIM:        ...FILE KEY SIZES
+                              MEM_LIST:       ...FILE RECORD (FIELD LIST)
+                              MEM_REC:        ...FILE RECORD (PACKED)
+                              MEM_OLD:        ...FILE SAVED WHEN READ
+                              MEM_QTY:        ...NUMBER OF FILES
+                              2               ...FILE NUMBER FOR THIS READ
+
+         MOVE RESULT TO MEM_RESULT
+         IF (MEM_RESULT <> 1)
+             BREAK                         
+         ENDIF
+
+         IF (MEM_ESSN <> ENR_SSN) 
+             BREAK                         
+         ELSE 
+             IF (MEM_REL = "01")
+                 CONTINUE
+             ELSE 
+                 IF ((MEM_REL = "02") AND (HLD_MEME_DEPC = "EC"))
+                     CONTINUE
+                 ELSE 
+                     CALL GET_REST_DEPS_INFO
+                 ENDIF
+             ENDIF
+         ENDIF
+     REPEAT
+            
+GET_FIRST_DEP_INFO_RET
+  RETURN
+            
+.##############################################################################
+GET_REST_DEPS_INFO
+.##############################################################################
+     IF (MEM_REL = "01")
+         GOTO GET_REST_DEPS_INFO_RET
+     ENDIF
+
+     IF ((MEM_REL = "02") AND (HLD_MEME_DEPC = "EC"))
+         GOTO GET_REST_DEPS_INFO_RET
+     ENDIF
+
+     MOVE MEM_ID1 TO HOLD_OUT_ID1
+     PACK MEM_SAV WITH MEM_REC
+
+     MOVE " " TO FIRST_MEME_READ
+     CLEAR HLD_MEME_NET       
+     CLEAR MEME_SAV
+     CLEAR SAV_SWT
+     CLEAR MEME_SAV2
+     CLEAR SAV2_SWT
+     PACK MEME_FK11 WITH MEM_ID1,BLANKS
+ 
+     CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                          MEME_FN:             ...FILE NAME LIST
+                          MEME_FC:             ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                          MEME_FV:             ...FILE KEY VARLIST
+                          MEME_FK:             ...FILE KEY SIZES
+                          MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                          MEME_REC:            ...FILE RECORD (PACKED)
+                          MEME_OLD:            ...FILE SAVED WHEN READ
+                          MEME_QTY:            ...NUMBER OF FILES
+                          1                    ...FILE NUMBER FOR THIS READ
+
+     LOOP
+         CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST
+                              MEME_FN:         ...FILE NAME LIST
+                              MEME_FC:         ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                              MEME_FV:         ...FILE KEY VARLIST
+                              MEME_FK:         ...FILE KEY SIZES
+                              MEME_LIST:       ...FILE RECORD (FIELD LIST)
+                              MEME_REC:        ...FILE RECORD (PACKED)
+                              MEME_OLD:        ...FILE SAVED WHEN READ
+                              MEME_QTY:        ...NUMBER OF FILES
+                              1                ...FILE NUMBER FOR THIS READ
+
+         IF (RESULT <> 1) 
+.            GOTO GET_REST_DEPS_INFO_RET
+             BREAK
+         ENDIF 
+
+
+         IF (MEM_ID1 <> MEME_ID1)
+             IF (FIRST_MEME_READ = " ")
+                 GOTO GET_REST_DEPS_INFO_RET
+             ELSE 
+                 IF (HLD_MEME_NET = "")
+                     GOTO GET_REST_DEPS_INFO_RET
+                 ELSE 
+                     BREAK 
+                 ENDIF
+             ENDIF
+         ELSE
+             MOVE "N" TO FIRST_MEME_READ
+         ENDIF
+
+... Excludes LIFE Plans              
+         IF (SQUEEZE MEME_NET = "LIFE") 
+             CONTINUE
+         ENDIF
+
+... Excludes EGWP Plans              
+         IF (SQUEEZE MEME_NET = "EGWP")
+            CONTINUE
+         ENDIF
+
+... Excludes no coverage records
+         IF (SQUEEZE MEME_NET = "NOCOV") 
+             CONTINUE
+         ENDIF
+
+... Excludes Blank Fields   
+         IF (SQUEEZE MEME_NET = "")
+             CONTINUE
+         ENDIF
+
+         IF (SQUEEZE MEME_TRM = "")
+            IF (SQUEEZE MEME_LEV2 <> "95")
+               IF (SQUEEZE MEME_SAV = "")
+                  PACK MEME_SAV WITH MEME_REC
+                  CALL TERM_CURR_REC
+                  CONTINUE
+               ELSE
+                  PACK MEME_SAV2 WITH MEME_REC
+                  CALL TERM_CURR_REC
+                  CONTINUE
+               ENDIF
+            ELSE
+               IF (SQUEEZE MEME_EFF < EFF_01)
+                  IF (SQUEEZE MEME_SAV = "")
+                     PACK MEME_SAV WITH MEME_REC
+                     CALL TERM_CURR_REC
+                     CONTINUE
+                  ELSE
+                     PACK MEME_SAV2 WITH MEME_REC
+                     CALL TERM_CURR_REC
+                     CONTINUE
+                  ENDIF
+               ELSE 
+                  IF (SQUEEZE MEME_SAV = "")
+                     PACK MEME_SAV WITH MEME_REC
+                     PACK HLD_MEME_NET WITH MEME_NET
+                     PACK SAV_SWT WITH "Y"
+                     CONTINUE
+                  ELSE
+                     PACK MEME_SAV2 WITH MEME_REC
+                     PACK HLD_MEME_NET WITH MEME_NET
+                     PACK SAV2_SWT WITH "Y"
+                     CONTINUE
+                  ENDIF
+               ENDIF
+            ENDIF
+         ENDIF
+
+     REPEAT
+
+     IF ((SAV_SWT = "Y") AND (SAV2_SWT = "Y"))
+         GOTO GET_REST_DEPS_INFO_RET
+     ENDIF
+
+     IF ((SAV_SWT = "Y") AND (SAV2_SWT <> "Y"))
+         CLEAR INM_REC
+         PACKLEN INM_REC WITH MEM_SAV,MEME_SAV
+         CALL WRITE_OUTPUT_RECS
+         GOTO GET_REST_DEPS_INFO_RET
+     ENDIF
+
+     IF ((SAV_SWT <> "Y") AND (SAV2_SWT = "Y"))
+         CLEAR INM_REC
+         PACKLEN INM_REC WITH MEM_SAV,MEME_SAV2
+         CALL WRITE_OUTPUT_RECS
+         GOTO GET_REST_DEPS_INFO_RET
+     ENDIF
+
+.    IF (SQUEEZE MEME_SAV2 = "")
+.       UNPACK MEME_SAV INTO MEME_LIST
+.    ELSE
+.       GOTO GET_REST_DEPS_INFO_RET
+.    ENDIF
+.
+.    IF (SQUEEZE MEME_TRM = "")
+.        MOVE "99999999" TO MEME_TRM
+.    ELSE 
+.        IF (MEME_TRM = DEC_TRM)
+.            MOVE "99999999" TO MEME_TRM
+.        ELSE
+.            IF (MEME_TRM = FEB_TRM)
+.                MOVE "99999999" TO MEME_TRM
+.            ENDIF
+.        ENDIF
+.    ENDIF
+
+
+GET_REST_DEPS_INFO_RET
+  RETURN
+
+.##############################################################################
+WRITE_OUTPUT_RECS
+.##############################################################################
+.---------------
+...Write records
+.---------------
+
+...
+    UNPACK INM_REC INTO INM_LIST
+    PACK INME_ID2         WITH "    "       
+    PACK INME_TRM         WITH "~~~~~~~~"
+    PACK INME_TRUN        WITH "~~~~~~~~"
+    PACK INME_TLET        WITH "~"
+    CLEAR INME_CHGBY
+    CLEAR INME_CHGDT
+    PACK  INME_CHGBY      WITH "FIX_95" 
+    PACK  INME_CHGDT      WITH "~~~~~~~~"
+    IF (SQUEEZE INME_MODE = "")
+       PACK INME_MODE     WITH "M"
+    ELSE 
+       PACK INME_MODE     WITH "~"
+       PACK INME_BILLD    WITH "~~~~~~~~"
+       PACK INME_DUERU    WITH "~"
+       PACK INME_DUEDA    WITH "~~~"
+       PACK INME_BFORM    WITH "~~~~"
+       PACK INME_COB      WITH "~~"
+    ENDIF
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUTPUT_FILE:
+                            OUTPUT_NAME:
+                            INM_LIST     
+
+    ADD 1 TO X_CNT3
+
+  RETURN
+
+.##############################################################################
+TERM_CURR_REC
+.##############################################################################
+
+    CLEAR INM_REC
+    IF (SQUEEZE MEME_SAV = "")
+       PACKLEN INM_REC WITH MEM_SAV,MEME_SAV2
+    ELSE 
+       IF (SAV_SWT = "Y")
+          PACKLEN INM_REC WITH MEM_SAV,MEME_SAV2
+       ELSE
+          PACKLEN INM_REC WITH MEM_SAV,MEME_SAV
+       ENDIF
+    ENDIF
+    UNPACK INM_REC INTO INM_LIST
+    PACK INME_TRM WITH "20150228"
+    CLEAR INME_CHGBY
+    CLEAR INME_CHGDT
+    PACK  INME_CHGBY      WITH "FIX_95" 
+    PACK  INME_CHGDT      WITH "~~~~~~~~"
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUTPUT_FILE:
+                            OUTPUT_NAME:
+                            INM_LIST     
+
+    ADD 1 TO X_CNT2
+
+    IF (SQUEEZE MEME_SAV = "")
+       CLEAR MEME_SAV2
+    ELSE 
+       IF (SAV_SWT = "Y")
+          CLEAR MEME_SAV2 
+       ELSE 
+          CLEAR MEME_SAV 
+       ENDIF
+    ENDIF
+
+  RETURN
+
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+  CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME
+
+  CALL CLOSE_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  RETURN
+. -----------------------------------------------------
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         X_RGNXREF.EX
+  INC         FILE.IO
+  INC         XALID.IO
+  INC         ZIPCODE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        CMDPARAM.SR  
+  INC        X_OGBFILE.IO

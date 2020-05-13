@@ -1,0 +1,688 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. apsjm 01/07/2010 a1001051 adh - initial version
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB            ...Common work area
+              INC       MEM.RL               ...Member record
+              INC       MEME.RL              ...Member Enrollment record
+              INC       CLM.RL               ...Claim record
+              INC       CLMS.RL              ...Service record
+              INC       VALID.RL             ...Valid codes
+              INC       PRT.RL               ...Printer Definition File
+              INC       CMDPARAM.CB          ...Command line variables
+
+.----------------------------------------------------------------------------
+.          Constants and data definition work areas
+.          Add any data areas/constants unique to this program here.
+.----------------------------------------------------------------------------
+.
+DEP_TERM_FD   FILE      VAR=34,TEXT
+DEP_TERM_NAME INIT      "dep_term_lt4.txt"
+DEP_TERM_LIST LIST
+DEP_TERM_ID1  DIM       8
+DEP_TERM_ESSN DIM       9
+DEP_TERM_ID2  DIM       4
+DEP_TERM_DTE  DIM       8
+DEP_TERM_NET  DIM       5
+              LISTEND
+.
+OLD_RET       FORM      3
+NEW_RET       FORM      3
+.
+PRINT_STATE   DIM        1
+MYSTATE       DIM       456
+CAL_CLOCK     DIM       21
+ACTION        DIM       10
+CURRDATE      DIM       8
+PREX_CAT      DIM       6
+PREX_LOOK     DIM       8
+SERIES        DIM       2
+SAVESCRN      DIM       16000
+SAVETRAP      DIM       500
+SAVEOPER      DIM       20
+SAVEPROG      DIM       12
+SAVENEXT      DIM       12
+HELPFILE      DIM       8
+WORKAIM       DIM       300
+SAVE_MODE     DIM       1
+SAVE_INQ      DIM       1
+NEW_DATE      DIM       10
+CHG_DATE      DIM       10
+HOW_SEARCH    DIM       10
+TODAY         DIM       8
+DO_WHAT       DIM       50
+LATEST        DIM       8
+.
+BASE_DATE     DIM       8
+DIMBEG        DIM       10
+DIMEND        DIM       10
+CLAIMANT      DIM       15
+.
+END           FORM      "-3"
+SEQ           FORM      "-1"
+FIRST_PAGE    FORM      1
+SAVELEVEL     FORM      1
+CNT_WORK      FORM      7
+CNT_LET       FORM      7
+FUD           FORM      2
+FUL           FORM      2
+LAG           FORM      2
+READ_COUNT    FORM      5
+WRITE_COUNT   FORM      5
+
+HIT           INIT      "N"
+DIM8          DIM       8
+FULLTIME      DIM       20
+HR            DIM       2
+MN            DIM       2
+NEWMM         DIM       2
+NEWYY         DIM       4
+NEWDD         DIM       2
+DOBMM         DIM       2
+DOBYYYY       DIM       4
+DOBDD         DIM       2
+CALC_DATE     DIM       8
+WORK_DATE     DIM       8
+END_DATE      DIM       8
+SAV_DATE      DIM       8
+BEG_DATE      DIM       8
+TRM_DATE      DIM       8
+THISYR_DOB    DIM       8
+SAVE_DOB      DIM       8
+SAVE_ID1      DIM       8
+DIM2          DIM       2
+DIM4          DIM       4
+AGE           DIM       3
+SPACE8        INIT      "        "
+WORK_MONTH    DIM       8
+WRK_YYYY      FORM      4
+WRK_DD        FORM      2
+WRK_MM        FORM      2
+WORKYEAR      FORM      4
+DONEIT        INIT      "N"
+
+
+. Key File
+
+KEY_FILE     FILE      VAR=8,COMP
+KEY_NAME     INIT      "mem.key"
+
+KEY_KEY      DIM        8        1-8
+
+FIRST_NOTE    FORM      1
+NOTE_CHECK    INIT      "-----"
+NUM_DATE      FORM      "2"
+DATE_COUNT    FORM      2
+SORT_TYPE     DIM       1
+SORT_NAME     DIM       8
+SORT_CLAIMANT INIT      "C"
+SORT_PROV     INIT      "P"
+
+PRINT@DETAIL  DIM       @
+
+LAST@NAME     DIM       @
+FIRST@NAME    DIM       @
+MIDDLE@INIT   DIM       @
+FULL@NAME     DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+.컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+.   Scheduler Fields
+.컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+
+PARAM_LIST    LIST       WITH NAMES
+PARAM_DATE    DIM        8
+PARAM_SER1    DIM        2
+PARAM_SER2    DIM        2
+PARAM_SER3    DIM        2
+PARAM_SER4    DIM        2
+PARAM_SER5    DIM        2
+PARAM_NOW     DIM        2
+              LISTEND
+.
++ ---------------------------------------------------------�---------------
++   Begin Program
++ ---------------------------------------------------------�---------------�
+
+START_MEMLT4
+
+         IF (C_CMDPAR)
+            CALL CMD_START USING "p_memlt4"
+         ENDIF
+
+         UNPACK    C_OPTN INTO PARAM_SER1,WCHAR:
+                               PARAM_SER2,WCHAR:
+                               PARAM_SER3,WCHAR:
+                               PARAM_SER4,WCHAR:
+                               PARAM_SER5
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+         MOVE      C_OPTN TO C_OPTO
+         SCRNSAVE  SAVESCRN
+         TRAPSAVE  SAVETRAP
+         MOVE      C_PROG  TO SAVEPROG
+         MOVE      C_OPER  TO SAVEOPER
+         MOVE      C_NEXT  TO SAVENEXT
+         MOVE      C_LEVEL TO SAVELEVEL
+         MOVE      C_MODE  TO C_SAVE
+         MOVE      C_INQ   TO C_SAVINQ
+
+         TRAPCLR   ALL
+
+. Where to go when the program quits
+. The name of this program
+. The description of this program (20 chars max)
+
+         MOVE      "menu"     TO C_NEXT                         <==
+         MOVE      "P_MEMLT4" TO C_PROG                         <==
+         MOVE      "MEMBER 21-24 LTRS" TO C_OPER               <==
+         MOVE       1 TO C_LEVEL                                <==
+
+         RETCOUNT  OLD_RET
+         CLOCK     CALENDAR  TO  CAL_CLOCK
+         CLOCK     TIMESTAMP TO  TODAY
+
+         MOVE      BLANKS TO C_LABEL
+         MOVE      BLANKS TO C_FILE
+         MOVE      BLANKS TO C_KEYS
+
+. -------------------------------------------------
+.   Put all externals used in F/M programs here
+. -------------------------------------------------
+RUN_UNILET    EXTERNAL
+
+. ------------------------------
+.   Fill top of screen
+. ------------------------------
+FILLTOP
+         GOTO      NO_FILL IF (C_RMODE <> "I")
+         STATESAVE MYSTATE
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_DATB,*COLOR=C_DATL,*+:
+                   *P1:2,*RPTCHAR *HLN:80,*COLOR=C_DATF:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<",ACTION,">"
+
+. Function line
+.-----------------------------------------------------------------------------
+.1-Help  2-Srch  3-Prev  4-Next  5-New   6-Tick  7-Code  8-Note  9-Quit 10-More
+........--------........--------........--------........--------........--------
+.  F1      F2      F3      F4      F5      F6      F7      F8      F9     F10
+.-----------------------------------------------------------------------------
+.�<Fri Feb 28 1997 09:20>컴�<PROGRAM DESCRIPTION >컴�<PROGNAME>컴<ACTION....>컴�
+.-----------------------------------------------------------------------------
+
+         DISPLAY   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        "
+
+. Standard bottom line
+.컴<12/12/1998>컴<userxx>컴<12/12/1998>컴<userxx>컴<id1.....>컴<id2.>컴<id3.>컴�
+.    date orig     by        date chgd     by
+.컴<12/12/1998>컴<userxx>컴<12/12/1998>컴<userxx>컴<id1.....>컴<how_search>컴컴
+.                                                               if level 1
+
+         UNPACK    MEM_NEWDT TO  W_YEAR,W_MM,W_DD
+         PACK      NEW_DATE WITH W_MM,"/",W_DD,"/",W_YEAR
+         UNPACK    MEM_CHGDT TO  W_YEAR,W_MM,W_DD
+         PACK      CHG_DATE WITH W_MM,"/",W_DD,"/",W_YEAR
+         DISPLAY   *BGCOLOR=C_BOTB,*COLOR=C_BOTL,*+:
+                   *P1:C_WIND25,*RPTCHAR *HLN:80,*COLOR=C_BOTF:
+                   *P4:C_WIND25,"<",NEW_DATE,">",*P18:C_WIND25,"<",*+,MEM_NEWBY,">":
+                   *P28:C_WIND25,"<",CHG_DATE,">",*P42:C_WIND25,"<",*+,MEM_CHGBY,">":
+                   *P52:C_WIND25,"<",MEM_ID1,">",*P64:C_WIND25,"<",HOW_SEARCH,">"
+
+. Reset window
+         STATEREST MYSTATE
+NO_FILL
+         PACK VAL_KEY1 WITH "155MEMLT4"
+         CALL      VAL_READ1
+         IF (RESULT = 1)
+            MOVE VAL_OPT TO PARAM_DATE
+         ENDIF
+         IF (SQUEEZE RUN_MODE = "" AND C_RMODE = "I")
+            message   horz="26",vert="06":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="This program will create   ":
+                      text="letters for students who   ":
+                      text="are 21 to 24 yrs old, 30   ":
+                      text="days from end of semester. ":
+                      text="Enter the date to start:   ":
+                      text="---> "
+
+            DISPLAY   *RESETSW,*BGCOLOR=C_DLGB,*COLOR=C_DLGF:
+                      *P37:12,PARAM_DATE
+
+            MOVE      37          TO  KEY_COL
+            MOVE      12          TO  KEY_ROW
+            MOVE      8           TO  KEY_SIZ
+            MOVE      0           TO  KEY_DEC
+            MOVE      "D"         TO  KEY_TYP
+            MOVE      "L"         TO  KEY_JUS
+            MOVE      "O"         TO  KEY_REQ
+            DISPLAY   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+            CALL      KEY_IN   USING  PARAM_DATE
+
+            RETURN    IF (SQUEEZE PARAM_DATE   = "")
+         ENDIF
+
+. Get scheduler information
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+             CALL      MAIN_PROCESS
+         ENDIF
+
+         GOTO QUIT
+
+. ----------------------------------------------------------------------
+. MAIN PROCESS
+. ----------------------------------------------------------------------
+
+MAIN_PROCESS
+         debug
+         MOVE      "loadmod"     TO C_KEYS
+         MOVE      "u_unilet"    TO C_FILE
+         LOADMOD   "u_unilet"
+
+
+. Create the report control work file
+         CREATE    KEY_NAME
+
+         IF (C_RMODE = "I")
+            message   horz="21",vert="16":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="Extracting MEM Records for Letters.":
+                      text="-----------------------------------":
+                      text="Action          :          ":
+                      text="Records Selected:          "
+         ENDIF
+         IF (C_RMODE = "I")
+            DISPLAY   *BGCOLOR=C_DLGB,*COLOR=C_DLGF:
+                          *P41:19,"Reformat "
+         ENDIF
+
+. This will select mem's whose semester will end in 30 days from PARAM_DATE.
+
+         CALL    DATE_CALC USING PARAM_DATE,"ADD","MONTHS",1,NEW_DATE
+         UNPACK NEW_DATE INTO WRK_YYYY,DIM2,WRK_DD
+
+         PACK      SCRATCH WITH "mem.dbf mem.key ":
+                  " -p408-415ge#"",PARAM_DATE,"#" ":
+                  " -p408-415le#"",NEW_DATE,"#" 1-8 -t -j -c"
+         REFORMAT  SCRATCH
+
+         PACK      SCRATCH WITH "mem.dbf mem.jnk ":
+                  " -p360-367ge#"",PARAM_DATE,"#" ":
+                  " -p360-367le#"",TODAY,"#" ":
+                  " -p408-409ne#"  #"":
+                  " -p408-415le#"",NEW_DATE,"#" 1-8 -t -j -c"
+         REFORMAT  SCRATCH
+
+. Unique sort to remove dups
+         BUILD     "mem.jnk mem.key -a "
+         SORT      "mem.key mem.key 1-8 -u -c"
+
+         MOVE WRK_YYYY TO NEWYY
+         MOVE WRK_DD   TO NEWDD
+         PACK WORK_DATE WITH NEWYY,DIM2,NEWDD
+         REPLACE " 0" IN WORK_DATE
+
+         PREP      DEP_TERM_FD,DEP_TERM_NAME
+. Now read Key file and get MEME records
+         OPEN      KEY_FILE,KEY_NAME
+         IF (C_RMODE = "I")
+            DISPLAY   *P41:19,SPACE8
+         ENDIF
+         LOOP
+            READ      KEY_FILE,SEQ;KEY_KEY
+            WHILE     NOT OVER
+            ADD       1 TO CNT_WORK
+            IF (C_RMODE = "I")
+               DISPLAY   *P42:19,CNT_WORK
+            ENDIF
+            MOVE      "N" TO HIT
+            PACK      MEM_FK11 WITH KEY_KEY
+            CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                                MEM_FN:          ...File name list
+                                MEM_FC:          ...(I)ndex or (A)imdex
+                                MEM_FV:          ...File key varlists
+                                MEM_FK:          ...File key sizes
+                                MEM_LIST:        ...File record (field list)
+                                MEM_REC:         ...File record (packed)
+                                MEM_OLD:         ...File saved when read
+                                MEM_QTY:         ...Number of files
+                                1                ...File number for this read
+
+. Make sure that dependent is not member or spouse.
+            CONTINUE IF (SQUEEZE MEM_REL = "01")
+            CONTINUE IF (SQUEEZE MEM_REL = "02")
+            CONTINUE IF (SQUEEZE MEM_REL = "X1")
+            CONTINUE IF (SQUEEZE MEM_REL = "X2")
+
+            CONTINUE IF (SQUEEZE MEM_LIFE = "HANDIC")
+            CONTINUE IF (SQUEEZE MEM_LIFE = "HANDI")
+            CONTINUE IF (SQUEEZE MEM_LIFE = "HAND")
+            CONTINUE IF (SQUEEZE MEM_LIFE = "LSUHDC")
+
+            UNPACK MEM_DOB INTO DOBYYYY,DOBMM,DOBDD
+            PACK THISYR_DOB WITH WRK_YYYY,DOBMM,DOBDD
+
+            UNPACK   WORK_DATE INTO WRK_YYYY,WRK_MM,WRK_DD
+            PACK     BEG_DATE WITH  WRK_YYYY,WRK_MM,WRK_DD
+            REPLACE " 0" IN BEG_DATE
+            CALL     DATE_CALC USING BEG_DATE,"ADD","MONTHS",1,END_DATE
+...         IF ((THISYR_DOB < BEG_DATE) OR (THISYR_DOB > END_DATE))
+...            CONTINUE
+...         ENDIF
+
+            CALL    CALC_AGE USING MEM_DOB,AGE,THISYR_DOB
+            IF ((SQUEEZE AGE < "21") OR (SQUEEZE AGE > "24"))
+               CONTINUE
+            ENDIF
+
+
+            PACK      MEME_FK11 WITH KEY_KEY,BLANKS
+            CALL      FILE_READ USING MEME_FD:    ...File declaration list
+               MEME_FN:  ...File name list
+               MEME_FC:  ...(I)ndex or (A)imdex
+               MEME_FV:  ...File key varlists
+               MEME_FK:  ...File key sizes
+               MEME_LIST: ...File record (field list)
+               MEME_REC: ...File record (packed)
+               MEME_OLD: ...File saved when read
+               MEME_QTY: ...Number of files
+               1         ...File number for this read
+
+.set flag for only doing one letter series
+            MOVE "N" TO DONEIT
+
+            LOOP
+               CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                  MEME_FN:  ...File name list
+                  MEME_FC:  ...(I)ndex or (A)imdex
+                  MEME_FV:  ...File key varlists
+                  MEME_FK:  ...File key sizes
+                  MEME_LIST: ...File record (field list)
+                  MEME_REC: ...File record (packed)
+                  MEME_OLD: ...File saved when read
+                  MEME_QTY: ...Number of files
+                  1         ...File number for this read
+               WHILE     (MEM_ID1 = MEME_ID1 AND RESULT = 1)
+
+. ISC 21638 Exclude groups 5005, 5006, 5007
+               CONTINUE IF (SQUEEZE MEME_LEV1 = "5005")
+               CONTINUE IF (SQUEEZE MEME_LEV1 = "5006")
+               CONTINUE IF (SQUEEZE MEME_LEV1 = "5007")
+.
+
+.check for future term date, check it against the last day of birthmonth.
+               IF (SQUEEZE MEME_NET <> "LSUSH")
+                    CONTINUE
+               ENDIF
+               IF (MEME_CHGDT = "20100101")
+                  IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM = "20100131"))
+                  ELSE
+                     CONTINUE
+                  ENDIF
+               ELSE
+                    CONTINUE
+               ENDIF
+
+. Semester end date matches 1 month from date user entered, go
+. do EVE and update MEME_TRM with last day of semester end month.
+. If student is 24...and he turns 24 before the semster ends, term him at the
+. end of his birth month.
+. If student terms, send HIPAA and COBRA.
+
+               IF (SQUEEZE AGE = "24")
+                  IF (THISYR_DOB < BEG_DATE)
+                     UNPACK MEM_DOB INTO DOBYYYY,DOBMM,DOBDD
+                     PACK     NEW_DATE WITH  WRK_YYYY,DOBMM,"01"
+                     CALL     DATE_CALC USING NEW_DATE,"ADD","MONTHS",1,TRM_DATE
+. Need to subtract 1 day to make it last day of month
+                     CALL     DATE_CALC USING TRM_DATE,"SUB","DAYS",1,MEME_TRM
+                  ELSE
+                     PACK MEME_TRM WITH MEM_GRAD
+                  ENDIF
+               ELSE
+                  PACK MEME_TRM WITH MEM_GRAD
+               ENDIF
+. Update the letter term date and term reason
+               CLOCK     TIMESTAMP TO MEME_CHGDT
+               MOVE      (C_USER + BLANKS) TO MEME_CHGBY
+               PACK     MEME_TRUN WITH MEME_TRM
+               PACK     MEME_TLET WITH "O"
+.              CALL     UPDATE_MEME
+               MOVE     MEME_ID1 TO DEP_TERM_ID1
+               MOVE     MEME_ID2 TO DEP_TERM_ID2
+               MOVE     MEM_ESSN TO DEP_TERM_ESSN
+               MOVE     MEME_TRM TO DEP_TERM_DTE
+               MOVE     MEME_NET TO DEP_TERM_NET
+               WRITE    DEP_TERM_FD,END;DEP_TERM_LIST
+               CLEAR    DEP_TERM_LIST
+               IF (DONEIT = "N")
+                  MOVE MEM_ID1 TO SAVE_ID1
+                  MOVE MEM_REC TO MEM_SAV
+                  MOVE MEM_DOB TO SAVE_DOB
+                  MOVE MEM_GRAD TO SAV_DATE
+                  MOVE     "TE" TO PARAM_NOW
+                  CALL     GOT_ONE
+                  MOVE MEM_SAV TO MEM_REC
+                  MOVE SAVE_ID1 TO MEM_ID1
+                  MOVE SAVE_DOB TO MEM_DOB
+                  MOVE SAV_DATE TO MEM_GRAD
+               ENDIF
+               MOVE "Y" TO DONEIT
+
+            REPEAT
+
+
+            IF (C_CUSTNO <> "OGB")
+               MOVE     PARAM_SER1 TO PARAM_NOW
+               CALL     GOT_ONE
+               MOVE     PARAM_SER2 TO PARAM_NOW
+               CALL     GOT_ONE
+               MOVE     PARAM_SER3 TO PARAM_NOW
+               CALL     GOT_ONE
+               MOVE     PARAM_SER4 TO PARAM_NOW
+               CALL     GOT_ONE
+               MOVE     PARAM_SER5 TO PARAM_NOW
+               CALL     GOT_ONE
+            ENDIF
+
+        REPEAT
+
+
+.Write out current date to valid table for next run
+         CLOCK     TIMESTAMP INTO FULLTIME
+         UNPACK    FULLTIME INTO DIM8,HR,MN
+         IF ((HR >= "00") AND (HR <= "16"))
+            CALL    DATE_CALC USING TODAY,"SUB","DAYS",1,NEW_DATE
+         ELSE
+            PACK NEW_DATE WITH TODAY
+         ENDIF
+         PACK VAL_TYPE WITH "155",BLANKS
+         PACK VAL_CODE WITH "MEMLT4",BLANKS
+         PACK VAL_DESC WITH "LAST DATE FOR 21-24 LTRS",BLANKS
+         PACK VAL_OPT  WITH NEW_DATE,BLANKS
+         PACK VAL_FILL WITH BLANKS
+         CALL VAL_WRITE
+
+        RETURN
+
+GOT_ONE
+.Member meets criteria, go write the EVE
+
+         RETURN    IF (SQUEEZE PARAM_NOW = "")
+         MOVE      PARAM_NOW TO SERIES
+         CALL      BUILD_EVE
+         RETURN
+
+. -------------------------------------------------------------------
+. The U_UNILET system thinks you are passing it a claim, so fool it.
+. -------------------------------------------------------------------
+BUILD_EVE
+         FILL      " " IN CLMS_REC
+         FILL      " " IN CLM_REC
+         UNPACK    CLM_REC    TO CLM_LIST
+         MOVE      BLANKS     TO CLM_MCAT
+         MOVE      MEM_ID1    TO CLM_12
+         MOVE      MEME_CLIR  TO CLM_CLIR
+         MOVE      PARAM_DATE TO CLM_6A
+         MOVE      MEME_NET   TO CLM_NET
+         MOVE      MEME_PRD   TO CLM_PROD
+         MOVE      MEME_CARR  TO CLM_CARR
+         MOVE      MEME_PLAN  TO CLM_PLAN
+         MOVE      MEME_ORIG  TO CLM_32A2
+         MOVE      MEME_TRM   TO CLM_33A2
+         MOVE      MEM_GRAD   TO CLM_81A2
+
+         MOVE      BLANKS TO PREX_CAT
+         MOVE      BLANKS TO PREX_LOOK
+
+. CLM_84A gets stored in EVE.I1
+. CLM_84B gets stored in EVE.I2
+. CLM_84C gets stored in EVE.I3
+. Key words will unpack these during printing
+         PACK      CLM_84A  WITH MEM_ALTID,BLANKS
+....     PACK      CLM_84B  WITH MEM_DATE20,MEM_DATE11,BLANKS
+         PACK      CLM_84C  WITH BLANKS
+         PACK      CLM_84D  WITH "MEM 21-24 BD",BLANKS
+
+..get 01 mem id for clm_38
+         CLEAR     MEM_AIM
+         PACK      MEM_AIM1 WITH "01X",MEM_ESSN
+         PACK      MEM_AIM3 WITH "03X","01"
+         CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                             MEM_FN:          ...File name list
+                             MEM_FC:          ...(I)ndex or (A)imdex
+                             MEM_FV:          ...File key varlists
+                             MEM_AIM:         ...File key sizes
+                             MEM_LIST:        ...File record (field list)
+                             MEM_REC:         ...File record (packed)
+                             MEM_OLD:         ...File saved when read
+                             MEM_QTY:         ...Number of files
+                             2                ...File idx used (*custom*)
+         IF (RESULT = 1)
+            MOVE      MEM_ID1   TO CLM_38
+         ELSE
+            MOVE      MEME_ID1   TO CLM_38
+         ENDIF
+
+. Call the program that will build the EVE.LT record
+         PACK      CLM_REC WITH CLM_LIST
+         CALL      RUN_UNILET USING RESULT,SERIES,CLM_REC,CLMS_REC:
+                                    PREX_CAT,PREX_LOOK
+         IF (RESULT = 1)
+            ADD       1 TO CNT_LET
+            IF (C_RMODE = "I")
+               DISPLAY   *P42:20,CNT_LET
+            ENDIF
+         ENDIF
+
+         RETURN
+
+. ----------------------
+. UPDATE THE MEME RECORD
+. ----------------------
+UPDATE_MEME
+         PACK    MEME_REC      WITH  MEME_LIST
+         CALL    FILE_WRITE   USING  MEME_FD:
+                                     MEME_FN:
+                                     MEME_FC:
+                                     MEME_FV:
+                                     MEME_FK:
+                                     MEME_LIST:
+                                     MEME_REC:
+                                     MEME_OLD:
+                                     MEME_QTY:
+                                     1
+          RETURN
+
+. ----------------------
+.  Operator pressed F9
+. ----------------------
+QUIT
+
+         IF (C_CMDPAR)
+            CALL CMD_END
+            STOP
+         ENDIF
+
+         MOVE      BLANKS TO WCHAR
+         IF (RUN_MODE = "N")
+            dialog    horz="19",vert="19":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="Student Letters Complete  ":
+                      field=WCHAR
+         ENDIF
+
+         LOOP
+            RETCOUNT  NEW_RET
+            WHILE     (NEW_RET > OLD_RET)
+            NORETURN
+         REPEAT
+
+         MOVE      BLANKS TO C_CLOSED
+
+         MOVE SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+TRAP_SET
++        TRAP      HELP  NORESET IF F1
++        TRAP      SRCH  NORESET IF F2
++        TRAP      PREV  NORESET IF F3
++        TRAP      NEXT  NORESET IF F4
++        TRAP      NEW   NORESET IF F5
++        TRAP      EXPD  NORESET IF F6
++        TRAP      CODE  NORESET IF F7     ...Must be inactive (hoel.sr)
++        TRAP      NOTE  NORESET IF F8
+         TRAP      QUIT  NORESET IF F9
++        TRAP      MORE  NORESET IF F10
+         RETURN
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO
+         INC       PRINT.SR
+         INC       CMDPARAM.SR
+.

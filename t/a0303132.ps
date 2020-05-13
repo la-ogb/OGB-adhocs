@@ -1,0 +1,388 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0303132.PS
++    Description    :  Program to correct Blue Cross accum errors      
++
++    apeks 03/13/2003 a0303132 DEV - Initial Version. 
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy ayymmdd# MOD - Description        
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demographics
+              INC       MEME.RL              ...Member Enrollment
+              INC       MEMA.RL              ...Member Accum File
+              INC       SCH.RL               ...Scheduler File  
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+. Input Files
+. File created from Excel file provided by Blue Cross --
+. Contains accum record they could not post because of inability to
+. match member
+INP_FILE        FILE    VAR=100,TEXT
+INP_NAME        INIT    "/w/bluaccerr.prn"
+INP_LIST        LIST
+INP_OSSN        DIM     9
+INP_FIL1        DIM     9
+INP_REL         DIM     2 
+INP_FIL2        DIM     3
+INP_MEM         DIM     8 
+INP_FIL3        DIM     1
+INP_DATE        DIM     8 
+INP_AMT         DIM     10
+INP_SSN         DIM     9 
+INP_FIL4        DIM     1
+                LISTEND
+
+. Output Files
+. Enhanced layout for submission of accums to ASO
+MX_FILE         FILE    VAR=150,TEXT
+MX_NAME         INIT    "/w/bluacccor.txt"
+MX_LIST         LIST
+..<BEGIN>-----------------------------------------------------------------
+MX_SSN          DIM     9               0001 0009           SSN No
+MX_REL          DIM     2               0010 0011           Rel Code
+MX_ID           DIM     8               0012 0019           Impact MEM ID
+MX_ACCU         DIM     4               0036 0039           Accum Name
+MX_FROM         DIM     8               0020 0027           Earliest DOS
+MX_THRU         DIM     8               0028 0035           Lastest  DOS
+MX_AMT          DIM     10              0040 0049           Amount
+MX_FIRST        DIM     15              0050 0064           First Name
+MX_LAST         DIM     20              0065 0084           Last Name
+MX_DOB          DIM     8               0085 0092           DOB
+MX_SEX          DIM     1               0093 0093           Sex
+MX_PSSN         DIM     9               0094 0102           Pat SSN
+..<END>------------------------------------------------------------------
+                LISTEND
+
+
+. ---------------------------------------------
+. Program Specific Variables & Working Storage
+. ---------------------------------------------
+CAL_CLOCK       DIM       21 
+CYCLE_DATE      DIM       8
+HOLD_CYCLE_DATE DIM       8
+HOLD_FILE_NME   DIM       31
+ORIG_RETURN     FORM      5       
+PARAM_LIST      LIST
+PARAM_XXX       DIM       10
+PARAM_YYY       DIM       5
+PARAM_DATE      DIM       8
+       	        LISTEND
+TRAP_DATA       DIM       500
+
+DIM2            DIM       2
+DIM8            DIM       8
+DIM10           DIM       10
+DIM24           DIM       24
+MCS@DIM1        DIM       @
+MCS@DIM2        DIM       @
+MCS@FORM1       FORM      @
+
+WS_CCYY         DIM       4
+WS_CC           DIM       2
+WS_YY           DIM       2
+WS_MM           DIM       2
+WS_DD           DIM       2
+
+INP_RD_CNT      FORM      10 
+OUT_WT_CNT      FORM      10 
+
+W_CURRDT        DIM       8
+W_FROM          DIM       8
+W_THRU          DIM       8
+
+AMT1            FORM      9.2
+AMT2            FORM      9.2
+AMT3            FORM      9.2
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ---------------------------------
+. Start here if selected from menu   
+. ---------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. --------------------------------------
+. Start here if called by the Scheduler    
+. --------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "BCBS ACCUM FIX"    TO  C_OPER
+         MOVE      "A0303132"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...No Traps should be Set
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         CALL INIT_PROG
+         CALL FIND_MEMBER
+
+         RETURN
+
+. ----------------------------
+. Initialize Program       
+. ----------------------------
+
+INIT_PROG
+
+         CALL SCR_DISPLAY
+         CALL OPEN_FILES
+
+         RETURN
+
+. ----------------------------
+. Screen display
+. ----------------------------
+
+SCR_DISPLAY
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="10":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="      -Records Processed-        ":
+                      text=" Input Read                      ":
+                      text=" Output Written                  "
+         ENDIF
+
+         MOVE 0 TO INP_RD_CNT
+         MOVE 0 TO OUT_WT_CNT
+
+         CALL DISPLAY_CNTS 
+
+         RETURN
+
+. ----------------------------
+. Open Program Files        
+. ----------------------------
+
+OPEN_FILES
+
+         CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+
+         CALL PREP_OGBFILE USING MX_FILE,MX_NAME
+
+         RETURN
+
+. ----------------------------
+.  Find Member record       
+. ----------------------------
+
+FIND_MEMBER
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+
+. Read input file
+         LOOP
+           CALL READ_OGBFILE USING INP_FILE,INP_NAME,INP_LIST
+           IF (RESULT <> 1)
+              GOTO FIND_MEMBER_END
+           ENDIF
+
+         ADD 1 TO INP_RD_CNT
+        
+         PACK      MEM_FK11 WITH INP_MEM
+         CALL      FILE_READ USING MEM_FD:    ...File dec list
+                   MEM_FN:   ...File name list
+                   MEM_FC:   ...(I)ndex or (A)imdex
+                   MEM_FV:   ...File key varlists
+                   MEM_FK:   ...File key sizes
+                   MEM_LIST: ...File record (field list)
+                   MEM_REC:  ...File record (packed)
+                   MEM_OLD:  ...File saved when read
+                   MEM_QTY:  ...Number of files
+                   1         ...File number for this read
+
+         IF (RESULT <> 1)
+            GOTO FIND_MEMBER_MORE
+         ENDIF
+
+         PACK      MEME_FK11 WITH INP_MEM,BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...File dec list
+                   MEME_FN:  ...File name list
+                   MEME_FC:  ...(I)ndex or (A)imdex
+                   MEME_FV:  ...File key varlists
+                   MEME_FK:  ...File key sizes
+                   MEME_LIST: ...File record (field list)
+                   MEME_REC: ...File record (packed)
+                   MEME_OLD: ...File saved when read
+                   MEME_QTY: ...Number of files
+                   1         ...File number for this read
+         LOOP
+            CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                      MEME_FN:  ...File name list
+                      MEME_FC:  ...(I)ndex or (A)imdex
+                      MEME_FV:  ...File key varlists
+                      MEME_FK:  ...File key sizes
+                      MEME_LIST: ...File record (field list)
+                      MEME_REC: ...File record (packed)
+                      MEME_OLD: ...File saved when read
+                      MEME_QTY: ...Number of files
+                      1         ...File number for this read
+
+
+            WHILE (RESULT = 1)
+            WHILE (MEM_ID1 = MEME_ID1)
+            debug 
+            CONTINUE IF (INP_DATE < MEME_EFF)
+            CONTINUE IF (INP_DATE > MEME_TRM AND:
+                         SQUEEZE MEME_TRM > "")
+            CONTINUE IF (SQUEEZE MEME_NET <> "BLUE")
+
+            CALL WRITE_OUT
+            GOTO FIND_MEMBER_MORE
+
+         REPEAT
+ 
+FIND_MEMBER_MORE
+         REPEAT
+
+FIND_MEMBER_END
+         RETURN
+
+. ----------------------------
+. Write Output File         
+. ----------------------------
+
+WRITE_OUT
+
+         debug
+         PACK MX_SSN     WITH MEM_ESSN
+         PACK MX_REL     WITH MEM_REL
+         PACK MX_ID      WITH INP_MEM
+         PACK MX_ACCU    WITH "LIFE"
+         PACK MX_FROM    WITH MEME_EFF
+         PACK MX_THRU    WITH INP_DATE 
+         PACK MX_AMT     WITH INP_AMT
+         PACK MX_FIRST   WITH MEM_FNAME
+         PACK MX_LAST    WITH MEM_LNAME
+         PACK MX_DOB     WITH MEM_DOB
+         PACK MX_SEX     WITH MEM_SEX
+         PACK MX_PSSN    WITH MEM_PSSN
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL  WRITE_OGBREC USING MX_FILE,MX_NAME,MX_LIST
+         ADD 1 TO OUT_WT_CNT
+
+         RETURN
+
+. ----------------------------
+. Display Delay             
+. ----------------------------
+
+DELAY_DSP ROUTINE MCS@FORM1
+
+        MOVE MCS@FORM1 TO DIM10 
+        UNPACK DIM10 INTO DIM8,DIM2
+        IF (DIM2 = "00")
+           CALL DISPLAY_CNTS
+        ENDIF
+
+        RETURN
+
+. ----------------------------
+. Display Counters          
+. ----------------------------
+
+DISPLAY_CNTS 
+
+         IF (C_RMODE = "I")
+            DISPLAY   *P51:12,INP_RD_CNT
+            DISPLAY   *P51:13,OUT_WT_CNT
+         ENDIF
+
+         RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+	      INC	FILE.IO
+	      INC	VALID.IO
+	      INC	X_STANDARD.SR
+	      INC	X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of a0303132.ps
+. +++++++++++++++++++++++++++++++++++++

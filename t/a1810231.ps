@@ -1,0 +1,598 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1810231.PS
++    Description    :  ADH - FILE TO DHH FOR THE 1ST PAYMENT FOR ALL WHO WERE
++                      SENT IN 2018                            
++    APSJM 10/23/2018 - INITIAL VERSION
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+    INC UTIL_COMMON.CB      ...Standard OGB includes
+    INC VALID.RL             ...Valid codes
+    INC COL.RL               ...Collections
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+    INC MEM.RL           ...Member Demographics
+    INC MEME.RL          ...Member Enrollment
+    INC MEMI.RL          ...Alternate IDS
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+CHP_MEM_FD         FILE       VAR=37,TEXT
+CHP_MEM_NAME       INIT       "/w/lachip_mem.txt"
+.
+CHP_MEM_LIST       LIST
+CHP_MEM_ID1        DIM         8
+CHP_MEM_ID2        DIM         4
+CHP_MEM_EFF        DIM         8
+CHP_MEM_TRM        DIM         8
+CHP_MEM_PRD        DIM         5
+CHP_MEM_PLN        DIM         4
+                   LISTEND
+.
+.I/O Files
+.
+FP_SENT_FD        IFILE      VAR=25,TEXT,KEYL=9,DUP
+FP_SENT_NAME      INIT       "/w/fp_sent.ix1"
+.
+FP_SENT_LIST      LIST
+FP_SENT_ESSN      DIM        9 ....Enrollee SSN
+FP_SENT_SDTE      DIM        8 ....Conract Start Date
+FP_SENT_EDTE      DIM        8 ....Conract End   Date
+                  LISTEND
+.
+FP_SENT_KEY       DIM        9
+FP_SENT_SW        DIM        1
+.
+.Output Files
+FP_MEM_FD         FILE       VAR=101,TEXT
+FP_MEM_NAME       INIT       "/w/chip5_fpay.txt"
+.
+FP_LIST            LIST
+FP_PDATE           DIM         8   .... First Premium Paid Date
+FP_ESSN            DIM         9   .... Family SSN
+FP_LNAME           DIM         20  .... Last Name
+FP_FNAME           DIM         15  .... First Name
+FP_MI              DIM         1   .... M.I.
+FP_DOB             DIM         8   .... Date of Birth
+FP_PREM_AMT        DIM         10  .... Premium Amount
+FP_PROD            DIM         5   .... Product
+FP_PLAN            DIM         4   .... Plan
+FP_START           DIM         8   .... Contract Start Date
+FP_LDH_ID          DIM        13   .... LDH Unique Person ID
+                   LISTEND
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+HOLD_SDTE     DIM  8
+W_REMAIN      FORM 4.2
+
+CK_DATE       DIM  8
+W_CCYY        DIM  4
+PR_DATE       DIM  8
+MEME_CNT      FORM 2
+SAV_EFF       DIM  8
+G_TRM         DIM  8
+DIFF_MONTHS   FORM    5
+COL_CNT       FORM 2
+PROCESS_REC   DIM  1
+CK_TRM        DIM  8
+START_DATE    INIT "20120201"
+FIRST_READ    DIM  1
+AG_5005       INIT "5005 "
+SEC_01        INIT "01   "
+CMP_TRM       DIM  9
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+CAL_CLOCK     DIM       21
+TODAY         DIM       8
+FORM_42       FORM      4.2
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "DHH 1st PAYMENT"   TO C_OPER
+         MOVE      "a1810231"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Program Logic
+. ----------------------------
+
+MAIN_PROCESS
+    debug
+    CALL INITIALIZE
+    CALL REFORMAT_MEME
+    CALL OPEN_FILES
+    CALL PROCESS_REF_FILE
+    CALL CLOSE_FILES
+
+    CALL BACKUP_OUTPUT
+
+    ROLLOUT "fis7000.ftp"
+    IF OVER
+        CALL UTIL_ERRORMSG USING "ROLLOUT FAILED-fis7000.ftp","MAIN_PROCESS"
+    ENDIF
+
+    CALL NORMAL_EOJ
+    RETURN
+
+
+. ----------------------------
+. Process Routines
+. ----------------------------
+
+PROCESS_REF_FILE
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING CHP_MEM_FD,CHP_MEM_NAME,CHP_MEM_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,100
+
+        IF (SQUEEZE CHP_MEM_TRM <> "")
+            CONTINUE IF (CHP_MEM_TRM < CHP_MEM_EFF)
+        ENDIF
+        PACK MEM_FK11 WITH CHP_MEM_ID1,BLANKS
+        CALL  FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+                                MEM_FN:  ...FILE NAME LIST
+                                MEM_FC:  ...TYPE OF INDEX
+.                        ...(I)NDEX OR (A)IMDEX
+                               MEM_FV:  ...FILE KEY VARLISTS
+                               MEM_FK:  ...FILE KEY SIZES
+                               MEM_LIST:...FILE RECORD (FIELD LIST)
+                               MEM_REC: ...FILE RECORD (PACKED)
+                               MEM_OLD: ...FILE SAVED WHEN READ
+                               MEM_QTY: ...NUMBER OF FILES
+                                1         ...FILE NUMBER FOR THIS READ
+
+        CONTINUE IF (RESULT <> 1)
+        CONTINUE IF (MEM_REL <> "01")
+
+        CALL READ_SENT_FILE
+        CONTINUE IF (FP_SENT_SW = "N")
+        UNPACK HOLD_SDTE INTO W_CCYY,W_MM,W_DD
+        IF (HOLD_SDTE >= "20180701")
+        ELSE
+           CONTINUE
+        ENDIF
+        CALL READ_COL_1
+        IF (SQUEEZE COL_SAV = "")
+           DEBUG
+           CONTINUE
+        ENDIF
+        CALL WRITE_FPAY
+        REPEAT
+    RETURN
+
+
+WRITE_FPAY
+    UNPACK COL_SAV INTO COL_LIST
+    MOVE COL_RECDT TO FP_PDATE
+    MOVE MEM_ESSN TO FP_ESSN
+    MOVE MEM_LNAME TO FP_LNAME
+    MOVE MEM_FNAME TO FP_FNAME
+    MOVE MEM_MINIT TO FP_MI
+    MOVE MEM_DOB TO FP_DOB
+    MOVE COL_AMT TO FP_PREM_AMT
+    MOVE CHP_MEM_PRD TO FP_PROD
+    MOVE CHP_MEM_PLN TO  FP_PLAN
+    MOVE CHP_MEM_EFF TO FP_START
+
+    PACKLEN MEMI_KEY WITH MEM_ID1,"DHH",BLANKS
+    MOVE BLANKS TO FP_LDH_ID   
+    CALL MEMI_READ
+    LOOP
+           CALL MEMI_NEXT 
+           BREAK IF (RESULT <> 1)
+           BREAK IF (MEMI_ID <> MEM_ID1)
+           BREAK IF (MEMI_CAT <> "DHH")
+           MOVE MEMI_ALT TO FP_LDH_ID
+    REPEAT
+
+    MOVE OGB_SEQ3 TO OGB_SEQ
+    CALL WRITE_OGBREC USING FP_MEM_FD,FP_MEM_NAME,FP_LIST
+    CLEAR FP_LIST
+
+    RETURN
+
+
+READ_SENT_FILE
+    MOVE "N" TO FP_SENT_SW
+    PACK FP_SENT_KEY WITH MEM_ESSN
+    MOVE "Y" TO FIRST_READ
+    LOOP
+        IF (FIRST_READ = "Y")
+            CALL READ_OGBFILE_IX USING FP_SENT_FD,FP_SENT_NAME:
+                                   FP_SENT_KEY,FP_SENT_LIST
+            MOVE "N" TO FIRST_READ
+        ELSE
+            CALL READKS_OGBFILE_IX USING FP_SENT_FD,FP_SENT_NAME:
+                                   FP_SENT_LIST
+        ENDIF
+        WHILE ((RESULT = 1) & (FP_SENT_KEY = FP_SENT_ESSN))
+
+        IF (FP_SENT_SDTE = CHP_MEM_EFF) AND (FP_SENT_EDTE = CHP_MEM_TRM)
+            MOVE "Y" TO FP_SENT_SW
+            MOVE FP_SENT_SDTE TO HOLD_SDTE
+        ENDIF
+    REPEAT
+
+   RETURN
+
+
+READ_MEME_1
+      CLEAR MEME_CNT
+      MOVE "Y" TO PROCESS_REC
+      PACK MEME_FK11 WITH MEM_ID1,BLANKS
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST
+                            MEME_FC:  ...TYPE OF INDEX
+.                         ...(I)NDEX OR (A)IMDEX
+                            MEME_FV:  ...FILE KEY VARLISTS
+                            MEME_FK:  ...FILE KEY SIZES
+                            MEME_LIST:...FILE RECORD (FIELD LIST)
+                            MEME_REC: ...FILE RECORD (PACKED)
+                            MEME_OLD: ...FILE SAVED WHEN READ
+                            MEME_QTY: ...NUMBER OF FILES
+                            1         ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST
+                                MEME_FC:  ...TYPE OF INDEX
+.                                 ...(I)NDEX OR (A)IMDEX
+                                MEME_FV:  ...FILE KEY VARLISTS
+                                MEME_FK:  ...FILE KEY SIZES
+                                MEME_LIST:...FILE RECORD (FIELD LIST)
+                                MEME_REC: ...FILE RECORD (PACKED)
+                                MEME_OLD: ...FILE SAVED WHEN READ
+                                MEME_QTY: ...NUMBER OF FILES
+                                1     ...FILE NUMBER FOR THIS READ
+          WHILE ((MEM_ID1 = MEME_ID1) & (RESULT = 1))
+
+          CONTINUE IF (SQUEEZE MEME_NET <> "DHH")
+          CONTINUE IF (SQUEEZE MEME_PRD <> "CHIP5")
+          CONTINUE IF ((SQUEEZE MEME_TRM != "") & (MEME_TRM < MEME_EFF))
+
+          ADD 1 TO MEME_CNT
+          IF (CK_TRM = MEME_TRM)
+                MOVE "N" TO PROCESS_REC
+          ENDIF
+      REPEAT
+      RETURN
+
+
+READ_MEME_2
+      CLEAR G_TRM
+      PACK MEME_FK11 WITH MEM_ID1,BLANKS
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST
+                            MEME_FC:  ...TYPE OF INDEX
+.                         ...(I)NDEX OR (A)IMDEX
+                            MEME_FV:  ...FILE KEY VARLISTS
+                            MEME_FK:  ...FILE KEY SIZES
+                            MEME_LIST:...FILE RECORD (FIELD LIST)
+                            MEME_REC: ...FILE RECORD (PACKED)
+                            MEME_OLD: ...FILE SAVED WHEN READ
+                            MEME_QTY: ...NUMBER OF FILES
+                            1         ...FILE NUMBER FOR THIS READ
+
+      LOOP
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST
+                                MEME_FC:  ...TYPE OF INDEX
+.                                 ...(I)NDEX OR (A)IMDEX
+                                MEME_FV:  ...FILE KEY VARLISTS
+                                MEME_FK:  ...FILE KEY SIZES
+                                MEME_LIST:...FILE RECORD (FIELD LIST)
+                                MEME_REC: ...FILE RECORD (PACKED)
+                                MEME_OLD: ...FILE SAVED WHEN READ
+                                MEME_QTY: ...NUMBER OF FILES
+                                1     ...FILE NUMBER FOR THIS READ
+
+          WHILE ((MEM_ID1 = MEME_ID1) & (RESULT = 1))
+
+          CONTINUE IF (SQUEEZE MEME_NET <> "DHH")
+          CONTINUE IF (SQUEEZE MEME_PRD <> "CHIP5")
+          CONTINUE IF ((SQUEEZE MEME_TRM <> "") & (MEME_TRM < MEME_EFF))
+
+          CONTINUE IF (MEME_EFF = CHP_MEM_EFF)
+          IF ((SQUEEZE G_TRM = "") OR (MEME_TRM > G_TRM))
+              MOVE MEME_TRM TO G_TRM
+          ENDIF
+      REPEAT
+      RETURN
+
+
+READ_COL_1
+    CLEAR COL_SAV
+    MOVE  "Y" TO FIRST_READ
+    CLEAR COL_CNT
+    CLEAR COL_AIM
+    PACK  COL_AIM4 WITH "04X",MEM_ID1,BLANKS
+    LOOP
+           IF (FIRST_READ = "Y")
+              CALL  FILE_READ USING COL_FD:    ...File declaration list
+                                  COL_FN:          ...File name list
+                                  COL_FC:          ...(I)ndex or (A)imdex
+                                  COL_FV:          ...File key varlists
+                                  COL_AIM:         ...File key sizes
+                                  COL_LIST:        ...File record (field list)
+                                  COL_REC:         ...File record (packed)
+                                  COL_OLD:         ...File saved when read
+                                  COL_QTY:         ...Number of files
+                                  2                ...File number for this read
+              MOVE "N" TO FIRST_READ
+           ELSE
+                CALL  FILE_NEXT USING COL_FD:    ...File declaration list
+                                    COL_FN:          ...File name list
+                                    COL_FC:          ...(I)ndex or (A)imdex
+                                    COL_FV:          ...File key varlists
+                                    COL_AIM:         ...File key sizes
+                                    COL_LIST:        ...File record (field list)
+                                    COL_REC:         ...File record (packed)
+                                    COL_OLD:         ...File saved when read
+                                    COL_QTY:         ...Number of files
+                                    2                ...File number for this read
+           ENDIF
+
+           WHILE (RESULT = 1)
+
+           PACK SCRATCH WITH (SQUEEZE COL_REF)
+           REPLACE MAKEUPPER IN SCRATCH
+           CONTINUE IF ((SCRATCH = "APPLY") & (COL_REF = "ADJUST"))
+
+           CLEAR FORM_42
+           MOVE COL_AMT TO FORM_42
+           IF (FORM_42 < 50.00)
+             CONTINUE
+           ENDIF
+           IF (FORM_42 = 50.00)
+             PACKLEN COL_SAV WITH COL_REC
+             BREAK
+           ELSE
+               MOD "50.00" INTO FORM_42 GIVING W_REMAIN
+               IF (W_REMAIN = 0)
+                 PACKLEN COL_SAV WITH COL_REC
+                 BREAK
+               ENDIF
+           ENDIF
+    REPEAT    .loop thru COL
+    RETURN
+
+
+READ_COL_2
+    CLEAR COL_SAV
+    MOVE  "Y" TO FIRST_READ
+    CLEAR COL_AIM
+    PACK  COL_AIM4 WITH "04X",MEM_ID1,BLANKS
+    LOOP
+           IF (FIRST_READ = "Y")
+              CALL  FILE_READ USING COL_FD:    ...File declaration list
+                                  COL_FN:          ...File name list
+                                  COL_FC:          ...(I)ndex or (A)imdex
+                                  COL_FV:          ...File key varlists
+                                  COL_AIM:         ...File key sizes
+                                  COL_LIST:        ...File record (field list)
+                                  COL_REC:         ...File record (packed)
+                                  COL_OLD:         ...File saved when read
+                                  COL_QTY:         ...Number of files
+                                  2                ...File number for this read
+              MOVE "N" TO FIRST_READ
+           ELSE
+                CALL  FILE_NEXT USING COL_FD:    ...File declaration list
+                                    COL_FN:          ...File name list
+                                    COL_FC:          ...(I)ndex or (A)imdex
+                                    COL_FV:          ...File key varlists
+                                    COL_AIM:         ...File key sizes
+                                    COL_LIST:        ...File record (field list)
+                                    COL_REC:         ...File record (packed)
+                                    COL_OLD:         ...File saved when read
+                                    COL_QTY:         ...Number of files
+                                    2                ...File number for this read
+           ENDIF
+           WHILE (RESULT = 1)
+
+           PACK SCRATCH WITH (SQUEEZE COL_REF)
+           REPLACE MAKEUPPER IN SCRATCH
+           CONTINUE IF ((SQUEEZE SCRATCH = "APPLY") & (SQUEEZE COL_REF = "ADJUST"))
+
+           CLEAR FORM_42
+           MOVE COL_AMT TO FORM_42
+           CONTINUE IF (FORM_42 < 50.00)
+
+           IF (COL_RECDT >= CK_DATE)
+             IF (FORM_42 = 50.00)
+                   PACKLEN COL_SAV WITH COL_REC
+.                  CALL WRITE_FPAY
+                   BREAK
+             ELSE
+                   MOD "50.00" INTO FORM_42 GIVING W_REMAIN
+                   IF (W_REMAIN = 0)
+                        PACKLEN COL_SAV WITH COL_REC
+.                       CALL WRITE_FPAY
+                        BREAK
+                   ENDIF
+             ENDIF
+           ENDIF
+    REPEAT    .loop thru COL
+    IF (SQUEEZE COL_SAV = "")
+         DEBUG
+    ENDIF
+    RETURN
+
+
+REFORMAT_MEME
+    CALL UTIL_MESSAGE USING "Building work file from MEME",25
+
+    PACK SCRATCH WITH "meme.dbf ",CHP_MEM_NAME:
+                      " -p21-25eq#"",AG_5005,"#"":
+                      " -p26-30eq#"",SEC_01,"#"":
+                      " -p96-103ge#"",START_DATE,"#"":
+                      " 1-12 96-103 104-111 117-121 126-129 -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        CALL UTIL_ERRORMSG USING "REFORMAT FAILED(meme.dbf)","REFORMAT_MEME"
+    ENDIF
+
+    SORT CHP_MEM_NAME," ",CHP_MEM_NAME," 13-20 -r -t"
+    IF OVER
+        CALL UTIL_ERRORMSG USING "Sort 1 failed","REFORMAT_MEME"
+    ENDIF
+
+    SORT CHP_MEM_NAME," ",CHP_MEM_NAME," 1-8 -u -t"
+    IF OVER
+        CALL UTIL_ERRORMSG USING "Sort 2 failed","REFORMAT_MEME"
+    ENDIF
+
+    MESSAGEERASE
+    RETURN
+
+
+INITIALIZE
+    DISPLAY *P1:9,*ES
+    CALL X_BLANK_SCREEN
+    CLOCK     TIMESTAMP   INTO  TIMESTAMP
+    CLOCK     TIMESTAMP   INTO  CURRDATE
+    CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+     MOVE      "Recs Read:     " TO X_CNTDESC1
+     MOVE      "Recs Written:     " TO X_CNTDESC2
+
+     CALL      X_DISPLAY_COUNTS
+     RETURN
+
+
+OPEN_FILES
+    CALL OPEN_OGBFILE USING CHP_MEM_FD,CHP_MEM_NAME
+    CALL PREP_OGBFILE USING FP_MEM_FD,FP_MEM_NAME
+    CALL OPEN_OGBFILE_IX USING FP_SENT_FD,FP_SENT_NAME
+    RETURN
+
+
+CLOSE_FILES
+    CALL CLOSE_OGBFILE USING CHP_MEM_FD,CHP_MEM_NAME
+    CALL CLOSE_OGBFILE USING FP_MEM_FD,FP_MEM_NAME
+    CALL CLOSE_OGBFILE_IX USING FP_SENT_FD,FP_SENT_NAME
+    RETURN
+
+
+.#######################################################################
+BACKUP_OUTPUT LROUTINE
+./* Since this file is daily, we want to make a date stamped backup to
+. * be captured in the weekly backups
+. */
+BACKUP_TIMESTAMP    CHAR    20
+BACKUP_NAME         CHAR    500
+...
+    debug ...new
+    CLOCK TIMESTAMP INTO BACKUP_TIMESTAMP
+    CALL UTIL_PENDING_BACKUP USING "/w/":
+                                   FP_MEM_NAME:
+                                   (CHOP BACKUP_TIMESTAMP)
+
+    RETURN
+    ENDROUTINE
+
+
+...Routine Includes
+    INC UTIL_COMMON.SR      ...Standard routine includes
+    INC UTIL_SYSTEM.SR      ...Routines for interacting with Unix
+    INC MEMI.IO             ...Alternate IDS
+    INC VALID.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of FIS7000.PS
+. +++++++++++++++++++++++++++++++++++++

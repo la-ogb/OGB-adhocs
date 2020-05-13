@@ -1,0 +1,508 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: a0409092.ps                                         *
+.     *                                                                   *
+.     * DESCRIPTION:  Counts:  (1). Number of enrollees who are Retired,  *
+.     *                             Over 65, and not on Medicare.         *
+.     *                        (2). Number of enrollees and/or spouses    *
+.     *                             who are Retired, Over 65, and not on  *
+.     *                             Medicare.                             *
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APAJP 09/09/2004 A0409092 DEV - Initial Version.                  *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrolllment
+              INC       MEMO.RL          ...Member Other Coverage
+              INC       CLI.RL           ...Client
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+MEME_RF_FD   FILE    VAR=34, TEXT
+MEME_RF_NAME INIT    "/w/a0409092.ref4"
+MEME_RF_LIST LIST 
+MEME_RF_ID   DIM     8
+MEME_RF_EFF  DIM     8
+MEME_RF_TERM DIM     8
+MEME_RF_LEV1 DIM     5
+MEME_RF_LEV2 DIM     5
+             LISTEND
+
+OUT_FD       FILE    VAR=64,TEXT
+OUT_NAME     INIT    "/w/a0409092.out"
+OUT_LIST     LIST
+OUT_RECID    DIM     8
+OUT_RELATION DIM     2
+OUT_ESSN     DIM     9
+OUT_DOB      DIM     8
+OUT_EFF      DIM     8
+OUT_TERM     DIM     8
+OUT_LEV1     DIM     5
+OUT_LEV2     DIM     5
+OUT_MEMO_EFF DIM     8
+OUT_MEDA     DIM     1
+OUT_MEDB     DIM     1
+OUT_RANK     DIM     1
+             LISTEND
+
+COUNT_FD     FILE    VAR=12, TEXT
+COUNT_NAME   INIT    "/w/a0409092.txt"
+COUNT_LIST   LIST 
+COUNT_TOTL   FORM    6
+COUNT_ENR    FORM    6
+             LISTEND
+.
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+.
+.FIRST_READ    DIM  1
+FORM_AGE      FORM 3
+MEDA_SW       DIM  1
+MEDB_SW       DIM  1
+MED_PRIM_SW   DIM  1
+MEME_RF_KEY1  INIT "1-8 -U -T"
+.MEME_RF_KEY2  INIT "25-26 -T"
+E_DATE        DIM  8
+L_DATE        DIM  8
+SVE_KEY       DIM  16
+CURR_KEY      DIM  16
+LIFE          INIT "LIFE "
+BLANK8        INIT "        "
+B_DATE        DIM  8
+.MEME_W_KEY    INIT "1-25 27-34 -T"
+.SUB_HIS_SKEY  INIT "1-24 26-26 27-34 -T"
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+W_AGE         DIM       3 
+
+
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "RETS >65;NO MEDICARE"     TO  C_OPER
+         MOVE      "A040909" TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL REFORMAT_MEME
+   CALL OPEN_FILES
+   CALL GET_COUNTS
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+
+
+. ----------------------------------------------------------------------------
+INITIALIZE
+. ----------------------------------------------------------------------------
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "MEME  Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written  :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+
+
+. -----------------------------------------------------------------------------
+. Reformat the MEME to get just the current, non-life, records for retired 
+. members (Level 1 = R* or Level 2 = 99). 
+. -----------------------------------------------------------------------------
+REFORMAT_MEME
+   DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+             *P30:21, "REFORMATTING MEME", *BOLDOFF
+
+. ...Eliminate Life-Only
+   PACK     SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "meme.dbf /w/a0409092.ref1":
+                     " -p112-116ne#"",LIFE,"#" 1-8 96-111 21-30 -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(MEME.DBF)"
+       CHAIN     "MENU"
+    ENDIF
+
+. ...Select only Records with no Term Date
+   PACK     SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "/w/a0409092.ref1 /w/a0409092.ref2":
+                      " -p17-24eq#"",BLANK8,"#" -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(REF1)"
+      CHAIN     "MENU"
+    ENDIF
+
+. ...Append Records with Future Term Date
+   PACK     SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "/w/a0409092.ref1 /w/a0409092.ref2":
+                      " -p17-24ge#"",TODAY,"#" -a -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(REF1)"
+      CHAIN     "MENU"
+    ENDIF
+
+. ...Select only Records Effective on or prior to Today
+   PACK SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "/w/a0409092.ref2 /w/a0409092.ref3":
+                      " -p9-16le#"",TODAY,"#" -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(REF2)"
+      CHAIN     "MENU"
+    ENDIF
+
+. ...Select only Records where Level 1 begins with "R"
+   PACK     SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "/w/a0409092.ref3 /w/a0409092.ref4":
+                      " -p25eq#"R#" -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(REF3)"
+      CHAIN     "MENU"
+    ENDIF
+
+. ...Append Records where Level 2 = "99"
+   PACK     SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "/w/a0409092.ref3 ",MEME_RF_NAME:
+                      " -p30-31eq#"99#" -a -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(REF3)"
+      CHAIN     "MENU"
+    ENDIF
+
+   CALL SORT_OGBFILE USING MEME_RF_NAME,MEME_RF_NAME,MEME_RF_KEY1
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="SORT FAILED(REF4)"
+      CHAIN     "MENU"
+    ENDIF
+   RETURN
+
+
+. -----------------------------------------------------------------------------
+OPEN_FILES
+. -----------------------------------------------------------------------------
+         CALL      OPEN_OGBFILE USING MEME_RF_FD,MEME_RF_NAME
+         CALL      PREP_OGBFILE USING OUT_FD,OUT_NAME
+         CALL      PREP_OGBFILE USING COUNT_FD,COUNT_NAME
+         RETURN
+
+
+. ----------------------------------------------------------------------------
+. After eliminating children and members under 65, check the MEMO file for 
+. members who are medicare primary.  At this point, we know the member is 
+. retired.  If they are also 65 or over and not medicare primary count them in 
+. the Total Lives count.  If they are >=65, not medicare primary, and an 
+. enrollee, also count them in the Total Enrollees count.
+. ----------------------------------------------------------------------------
+GET_COUNTS
+    MOVE OGB_SEQ1 TO OGB_SEQ
+  LOOP
+    CALL READ_OGBFILE USING MEME_RF_FD,MEME_RF_NAME,MEME_RF_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    MOVE MEME_RF_ID TO OUT_RECID
+    MOVE MEME_RF_EFF TO OUT_EFF
+    MOVE MEME_RF_TERM TO OUT_TERM
+    MOVE MEME_RF_LEV1 TO OUT_LEV1
+    MOVE MEME_RF_LEV2 TO OUT_LEV2
+    PACK MEM_FK11 WITH MEME_RF_ID     
+    CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                         MEM_FN:              ...FILE NAME LIST
+                         MEM_FC:              ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:              ...FILE KEY VARLISTS
+                         MEM_FK:              ...FILE KEY SIZES
+                         MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                         MEM_REC:             ...FILE RECORD (PACKED)
+		            MEM_OLD:             ...FILE SAVED WHEN READ
+                         MEM_QTY:             ...NUMBER OF FIlES
+                         1                    ...FILE NUMBER FOR THIS READ
+
+    MOVE MEM_REL TO OUT_RELATION
+    MOVE MEM_ESSN TO OUT_ESSN
+    MOVE MEM_DOB TO OUT_DOB
+
+    IF ((MEM_REL <> "01") AND (MEM_REL <> "02"))
+        CONTINUE
+    ENDIF
+
+    CALL CALC_AGE USING MEM_DOB,W_AGE,TODAY
+    MOVE W_AGE TO FORM_AGE
+    IF (FORM_AGE < 65)
+        CONTINUE
+    ENDIF
+
+    CALL GET_MED_PRIM
+    IF (MED_PRIM_SW <> "1")
+         ADD 1 TO COUNT_TOTL
+         CALL WRITE_OGBREC USING OUT_FD,OUT_NAME,OUT_LIST
+         ADD 1 TO X_CNT2
+         CLEAR OUT_LIST
+         IF (MEM_REL = "01")
+             ADD 1 TO COUNT_ENR
+         ENDIF
+    ENDIF
+
+  REPEAT
+  RETURN
+ 
+
+. ----------------------------------------------------------------------------
+. CHECK MEMO FILE FOR MEDICARE PRIMARY STATUS (++Note that prior to 07/01/1997
+. a member only had to have 1 part (A or B) to be considered Medicare Primary).
+. ----------------------------------------------------------------------------
+GET_MED_PRIM
+  CLEAR MED_PRIM_SW
+  CLEAR MEDA_SW
+  CLEAR MEDB_SW
+  MOVE MEME_RF_ID TO MEMO_FK11
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> MEME_RF_ID))
+           IF ((SQUEEZE(MED_PRIM_SW) = "") AND (MEDA_SW = "1") AND:
+               (MEDB_SW = "1"))
+               MOVE "1" TO MED_PRIM_SW
+           ENDIF
+           BREAK                  
+      ENDIF	
+      IF (MEMO_EFF > TODAY)
+          CONTINUE
+      ENDIF
+      IF ((SQUEEZE MEMO_TRM >"") AND (MEMO_TRM <= TODAY))
+          CONTINUE
+      ENDIF
+
+      MOVE MEMO_EFF TO OUT_MEMO_EFF
+      MOVE MEMO_RANK TO OUT_RANK
+      IF (SQUEEZE MEMO_RANK = "")
+         CONTINUE
+      ENDIF
+      SWITCH MEMO_TYPE
+             CASE "MEDA"
+               MOVE "1" TO MEDA_SW
+               MOVE "1" TO OUT_MEDA
+               IF (MEMO_EFF < "19970701")
+                    MOVE "1" TO MED_PRIM_SW
+               ENDIF 
+             CASE "MEDB"
+               MOVE "1" TO MEDB_SW
+               MOVE "1" TO OUT_MEDB
+               IF (MEMO_EFF < "19970701")
+                    MOVE "1" TO MED_PRIM_SW
+               ENDIF 
+      ENDSWITCH
+
+  REPEAT
+  RETURN
+
+
+. -----------------------------------------------------------------------------
+. Write the two counts out to the 'counts' file and close all program files.
+. -----------------------------------------------------------------------------
+CLOSE_FILES
+         CALL      WRITE_OGBREC USING COUNT_FD,COUNT_NAME,COUNT_LIST
+         CALL      CLOSE_OGBFILE USING MEME_RF_FD,MEME_RF_NAME
+         CALL      CLOSE_OGBFILE USING OUT_FD,OUT_NAME
+         RETURN
+
+
+. ----------------------------------------------------------------------------
+. Operator pressed F9
+. ----------------------------------------------------------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+
+. -----------------------------------------------------------------------------
+. Program Specific Includes
+. -----------------------------------------------------------------------------
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. /End of A0409092.PS
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

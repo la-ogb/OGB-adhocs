@@ -1,0 +1,1363 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  ELG0150
++    Description    :  Extract active Enrollees with Life and/or Health     
++                      Insurance through the State; Allows the Operator to   
++                      select criteria that need to be extracted as per 
++                      instructions from the person that requested the labels.
++
++ 
++    Author         :  Lisa Spurlock    
++    Date created   :  08/13/2002
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             Revisions
+.
+.APLLS 06/25/2003 MOD  MADE CHANGES FOR NEW PLANS FOR 07/2003 AND ADDED A 
+.                      LOOKUP OR KEYIN TO EXTRACT PLAN MEMBERS BY EFFECTIVE
+.                      DATE.  CHANGED THE NAME FROM X_ELG150 TO ELG0150 AND 
+.                      CHANGED THE OUTPUT NAME FROM x_labels.txt to label.txt.
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       VALID.RL
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL                Member Demographics File
+              INC       MEME.RL          
+              INC       MEMO.RL          
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+ZIP03_FILE_IX   IFILE     VAR=3,KEYL=3,NODUP,TEXT
+ZIP03_NAME_IX   INIT      "x_zip03.ix1"
+ZIP03_FILE_TXT  FILE      VAR=3,TEXT
+ZIP03_NAME_TXT  INIT      "x_zip03.txt"
+
+ZIP05_FILE_IX   IFILE     VAR=5,KEYL=5,NODUP,TEXT
+ZIP05_NAME_IX   INIT      "x_zip05.ix1"
+ZIP05_FILE_TXT  FILE      VAR=5,TEXT
+ZIP05_NAME_TXT  INIT      "x_zip05.txt"
+
+HEALTH_FILE_IX  IFILE     VAR=1,KEYL=1,NODUP,TEXT
+HEALTH_NAME_IX  INIT      "x_health.ix1"
+HEALTH_FILE_TXT FILE      VAR=1,TEXT
+HEALTH_NAME_TXT INIT      "x_health.txt"
+
+ACTLAB_FILE     FILE      VAR=8,TEXT      
+ACTLAB_NAME     INIT	  "x_meme.actlab"
+ 	    	 
+LABELS_FILE     FILE      VAR=151,TEXT
+LABELS_NAME     INIT      "label.txt"
+ 	    	 
+RECID_FILE      FILE      VAR=8,TEXT      
+RECID_NAME      INIT	  "x_recid.txt"
+ 	    	 
+.----------------------------------------------------------------------------
+.Output File Lists                                 
+.----------------------------------------------------------------------------
+
+ACTLAB_LIST     LIST	   
+ACTLAB_KEY1     DIM       8
+	        LISTEND 	 	    	 
+
+RECID_LIST      LIST	   
+RECID_KEY1      DIM       8
+	        LISTEND 	 	    	 
+
+ZIP03_LIST      LIST
+ZIP03_CODE      DIM       3         .> 3-byte zip code     
+                LISTEND
+
+ZIP05_LIST      LIST
+ZIP05_CODE      DIM       5         .> 5-byte zip code     
+                LISTEND
+HEALTH_LIST     LIST
+HEALTH_CODE     DIM       1         .> health code selection
+                LISTEND
+
+LABEL_LIST      LIST
+LABEL_LNAME     DIM       20        .>enrollee last name
+LABEL_FNAME     DIM       15        .>enrollee first name
+LABEL_MINIT     DIM       1         .>enrollee middle initial 
+LABEL_ADDRESS1  DIM       35        .>address line 1           
+LABEL_ADDRESS2  DIM       35        .>address line 2           
+LABEL_CITY      DIM       30        .>city                     
+LABEL_STATE     DIM       2         .>state        
+LABEL_ZIP       DIM       13        .>zip code     
+                LISTEND
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+
+DISP3           DIM       3
+DISP4           DIM       4
+MEM_ZIP03       DIM       3
+MEM_ZIP05       DIM       5
+MEM_ZIP08       DIM       8
+MEM_ZIP10       DIM       10
+ACT_RESULT      FORM      1 
+MEM_RESULT      FORM      1 
+MEME_RESULT     FORM      1 
+MEMO_RESULT     FORM      1 
+VAL_RESULT      FORM      1 
+HEALTH_RESULT   FORM      1 
+LIFE_RESULT     FORM      1 
+RETIRE_RESULT   FORM      1 
+ZIP_RESULT      FORM      1 
+LIFE_CODE       DIM       1 
+EMPL_CODE       FORM      1 
+ZIP_CODE        FORM      1 
+REPORT_CODE     DIM       1 
+ANOTHER_CODE    DIM       1 
+ANOTHER_ZIP     DIM       1 
+OUTPUT_CODE     FORM      1 
+LABEL_SRTKEY    INIT      "139-143 1-20 21-35 36-36 -T -U"
+LPTR            FORM      2
+WRK_DIM1        DIM       1
+WRK_DIM2_3      DIM       2
+WRK_DIM4_5      DIM       2
+DATE1           DIM       8
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+SPACES          DIM       8
+PREV_MEME_ID1   DIM       8
+PREV_MEME_PRD   DIM       5
+PREV_MEME_PLAN  DIM       4
+VALID_HEALTH_CODE  DIM    1        
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+WS_MEDA         DIM       4
+WS_MEDB         DIM       4
+KEYIN_DATE      DIM       8          
+KEYIN_CCYY      DIM       4          
+KEYIN_MM        DIM       2          
+KEYIN_DD        DIM       2          
+VALID_DATE      DIM       1          
+YN_ANS          DIM       1          
+BLANK8          INIT      "        "
+SPACE1          INIT      " "
+SPACE30         DIM       30 
+CMDLAB          INIT    "cp /ogb/work/label.txt /ogb/work/ftp/label.txt"
+
+ERRMSG          INIT    "YOU HAVE ENTERED AN INVALID RESPONSE !"                
+   
+LINE1           INIT    "A - GROUP BENEFITS (PPO)    E - GROUP BENEFITS (EPO)"  
+LINE2           INIT    "D - DEFINITY                O - OCHSNER             "  
+LINE3           INIT    "H - VANTAGE (MONROE)        M - UNITED H. C. (B.R.) "  
+LINE4           INIT    "Z - FARA MCO                X - ALL HEALTH PLANS    "  
+   
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Generic Label Extract" TO  C_OPER
+         MOVE      "ELG0150"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+. ...Initialize
+         CALL      INITIALIZE
+	 
+. ...Opens keyin files
+         CALL      OPEN_KEYIN_FILES 
+
+         DEBUG
+
+.....Prompt for Operator to keyin the Effective Date needed for extract
+         CALL      EFF_DATE_KEYIN   
+
+. ...Operator keyins
+
+         CALL      LIFE_INFO 
+
+         IF (LIFE_CODE = "N")  
+             MOVE "X" TO HEALTH_CODE
+         ELSE
+             CALL  HEALTH_INFO
+         ENDIF
+	 
+         CALL      RETIRE_INFO
+	 
+         CALL      ZIP_INFO 
+	 
+.        CALL      REPORT_INFO
+	 
+         CALL      OUTPUT_INFO
+	 
+         CALL      RESPONSE_INFO
+	 
+. ...Reformat MEM file
+         CALL      REFORMAT_MEME
+         
+. ...Open Files	
+         CALL      OPEN_FILES 
+         
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+    DISPLAY *ES
+. ...Screen Display
+         MOVE      "Generic Label Extract" TO  C_OPER
+         MOVE      "ELG0150"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. ...Extract Label files 
+	 CALL      EXT_LABEL_FILES 
+         
+. ...Sort Output file by Zip Code          
+        MOVE      LABELS_NAME TO C_FILE
+	CALL 	  CLOSE_OGBFILE USING LABELS_FILE,LABELS_NAME  
+        PACK      OGB_NAME WITH OGB_PATH,LABELS_NAME
+        MOVE      LABELS_NAME TO C_FILE
+	CALL 	  OPEN_OGBFILE USING LABELS_FILE,OGB_NAME  
+        DISPLAY   *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                  *P30:21,"SORTING FILE...",*BOLDOFF
+        PACK      OGB_NAME WITH OGB_PATH,LABELS_NAME
+        MOVE      OGB_NAME TO C_FILE
+        MOVE      LABEL_SRTKEY TO C_KEYS
+        CALL      SORT_OGBFILE USING OGB_NAME,OGB_NAME,LABEL_SRTKEY
+        IF OVER
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT FAILED(label.txt)"
+            CHAIN   "MENU"
+        ENDIF
+ 
+. ...Copy files to /ogb/work/ftp for use by elg0150.bat
+         MOVE CMDLAB TO SCRATCH 
+         ROLLOUT  SCRATCH
+         IF OVER            
+             ERROR    HORZ="15",VERT="19":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="COPY label.txt TO /ogb/work/ftp  FAILED"        
+             CHAIN    "MENU"
+         ENDIF         
+  
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         DEBUG
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Records Read:  " TO X_CNTDESC1
+	 MOVE      "Records Found: " TO X_CNTDESC2
+	 MOVE      "" TO X_CNTDESC3
+	 MOVE      "" TO X_CNTDESC4
+	 MOVE      "" TO X_CNTDESC5
+	 MOVE      "" TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+. ---------------------------------
+. Open Files That are Keyed Into
+. --------------------------------- 
+
+OPEN_KEYIN_FILES
+
+         DEBUG
+         PACK      OGB_NAME WITH OGB_PATH,ZIP03_NAME_IX
+         MOVE      ZIP03_NAME_IX TO C_FILE
+         CALL      PREP_OGBFILE_IX USING ZIP03_FILE_IX,OGB_NAME  
+         PACK      OGB_NAME WITH OGB_PATH,ZIP05_NAME_IX
+         MOVE      ZIP05_NAME_IX TO C_FILE
+         CALL      PREP_OGBFILE_IX USING ZIP05_FILE_IX,OGB_NAME  
+         PACK      OGB_NAME WITH OGB_PATH,HEALTH_NAME_IX
+         MOVE      HEALTH_NAME_IX TO C_FILE
+         CALL      PREP_OGBFILE_IX USING HEALTH_FILE_IX,OGB_NAME  
+
+
+    RETURN
+
+.
+.-------------------------------
+. Reformat MEME file
+.-------------------------------
+REFORMAT_MEME
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+...Get only Records without term dates
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/x_meme.actlab": 
+              " -p104-111eq#"",BLANK8,"#" 1-8 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(x_meme.actlab)"
+               CHAIN     "MENU"
+         ENDIF
+
+
+...Get only Records with term dates > today
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/x_meme.actlab":     
+              " -p104-111gt#"",KEYIN_DATE,"#" 1-8 -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(x_meme.actlab append)"
+               CHAIN     "MENU"
+         ENDIF
+
+    SORT "/ogb/work/x_meme.actlab /ogb/work/x_meme.actlab 1-8 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(x_meme.actlab)"
+               CHAIN     "MENU"
+         ENDIF
+ 
+    RETURN
+
+
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+...Display message to Operator that reformat completed
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="******* REFORMAT COMPLETE *******";
+    
+         DEBUG
+         PACK      OGB_NAME WITH OGB_PATH,ACTLAB_NAME
+	 MOVE      ACTLAB_NAME TO C_FILE
+	 CALL 	   OPEN_OGBFILE USING ACTLAB_FILE,OGB_NAME
+
+         PACK      OGB_NAME WITH OGB_PATH,RECID_NAME
+	 MOVE      RECID_NAME TO C_FILE
+	 CALL 	   PREP_OGBFILE USING RECID_FILE,OGB_NAME
+
+         PACK      OGB_NAME WITH OGB_PATH,LABELS_NAME
+	 MOVE      LABELS_NAME TO C_FILE
+	 CALL 	   PREP_OGBFILE USING LABELS_FILE,OGB_NAME  
+
+ 	 MOVE      ZIP03_NAME_IX TO C_FILE
+ 	 CALL 	   CLOSE_OGBFILE_IX USING ZIP03_FILE_IX,ZIP03_NAME_IX  
+ 	 MOVE      ZIP05_NAME_IX TO C_FILE
+ 	 CALL 	   CLOSE_OGBFILE_IX USING ZIP05_FILE_IX,ZIP05_NAME_IX  
+ 	 MOVE      HEALTH_NAME_TXT TO C_FILE
+ 	 CALL 	   CLOSE_OGBFILE USING HEALTH_FILE_TXT,HEALTH_NAME_TXT  
+.	 MOVE      HEALTH_NAME_IX TO C_FILE
+.	 CALL 	   CLOSE_OGBFILE_IX USING HEALTH_FILE_IX,HEALTH_NAME_IX  
+
+         PACK      OGB_NAME WITH OGB_PATH,ZIP03_NAME_TXT
+ 	 MOVE      ZIP03_NAME_TXT TO C_FILE
+ 	 CALL 	   OPEN_OGBFILE USING ZIP03_FILE_TXT,OGB_NAME  
+         PACK      OGB_NAME WITH OGB_PATH,ZIP05_NAME_TXT
+ 	 MOVE      ZIP05_NAME_TXT TO C_FILE
+ 	 CALL 	   OPEN_OGBFILE USING ZIP05_FILE_TXT,OGB_NAME  
+         PACK      OGB_NAME WITH OGB_PATH,HEALTH_NAME_TXT
+         MOVE      HEALTH_NAME_TXT TO C_FILE
+         CALL      OPEN_OGBFILE USING HEALTH_FILE_TXT,OGB_NAME  
+    RETURN
+
+. ----------------------------
+. Extract Label Information
+. ----------------------------
+
+EXT_LABEL_FILES
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ACTLAB_FILE,ACTLAB_NAME,ACTLAB_LIST
+        MOVE RESULT TO ACT_RESULT
+        IF (ACT_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        MOVE 2 TO LIFE_RESULT 
+        MOVE 2 TO HEALTH_RESULT 
+        CLEAR MEME_SAV
+        PACK MEME_FK11 WITH ACTLAB_KEY1,BLANKS
+	CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+	 	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.			             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+        LOOP
+            CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	       	           MEME_FN:  ...FILE NAME LIST  
+	                   MEME_FC:  ...TYPE OF INDEX   
+.	 	                     ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+		           1	     ...FILE NUMBER FOR THIS READ
+
+            MOVE RESULT TO MEME_RESULT
+            IF (MEME_RESULT <> 1)
+                BREAK       
+            ENDIF
+
+            IF (ACTLAB_KEY1 <> MEME_ID1) 
+                IF (HEALTH_RESULT = 1) 
+                    BREAK       
+                ELSE 
+                    IF (LIFE_RESULT <> 1) 
+                        BREAK       
+                    ENDIF
+                ENDIF
+            ELSE 
+                IF ((MEME_TRM >= KEYIN_DATE) OR (SQUEEZE MEME_TRM = ""))
+                    CALL CHECK_ANSWERS
+                    IF (LIFE_CODE = "N")  
+. The below 4 lines will get PM with life only.
+                        IF (HEALTH_RESULT = 1) 
+                            BREAK       
+                        ENDIF
+                        CONTINUE
+. The below 3 lines will get all PM that has life insurance.
+.                       IF (LIFE_RESULT <> 1) 
+.                           CONTINUE
+.                       ENDIF
+                    ELSE
+                        IF  (HEALTH_RESULT <> 1)
+                            CONTINUE
+                        ENDIF
+                    ENDIF
+                ELSE
+                    CONTINUE
+                ENDIF
+            ENDIF
+            UNPACK MEME_SAV INTO MEME_LIST
+            IF ((SQUEEZE MEME_LEV2 = "95") AND (MEME_ID1 = PREV_MEME_ID1) AND:
+                (MEME_PRD = PREV_MEME_PRD) AND (MEME_PLAN = PREV_MEME_PLAN))
+                CONTINUE
+            ENDIF
+            MOVE MEME_ID1 TO PREV_MEME_ID1
+            MOVE MEME_PRD TO PREV_MEME_PRD
+            MOVE MEME_PLAN TO PREV_MEME_PLAN
+            PACK MEM_FK11 WITH ACTLAB_KEY1
+	    CALL FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+	 	               MEM_FN:  ...FILE NAME LIST  
+		               MEM_FC:  ...TYPE OF INDEX   
+.			                ...(I)NDEX OR (A)IMDEX
+		               MEM_FV:  ...FILE KEY VARLISTS
+		               MEM_FK:  ...FILE KEY SIZES  
+		               MEM_LIST:...FILE RECORD (FIELD LIST)
+        		       MEM_REC: ...FILE RECORD (PACKED)
+		               MEM_OLD: ...FILE SAVED WHEN READ
+		               MEM_QTY: ...NUMBER OF FILES 
+			       1        ...FILE NUMBER FOR THIS READ
+             MOVE RESULT TO MEM_RESULT
+             IF  ((ACTLAB_KEY1 <> MEM_ID1) OR (MEM_RESULT <> 1))
+                 BREAK       
+             ENDIF
+             IF (MEM_REL <> "01")
+                 BREAK
+             ENDIF 
+
+             CALL CHECK_RETIRE
+             IF ((EMPL_CODE = 1) AND (RETIRE_RESULT = 2))
+                 CONTINUE 
+             ELSE 
+                 IF ((EMPL_CODE = 2) AND (RETIRE_RESULT = 1))
+                     CONTINUE
+                 ENDIF
+             ENDIF
+
+             CALL GET_MED
+             IF ((SQUEEZE WS_MEDA = "") AND (SQUEEZE WS_MEDB = ""))
+                 CONTINUE
+             ENDIF
+
+             UNPACK MEM_ZIP INTO MEM_ZIP03,MEM_ZIP10
+             UNPACK MEM_ZIP INTO MEM_ZIP05,MEM_ZIP08
+             MOVE "2" TO ZIP_RESULT
+             IF (ZIP_CODE = 3)
+                 CALL CHECK_ZIP03_CODES         
+             ELSE                       
+                 IF (ZIP_CODE = 5)
+                     CALL CHECK_ZIP05_CODES         
+                 ELSE                       
+                     IF (ZIP_CODE = 1)     
+                         MOVE "1" TO ZIP_RESULT
+                     ENDIF
+                 ENDIF
+             ENDIF
+             IF (ZIP_RESULT = 2)
+                 BREAK     
+             ENDIF
+             MOVE MEM_LNAME TO LABEL_LNAME
+             SETLPTR LABEL_LNAME TO 20
+             MOVE MEM_FNAME TO LABEL_FNAME
+             SETLPTR LABEL_FNAME TO 15
+             MOVE MEM_MINIT TO LABEL_MINIT
+             MOVE MEM_ADDR1 TO LABEL_ADDRESS1
+             SETLPTR LABEL_ADDRESS1 TO 35
+             MOVE MEM_ADDR2 TO LABEL_ADDRESS2
+             SETLPTR LABEL_ADDRESS2 TO 35
+             MOVE MEM_CITY TO LABEL_CITY
+             SETLPTR LABEL_CITY TO 30
+             MOVE MEM_STATE TO LABEL_STATE
+             MOVE MEM_ZIP TO LABEL_ZIP
+             SETLPTR LABEL_ZIP TO 13
+             MOVE      OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING LABELS_FILE,LABELS_NAME,LABEL_LIST 
+             ADD   1  TO X_CNT2
+             MOVE MEM_ID1 TO RECID_KEY1
+             MOVE      OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING RECID_FILE,RECID_NAME,RECID_LIST 
+             BREAK     
+        REPEAT  
+    REPEAT  
+   RETURN
+
+GET_MED      
+        CLEAR     WS_MEDA
+        CLEAR     WS_MEDB
+        CLEAR     MEMO_RESULT
+        PACK      MEMO_FK11 WITH ACTLAB_KEY1,BLANKS
+        CALL      FILE_READ USING MEMO_FD:     ...FILE DECLARATION LIST
+                         MEMO_FN:           ...FILE NAME LIST  
+                         MEMO_FC:           ...TYPE OF INDEX   
+.                                           ...(I)NDEX OR (A)IMDEX
+                         MEMO_FV:           ...FILE KEY VARLISTS
+                         MEMO_FK:           ...FILE KEY SIZES  
+                         MEMO_LIST:         ...FILE RECORD (FIELD LIST)
+                         MEMO_REC:          ...FILE RECORD (PACKED)
+                         MEMO_OLD:          ...FILE SAVED WHEN READ
+                         MEMO_QTY:          ...NUMBER OF FILES 
+                         1                  ...FILE NUMBER FOR THIS READ
+    LOOP
+        CALL  FILE_NEXT USING MEMO_FD:  ...FILE DECLARATION LIST
+                         MEMO_FN:        ...FILE NAME LIST  
+                         MEMO_FC:        ...TYPE OF INDEX   
+.                                        ...(I)NDEX OR (A)IMDEX
+                         MEMO_FV:        ...FILE KEY VARLISTS
+                         MEMO_FK:        ...FILE KEY SIZES  
+                         MEMO_LIST:      ...FILE RECORD (FIELD LIST)
+                         MEMO_REC:       ...FILE RECORD (PACKED)
+                         MEMO_OLD:       ...FILE SAVED WHEN READ
+                         MEMO_QTY:       ...NUMBER OF FILES 
+                         1               ...FILE NUMBER FOR THIS READ
+        MOVE RESULT TO MEMO_RESULT
+        IF ((ACTLAB_KEY1 <> MEMO_ID1) OR (MEMO_RESULT <> 1))
+            BREAK           
+        ENDIF
+        SWITCH MEMO_TYPE
+            CASE "MEDA"
+                MOVE MEMO_TYPE TO WS_MEDA
+            CASE "MEDB"
+                MOVE MEMO_TYPE TO WS_MEDB
+        ENDSWITCH
+    REPEAT
+  RETURN
+
+
+CHECK_RETIRE 
+    
+    UNPACK MEME_LEV1 INTO WRK_DIM1,WRK_DIM2_3,WRK_DIM4_5
+    
+    TYPE MEM_RETD
+    IF EQUAL
+        MOVE 1 TO RETIRE_RESULT
+    ELSE
+        IF (WRK_DIM4_5 = "SV") 
+            MOVE 1 TO RETIRE_RESULT
+        ELSE
+            IF (SQUEEZE MEME_LEV2 = "94")
+                MOVE 1 TO RETIRE_RESULT
+            ELSE
+                IF (SQUEEZE MEME_LEV2 = "95"))
+                    MOVE 1 TO RETIRE_RESULT
+                ELSE 
+                    MOVE 2 TO RETIRE_RESULT
+                ENDIF
+            ENDIF
+        ENDIF
+    ENDIF
+   RETURN
+
+CHECK_ANSWERS
+    
+    IF (LIFE_CODE = "N")
+        IF (MEME_PRD = "LIFE ")
+            PACK MEME_SAV WITH MEME_REC
+            UNPACK MEME_SAV INTO MEME_LIST
+            MOVE 1 TO LIFE_RESULT
+        ELSE
+            MOVE 1 TO HEALTH_RESULT
+        ENDIF
+    ELSE
+        IF (MEME_PRD <> "LIFE ")
+            CALL CHECK_NETWK_PLAN
+            PACK MEME_SAV WITH MEME_REC
+            UNPACK MEME_SAV INTO MEME_LIST
+        ENDIF
+    ENDIF
+   RETURN
+
+CHECK_NETWK_PLAN
+
+    MOVE  HEALTH_NAME_TXT TO C_FILE
+    CALL  CLOSE_OGBFILE USING HEALTH_FILE_TXT,HEALTH_NAME_TXT  
+    PACK  OGB_NAME WITH OGB_PATH,HEALTH_NAME_TXT
+    MOVE  HEALTH_NAME_TXT TO C_FILE
+    CALL  OPEN_OGBFILE USING HEALTH_FILE_TXT,OGB_NAME  
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        MOVE HEALTH_NAME_TXT TO C_FILE
+        CALL READ_OGBFILE USING HEALTH_FILE_TXT,HEALTH_NAME_TXT:
+                                HEALTH_LIST
+        IF (RESULT <> 1)
+            BREAK   
+        ENDIF
+        SWITCH HEALTH_CODE
+	    CASE "X"    
+                MOVE 1 TO HEALTH_RESULT
+	    CASE "A"    
+                CALL GET_GB_PPO
+	    CASE "D"    
+                CALL GET_DEFINITY
+	    CASE "E"    
+                CALL GET_GB_EPO
+	    CASE "O"    
+                CALL GET_OCHSNER
+	    CASE "H"    
+                CALL GET_VANTAGE
+	    CASE "M"    
+                CALL GET_UNITED
+	    CASE "Z"    
+                CALL GET_FARA_MCO
+        ENDSWITCH  
+    REPEAT
+    RETURN
+.............................................................................
+
+GET_GB_PPO       
+    IF (MEME_PLAN = "PPO ")
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+  RETURN
+.............................................................................
+
+GET_GB_EPO       
+    IF (MEME_PLAN = "EPO ")
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+  RETURN
+.............................................................................
+
+GET_DEFINITY     
+    IF ((MEME_NET = "DEFIN") AND (MEME_PLAN = "D5  "))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "DEFIN") AND (MEME_PLAN = "D10 "))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+  RETURN
+.............................................................................
+
+GET_OCHSNER      
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "ALEX"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "BATO"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "HAMM"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "HOUM"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "LAFA"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "LKCH"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "NOLA"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+    IF ((MEME_NET = "OCHSN") AND (MEME_PLAN = "SHRE"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+  RETURN
+.............................................................................
+
+GET_VANTAGE      
+    IF ((MEME_NET = "VANTA") AND (MEME_PLAN = "MONR"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+  RETURN
+.............................................................................
+
+GET_UNITED       
+    IF ((MEME_NET = "UNIT ") AND (MEME_PLAN = "BATO"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+  RETURN
+.............................................................................
+
+GET_FARA_MCO     
+    IF ((MEME_NET = "FARA ") AND (MEME_PLAN = "STAT"))
+        MOVE "1" TO HEALTH_RESULT
+    ENDIF
+  RETURN
+.............................................................................
+
+CHECK_ZIP03_CODES
+    MOVE  ZIP03_NAME_TXT TO C_FILE
+    CALL  CLOSE_OGBFILE USING ZIP03_FILE_TXT,ZIP03_NAME_TXT
+    PACK  OGB_NAME WITH OGB_PATH,ZIP03_NAME_TXT
+    MOVE  ZIP03_NAME_TXT TO C_FILE
+    CALL  OPEN_OGBFILE USING ZIP03_FILE_TXT,OGB_NAME  
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        MOVE ZIP03_NAME_TXT TO C_FILE
+        CALL READ_OGBFILE USING ZIP03_FILE_TXT,ZIP03_NAME_TXT:     
+                                   ZIP03_LIST
+        IF (RESULT <> 1)
+            BREAK   
+        ENDIF
+        IF (MEM_ZIP03 <> ZIP03_CODE)
+	    CONTINUE    
+        ELSE
+            MOVE "1" TO ZIP_RESULT
+            BREAK   
+        ENDIF      
+    REPEAT
+  RETURN
+.............................................................................
+
+CHECK_ZIP05_CODES
+    MOVE  ZIP05_NAME_TXT TO C_FILE
+    CALL  CLOSE_OGBFILE USING ZIP05_FILE_TXT,ZIP05_NAME_TXT  
+    PACK  OGB_NAME WITH OGB_PATH,ZIP05_NAME_TXT
+    MOVE  ZIP05_NAME_TXT TO C_FILE
+    CALL  OPEN_OGBFILE USING ZIP05_FILE_TXT,OGB_NAME  
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        MOVE ZIP05_NAME_TXT TO C_FILE
+        CALL READ_OGBFILE USING ZIP05_FILE_TXT,ZIP05_NAME_TXT:
+                                   ZIP05_LIST      
+        IF (RESULT <> 1)
+            BREAK   
+        ENDIF
+        IF (MEM_ZIP05 <> ZIP05_CODE)
+	    CONTINUE    
+        ELSE
+            MOVE "1" TO ZIP_RESULT
+            BREAK   
+        ENDIF      
+    REPEAT
+  RETURN
+.............................................................................
+
+. -----------------------------------------
+. Screen Displays for Operator Intervention
+. -----------------------------------------
+.............................................................................
+
+EFF_DATE_KEYIN
+
+    DISPLAY *ES
+    LOOP
+        MOVE "00000000" TO KEYIN_DATE
+        MOVE " " TO YN_ANS    
+        KEYIN  *P=10:5, "WOULD YOU LIKE TO USE TODAY'S DATE FOR THIS EXTRACT":
+               " (Y/N)? ",*UC, YN_ANS, *P=10:5, *EL
+        IF (YN_ANS = "Y")
+            MOVE TODAY TO KEYIN_DATE 
+            BREAK
+        ELSE
+            IF (YN_ANS = "N")
+                KEYIN  *P=10:5, "ENTER THE EFFECTIVE DATE NEEDED (CCYYMMDD). ": 
+                       *UC, KEYIN_DATE, *P=10:5, *EL
+                MOVE " " TO VALID_DATE
+                CALL VALIDATE_KEYIN_DATE
+                IF (VALID_DATE = "Y")
+                    BREAK
+                ELSE  
+                    DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                            *P=10:6, *EL    
+                    CONTINUE
+                ENDIF
+            ELSE  
+                DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                        *P=10:6, *EL    
+                CONTINUE
+            ENDIF
+        ENDIF
+    REPEAT
+   RETURN
+.............................................................................
+
+VALIDATE_KEYIN_DATE
+
+    TYPE KEYIN_DATE
+    IF NOT EQUAL
+        RETURN
+    ENDIF
+   
+    UNPACK KEYIN_DATE INTO KEYIN_CCYY, KEYIN_MM, KEYIN_DD
+
+    IF (KEYIN_CCYY >= "2000") 
+        IF ((KEYIN_MM > "00") AND (KEYIN_MM <= "12"))
+            IF ((KEYIN_DD > "00") AND (KEYIN_DD <= "31"))
+                MOVE "Y" TO VALID_DATE
+            ENDIF
+        ENDIF
+    ENDIF
+
+  RETURN
+.............................................................................
+LIFE_INFO    
+
+    DISPLAY *ES
+    LOOP
+        MOVE " " TO LIFE_CODE
+        KEYIN  *P=10:5, "EXTRACT EMPLOYEES WITH HEALTH INSURANCE (Y/N)? ":
+               *UC, LIFE_CODE, *P=10:5, *EL
+        IF (LIFE_CODE = "N")
+            BREAK
+        ELSE
+            IF (LIFE_CODE = "Y")
+                BREAK
+            ELSE
+                DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                        *P=10:6, *EL    
+                CONTINUE
+            ENDIF
+        ENDIF
+    REPEAT
+   RETURN
+.............................................................................
+
+RETIRE_INFO  
+
+    DISPLAY *ES
+    LOOP
+        MOVE 0 TO EMPL_CODE
+        DISPLAY *P=30:5, "1 - RETIRED":
+                *P=30:6, "2 - ACTIVE":
+                *P=30:7, "3 - ALL EMPLOYEES"
+        KEYIN   *P=20:9, "PLEASE SELECT A RETIREMENT CODE OPTION: ":    
+                *P=60:9, *UC, EMPL_CODE:
+                *P=1:5, *EL, *P=1:6, *EL:
+                *P=1:7, *EL, *P=1:9, *EL
+        IF (EMPL_CODE = 1)
+            BREAK
+        ELSE
+            IF (EMPL_CODE = 2)
+                BREAK
+            ELSE
+                IF (EMPL_CODE = 3)
+                    BREAK
+                ELSE
+                    DISPLAY *P=20:11, *REVON, ERRMSG, *REVOFF, *W=5:
+                            *P=1:11, *EL    
+                    CONTINUE
+                ENDIF
+            ENDIF
+        ENDIF
+    REPEAT
+   RETURN
+
+.............................................................................
+.......THE FOLLOWING IS INFORMATION THAT IS KEYED IN BY THE OPERATOR.........
+.......TO SELECT ZIP CODES THAT ARE NEEDED BY THE REQUESTOR.  THESE..........
+.......ZIP CODES ARE PUT INTO AN INDEXED FILE AND IS LATER USED TO...........
+.......SELECT THE REQUESTED ZIP CODES .......................................
+.............................................................................
+
+ZIP_INFO        
+
+    DISPLAY *ES
+    LOOP
+        MOVE 0 TO ZIP_CODE
+        DISPLAY *P=30:5, "1 - ALL ZIP CODES ":
+                *P=30:6, "3 - ENTER FIRST 3 DIGITS OF ZIP CODE ":
+                *P=30:7, "5 - ENTER 5 DIGIT ZIP CODES "
+        KEYIN   *P=30:9, "SELECT A ZIP CODE OPTION: ":    
+                *P=56:9, ZIP_CODE:
+                *P=1:5, *EL, *P=1:6, *EL:
+                *P=1:7, *EL, *P=1:9, *EL
+        IF (ZIP_CODE = 1)
+            BREAK
+        ELSE 
+            IF (ZIP_CODE = 3)
+                CALL LOAD_3BYTE_ZIPS
+                BREAK
+            ELSE 
+                IF (ZIP_CODE = 5)
+                    CALL LOAD_5BYTE_ZIPS
+                    BREAK
+                ELSE 
+                    DISPLAY *P=20:11, *REVON, ERRMSG, *REVOFF, *W=5:
+                            *P=1:11, *EL    
+                    CONTINUE
+                ENDIF
+            ENDIF
+        ENDIF
+    REPEAT
+  RETURN
+
+.............................................................................
+.......THE FOLLOWING IS INFORMATION THAT IS LOADED INTO THE INDEXED..........
+.......FILE (x_zip03.ix1) THAT WILL BE USED TO EXTRACT THE FIRST 3..........
+.......BYTES OF THE ZIP CODE.................................................
+.............................................................................
+
+LOAD_3BYTE_ZIPS   
+    DISPLAY *ES
+    LOOP
+        MOVE 000 TO ZIP03_CODE  
+        KEYIN  *P=10:5, "PLEASE ENTER 3-BYTE ZIPS TO EXTRACT: ":  
+               ZIP03_CODE 
+        MOVE ZIP03_NAME_IX TO C_FILE    
+        MOVE ZIP03_CODE TO C_KEYS    
+        CALL READ_OGBFILE_IX USING ZIP03_FILE_IX,ZIP03_NAME_IX:
+                                   ZIP03_CODE,ZIP03_LIST 
+        IF (RESULT <> 1)
+            MOVE ZIP03_NAME_IX TO C_FILE    
+            MOVE ZIP03_CODE TO C_KEYS    
+            CALL WRITE_OGBREC_IX USING ZIP03_FILE_IX,ZIP03_NAME_IX:
+                                       ZIP03_CODE,ZIP03_LIST 
+        ENDIF
+        MOVE " " TO ANOTHER_ZIP 
+        KEYIN  *P=10:7, "WOULD YOU LIKE TO ENTER ANOTHER ZIP  (Y/N)? ":
+               *UC, ANOTHER_ZIP, *EL
+        IF (ANOTHER_ZIP  = "Y")
+            CONTINUE
+        ELSE
+            IF (ANOTHER_ZIP  = "N")
+                BREAK
+            ELSE
+                DISPLAY *P=20:11, *REVON, ERRMSG, *REVOFF, *W=5:
+                        *P=1:11, *EL    
+                CONTINUE
+            ENDIF
+        ENDIF
+    REPEAT
+   RETURN
+
+.............................................................................
+.......THE FOLLOWING IS INFORMATION THAT IS LOADED INTO THE INDEXED..........
+.......FILE (x_zip05.ix1) THAT WILL BE USED TO EXTRACT THE FIRST 5..........
+.......BYTES OF THE ZIP CODE.................................................
+.............................................................................
+
+LOAD_5BYTE_ZIPS   
+    DISPLAY *ES
+    LOOP
+        MOVE 000 TO ZIP05_CODE  
+        KEYIN  *P=10:5, "PLEASE ENTER 5-BYTE ZIPS TO EXTRACT: ":  
+               ZIP05_CODE 
+        MOVE ZIP05_NAME_IX TO C_FILE    
+        MOVE ZIP05_CODE TO C_KEYS    
+        CALL READ_OGBFILE_IX USING ZIP05_FILE_IX,ZIP05_NAME_IX:
+                                   ZIP05_CODE,ZIP05_LIST 
+        IF (RESULT <> 1)
+            MOVE ZIP05_NAME_IX TO C_FILE    
+            MOVE ZIP05_CODE TO C_KEYS    
+            CALL WRITE_OGBREC_IX USING ZIP05_FILE_IX,ZIP05_NAME_IX:
+                                       ZIP05_CODE,ZIP05_LIST 
+        ENDIF
+        MOVE " " TO ANOTHER_ZIP 
+        KEYIN  *P=10:7, "WOULD YOU LIKE TO ENTER ANOTHER ZIP  (Y/N)? ":
+               *UC, ANOTHER_ZIP, *EL
+        IF (ANOTHER_ZIP  = "Y")
+            CONTINUE
+        ELSE
+            IF (ANOTHER_ZIP  = "N")
+                BREAK
+            ELSE
+                DISPLAY *P=20:11, *REVON, ERRMSG, *REVOFF, *W=5:
+                        *P=1:11, *EL    
+                CONTINUE
+            ENDIF
+        ENDIF
+    REPEAT
+   RETURN
+.............................................................................
+
+RESPONSE_INFO  
+
+    DISPLAY *ES
+    DISPLAY *P=20:2, "THE SELECTIONS YOU CHOSE ARE AS FOLLOWS:  "  
+    IF (LIFE_CODE = "Y")
+        DISPLAY *P=10:4, "EXTRACT EMPLOYEES WITH HEALTH INSURANCE"
+    ELSE
+        DISPLAY *P=10:4, "EXTRACT EMPLOYEES WITH LIFE INSURANCE ONLY"
+    ENDIF
+    IF (EMPL_CODE = 1)
+        DISPLAY *P=10:5, "EXTRACT RETIRED EMPLOYEES"                   
+    ELSE
+        IF (EMPL_CODE = 2)
+            DISPLAY *P=10:5, "EXTRACT ACTIVE EMPLOYEES"                   
+        ELSE
+            IF (EMPL_CODE = 3)
+                DISPLAY *P=10:5, "EXTRACT ALL EMPLOYEES"                   
+            ENDIF
+        ENDIF
+    ENDIF
+    IF (ZIP_CODE = 3)
+        DISPLAY *P=10:6, "EXTRACT 3 DIGIT ZIP CODES"                   
+    ELSE
+        IF (ZIP_CODE = 5)
+            DISPLAY *P=10:6, "EXTRACT 5 DIGIT ZIP CODES"                  
+        ELSE
+            IF (ZIP_CODE = 1)
+                DISPLAY *P=10:6, "EXTRACT ALL ZIP CODES"                   
+            ENDIF
+        ENDIF
+    ENDIF
+    IF (OUTPUT_CODE = 1)
+        DISPLAY *P=10:7, "LABELS WILL BE PRINTED"                      
+    ELSE
+        DISPLAY *P=10:7, "DISKETTE (FILE) WILL BE PRODUCED"    
+    ENDIF
+    MOVE  HEALTH_NAME_IX TO C_FILE
+    CALL  CLOSE_OGBFILE_IX USING HEALTH_FILE_IX,HEALTH_NAME_IX  
+    PACK  OGB_NAME WITH OGB_PATH,HEALTH_NAME_TXT
+    MOVE  HEALTH_NAME_TXT TO C_FILE
+    CALL  OPEN_OGBFILE USING HEALTH_FILE_TXT,OGB_NAME  
+    DISPLAY *P=10:8, "HEALTH INSURANCE CODES SELECTED: "
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        MOVE HEALTH_NAME_TXT TO C_FILE
+        CALL READ_OGBFILE USING HEALTH_FILE_TXT,HEALTH_NAME_TXT:
+                                HEALTH_LIST
+        IF (RESULT <> 1)
+            BREAK  
+        ELSE
+            DISPLAY SPACE30, HEALTH_CODE, SPACE1  
+        ENDIF
+    REPEAT
+    DISPLAY *W=10
+  RETURN
+.............................................................................
+
+OUTPUT_INFO  
+
+    DISPLAY *ES
+    LOOP
+        MOVE 0 TO OUTPUT_CODE
+        DISPLAY *P=35:5, "1 - LABELS ":
+                *P=35:6, "2 - DISKETTE (FILE)"
+        KEYIN   *P=30:8, "SELECT A TYPE OF OUTPUT: ":    
+                *P=55:8, *UC, OUTPUT_CODE:
+                *P=1:5, *EL, *P=1:6, *EL, *P=1:8, *EL
+        IF (OUTPUT_CODE = 1)
+            MOVE  "MENU" TO C_NEXT
+            BREAK
+        ELSE
+            IF (OUTPUT_CODE = 2)
+                MOVE  "MENU" TO C_NEXT
+                BREAK
+            ELSE
+                DISPLAY *P=20:10, *REVON, ERRMSG, *REVOFF, *W=5:
+                        *P=1:10, *EL    
+                CONTINUE
+            ENDIF
+        ENDIF
+    REPEAT
+  RETURN
+
+.............................................................................
+.......THE FOLLOWING IS INFORMATION THAT IS KEYED IN BY THE OPERATOR.........
+.......TO SELECT HEALTH CODES THAT ARE NEEDED BY THE REQUESTOR..THESE........
+.......CODES ARE PUT INTO AN INDEXED FILE AND IS LATER USED TO SELECT........
+.......THE REQUESTED HEALTH PLANS............................................
+.............................................................................
+
+HEALTH_INFO  
+
+    DISPLAY *ES
+    DISPLAY *P=10:5, LINE1,*N, *P=10:6, LINE2,*N, *P=10:7, LINE3,*N: 
+            *P=10:8, LINE4
+    LOOP
+        MOVE " " TO HEALTH_CODE
+        MOVE "2" TO VALID_HEALTH_CODE
+        KEYIN  *P=10:12, "PLEASE ENTER HEALTH CODES TO EXTRACT: ":  
+               *UC, HEALTH_CODE
+        IF (HEALTH_CODE = "X")
+            MOVE HEALTH_NAME_IX TO C_FILE
+ 	    CALL CLOSE_OGBFILE_IX USING HEALTH_FILE_IX,HEALTH_NAME_IX  
+            PACK OGB_NAME WITH OGB_PATH,HEALTH_NAME_IX 
+            MOVE HEALTH_NAME_IX TO C_FILE
+            CALL PREP_OGBFILE_IX USING HEALTH_FILE_IX,OGB_NAME        
+            MOVE HEALTH_NAME_IX TO C_FILE
+            MOVE HEALTH_CODE TO C_KEYS
+            CALL WRITE_OGBREC_IX USING HEALTH_FILE_IX,HEALTH_NAME_IX:
+                                       HEALTH_CODE,HEALTH_LIST 
+            BREAK
+        ENDIF
+        SWITCH HEALTH_CODE
+            CASE "A"    
+                CALL LOAD_HEALTH_CODES                    
+	    CASE "D"    
+                CALL LOAD_HEALTH_CODES                    
+	    CASE "E"    
+                CALL LOAD_HEALTH_CODES                    
+	    CASE "O"    
+                CALL LOAD_HEALTH_CODES                    
+	    CASE "H"    
+                CALL LOAD_HEALTH_CODES                    
+	    CASE "M"    
+                CALL LOAD_HEALTH_CODES                    
+	    CASE "Z"    
+                CALL LOAD_HEALTH_CODES                    
+        ENDSWITCH  
+        IF (VALID_HEALTH_CODE <> "1")
+            DISPLAY *P=20:16, *REVON, ERRMSG, *REVOFF, *W=5    
+            DISPLAY *P=1:16, *EL    
+            CONTINUE
+        ENDIF
+        MOVE " " TO ANOTHER_CODE
+        KEYIN  *P=10:14, "WOULD YOU LIKE TO ENTER ANOTHER CODE (Y/N)? ":
+               *UC, ANOTHER_CODE, *P=10:14, *EL
+        IF (ANOTHER_CODE = "Y")
+            CONTINUE
+        ELSE
+            IF (ANOTHER_CODE = "N")
+                BREAK
+            ELSE
+                DISPLAY *P=20:16, *REVON, ERRMSG, *REVOFF, *W=5    
+                DISPLAY *P=1:16, *EL    
+                CONTINUE
+            ENDIF
+        ENDIF
+    REPEAT
+  RETURN
+
+.............................................................................
+.......THE FOLLOWING IS INFORMATION THAT IS LOADED INTO THE INDEXED..........
+.......FILE (x_health.ix1) THAT WILL BE USED TO EXTRACT HEALTH PLANS.........
+.............................................................................
+
+LOAD_HEALTH_CODES
+
+    MOVE HEALTH_NAME_IX TO C_FILE
+    MOVE HEALTH_CODE TO C_KEYS
+    CALL READ_OGBFILE_IX USING HEALTH_FILE_IX,HEALTH_NAME_IX:
+                               HEALTH_CODE,HEALTH_LIST
+    IF (RESULT <> 1)
+        MOVE HEALTH_NAME_IX TO C_FILE
+        MOVE HEALTH_CODE TO C_KEYS
+        CALL WRITE_OGBREC_IX USING HEALTH_FILE_IX:
+                                   HEALTH_NAME_IX,HEALTH_CODE,HEALTH_LIST 
+        MOVE "1" TO VALID_HEALTH_CODE
+    ELSE   
+        MOVE "1" TO VALID_HEALTH_CODE
+    ENDIF
+  RETURN
+.............................................................................
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+    
+
+CLOSE_FILES
+
+	 CALL 	   CLOSE_OGBFILE USING ZIP03_FILE_TXT,ZIP03_NAME_TXT  
+	 CALL 	   CLOSE_OGBFILE USING ZIP05_FILE_TXT,ZIP05_NAME_TXT  
+
+	 CALL 	   CLOSE_OGBFILE USING HEALTH_FILE_TXT,HEALTH_NAME_TXT  
+	 CALL 	   CLOSE_OGBFILE USING LABELS_FILE,LABELS_NAME  
+
+    RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    ELG0150 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       VALID.IO
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of ELG0150.PS          
+.----------------------------------------------------------------------------

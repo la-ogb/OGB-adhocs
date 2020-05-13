@@ -1,0 +1,343 @@
++    Program Name   :  A1009282.ps                                           +
++    Description    :  Fix MEME Records ith Blank Client ID                  +
++    apsjm 09/29/2010  A1009282 dev - initial version                      
++    apazw 06/12/2017 - mod - increase file size
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEME.RL              Member Enrollment/Elig File
+              INC       CLI.RL               Client Demographics
+              INC       D_MEMMEM.CB          Member Inload
+
+.----------------------------------------------------------------------------
+.I/O File Declaration   
+.----------------------------------------------------------------------------
+REF_FD          FILE      VAR=12,TEXT
+REF_NAME        INIT      "/w/a1009282.meme"
+REF_LIST         LIST
+REF_ID1          DIM     8                Member ID for enrollee
+REF_ID2          DIM     4
+                 LISTEND
+.
+UPD_MEME_FD      FILE     VAR=X_INM_SIZE,TEXT
+UPD_MEME_NAME    INIT     "a1009282.txt"
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+...Work file variables
+TODAY         DIM      08
+BLANK8        INIT     "        "
+LIFE          INIT     "LIFE "    
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+SP_44          DIM       44
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<EXTRACT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+         CALL MAIN_PROCESS
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+         RETURN
+
+.--------------------
+.MAIN_PROCESS
+.--------------------
+
+MAIN_PROCESS
+
+         DEBUG
+         CALL REFORMAT_MEME_FILE
+         CALL OPEN_FILES
+         CALL READ_REF    
+         CALL CLOSE_FILES
+
+     RETURN
+
+.--------------------
+.Reformat MEME file
+.--------------------
+REFORMAT_MEME_FILE
+         MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf ",REF_NAME: 
+                      " -p112-116eq#"NOCOV#"":
+                      " -p13-20eq#"",BLANK8,"#"":
+                      " 1-12 -t -j"
+
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(meme.dbf)"
+             CHAIN "MENU"
+         ENDIF
+ 
+         MESSAGE HORZ="22",VERT="20":
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:
+                 LNCOL=C_DLGL,SHADE="y": 
+                 TEXT="******* REFORMAT COMPLETE *******";
+ 
+         RETURN   
+
+. -------------------------------------
+.Reads meme file created from reformat
+. -------------------------------------
+READ_REF         
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING REF_FD,REF_NAME,REF_LIST
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+        CALL READ_MEM
+        IF (RESULT <> 1)
+           CONTINUE
+        ENDIF
+        CALL READ_MEME 
+        IF (SQUEEZE MEME_SAV <> "")
+           PACKLEN INM_REC WITH MEM_REC,MEME_SAV
+           UNPACK INM_REC INTO INM_LIST
+           CLEAR INME_CHGBY
+           CLEAR INM_CHGBY
+           MOVE OGB_SEQ1 TO OGB_SEQ
+           CALL WRITE_OGBREC USING UPD_MEME_FD,UPD_MEME_NAME,INM_LIST
+           CLEAR INM_LIST 
+        ENDIF
+    REPEAT
+ RETURN
+
+. ----------------------------
+. Read mem.dbf to get SSN  
+. ----------------------------
+READ_MEM
+    PACK      MEM_FK11 WITH REF_ID1
+    CALL      FILE_READ USING MEM_FD:    ...File declaration list
+        MEM_FN:   ...File name list
+        MEM_FC:   ...(I)ndex or (A)imdex
+        MEM_FV:   ...File key varlists
+        MEM_FK:   ...File key sizes
+        MEM_LIST: ...File record (field list)
+        MEM_REC:  ...File record (packed)
+        MEM_OLD:  ...File saved when read
+        MEM_QTY:  ...Number of files
+        1         ...File number for this read
+    RETURN
+
+READ_MEME
+   CLEAR MEME_SAV
+   PACK MEME_FK11 WITH REF_ID1,REF_ID2,BLANKS
+   CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+        RETURN
+    ENDIF
+    IF ((SQUEEZE MEME_LEV1 = "") OR (SQUEEZE MEME_LEV2 = ""))
+       RETURN    
+    ENDIF
+    CLEAR CLI_AIM
+    PACK CLI_AIM1 WITH "01X",MEME_LEV1,BLANKS
+    PACK CLI_AIM2 WITH "02X",MEME_LEV2,BLANKS
+    CALL FILE_READ USING CLI_FD:      ...File Declaration List
+                              CLI_FN:      ...File Name List
+                              CLI_FC:      ...(I)ndex Or (A)imdex
+                              CLI_FV:      ...File Key Varlists
+                              CLI_AIM:     ...File Key Sizes
+                              CLI_LIST:    ...File Record (Field List)
+                              CLI_REC:     ...File Record (Packed)
+                              CLI_OLD:     ...File Saved When Read
+                              CLI_QTY:     ...Number Of Files
+                              2            ...File Number For This Read
+    IF (RESULT = 1)
+      MOVE CLI_ID1 TO MEME_CLIR
+      PACKLEN MEME_SAV WITH MEME_LIST
+    ENDIF
+
+    RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+
+    CALL OPEN_OGBFILE USING REF_FD,REF_NAME      
+    CALL PREP_OGBFILE USING UPD_MEME_FD,UPD_MEME_NAME        
+    RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+
+       TRAPREST TRAP_DATA
+
+       IF (RUN_MODE = "B")
+           LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+           REPEAT
+           RETURN
+       ENDIF
+
+       CHAIN     C_NEXT
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+
+     DEBUG
+        CLOCK     TIMESTAMP INTO CURRDATE
+        CLOCK     TIMESTAMP INTO TODAY    
+        MOVE      "menu"         TO C_NEXT
+        MOVE      "a1009282"  TO C_PROG
+        MOVE      "FIX MEME_CLIR" TO C_OPER
+        MOVE      1 TO C_LEVEL
+        MOVE      BLANKS TO C_LABEL
+        MOVE      BLANKS TO C_FILE
+        MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	MOVE      "Records Read:     " TO X_CNTDESC1
+	MOVE      "Records Written:  " TO X_CNTDESC2
+	MOVE      "                  " TO X_CNTDESC3
+	MOVE      "                  " TO X_CNTDESC4
+	MOVE      "                  " TO X_CNTDESC5
+	MOVE      "                  " TO X_CNTDESC6
+
+    RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR
+
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0902271.ps
+. +++++++++++++++++++++++++++++++++++++

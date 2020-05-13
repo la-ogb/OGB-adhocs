@@ -1,0 +1,577 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A040713A.PS
++    Description    :  Prints The "Where the money goes"                  
++
++    apsjm 07/14/2004 a0407131 DEV _ Initial Version.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+      	      INC	COMMON.CB	...Common work area
+              INC       X_COMMON.CB     ...OGB Common Work Area
+              INC     	PRT.RL	        ...Printer Definition File
+              INC       VALID.RL        ...Valid codes
+              INC       X_OGBFILE.CB    ...OGB Custom File Handler
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+WTMG_FD          FILE     VAR=500,TEXT
+WTMG_NAME        INIT     "/w/wtmg.txt"
+.
+WTMG_LIST       LIST
+WTMG_P1_F       INIT    "20030701"
+WTMG_P1_T       INIT    "20040331"
+WTMG_P2_F       INIT    "20020701"
+WTMG_P2_T       INIT    "20030331"
+WTMG_CP_P1      FORM    8    
+WTMG_CP_P2      FORM    8    
+WTMG_CS_P1      FORM    10.2
+WTMG_CS_P2      FORM    10.2
+WTMG_NP_P1      FORM    10.2
+WTMG_NP_P2      FORM    10.2
+WTMG_IND        DIM     2      01=Place of Service Ambulance        
+.                              02=Ambulatory Surgical Center        
+.                              03=Emergency Room - Hospital 
+.                              04=End-Stage Renal Disease Facility
+.                              05=Independent Laboratory
+.                              06=Inpatient Hospital
+.                              07=Nursing Facility
+.                              08=Office
+.                              09=Outpatient Hospital
+.                              10=Patient Home
+.                              11=Pharmacy
+.                              12=Skilled Nursing Facility
+.                              13=All Other
+.
+.
+                LISTEND
+.
+.
+. ----------------------------
+. Detail Lines Definition
+. ----------------------------
+
+DET1_REC      LIST
+..<Begin>..............................................................................
+D1FL_1        DIM	2 
+DET1_LIT      DIM       27
+..<END>.........................................................................
+	      LISTEND
+
+DET2_REC      LIST
+..<Begin>..............................................................................
+DET2_1        DIM       27
+DET2_LIT      INIT      "Claims Paid"
+DET2_F1       DIM       13
+DET2_CP_1     DIM       10
+DET2_F2       DIM       9
+DET2_CP_2     DIM       10
+..<END>.........................................................................
+	      LISTEND
+
+DET3_REC      LIST
+..<Begin>..............................................................................
+DET3_1        DIM       27
+DET3_LIT      INIT      "Charge Submitted"
+DET3_F1       DIM       2    
+DET3_CS_1     DIM       16
+DET3_F2       DIM       3
+DET3_CS_2     DIM       16
+..<END>.........................................................................
+	      LISTEND
+
+DET4_REC      LIST
+..<Begin>..............................................................................
+DET4_1        DIM       27
+DET4_LIT      INIT      "Net Payment"          
+DET4_F1       DIM       7    
+DET4_NP_1     DIM       16
+DET4_F2       DIM       3
+DET4_NP_2     DIM       16
+..<END>.........................................................................
+	      LISTEND
+
+GTL1_REC      LIST
+..<Begin>..............................................................................
+GTL1_1        DIM       21
+GTL1_LIT      INIT      "Grand Totals"         
+              LISTEND
+..<END>.........................................................................
+GTL2_REC      LIST
+..<Begin>..............................................................................
+GTL2_1        DIM       27 
+GTL2_LIT      INIT      "Claims Paid"          
+GTL2_F1       DIM       13   
+GTL2_CP_1     DIM       10
+GTL2_F2       DIM       9
+GTL2_CP_2     DIM       10
+..<END>.........................................................................
+	      LISTEND
+
+GTL3_REC      LIST
+..<Begin>..............................................................................
+GTL3_1        DIM       27
+GTL3_LIT      INIT      "Charge Submitted"
+GTL3_F1       DIM       2    
+GTL3_CS_1     DIM       16
+GTL3_F2       DIM       3
+GTL3_CS_2     DIM       16
+..<END>.........................................................................
+	      LISTEND
+
+GTL4_REC      LIST
+..<Begin>..............................................................................
+GTL4_1        DIM       27
+GTL4_LIT      INIT      "Net Payment"          
+GTL4_F1       DIM       7    
+GTL4_NP_1     DIM       16
+GTL4_F2       DIM       3
+GTL4_NP_2     DIM       16
+..<END>.........................................................................
+	      LISTEND
+
+. ----------------------------
+. Header Lines Definition
+. ----------------------------
+
+HDR1_REC      LIST
+..<BEGIN>..............................................................................
+H1FL_1	      DIM       54
+H1FL_2	      INIT      "Where the Money Goes"
+..<END>.........................................................................
+	      LISTEND
+
+HDR2_REC      LIST
+..<BEGIN>..............................................................................
+H2FL_1	      DIM       60
+H2FL_2	      INIT      "(EPO & PPO)"               
+..<END>.........................................................................
+	      LISTEND
+
+HDR3_REC      LIST
+..<BEGIN>..............................................................................
+H3FL_1	      DIM       46
+H3FL_2	      INIT      "July 2003 thru"
+H3FL_3        DIM       5
+H3FL_4        INIT      "July 2002 thru"
+..<END>.........................................................................
+	      LISTEND
+
+HDR4_REC      LIST
+..<BEGIN>..............................................................................
+H4FL_1	      DIM       46
+H4FL_2	      INIT      "March 2004"    
+H4FL_3        DIM       9
+H4FL_4        INIT      "March 2003"     
+..<END>.........................................................................
+	      LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+ACC_CP_P1     FORM       8
+ACC_CP_P2     FORM       8
+ACC_CS_P1     FORM       10.2
+ACC_CS_P2     FORM       10.2
+ACC_NP_P1     FORM       10.2
+ACC_NP_P2     FORM       10.2
+BOLD_10	      DIM       29
+BOLD_12	      DIM       26
+BOLD_16	      DIM       33
+CAL_CLOCK     DIM       21         					.
+CNT1_4	      DIM       4                 
+CNT1_3	      DIM	3                    
+CNT3_4	      DIM       4                 
+CNT3_3	      DIM       3                 
+CURRDATE      DIM       8
+CURR_RETURN   FORM      5				     	            
+ESC_CHAR      EQU       27
+FIRST_PAGE    DIM	1 
+LINE_MAX      FORM      "63"
+LINE_NO       FORM      3
+JUNK1 	      DIM	11
+JUNK2	      DIM	12
+NO	      INIT      "N"
+NORM_10	      DIM       29
+NORM_12	      DIM       26
+NORM_16	      DIM       33
+ORIG_RETURN   FORM      5          
+PAGE_NO       FORM      5      				     
+PARAM_LIST    LIST
+PARAM_XXX     DIM       10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM      	8
+       	      LISTEND
+MASK_102      INIT      "Z,ZZZ,ZZZ,ZZ9.99-"
+MASK_8        INIT      "ZZ,ZZZ,ZZ9" 
+R_DATE	      DIM       10
+R_PAGE_NO     DIM       5
+R_TIME	      DIM      	8
+TIMESTAMP     DIM	14    
+TODAY	      DIM	8   
+TOTFLAMT      FORM	5
+TRAP_DATA     DIM       500
+WLFLAG	      DIM	2  
+WRITE_COUNT   FORM	8           
+WS_AGY	      DIM	4 
+WS_LOC	      DIM	2   
+XCAPE         INIT      ESC_CHAR
+YES           INIT      "Y"
+
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+SRH_LEFT1     INIT	"Program name: "
+SRH_LEFT2     INIT	"Date Printed: "
+SRH_TITLE1    INIT	"   STATE OF LOUISIANA	 "
+SRH_TITLE2    INIT	"OFFICE	OF GROUP BENEFITS"
+SRH_RIGHT1    INIT	"Page Number: "
+SRH_RIGHT2    INIT	"Report	Time: "
+SRH_DASH      INIT	"-"
+
+. ----------------------------
+. Begin	Program
+. ----------------------------
+
+. ----------------------------
+. Start	here if	selected from menu
+. ----------------------------
+
+         CALL	   RUN_NOW
+ 
+         CHAIN	   C_NEXT
+
+. ----------------------------
+. Start	here if	called by the Scheduler
+. ----------------------------
+
+	 INC	   SCHED_WP.SR		    Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+	 RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         CLEAR X_CNT1
+	 MOVE	   "MENU"	       TO  C_NEXT
+	 MOVE	   "Prints Where Money Goes" TO  C_OPER
+	 MOVE	   "A040713A"	       TO  C_PROG
+	 MOVE	   BLANKS	       TO  C_LABEL
+	 MOVE	   BLANKS	       TO  C_FILE
+	 MOVE	   BLANKS	       TO  C_KEYS
+	 CLOCK	   CALENDAR	     INTO  CAL_CLOCK
+
+	 CALL      X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+
+. ...Set Applicable Traps
+	 TRAPSAVE  TRAP_DATA
+	 TRAPCLR   ALL
+	 TRAP	   QUIT	  NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+
+         MOVE      "00000025" TO C_PRTUSR
+	 CALL	   PRINT_PICK	   .this routine gives the user	a printer list
+	 RETURN	   IF (RESULT =	2)
+
+. ----------------------------
+. Get scheduler	information
+. ----------------------------
+
+	 CALL	   SCHED_PICK
+
+	 IF (RUN_MODE =	"B" OR RUN_MODE	= "N")
+	     CALL      MAIN_PROCESS
+	 ENDIF
+	 RETURN
+
++++++++++++++++++<BEGIN	MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         DEBUG
+
+. ...Initialize
+	 CALL	   INITIALIZE
+	
+. ...Open Files	
+	 CALL	   OPEN_FILES
+
+. ...Prepare Report
+	 CALL	   REPORT_PREP
+
+. ...Print Heading
+	 CALL	   PRINT_HEADING
+
+. ...Print Sub Heading
+	 CALL	   PRINT_SUBHDGS 
+
+. ...Spool Report
+	 CALL	   PRINT_REPORT
+
+. ...Splclose and Send Spooled Report to Printer 
+         CALL      PRINT_DONE
+
+. ...Close Files & Printer Queue
+	 CALL	   CLOSE_FILES
+
+. ...Return Control Back to Chain - End	of Program	
+	 TRAPREST  TRAP_DATA
+	 MOVE	   SCH_RTSUCC  TO  SCH@RTCODE
+	 RETURN
+
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END	OF MAIN	PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+	 CLOCK	   TIMESTAMP INTO TIMESTAMP
+	 CLOCK	   TIMESTAMP INTO CURRDATE
+	 CLOCK	   TIMESTAMP TO TODAY
+
+. ...Display Counters
+	 MOVE	   "Records Read:     "	TO X_CNTDESC1
+	
+	 CALL	   X_DISPLAY_COUNTS
+
+	 RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+	 CALL	   OPEN_OGBFILE	USING WTMG_FD,WTMG_NAME    
+
+	 RETURN
+
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+	 UNPACK	   TIMESTAMP   INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+	 PACK	   R_DATE      WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+	 PACK	   R_TIME      WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+	 MOVE	   0	       TO  WRITE_COUNT
+	 MOVE	   YES         TO  FIRST_PAGE
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+.Print Portrait 
+         PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+         PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+         PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+         PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+         PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+         PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s3b0T"
+         PACK      C_PRTFILE WITH OGB_PATH,"a040713a.prt" 
+  CALL   PRINT_PREP
+	 RETURN
+
+. ----------------------------
+. Print	the report heading
+. ----------------------------
+
+PRINT_HEADING
+
+	 ADD	   1	       TO  PAGE_NO
+	 MOVE	   PAGE_NO     TO  R_PAGE_NO
+
+	 IF (FIRST_PAGE	= YES)
+	     MOVE      NO	  TO  FIRST_PAGE
+	 ELSE
+	     PRINT     *F;
+	 ENDIF
+
+	 PRINT	   BOLD_16,*C
+
+         PRINT     SRH_LEFT1,C_PROG:
+                   *54,SRH_TITLE1:
+		   *110,SRH_RIGHT1,(SQUEEZE R_PAGE_NO):
+		   *N:
+		   SRH_LEFT2,R_DATE:
+		   *54,SRH_TITLE2:
+		   *110,SRH_RIGHT2,R_TIME
+	 MOVE	   2		 TO LINE_NO
+	 RETURN
+
+. ----------------------------
+. Print	Subheadings
+. ----------------------------
+
+PRINT_SUBHDGS
+
+	 PRINT	   HDR1_REC,*N:   
+                   HDR2_REC,*N,*N:
+                   HDR3_REC,*N:
+                   HDR4_REC,*N,*N
+         RETURN
+
+PRINT_REPORT
+	 LOOP
+	     IF	(LINE_NO > LINE_MAX)
+	         CALL      PRINT_HEADING
+	         CALL      PRINT_SUBHDGS
+	     ENDIF
+	     MOVE      OGB_SEQ1 TO OGB_SEQ
+	     CALL      READ_OGBFILE USING WTMG_FD,WTMG_NAME:       
+                                          WTMG_LIST      
+	     IF	(RESULT	<> 1)
+		 EDIT ACC_CP_P1 INTO MASK_8 GIVING GTL2_CP_1     
+		 EDIT ACC_CP_P2 INTO MASK_8 GIVING GTL2_CP_2
+                 EDIT ACC_CS_P1 INTO MASK_102 GIVING GTL3_CS_1
+                 EDIT ACC_CS_P2 INTO MASK_102 GIVING GTL3_CS_2
+                 EDIT ACC_NP_P1 INTO MASK_102 GIVING GTL4_NP_1
+                 EDIT ACC_NP_P2 INTO MASK_102 GIVING GTL4_NP_2
+                 PRINT GTL1_REC,*N:
+                       GTL2_REC,*N:
+                       GTL3_REC,*N:
+                       GTL4_REC
+                 BREAK
+	     ENDIF
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+               CALL X_DISPLAY_COUNTS
+             ENDIF
+             SWITCH WTMG_IND
+                CASE "01"
+                   MOVE "Place of Service Ambulence" TO DET1_LIT
+                CASE "02"
+                   MOVE "Ambulatory Surgical Center" TO DET1_LIT
+                CASE "03"
+                   MOVE "Emergency Room - Hospital" TO DET1_LIT
+                CASE "04"
+                   MOVE "End-Stage Renal Disease Fac" TO DET1_LIT
+                CASE "05"
+                   MOVE "Independent Laboratory" TO DET1_LIT
+                CASE "06"
+                   MOVE "Inpatient Hospital" TO DET1_LIT
+                CASE "07"
+                   MOVE "Nursing Facility" TO DET1_LIT
+                CASE "08"
+                   MOVE "Office" TO DET1_LIT
+                CASE "09"
+                   MOVE "Outpatient Hospital" TO DET1_LIT
+                CASE "10"
+                   MOVE "Patient Home" TO DET1_LIT
+                CASE "11"
+                   MOVE "Pharmacy(Inc MCO&EPO Reg 6)" TO DET1_LIT
+                CASE "12"
+                   MOVE "Skilled Nursing Facility" TO DET1_LIT
+                CASE "13"
+                   MOVE "All Other" TO DET1_LIT
+             ENDSWITCH           
+             IF ((WTMG_CP_P1 = 0) AND (WTMG_CP_P2 = 0))
+                CONTINUE
+             ENDIF
+             EDIT WTMG_CP_P1 INTO MASK_8 GIVING DET2_CP_1
+             EDIT WTMG_CP_P2 INTO MASK_8 GIVING DET2_CP_2
+             EDIT WTMG_CS_P1 INTO MASK_102 GIVING DET3_CS_1
+             EDIT WTMG_CS_P2 INTO MASK_102 GIVING DET3_CS_2
+             EDIT WTMG_NP_P1 INTO MASK_102 GIVING DET4_NP_1
+             EDIT WTMG_NP_P2 INTO MASK_102 GIVING DET4_NP_2
+             ADD WTMG_CP_P1 TO ACC_CP_P1
+             ADD WTMG_CP_P2 TO ACC_CP_P2
+             ADD WTMG_CS_P1 TO ACC_CS_P1
+             ADD WTMG_CS_P2 TO ACC_CS_P2
+             ADD WTMG_NP_P1 TO ACC_NP_P1
+             ADD WTMG_NP_P2 TO ACC_NP_P2
+	     PRINT     DET1_REC,*N:
+                       DET2_REC,*N:
+                       DET3_REC,*N:
+                       DET4_REC,*N
+
+	 REPEAT
+	 RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+	 IF (C_RMODE = "I")
+	     error     horz="23",vert="19":
+		       bgcol=C_ERRB,fgcol=C_ERRF:
+		       lncol=C_ERRL,shade="Y":
+		       text=" Process Aborted by	Operator ":
+		      text="-----------------------------"
+	     messageerase
+	 ENDIF
+
+	 CLEAR	   C_NOHIST
+
+	 TRAPREST  TRAP_DATA
+
+	 IF (RUN_MODE =	"B")
+	    LOOP
+	        RETCOUNT	 CURR_RETURN
+	        WHILE	 (CURR_RETURN >	ORIG_RETURN)
+	        NORETURN
+	    REPEAT
+	    MOVE      SCH_RTABRT  TO  SCH@RTCODE
+	    RETURN
+	 ENDIF
+	 CHAIN	   C_NEXT
+
+. ----------------------------
+. Close	Files
+. ----------------------------
+
+CLOSE_FILES
+
+	 CALL	   CLOSE_OGBFILE USING WTMG_FD,WTMG_NAME    
+
+	 RETURN
+
+. ----------------------------
+. Subroutines and other	includes
+. ----------------------------
+
+	      INC	UTIL.SR
+	      INC	VALID.IO
+	      INC	PRINT.SR
+	      INC	X_STANDARD.SR
+	      INC	FILE.IO 
+	      INC	X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A040713A.PS
+. +++++++++++++++++++++++++++++++++++++

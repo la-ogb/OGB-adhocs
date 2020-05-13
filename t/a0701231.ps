@@ -1,0 +1,923 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0701231.PS
++    Description    :  
++    Author         :  Lisa Spurlock 
++    Date created   :  01/232006
++    Project #      :  aa0701231
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                          REVISIONS
+.
+.    AP???  MM/DD/CCYY  TYP - REMARKS                                         
+.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       MEMX.RL           
+    INC       ACCMLD.RL
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+ACTENR_FILE       FILE      VAR=8,TEXT
+ACTENR_NAME       INIT      "memlf.accu"  
+
+ACTENR_LIST       LIST
+ACTENR_KEY1       DIM       08
+                  LISTEND
+
+.~~~~~~~~~~OUTPUT FILES
+
+FARA_FILE     FILE      VAR=283,TEXT
+FARA_NAME     INIT      "a0701231.txt"
+.FARA_NAME     INIT      "/w/a0701231.txt"
+FARA_LIST     LIST
+FARA_REC      DIM      283
+              LISTEND
+
+CUR_FARA_FL   FILE      VAR=283,TEXT
+CUR_FARA_NME  INIT      "c0701231.txt"
+.CUR_FARA_NME .INIT      "/w/c0701231.txt"
+CUR_FARA_LIST LIST
+CUR_FARA_REC  DIM      283
+              LISTEND
+
+AMC_FILE      FILE      VAR=283,TEXT
+AMC_NAME      INIT      "a0701232.txt"
+.AMC_NAME      INIT      "/w/a0701232.txt"
+AMC_LIST      LIST
+AMC_REC       DIM      283
+              LISTEND
+
+CUR_AMC_FL    FILE      VAR=283,TEXT
+CUR_AMC_NME   INIT      "c0701232.txt"
+.CUR_AMC_NME   INIT      "/w/c0701232.txt"
+CUR_AMC_LIST  LIST
+CUR_AMC_REC   DIM      283
+              LISTEND
+
+BLC_FILE      FILE      VAR=283,TEXT
+BLC_NAME      INIT      "a0701233.txt"
+.BLC_NAME      INIT      "/w/a0701233.txt"
+BLC_LIST      LIST
+BLC_REC       DIM      283
+              LISTEND
+
+CUR_BLC_FL    FILE      VAR=283,TEXT
+CUR_BLC_NME   INIT      "c0701233.txt"
+.CUR_BLC_NME   INIT      "/w/c0701233.txt"
+CUR_BLC_LIST  LIST
+CUR_BLC_REC   DIM      283
+              LISTEND
+
+MAG_FILE      FILE      VAR=283,TEXT
+MAG_NAME      INIT      "a0701234.txt"
+.MAG_NAME      INIT      "/w/a0701234.txt"
+
+AG_LIST      LIST
+MAG_REC       DIM      283
+              LISTEND
+
+CUR_MAG_FL    FILE      VAR=283,TEXT
+CUR_MAG_NME   INIT      "c0701234.txt"
+.CUR_MAG_NME   INIT      "/w/c0701234.txt"
+CUR_MAG_LIST  LIST
+CUR_MAG_REC   DIM      283
+              LISTEND
+
+DEF_FILE      FILE      VAR=283,TEXT
+DEF_NAME      INIT      "a0701235.txt"
+.DEF_NAME      INIT      "/w/a0701235.txt"
+DEF_LIST      LIST
+DEF_REC       DIM      283
+              LISTEND
+
+CUR_DEF_FL    FILE      VAR=283,TEXT
+CUR_DEF_NME   INIT      "c0701235.txt"
+.CUR_DEF_NME   INIT      "/w/c0701235.txt"
+CUR_DEF_LIST  LIST
+CUR_DEF_REC   DIM      283
+              LISTEND
+
+OGB_FILE      FILE      VAR=283,TEXT
+OGB1_NAME     INIT      "a0701236.txt"
+.OGB1_NAME     INIT      "/w/a0701236.txt"
+OGB_LIST      LIST
+OGB_REC       DIM      283
+              LISTEND
+
+CUR_OGB_FL    FILE      VAR=283,TEXT
+CUR_OGB_NME   INIT      "c0701236.txt"
+.CUR_OGB_NME   INIT      "/w/c0701236.txt"
+CUR_OGB_LIST  LIST
+CUR_OGB_REC   DIM      283
+              LISTEND
+
+UNIT_FILE     FILE      VAR=283,TEXT
+UNIT_NAME     INIT      "a0701237.txt"
+.UNIT_NAME     INIT      "/w/a0701237.txt"
+UNIT_LIST     LIST
+UNIT_REC      DIM      283
+              LISTEND
+
+CUR_UNIT_FL   FILE      VAR=283,TEXT
+CUR_UNIT_NME  INIT      "c0701237.txt"
+.CUR_UNIT_NME  INIT      "/w/c0701237.txt"
+CUR_UNIT_LIST LIST
+CUR_UNIT_REC  DIM      283
+              LISTEND
+
+UNITB_FILE    FILE      VAR=283,TEXT
+UNITB_NAME    INIT      "a0701238.txt"
+.UNITB_NAME    INIT      "/w/a0701238.txt"
+UNITB_LIST    LIST
+UNITB_REC     DIM      283
+              LISTEND
+
+CUR_UNITB_FL   FILE      VAR=283,TEXT
+CUR_UNITB_NME  INIT      "c0701238.txt"
+.CUR_UNITB_NME INIT      "/w/c0701238.txt"
+CUR_UNITB_LIST LIST
+CUR_UNITB_REC  DIM      283
+               LISTEND
+
+HUM_FILE      FILE      VAR=283,TEXT
+HUM_NAME      INIT      "a0701239.txt"
+.HUM_NAME      INIT      "/w/a0701239.txt"
+HUM_LIST      LIST
+HUM_REC       DIM      283
+              LISTEND
+
+CUR_HUM_FL    FILE      VAR=283,TEXT
+CUR_HUM_NME   INIT      "c0701239.txt"
+.CUR_HUM_NME   INIT      "/w/c0701239.txt"
+CUR_HUM_LIST  LIST
+CUR_HUM_REC   DIM      283
+              LISTEND
+
+BES_FILE      FILE      VAR=283,TEXT
+BES_NAME      INIT      "a070123A.txt"
+.BES_NAME      INIT      "/w/a070123A.txt"
+BES_LIST      LIST
+BES_REC       DIM      283
+              LISTEND
+ 
+CUR_BES_FL    FILE      VAR=283,TEXT
+CUR_BES_NME   INIT      "c070123A.txt"
+.CUR_BES_NME   INIT      "/w/c070123A.txt"
+CUR_BES_LIST  LIST
+CUR_BES_REC   DIM      283
+              LISTEND
+ 
+VAN_FILE      FILE      VAR=283,TEXT
+VAN_NAME      INIT      "a070123B.txt"
+.VAN_NAME      INIT      "/w/a070123B.txt"
+VAN_LIST      LIST
+VAN_REC       DIM      283
+              LISTEND
+
+CUR_VAN_FL    FILE      VAR=283,TEXT
+CUR_VAN_NME   INIT      "c070123B.txt"
+.CUR_VAN_NME   INIT      "/w/c070123B.txt"
+CUR_VAN_LIST  LIST
+CUR_VAN_REC   DIM      283
+              LISTEND
+
+ERR_FILE      FILE      VAR=283,TEXT
+ERR_NAME      INIT      "a070123.err"
+.ERR_NAME      INIT      "/w/a070123.err"
+ERR_LIST      LIST
+ERR_REC       DIM      283
+              LISTEND
+
+
+Z_FILE        IFILE     VAR=12,KEYL=8,NODUP,TEXT
+Z_NAME        INIT      "a070123.ix1"
+.Z_NAME        INIT      "/w/a070123.ix1"
+Z_FILE_TXT    FILE      VAR=12,TEXT
+Z_NAME_TXT    INIT      "a070123.txt"
+.Z_NAME_TXT    INIT      "/w/a070123.txt"
+Z_LIST        LIST
+Z_MEMID_KEY   DIM       8 
+Z_ACCUM_TYPE  DIM       4 
+              LISTEND
+
+
+ACC2_LIST      LIST
+ACC2_SSN       DIM       9              0001 0009    .Social Security
+ACC2_REL       DIM       2              0010 0011    .relation code
+ACC2_MEM       DIM       8              0012 0019    .member ID
+ACC2_FROM      DIM       8              0020 0027    .effective from
+ACC2_THRU      DIM       8              0028 0035    .effective through
+ACC2_TYPE      DIM       4              0036 0039    .accum type
+ACC2_AMT       DIM       10             0040 0049    .accum paid amount
+ACC2_DOSF      DIM       8              0050 0057    .date of service from
+ACC2_DOST      DIM       8              0058 0065    .date of service thru
+ACC2_PAYD      DIM       8              0066 0073    .actual paid date
+ACC2_PRVN      DIM       30             0074 0103    .provider name
+ACC2_DIAG      DIM       5              0104 0108    .diagnosis code
+ACC2_TCHG      DIM       10             0109 0118    .total charge
+ACC2_TDED      DIM       10             0119 0128    .total deductible
+ACC2_COPA      DIM       10             0129 0138    .copay amount
+ACC2_CLMN      DIM       15             0139 0153    .claim number
+ACC2_RXNM      DIM       30             0154 0183    .drug name
+ACC2_RXNO      DIM       7              0184 0190    .prescription number
+ACC2_RXQT      DIM       11             0191 0201    .drug quantity
+ACC2_DTWR      DIM       8              0202 0209    .Date written
+ACC2_ALLO      DIM       10             0210 0219    .allowed amount
+ACC2_COIN      DIM       10             0220 0229    .coinsurance amount
+ACC2_DSUP      DIM       4              0230 0233    .days supply (drug only)
+ACC2_DFEE      DIM       10             0234 0243    .dispensing fee (drug only)
+ACC2_INGA      DIM       10             0244 0253    .ingredient amt (drug only)
+ACC2_NDCN      DIM       11             0254 0264    .NDC code (drug only)
+ACC2_STAX      DIM       10             0265 0274    .State Tax (drug only)
+ACC2_PRID      DIM       08             0275 0282    .Provider's Impact ID
+ACC2_MEDD      DIM       01             0283 0283    .Medicare D Eligible 
+              LISTEND
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+TODAY           	DIM      8
+TODAY_CCYY           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+ENR                     INIT     "01"
+BLANK8                  INIT     "        "
+ACC_REC_SWT             DIM      1    
+HLD_MEM_ACCU            DIM      08  
+HLD_ID1                 DIM      08  
+CURR_ID                 DIM      08  
+CURR_SSN                DIM      09  
+CURR_REL                DIM      02  
+FIRST_MEME_READ         DIM       1 
+FIRST_READ              DIM       1 
+INP_RESULT              FORM      1 
+IDX_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+MEMX_RESULT             FORM      1 
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+SAVE_DATE               DIM      8
+TERM_DATE               DIM      8
+HLD_DATE        	DIM      8
+
+ENROLLEE_FOUND          DIM      01
+
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 		    chains to the print program
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "Shared Life Accums Ext."  TO    C_OPER
+      MOVE      "a0701231"                  TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+
+  CALL      INITIALIZE
+
+. ...Reformat MEM file
+  CALL      REFORMAT_MEM
+
+  DEBUG
+  CALL      OPEN_FILES
+  DEBUG
+  CALL      EXTRACT_OUTPUT_FILE    
+  CALL      CLOSE_FILES
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "MENU"                     TO    C_NEXT
+  MOVE      "Shared Life Accums Ext."  TO    C_OPER
+  MOVE      "a0701231"                  TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Definity Life Recs:  " TO X_CNTDESC1
+  MOVE "FARA Life Recs:      " TO X_CNTDESC2
+  MOVE "Humana Life Recs:    " TO X_CNTDESC3
+  MOVE "United Life Recs:    " TO X_CNTDESC4
+  MOVE "United Behavioral Rec" TO X_CNTDESC5
+  MOVE "Vantage Life Recs:   " TO X_CNTDESC6
+  DISPLAY *ES
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+  UNPACK TODAY INTO TODAY_CCYY,TODAY_MM,TODAY_DD
+
+ RETURN
+
+.............................................................................
+
+.-------------------------------
+. Reformat MEM  file
+.-------------------------------
+REFORMAT_MEM 
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+...Get only records that contain something in the MEM_ACCU (Shared Accums)
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "mem.dbf memlf.accu":
+              " -p548-555ne#"",BLANK8,"#" 1-8 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(mem.dbf)"
+               CHAIN     "MENU"
+         ENDIF
+
+    RETURN
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+    CALL OPEN_OGBFILE USING ACTENR_FILE,ACTENR_NAME
+ 
+    CALL OPEN_OGBFILE_IX USING MEMX_DECL,MEMX_NAME
+
+    CALL PREP_OGBFILE USING DEF_FILE,DEF_NAME
+
+    CALL PREP_OGBFILE USING FARA_FILE,FARA_NAME
+
+    CALL PREP_OGBFILE USING HUM_FILE,HUM_NAME
+
+    CALL PREP_OGBFILE USING OGB_FILE,OGB1_NAME
+
+    CALL PREP_OGBFILE USING UNIT_FILE,UNIT_NAME
+
+    CALL PREP_OGBFILE USING UNITB_FILE,UNITB_NAME
+
+    CALL PREP_OGBFILE USING VAN_FILE,VAN_NAME
+
+    CALL PREP_OGBFILE USING AMC_FILE,AMC_NAME
+
+    CALL PREP_OGBFILE USING BLC_FILE,BLC_NAME
+
+    CALL PREP_OGBFILE USING MAG_FILE,MAG_NAME
+
+    CALL PREP_OGBFILE USING BES_FILE,BES_NAME
+
+    CALL PREP_OGBFILE USING CUR_DEF_FL,CUR_DEF_NME
+
+    CALL PREP_OGBFILE USING CUR_FARA_FL,CUR_FARA_NME
+
+    CALL PREP_OGBFILE USING CUR_HUM_FL,CUR_HUM_NME
+
+    CALL PREP_OGBFILE USING CUR_OGB_FL,CUR_OGB_NME
+
+    CALL PREP_OGBFILE USING CUR_UNIT_FL,CUR_UNIT_NME
+
+    CALL PREP_OGBFILE USING CUR_UNITB_FL,CUR_UNITB_NME
+
+    CALL PREP_OGBFILE USING CUR_VAN_FL,CUR_VAN_NME
+
+    CALL PREP_OGBFILE USING CUR_AMC_FL,CUR_AMC_NME
+
+    CALL PREP_OGBFILE USING CUR_BLC_FL,CUR_BLC_NME
+
+    CALL PREP_OGBFILE USING CUR_MAG_FL,CUR_MAG_NME
+
+    CALL PREP_OGBFILE USING CUR_BES_FL,CUR_BES_NME
+
+    CALL PREP_OGBFILE USING ERR_FILE,ERR_NAME
+
+    CALL PREP_OGBFILE_IX USING Z_FILE,Z_NAME
+    CALL CLOSE_OGBFILE_IX USING Z_FILE,Z_NAME
+    CALL OPEN_OGBFILE_IX USING Z_FILE,Z_NAME
+
+  RETURN
+
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file (memlf.accu)  
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ACTENR_FILE,ACTENR_NAME,ACTENR_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+
+... Read the MEM file for the Member 
+
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH ACTENR_KEY1
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+... If the Member is not found, the program                         
+... then continues to the next record to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            CONTINUE         
+        ENDIF
+
+        MOVE MEM_ESSN TO ACC_SSN
+        MOVE MEM_REL TO ACC_REL
+        PACK CURR_ID  WITH ACTENR_KEY1
+        PACK CURR_SSN WITH ACC_SSN
+        PACK CURR_REL WITH ACC_REL
+        PACK MEM_SAV WITH MEM_REC
+
+        CLEAR HLD_DATE
+        CLEAR TERM_DATE
+
+        MOVE MEM_ID1 TO HLD_ID1
+        PACK MEME_FK11 WITH HLD_ID1,BLANKS
+        CALL READ_MEME
+
+        IF (TERM_DATE <> "99999999")
+            MOVE HLD_DATE TO SAVE_DATE
+            MOVE MEM_ACCU TO HLD_ID1
+            PACK MEME_FK11 WITH HLD_ID1,BLANKS
+            CALL READ_MEME           
+            IF (TERM_DATE <> "99999999")
+                IF (HLD_DATE > SAVE_DATE)
+ 	            PACK CURR_ID WITH MEM_ACCU
+                    CALL GET_CURR_SSN
+                ELSE
+ 	            PACK CURR_ID  WITH ACTENR_KEY1
+                    PACK CURR_SSN WITH ACC_SSN
+                    PACK CURR_REL WITH ACC_REL
+                ENDIF
+            ELSE
+ 	        PACK CURR_ID WITH MEM_ACCU
+                CALL GET_CURR_SSN
+            ENDIF
+        ENDIF
+
+... Reading the MEMX file for Record ID
+
+...   PACK MEMX_KEY WITH MEM_ID1,BLANKS
+      PACK MEMX_KEY WITH ACTENR_KEY1,BLANKS
+      CALL READ_OGBFILE_IX USING MEMX_DECL,MEMX_NAME,MEMX_KEY,MEMX_REC
+      LOOP
+           CALL READKS_OGBFILE_IX USING MEMX_DECL,MEMX_NAME,MEMX_REC
+           IF (RESULT <> 1)
+              BREAK
+           ENDIF
+           IF (MEMX_ID <> ACTENR_KEY1)
+               BREAK
+           ENDIF
+           IF (MEMX_ACCU <> "LIFE")
+             CONTINUE
+           ENDIF
+           CALL WRITE_LIFE_RECS
+      REPEAT
+
+   REPEAT
+ RETURN
+
+.##############################################################################
+READ_MEME
+
+     MOVE " " TO FIRST_MEME_READ
+
+     CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                          MEME_FN:             ...FILE NAME LIST
+                          MEME_FC:             ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                          MEME_FV:             ...FILE KEY VARLIST
+                          MEME_FK:             ...FILE KEY SIZES
+                          MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                          MEME_REC:            ...FILE RECORD (PACKED)
+                          MEME_OLD:            ...FILE SAVED WHEN READ
+                          MEME_QTY:            ...NUMBER OF FILES
+                          1                    ...FILE NUMBER FOR THIS READ
+
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST
+                               MEME_FN:         ...FILE NAME LIST
+                               MEME_FC:         ...TYPE OF INDEX
+.                                               ...(I)NDEX or (A)IMDEX
+                               MEME_FV:         ...FILE KEY VARLIST
+                               MEME_FK:         ...FILE KEY SIZES
+                               MEME_LIST:       ...FILE RECORD (FIELD LIST)
+                               MEME_REC:        ...FILE RECORD (PACKED)
+                               MEME_OLD:        ...FILE SAVED WHEN READ
+                               MEME_QTY:        ...NUMBER OF FILES
+                               1                ...FILE NUMBER FOR THIS READ
+
+... If NO MEME record is found, then it exits the read MEME Loop. 
+
+          IF (RESULT <> 1) 
+              BREAK
+          ENDIF 
+
+... If not equal and the FIRST_MEME_READ switch is blank then reads next record
+
+          IF (HLD_ID1 <> MEME_ID1)
+              BREAK
+          ENDIF
+
+... Excludes LIFE Plans              
+          IF (SQUEEZE MEME_NET = "LIFE")
+              CONTINUE
+          ENDIF
+
+... Excludes Blank Fields              
+          IF (SQUEEZE MEME_NET = "") 
+              CONTINUE
+          ENDIF
+
+          IF (SQUEEZE MEME_TRM = "")
+              PACK TERM_DATE WITH "99999999" 
+              BREAK 
+          ENDIF
+
+          IF (MEME_TRM >= HLD_DATE) 
+              PACK HLD_DATE WITH MEME_TRM
+          ENDIF
+
+      REPEAT
+
+  RETURN
+
+.******************************************************************************
+GET_CURR_SSN
+.******************************************************************************
+
+... Read the MEM file for the Member 
+
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH CURR_ID    
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+... If the Member is not found, the program                         
+... then continues to the next record to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            RETURN           
+        ENDIF
+
+        MOVE MEM_ESSN TO CURR_SSN
+        MOVE MEM_REL  TO CURR_REL
+
+  RETURN
+
+.******************************************************************************
+.******************************************************************************
+WRITE_LIFE_RECS
+.******************************************************************************
+.-------------------------------------------------------
+...Write Life records to their corresponding Source Code
+.-------------------------------------------------------
+
+    MOVE MEMX_ID   TO ACC_MEM
+    MOVE MEMX_EFF  TO ACC_FROM
+    PACK ACC_THRU  WITH BLANKS
+    MOVE MEMX_ACCU TO ACC_TYPE
+    MOVE MEMX_AMT  TO ACC_AMT 
+    MOVE MEMX_DOSF TO ACC_DOSF
+    MOVE MEMX_DOST TO ACC_DOST
+    MOVE MEMX_PAYD TO ACC_PAYD
+    MOVE MEMX_PRVN TO ACC_PRVN
+    MOVE MEMX_DIAG TO ACC_DIAG
+    MOVE MEMX_TCHG TO ACC_TCHG
+    MOVE MEMX_TDED TO ACC_TDED
+    MOVE MEMX_COPA TO ACC_COPA
+    MOVE MEMX_CLMN TO ACC_CLMN
+    MOVE MEMX_DRUG TO ACC_RXNM
+    MOVE MEMX_PRES TO ACC_RXNO
+    MOVE MEMX_QUAN TO ACC_RXQT
+    MOVE MEMX_CHGDT TO ACC_DTWR
+    MOVE MEMX_ALLOW TO ACC_ALLO
+    MOVE MEMX_COINS TO ACC_COIN
+    MOVE MEMX_SUPPL TO ACC_DSUP
+    MOVE MEMX_DISP TO ACC_DFEE
+    MOVE MEMX_INGA TO ACC_INGA
+    MOVE MEMX_NDC  TO ACC_NDCN
+    MOVE MEMX_STAX TO ACC_STAX
+
+    MOVE MEMX_EFF   TO   ACC2_FROM
+    PACK ACC2_THRU  WITH BLANKS
+    MOVE MEMX_ACCU  TO   ACC2_TYPE
+    MOVE MEMX_AMT   TO   ACC2_AMT 
+    MOVE MEMX_DOSF  TO   ACC2_DOSF
+    MOVE MEMX_DOST  TO   ACC2_DOST
+    MOVE MEMX_PAYD  TO   ACC2_PAYD
+    MOVE MEMX_PRVN  TO   ACC2_PRVN
+    MOVE MEMX_DIAG  TO   ACC2_DIAG
+    MOVE MEMX_TCHG  TO   ACC2_TCHG
+    MOVE MEMX_TDED  TO   ACC2_TDED
+    MOVE MEMX_COPA  TO   ACC2_COPA
+    MOVE MEMX_CLMN  TO   ACC2_CLMN
+    MOVE MEMX_DRUG  TO   ACC2_RXNM
+    MOVE MEMX_PRES  TO   ACC2_RXNO
+    MOVE MEMX_QUAN  TO   ACC2_RXQT
+    MOVE MEMX_CHGDT TO   ACC2_DTWR
+    MOVE MEMX_ALLOW TO   ACC2_ALLO
+    MOVE MEMX_COINS TO   ACC2_COIN
+    MOVE MEMX_SUPPL TO   ACC2_DSUP
+    MOVE MEMX_DISP  TO   ACC2_DFEE
+    MOVE MEMX_INGA  TO   ACC2_INGA
+    MOVE MEMX_NDC   TO   ACC2_NDCN
+    MOVE MEMX_STAX  TO   ACC2_STAX
+
+    SWITCH MEMX_SRC
+        CASE "1"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING FARA_FILE,FARA_NAME,ACC_LIST
+             ADD 1 TO X_CNT2
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_FARA_FL,CUR_FARA_NME,ACC2_LIST
+        CASE "5"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING DEF_FILE,DEF_NAME,ACC_LIST
+             ADD 1 TO X_CNT1
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_DEF_FL,CUR_DEF_NME,ACC2_LIST
+        CASE "7"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING UNIT_FILE,UNIT_NAME,ACC_LIST
+             ADD 1 TO X_CNT4
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_UNIT_FL,CUR_UNIT_NME,ACC2_LIST
+        CASE "8"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING UNITB_FILE,UNITB_NAME,ACC_LIST
+             ADD 1 TO X_CNT5
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_UNITB_FL,CUR_UNITB_NME,ACC2_LIST
+        CASE "9"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING HUM_FILE,HUM_NAME,ACC_LIST
+             ADD 1 TO X_CNT3
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_HUM_FL,CUR_HUM_NME,ACC2_LIST
+        CASE "B" OR "b"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING VAN_FILE,VAN_NAME,ACC_LIST
+             ADD 1 TO X_CNT6
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_VAN_FL,CUR_VAN_NME,ACC2_LIST
+        CASE "2"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING AMC_FILE,AMC_NAME,ACC_LIST
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_AMC_FL,CUR_AMC_NME,ACC2_LIST
+        CASE "3"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING BLC_FILE,BLC_NAME,ACC_LIST
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_BLC_FL,CUR_BLC_NME,ACC2_LIST
+        CASE "4"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING MAG_FILE,MAG_NAME,ACC_LIST
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_MAG_FL,CUR_MAG_NME,ACC2_LIST
+        CASE "A" OR "a"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING BES_FILE,BES_NAME,ACC_LIST
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_BES_FL,CUR_BES_NME,ACC2_LIST
+        CASE "6"
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING OGB_FILE,OGB1_NAME,ACC_LIST
+             MOVE CURR_ID   TO ACC2_MEM
+             MOVE CURR_SSN  TO ACC2_SSN
+             MOVE CURR_REL  TO ACC2_REL
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING CUR_OGB_FL,CUR_OGB_NME,ACC2_LIST
+     DEFAULT
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING ERR_FILE,ERR_NAME,ACC_LIST
+.            ADD 1 TO X_CNT5 
+    ENDSWITCH 
+
+  RETURN
+ 
+.******************************************************************************
+ 
+.############################################################################## 
+CLOSE_FILES
+.############################################################################## 
+
+  CALL CLOSE_OGBFILE USING DEF_FILE,DEF_NAME
+  CALL CLOSE_OGBFILE USING FARA_FILE,FARA_NAME
+  CALL CLOSE_OGBFILE USING HUM_FILE,HUM_NAME
+  CALL CLOSE_OGBFILE USING UNIT_FILE,UNIT_NAME
+  CALL CLOSE_OGBFILE USING UNITB_FILE,UNITB_NAME
+  CALL CLOSE_OGBFILE USING VAN_FILE,VAN_NAME
+  CALL CLOSE_OGBFILE USING AMC_FILE,AMC_NAME
+  CALL CLOSE_OGBFILE USING BLC_FILE,BLC_NAME
+  CALL CLOSE_OGBFILE USING MAG_FILE,MAG_NAME
+  CALL CLOSE_OGBFILE USING BES_FILE,BES_NAME
+  CALL CLOSE_OGBFILE USING OGB_FILE,OGB1_NAME
+  CALL CLOSE_OGBFILE USING CUR_DEF_FL,CUR_DEF_NME
+  CALL CLOSE_OGBFILE USING CUR_FARA_FL,CUR_FARA_NME
+  CALL CLOSE_OGBFILE USING CUR_HUM_FL,CUR_HUM_NME
+  CALL CLOSE_OGBFILE USING CUR_UNIT_FL,CUR_UNIT_NME
+  CALL CLOSE_OGBFILE USING CUR_UNITB_FL,CUR_UNITB_NME
+  CALL CLOSE_OGBFILE USING CUR_VAN_FL,CUR_VAN_NME
+  CALL CLOSE_OGBFILE USING CUR_AMC_FL,CUR_AMC_NME
+  CALL CLOSE_OGBFILE USING CUR_BLC_FL,CUR_BLC_NME
+  CALL CLOSE_OGBFILE USING CUR_MAG_FL,CUR_MAG_NME
+  CALL CLOSE_OGBFILE USING CUR_BES_FL,CUR_BES_NME
+  CALL CLOSE_OGBFILE USING CUR_OGB_FL,CUR_OGB_NME
+  CALL CLOSE_OGBFILE USING ACTENR_FILE,ACTENR_NAME
+  CALL CLOSE_OGBFILE USING ACTENR_FILE,ACTENR_NAME
+  CALL CLOSE_OGBFILE USING ERR_FILE,ERR_NAME
+  CALL CLOSE_OGBFILE_IX USING Z_FILE,Z_NAME
+
+  RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "   A0701231  Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

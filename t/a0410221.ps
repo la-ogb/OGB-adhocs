@@ -1,0 +1,390 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0410221.PS
++    Description    :  GET CLAIMS PAID FOR CERTAIN ID'S
++    APSJM 10/22/2004 A0410221 DEV - INITIAL VERSION
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       CLM.RL           ...Claims Header   
+              INC       CLMS.RL          ...Claims service lines
+              INC       MEMX.RL          ...Third Party Payments
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+RID_FD        FILE     VAR=100,TEXT 
+RID_NAME      INIT     "/w/claimid.txt"
+RID_LIST      LIST
+RID_ID        DIM      8
+RID_LNAME     DIM      12
+RID_REL       DIM      2
+RID_F4        DIM      4
+RID_PID       DIM      8 
+RID_F11       DIM      11
+RID_MED       DIM      4
+RID_F21       DIM      21
+RID_M_DATE    DIM      8
+              LISTEND
+.
+AMT_FD        FILE     VAR=100,TEXT
+AMT_NAME      INIT     "/w/a0410221.txt"
+AMT_LIST      LIST
+AMT_AMT       FORM     10.2
+AMT_CNT       FORM     7
+              LISTEND
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+DIM_1         DIM       1
+FORM_72       FORM      7.2
+FORM_PAYP     FORM      7.2
+FORM_PAYE     FORM      7.2
+W_ID          DIM       8
+W_M_DATE      DIM       8
+E_DATE        INIT      "20040630"
+B_DATE        DIM       8
+CNT_4         DIM  4
+CNT_3         DIM  3
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+FIRST_READ    DIM       1  
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "CLAIM ACC" TO  C_OPER
+         MOVE      "A0410221"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL      INITIALIZE
+    CALL      OPEN_FILES
+    CALL      EXT_DATA 
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL      WRITE_OGBREC USING AMT_FD,AMT_NAME,AMT_LIST
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+EXT_DATA
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  LOOP
+      CALL READ_OGBFILE USING RID_FD,RID_NAME,RID_LIST
+      IF (RESULT <> 1)
+         BREAK
+      ENDIF
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO CNT_4,CNT_3
+      IF (CNT_3 = "000")
+           CALL X_DISPLAY_COUNTS
+      ENDIF
+      IF (RID_REL = "01")
+           MOVE RID_ID TO W_ID
+      ELSE
+           MOVE RID_PID TO W_ID
+      ENDIF
+      CLEAR CLM_AIM
+      PACK   CLM_AIM1   WITH "01X",W_ID 
+      MOVE   "Y" TO FIRST_READ
+      LOOP
+..Read the clm file by key 01 (patient id)
+            IF (FIRST_READ = "Y")
+                CALL      FILE_READ USING CLM_FD:    ...File declaration list
+                   CLM_FN:   ...File name list
+                   CLM_FC:   ...(I)ndex or (A)imdex
+                   CLM_FV:   ...File key varlists
+                   CLM_AIM:  ...File key sizes
+                   CLM_LIST: ...File record (field list)
+                   CLM_REC:  ...File record (packed)
+                   CLM_OLD:  ...File saved when read
+                   CLM_QTY:  ...Number of files
+                   3         ...File number for this read
+                MOVE "N" TO FIRST_READ
+            ELSE
+                CALL      FILE_NEXT USING CLM_FD:    ...File declaration list
+                   CLM_FN:   ...File name list
+                   CLM_FC:   ...(I)ndex or (A)imdex
+                   CLM_FV:   ...File key varlists
+                   CLM_AIM:  ...File key sizes
+                   CLM_LIST: ...File record (field list)
+                   CLM_REC:  ...File record (packed)
+                   CLM_OLD:  ...File saved when read
+                   CLM_QTY:  ...Number of files
+                   3         ...File number for this read
+            ENDIF
+            BREAK IF (RESULT <> 1)
+            BREAK IF (CLM_12 <> W_ID)
+            ADD 1 TO X_CNT2
+            UNPACK X_CNT2 INTO CNT_4,CNT_3
+            IF (CNT_3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF 
+            UNPACK RID_M_DATE INTO W_MM,DIM_1,W_DD,DIM_1,W_YY
+            SWITCH W_YY
+              CASE "00" OR "01" OR "02" OR "03" OR "04" OR "05"
+                PACK W_M_DATE WITH "20",W_YY,W_MM,W_DD
+              DEFAULT
+                PACK W_M_DATE WITH "19",W_YY,W_MM,W_DD
+            ENDSWITCH
+            IF (W_M_DATE <= "20030701")
+               MOVE "20030701" TO B_DATE
+            ELSE
+               MOVE W_M_DATE TO B_DATE
+            ENDIF
+            IF ((CLM_6A > E_DATE) OR (CLM_6B < B_DATE))
+              CONTINUE
+            ENDIF 
+            ADD 1 TO AMT_CNT 
+            
+..Clear amounts from previous claim from accumulators
+
+..Read the clms file by key 11 (claim #)   
+            PACK CLMS_BASE WITH CLM_ID1,BLANKS
+            PACK CLMS_KEY  WITH CLMS_BASE,"   " 
+            CALL POP_READ
+               LOOP
+                   CALL POP_NEXT
+ 
+                   IF ((RESULT <> 1) OR (CLMS_ID <> CLM_ID1))
+                      BREAK
+                   ENDIF                  
+
+                   ADD 1 TO X_CNT3
+                   UNPACK  X_CNT3 INTO CNT_4,CNT_3
+                   IF (CNT_3 = "000")
+                       CALL X_DISPLAY_COUNTS
+                   ENDIF 
+                   CLEAR FORM_PAYP
+                   CLEAR FORM_PAYE
+                   MOVE CLMS_PAYP TO FORM_PAYP
+                   MOVE CLMS_PAYE TO FORM_PAYE
+                   ADD (FORM_PAYP + FORM_PAYE) TO AMT_AMT 
+               REPEAT
+      REPEAT
+      PACK MEMX_KEY WITH W_ID,BLANKS
+      CALL READ_OGBFILE_IX USING MEMX_DECL,MEMX_NAME,MEMX_KEY,MEMX_REC
+      LOOP
+           CALL READKS_OGBFILE_IX USING MEMX_DECL,MEMX_NAME,MEMX_REC
+           ADD 1 TO X_CNT4
+           UNPACK  X_CNT4 INTO CNT_4,CNT_3
+           IF (CNT_3 = "000")
+              CALL X_DISPLAY_COUNTS
+           ENDIF 
+           IF (RESULT <> 1)
+              BREAK
+           ENDIF
+           IF (MEMX_ID <> W_ID)
+               BREAK
+           ENDIF
+           IF ((MEMX_DOSF > E_DATE) OR (MEMX_DOST < B_DATE))
+              CONTINUE
+           ENDIF 
+           IF (MEMX_ACCU = "DRUG")
+             CONTINUE
+           ENDIF
+           ADD 1 TO AMT_CNT 
+           CLEAR FORM_72
+           MOVE MEMX_AMT TO FORM_72
+           ADD FORM_72 TO AMT_AMT
+      REPEAT
+  REPEAT
+  RETURN       
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Input Recs Read: " TO X_CNTDESC1
+	 MOVE      "Clm Header Read: " TO X_CNTDESC2
+	 MOVE      "Clm Service Read   " TO X_CNTDESC3
+	 MOVE      "Memx Read          " TO X_CNTDESC4
+	 MOVE      "Not Used:          " TO X_CNTDESC5
+	 MOVE      "Not Used:          " TO X_CNTDESC6
+
+	 CALL      X_DISPLAY_COUNTS
+         CALL      SETPOP_CLMS
+         RETURN
+
+.
+OPEN_FILES
+         MOVE      MEMX_NAME TO C_FILE
+         CALL      OPEN_OGBFILE_IX USING MEMX_DECL,MEMX_NAME
+         MOVE      RID_NAME TO C_FILE
+         CALL      OPEN_OGBFILE USING RID_FD,RID_NAME           
+         MOVE      AMT_NAME TO C_FILE
+         CALL      PREP_OGBFILE USING AMT_FD,AMT_NAME           
+         RETURN
+
+CLOSE_FILES
+         MOVE      MEMX_NAME TO C_FILE
+         CALL      CLOSE_OGBFILE_IX USING MEMX_DECL,MEMX_NAME
+         MOVE      RID_NAME TO C_FILE
+         CALL      CLOSE_OGBFILE USING RID_FD,RID_NAME           
+         MOVE      AMT_NAME TO C_FILE
+         CALL      CLOSE_OGBFILE USING AMT_FD,AMT_NAME           
+         RETURN
+
+. -------------------------------
+
+WRITE_OUT
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        IF (CNT_3 = "000")
+          CALL X_DISPLAY_COUNTS
+        ENDIF 
+        RETURN
+         
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+    INC       POP.IO
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0208261.PS
+. +++++++++++++++++++++++++++++++++++++

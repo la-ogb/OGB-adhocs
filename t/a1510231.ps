@@ -1,0 +1,869 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++	Program Name	:  A1510231.ps
++ 
++	Description	:  Finds PSSNs for dependents, which are missing in OGB
++			:  records, from a file provided by LSU. Once found, the
++			:  PSSN is added to the MEM rec and formatted to be run
++			:  by the MEMMEM update program. 
++
++	Author		:  Jakob Hendrix 
++	Project #	:  A1510231
++	Date Created	:  10/23/2015
++
++	apjwh   10/30/2015   A1510231  -  DEV 
++..................................Revisions....................................
++	apjwh   11/04/2015   A1510231  -  FIX  -  Changed INM_CHGBY to reflect
++						  operator that ran program
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. -------------------------------------------------------------
+. Required Program Includes 
+. -------------------------------------------------------------	
+							
+	INC	COMMON.CB		...Common work area
+	INC	X_COMMON.CB		...OGB Common Work Area
+	INC	VALID.RL		...Valid codes
+	INC	X_OGBFILE.CB		...OGB Custom File Handler
+	INC	PRT.RL			...Printer Definition File
+              
+. -------------------------------------------------------------
+. Program Specific Includes
+. -------------------------------------------------------------
+
+	INC	MEM.RL			...Member Demographics
+	INC	MEME.RL			...Member Enrollment  
+	INC	D_MEMMEM.CB		...Member Import Layout
+	INC	CMDPARAM.CB		...
+
+. -------------------------------------------------------------
+. File Declarations
+. -------------------------------------------------------------
+
+...Input Files
+
+LSU_FD			FILE		VAR=126,  TEXT
+LSU_NAME		INIT		"/w/lsu_dssn.txt"
+LSU_LIST		LIST
+...
+LSU_ESSN		DIM		10
+LSU_AGY			DIM		12
+LSU_E_LNAME		DIM		19
+LSU_E_FNAME		DIM		24
+LSU_PSSN		DIM		10
+LSU_D_LNAME		DIM		18
+LSU_D_FNAME		DIM		22
+LSU_DOB		DIM		10
+LSU_REL			DIM		1
+			LISTEND
+
+...Output Files
+
+IMP_UPDT_FD		FILE		VAR=4800,  TEXT
+IMP_UPDT_NAME		INIT		"a1510231.txt"
+
+ERROR_FD		FILE		VAR=160,  TEXT
+ERROR_NAME		INIT		"/w/a1510231.err"
+ERROR_LIST		LIST
+...
+ERROR_ID1		DIM		8
+ERROR_C01		INIT		","
+ERROR_ESSN		DIM		9
+ERROR_C02		INIT            ","
+ERROR_D_LNAME		DIM		20
+ERROR_C03		INIT            "," 
+ERROR_D_FNAME		DIM		15
+ERROR_C04		INIT            ","
+ERROR_LSU_PSSN		DIM		9
+ERROR_C05		INIT            ","	
+ERROR_OGB_PSSN		DIM		9
+ERROR_C06		INIT            ","
+ERROR_DOB		DIM		8
+ERROR_C07		INIT            ","	
+ERROR_REL		DIM		2	
+ERROR_C08		INIT            ","	
+ERROR_MSG		DIM		70	
+			LISTEND
+
+. -------------------------------------------------------------
+. Program Specific Variables & Working Storage
+. -------------------------------------------------------------
+
+...<Test Options>...
+...Toggles use of various different reformat options (T/F to toggle)
+
+TEST_OPT_ESSN		INIT		"F"
+TEST_OPT_WRITE		INIT		"F"
+TEST_OPT_SEARCH		INIT		"F"
+
+TEST_ESSN		INIT		"123456789"	...Enter an ESSN here
+
+...<End Test Options>...
+
+...Error Messages
+
+E_NOSSN			INIT		"^^^ No SSN from LSU or OGB ^^^"
+E_LSU_NOSSN		INIT		"}}} OGB has SSN. LSU does NOT {{{"
+E_NOMEMREC		INIT		"*** NO OGB RECORD! ***"
+E_DIFFSSN		INIT		"+++ LSU & OGB have different SSNs +++"
+
+...Record Searching Variables
+
+AIM_SWITCH		FORM		1
+AIM_CNT			FORM		1	
+SEARCH_CNT		FORM		2
+OGB_REL			DIM		2	
+OGB_REL_05		DIM		2
+LSU_CC			DIM		2
+LSU_MM			DIM		2
+LSU_CCYY		DIM		4
+LSU_MMDD		DIM		4
+LSU_YYMMDD		DIM		6
+FNAME_3CHAR		DIM		3
+
+...Data Validity Variables
+
+OGB_PSSN_VALID		DIM		1
+PSSN_CHECK		DIM		9
+PSSN_CNT		FORM		2
+PSSN_CNT_FORM9		FORM		9
+OGB_PSSN_LEN		FORM		2
+
+...Clock Variables
+
+TIMESTAMP		DIM		14
+CURRDATE		DIM		8
+TRAP_DATA		DIM		500
+CAL_CLOCK		DIM		21
+ORIG_RETURN		FORM		5
+CURR_RETURN		FORM		5
+TODAY			DIM		8
+
+...Counter Controls
+
+X_CNT_ALL		FORM		8	
+CNT_FRACTION            FORM            4.3
+CNT_WHOLE               FORM            7
+CNT_ANS                 FORM            7.3
+CNT_DIV                 FORM            4
+
+...Printing Controls
+
+NORM_10			DIM		29
+BOLD_10			DIM		29
+NORM_12			DIM		26
+BOLD_12			DIM		26
+NORM_16			DIM		33
+BOLD_16			DIM		33
+
+ESC_CHAR		EQU		27
+XCAPE			INIT		ESC_CHAR
+
+PARAM_LIST		LIST
+PARAM_XXX		DIM		10
+PARAM_YYY		DIM		5
+PARAM_DATE		DIM		8
+			LISTEND
+
++ ------------------------------------------------------------------------------
++ Begin Program 
++ ------------------------------------------------------------------------------
+
+. ----------------------------------
+. Start here if selected from menu 
+. ----------------------------------
+
+	CALL		RUN_NOW
+
+	CHAIN		C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler
+. ---------------------------------------
+
+	INC	SCHED_NP.SR	...Scheduler routines (w/o printer)
+
+RUN_NOW
+
+...Check return stack
+
+	RETCOUNT	ORIG_RETURN
+
+. --------------------
+. Fill top of screen
+. --------------------
+
+...Screen Display
+ 
+	DISPLAY	*ES
+
+	MOVE	"MENU"				INTO	C_NEXT
+	MOVE	"Find Missing PSSN"		INTO	C_OPER
+	MOVE	"A1510231"			INTO	C_PROG
+	MOVE	BLANKS				INTO	C_LABEL
+	MOVE	BLANKS				INTO	C_FILE
+	MOVE	BLANKS				INTO	C_KEYS
+	CLOCK	CALENDAR			INTO	CAL_CLOCK
+         
+	CALL	X_BLANK_SCREEN
+
+. ----------------------
+. Set Applicable Traps 
+. ----------------------
+
+	TRAPSAVE	TRAP_DATA
+	TRAPCLR		ALL
+	TRAP		QUIT NORESET IF F9
+	
+. ---------------------------
+. Get scheduler information
+. ---------------------------
+
+	CALL		SCHED_PICK
+
+	IF (RUN_MODE = "B" OR RUN_MODE = "N")
+		CALL	MAIN_PROCESS
+	ENDIF
+
+	RETURN
+
++ ------------------------------------------------------------------------------
++ Main Process
++ ------------------------------------------------------------------------------
+
+MAIN_PROCESS
+
+...Use the LSU provided file to replace empty or invalid PSSNs in the OGB recs
+
+	DEBUG
+	CALL		INITIALIZE	
+	CALL		OPEN_FILES
+	CALL		PROCESS_FILE
+
+...Close Files
+
+	CALL		CLOSE_FILES
+
+...Normal End of Job Routine
+
+	CALL		NORMAL_EOJ
+
+   RETURN
+                                                   
++ ------------------------------------------------------------------------------
++ Sub-Routines 
++ ------------------------------------------------------------------------------
+
+. --------------------------------------------------------------
+. Draws screen header and returns the date the program was run
+. --------------------------------------------------------------
+
+INITIALIZE
+
+        DISPLAY *P1:9,*ES
+
+.	...From X_STANDARD.SR. Returns date and draws screen header
+        CALL    X_BLANK_SCREEN
+
+        CLOCK   TIMESTAMP       INTO    TIMESTAMP
+        CLOCK   TIMESTAMP       INTO    CURRDATE
+        CLOCK   TIMESTAMP       INTO    TODAY
+
+.	...Display Counters
+        MOVE    "LSU Recs Read:"		INTO	X_CNTDESC1
+        MOVE    "OGB Recs Updated:"		INTO	X_CNTDESC2
+        MOVE    "OGB Recs with PSSN:"		INTO	X_CNTDESC3
+        MOVE    "Rejected Recs:"		INTO    X_CNTDESC4
+        MOVE    "Not Used:"			INTO    X_CNTDESC5
+        MOVE    "Not Used:"			INTO    X_CNTDESC6
+
+...Standard Counters Display...
+...(1). Pass this routine up to 6 counter descriptions in fields
+...     x_cntdesc1 - x_cntdesc6 (specify "Not Used:" for unused fields).
+...(2). Accumulate counter values in fields x_cnt1 - x_cnt6.
+        
+        CALL    X_DISPLAY_COUNTS
+
+   RETURN
+
+. ---------------------------------------------------------------------
+. Opens and preps necessary files
+.	 Input:	LSU_NAME
+.	Output: A1510231.txt ... contains update recs for D_MEMMEM.CB
+.		A1510231.err ... errorfile
+. ---------------------------------------------------------------------
+
+OPEN_FILES
+
+...LSU Input File
+	CALL	OPEN_OGBFILE	USING	LSU_FD:
+					LSU_NAME
+
+...Impact Update File
+	CALL	PREP_OGBFILE	USING	IMP_UPDT_FD:
+					IMP_UPDT_NAME
+
+...Error Output File
+	IF  (TEST_OPT_WRITE = "T")
+		CALL	PREP_OGBFILE	USING	ERROR_FD:
+						ERROR_NAME
+	ENDIF
+
+   RETURN
+
+. -----------------------------------------------------------------------------
+. Reads through the LSU demographics files. For every new dependent record
+. find the corresponding MEM record by a series of tests. If there exists
+. a DSSN in the MEM record, skip to the next LSU record. If there is no DSSN
+. in the MEM record, pull the MEM data, add the DSSN from the LSU record,
+. then write all of that to a INM record that D_MEMMEM can read.
+. -----------------------------------------------------------------------------
+
+PROCESS_FILE
+
+	MESSAGE         HORZ="26",      VERT="20":
+                        BGCOL=C_DLGB,   FGCOL=C_DLGF:
+                        LNCOL=C_DLGL,   SHADE="y":
+                        TEXT="Searching for Missing DSSNs";
+
+   LOOP
+	
+	CLEAR	MEM_REC
+	CLEAR	MEM_LIST
+	CLEAR	MEM_AIM
+
+	MOVE	OGB_SEQ1	INTO	OGB_SEQ
+	CALL	READ_OGBFILE	USING	LSU_FD:
+					LSU_NAME:
+					LSU_LIST
+
+.	...Done with LSU_PSSN.txt
+	IF  (RESULT <> 1)
+		BREAK
+	ENDIF
+
+...Testing Conditions
+	IF  (TEST_OPT_ESSN = "T")
+	
+		IF  (SQUEEZE  LSU_ESSN = TEST_ESSN)
+			DEBUG
+		ENDIF
+	ENDIF
+
+.	...Tracks the number of records read from the LSU_NAME input file
+        MOVE    "1000"		INTO    CNT_DIV
+        MOVE    X_CNT1          INTO    X_CNT_ALL
+        CALL    COUNTER_ROUTINE
+        MOVE    X_CNT_ALL       INTO    X_CNT1
+
+
+...Find OGB_REL for current LSU rec. If LSU_REL is "F", this returns OGB_REL_05
+...to account for OGB having "F" records as 03 - child, or 05 - grandchild
+
+	CALL	FIND_OGB_REL
+
+.	...AIM_SWITCH variable cycles through seperate AIMDEX searches.
+	CLEAR	AIM_SWITCH
+	
+	MOVE	0	INTO	SEARCH_CNT
+
+...Cycle through various tests to find a MEM rec matching the LSU rec
+
+	FOR  AIM_CNT  FROM  1  TO  7 
+
+		ADD  1  TO	SEARCH_CNT
+		ADD  1	TO	AIM_SWITCH
+		CALL	FIND_MEM_REC
+
+		BREAK	IF	(SQUEEZE  MEM_REC <> "")
+
+	REPEAT	
+
+.	...Does OGB have a record for the LSU rec?
+	IF  (SQUEEZE  MEM_REC = "")
+		MOVE	E_NOMEMREC	INTO	ERROR_MSG
+		CALL	WRITE_ERROR_FILE
+
+		CONTINUE
+	ENDIF
+
+	IF  (SQUEEZE  LSU_PSSN = "")
+
+.	...Both LSU and OGB missing a SSN
+		IF  (SQUEEZE  MEM_PSSN = "")
+			MOVE	E_NOSSN		INTO	ERROR_MSG
+			CALL	WRITE_ERROR_FILE
+			
+			CONTINUE
+		ELSE
+.	...OGB has an SSN, but LSU does not.		
+			MOVE	E_LSU_NOSSN	INTO	ERROR_MSG
+			CALL	WRITE_ERROR_FILE
+
+			CONTINUE
+		ENDIF
+	ELSE
+
+...Add the SSN from the LSU file to the INM list, along with what part of
+...the MEM rec OGB already has. Then write the INM list to the output file.	
+		IF  (SQUEEZE  MEM_PSSN = "")
+			CALL	WRITE_MEMMEM_FILE
+		
+			CONTINUE
+		ELSE
+
+.	...LSU and OGB SSNs do not match. First, check if the OGB PSSN
+.	...is filler data: if so, use LSU data and write to MEMMEM. Else,
+.	...return error.
+			IF (MEM_PSSN <> (SQUEEZE  LSU_PSSN))
+				CALL	VALIDATE_OGB_PSSN
+
+.	...If OGB_PSSN_VALID is "F", then the OGB PSSN is a filler, and has been
+.	...updated from the LSU file. Go to next record. Else, OGB_PSSN_VALID
+.	...is "T" and both LSU and OGB have valid SSNs that aren't equal.
+				IF  (OGB_PSSN_VALID = "T")
+					
+					MOVE    E_DIFFSSN   INTO    ERROR_MSG
+					CALL    WRITE_ERROR_FILE
+				ENDIF
+
+				CONTINUE
+			ELSE
+
+.       ...MEM record is up-to-date
+				MOVE    "1000"           INTO    CNT_DIV
+				MOVE    X_CNT3          INTO    X_CNT_ALL
+				CALL    COUNTER_ROUTINE
+				MOVE    X_CNT_ALL       INTO    X_CNT3
+
+ 				CONTINUE
+			ENDIF
+		ENDIF
+	ENDIF
+ 
+   REPEAT
+
+...Displays the final count of all processes
+	
+	MESSAGEERASE
+	CALL	X_DISPLAY_COUNTS
+
+   RETURN
+
+. ------------------------------------------------------------------------
+. Fills out MEM_REC and MEM_LIST based off of various combinations 
+.
+. AIM_SWITCH variable cycles through the three seperate AIMDEX searches.
+. ---All tests use LSU's ESSN
+.
+. 1 = First Name + Relation Code
+. 2 = 3 bytes of First Name + MMDD of DOB
+. 3 = 3FName + Rel + CCYY
+. 4 = YYMMDD + Rel
+. 5 = 3FName + Rel + MM
+. 6 = 3FName + Rel
+. 7 = DOB
+.------------------------------------------------------------------------- 
+
+FIND_MEM_REC
+
+	CLEAR	MEM_AIM
+
+.	...All searches use the ESSN
+	PACK    MEM_AIM1        WITH    "01X":
+					(SQUEEZE  LSU_ESSN):
+					BLANKS
+
+	SWITCH	AIM_SWITCH
+
+...Search by First Name and Rel
+		CASE	1
+
+			PACK	MEM_AIM5	WITH	"05X":
+							LSU_D_FNAME:
+							BLANKS
+			
+			PACK	MEM_AIM3	WITH	"03X":
+							OGB_REL	
+
+...Search by first 3 of First Name and MMDD of DOB
+		CASE	2
+			
+			PACK	BLANKS		INTO	LSU_CCYY:
+							LSU_MMDD:
+							LSU_CC:
+							LSU_YYMMDD
+
+.	...Get the first three char of LSU Rec's first name
+			CLEAR	FNAME_3CHAR
+			UNPACK	LSU_D_FNAME	INTO	FNAME_3CHAR
+	
+			UNPACK	LSU_DOB		INTO	LSU_CCYY:
+					 		LSU_MMDD
+
+			PACK	MEM_AIM5	WITH	"05L":
+							FNAME_3CHAR:
+							BLANKS
+
+			PACK	MEM_AIM10	WITH	"10R":
+							LSU_MMDD
+
+...Search by first 3 of First Name, REL code and CCYY of DOB.
+		CASE	3	
+
+.	...Resets OGB_REL for first run
+			IF  (SEARCH_CNT = 4)
+				CALL	FIND_OGB_REL
+			ENDIF
+		
+			PACK	MEM_AIM5	WITH	"05L":
+							FNAME_3CHAR
+
+			PACK	MEM_AIM3	WITH	"03X":
+							OGB_REL
+
+			PACK	MEM_AIM10	WITH	"10L":
+							LSU_CCYY	
+
+...Search by YYMMDD of DOB and REL code. Catches left over records
+...where the FNAME is too different and the century of the DOB is
+...wrong
+		CASE	4
+
+			IF  (SEARCH_CNT = 6)
+				CALL    FIND_OGB_REL
+			ENDIF
+
+			UNPACK	LSU_DOB		INTO	LSU_CC:
+							LSU_YYMMDD
+
+			PACK	MEM_AIM3	WITH	"03X":
+							OGB_REL
+
+			PACK	MEM_AIM10	WITH	"10R":
+							LSU_YYMMDD	
+
+...Search by MM of DOB, REL code, and the First 3 of the First Name
+ 		CASE	5
+
+			IF  (SEARCH_CNT = 8)
+				CALL    FIND_OGB_REL
+			ENDIF
+			
+			UNPACK	LSU_MMDD	INTO	LSU_MM
+
+			PACK	MEM_AIM3	WITH	"03X":
+							OGB_REL
+			
+			PACK	MEM_AIM5	WITH	"05L":
+							FNAME_3CHAR
+
+			PACK	MEM_AIM10	WITH	"10F":
+							LSU_MM
+
+...Search by first 3 of First Name and REL alone.
+		CASE	6	
+
+			IF  (SEARCH_CNT = 10)
+				CALL    FIND_OGB_REL
+			ENDIF
+			
+			PACK	MEM_AIM3	WITH	"03X":
+							OGB_REL
+
+			PACK	MEM_AIM5	WITH	"05L":
+							FNAME_3CHAR 
+
+...Search by DOB. Catch-all, and thus the most prone to errors.
+                CASE	7 
+
+                        PACK    MEM_AIM10       WITH    "10X":
+                                                        (SQUEEZE  LSU_DOB):
+                                                        BLANKS
+
+		DEFAULT
+	ENDSWITCH
+
+	CALL	FILE_READ,	MEM_FD:		...File Declaration List
+				MEM_FN:		...File Name List
+				MEM_FC:		...(I)ndex or (A)imdex
+				MEM_FV:		...File Key Varlists
+				MEM_AIM:	...File Key Size
+				MEM_LIST:	...File Record (Field List)
+				MEM_REC:	...File Record (Packed)
+				MEM_OLD:	...File Saved When Read
+				MEM_QTY:	...Number of Files
+				2		...File Number for this Read
+
+	IF  (TEST_OPT_SEARCH = "T")
+		DEBUG
+	ENDIF
+
+...If the LSU_REL is "F", it could apply to multiple OGB_REL
+
+	IF  (SQUEEZE  MEM_REC = "")
+
+.	...OGB_REL_05 is assigned a value if LSU_REL is "F"
+		IF  (SQUEEZE  OGB_REL_05 <> "")
+	
+		   SWITCH	AIM_SWITCH
+
+			CASE  2  OR  4  OR  5  OR  6  OR  7
+	
+				IF  (OGB_REL <> OGB_REL_05)
+
+				   MOVE  OGB_REL_05	INTO	OGB_REL
+				   SUBTRACT  1		FROM	AIM_SWITCH
+				   MOVE  AIM_SWITCH	INTO	AIM_CNT
+
+				ENDIF
+		   ENDSWITCH
+		ENDIF
+	ENDIF
+
+   RETURN
+
+. ---------------------------------------------------------
+. Converts LSU relationship code to OGB relationship code
+.	Key:	LSU ->	S	M,C,F
+.		OGB ->	02	03
+. ---------------------------------------------------------
+
+FIND_OGB_REL
+
+	CLEAR	OGB_REL_05
+	CLEAR	OGB_REL
+
+	SWITCH	LSU_REL
+		CASE  "S"
+			MOVE	"02"	INTO	OGB_REL
+	
+		CASE  "M"  OR  "C"
+			MOVE	"03"	INTO	OGB_REL
+
+		CASE  "F"
+			MOVE	"03"	INTO	OGB_REL
+			MOVE	"05"	INTO	OGB_REL_05
+
+		DEFAULT
+			MOVE	BLANKS	INTO	OGB_REL
+	ENDSWITCH
+
+   RETURN
+
+. -----------------------------------------------------------------------------
+. Fills the MEM portion of the D_MEMMEM.CB record. Then adds the PSSN from the
+. LSU file. Then the record is written to the output file which will be used
+. to update IMPACT
+. -----------------------------------------------------------------------------
+
+WRITE_MEMMEM_FILE
+
+	CLEAR	INM_LIST
+
+	UNPACK	MEM_REC			INTO	INM_LIST
+	MOVE	(SQUEEZE  LSU_PSSN)	INTO	INM_PSSN
+
+	CLEAR	INM_CHGBY
+	
+	MOVE	OGB_SEQ1	INTO	OGB_SEQ
+	CALL	WRITE_OGBREC	USING	IMP_UPDT_FD:
+					IMP_UPDT_NAME:
+					INM_LIST
+
+.	...Counts the number of records to be updated
+	MOVE	"1000"		INTO	CNT_DIV
+	MOVE	X_CNT2		INTO	X_CNT_ALL
+	CALL	COUNTER_ROUTINE
+	MOVE	X_CNT_ALL	INTO	X_CNT2
+
+   RETURN
+
+. ----------------------------------------------------
+. Checks the OGB PSSN against common filler patterns
+. 	0's-9's and 123456789
+. ----------------------------------------------------
+
+VALIDATE_OGB_PSSN
+
+	MOVE	"T"	INTO	OGB_PSSN_VALID
+
+	IF  (MEM_PSSN = "123456789"  OR  MEM_PSSN = "000000000")
+		MOVE	"F"	INTO	OGB_PSSN_VALID
+		CALL	WRITE_MEMMEM_FILE
+		
+		RETURN
+	ENDIF
+
+.	...Check for MEM PSSNs which don't have 9 chars
+	COUNT	OGB_PSSN_LEN	FROM	MEM_PSSN
+	
+	IF  (OGB_PSSN_LEN <> 9)
+		MOVE	"F"	INTO	OGB_PSSN_VALID
+		CALL	WRITE_MEMMEM_FILE
+
+		RETURN
+	ENDIF
+
+	CLEAR	OGB_PSSN_LEN
+
+.	...Checks for "111111111" through "999999999"	
+	FOR  PSSN_CNT  FROM  1  TO  9
+		MULTIPLY  PSSN_CNT  BY  "111111111"  GIVING  PSSN_CNT_FORM9
+		MOVE	PSSN_CNT_FORM9	INTO	PSSN_CHECK
+	
+		IF  (PSSN_CHECK = MEM_PSSN)
+			MOVE	"F"	INTO	OGB_PSSN_VALID
+			CALL	WRITE_MEMMEM_FILE
+			
+			RETURN
+		ENDIF
+	REPEAT	
+
+   RETURN
+
+. ------------------------------------------------------------------
+. Errorfile write routine. Writes out identifying demographic info
+. and whatever is entered into ERROR_MSG. 
+. 
+. TEST_OPT_WRITE must be "T".
+. ------------------------------------------------------------------
+
+WRITE_ERROR_FILE
+
+.	...Counts the number of records that fail a test
+	MOVE	"100"		INTO	CNT_DIV
+	MOVE	X_CNT4		INTO	X_CNT_ALL
+	CALL	COUNTER_ROUTINE
+	MOVE	X_CNT_ALL	INTO	X_CNT4
+
+	IF  (TEST_OPT_WRITE = "T")
+
+.	...Finds the OGBID (if exists) and matches it to the record from the
+.	...LSU records
+
+		PACK	ERROR_ID1	WITH	MEM_ID1
+		PACK	ERROR_ESSN	WITH	LSU_ESSN
+		PACK	ERROR_D_LNAME	WITH	LSU_D_LNAME
+		PACK	ERROR_D_FNAME	WITH	LSU_D_FNAME
+		PACK	ERROR_LSU_PSSN	WITH	LSU_PSSN
+		PACK	ERROR_OGB_PSSN	WITH	MEM_PSSN
+		PACK	ERROR_DOB	WITH	LSU_DOB
+		PACK	ERROR_REL	WITH	OGB_REL
+
+		MOVE	OGB_SEQ1	INTO	OGB_SEQ
+		CALL	WRITE_OGBREC	USING	ERROR_FD:
+						ERROR_NAME:
+						ERROR_LIST
+	
+		CLEAR	ERROR_ID1, ERROR_ESSN, ERROR_D_LNAME:
+			ERROR_D_FNAME, ERROR_LSU_PSSN, ERROR_OGB_PSSN:
+			ERROR_DOB, ERROR_REL	
+	
+	ENDIF
+   RETURN
+
+. -----------------------------------------------------------------------------
+. Counter Routine: Pass CNT_DIV the refresh interval and the choice of counter
+. -----------------------------------------------------------------------------
+
+COUNTER_ROUTINE
+
+        ADD  1                  TO      X_CNT_ALL
+        DIVIDE  CNT_DIV         INTO    X_CNT_ALL	GIVING  CNT_ANS
+        MOVE    CNT_ANS         INTO    CNT_FRACTION
+        MOVE    CNT_ANS         INTO    CNT_WHOLE
+
+        IF  (CNT_WHOLE = CNT_FRACTION)
+                CALL    X_DISPLAY_COUNTS
+        ENDIF
+
+   RETURN
+
+. -------------------------
+. Closes all opened files
+. -------------------------
+
+CLOSE_FILES
+
+	CALL	CLOSE_OGBFILE	USING	LSU_FD:
+					LSU_NAME
+
+	CALL	CLOSE_OGBFILE	USING	IMP_UPDT_FD:
+					IMP_UPDT_NAME
+
+.	...Sorts the ERROR file by ERROR_MSG
+	IF  (TEST_OPT_WRITE = "T")
+		CALL	CLOSE_OGBFILE	USING	ERROR_FD:
+						ERROR_NAME
+		CLEAR	SCRATCH
+		PACK	SCRATCH		WITH	ERROR_NAME:
+						" ", ERROR_NAME:
+						" 90-160 -t"
+		SORT	SCRATCH
+
+	ENDIF
+
+   RETURN
+
+. --------------------------------
+. Quits when operator presses F9
+. --------------------------------
+
+QUIT
+	IF  (C_RMODE = "I")
+		ERROR	HORZ="23",	VERT="19":
+			BGCOL=C_ERRB,	FGCOL=C_ERRF:
+			LNCOL=C_ERRL,	SHADE="Y":
+			TEXT=" Process Aborted by Operator ":
+			TEXT="-----------------------------"
+		MESSAGEERASE	
+	ENDIF
+
+	CLEAR		C_NOHIST
+
+	TRAPREST	TRAP_DATA
+
+	IF (RUN_MODE = "B")
+		LOOP
+			RETCOUNT	CURR_RETURN
+			WHILE  (CURR_RETURN > ORIG_RETURN)
+			NORETURN
+		REPEAT
+		MOVE	SCH_RTABRT,	SCH@RTCODE
+ 	   RETURN
+	ENDIF
+
+   CHAIN	"MENU"
+
+. ---------------------------
+. Normal End of Job Routine
+. ---------------------------
+
+NORMAL_EOJ
+
+	MOVE	"NEOJ"			INTO	X_FINISH_STATUS
+	MOVE	"A1510231 Completed"	INTO	X_PROG_FINISH
+	CALL	X_END_OF_JOB
+
+...Return Control to Chain - End of Program
+
+        TRAPREST        TRAP_DATA
+        MOVE            SCH_RTSUCC      INTO    SCH@RTCODE
+
+   RETURN
+
+. -------------------------------------------------------------
+. Subroutines Found in Includes 
+. -------------------------------------------------------------
+
+	INC	CMDPARAM.SR
+	INC	FILE.IO
+	INC	PRINT.SR
+	INC	UTIL.SR
+	INC	VALID.IO
+	INC	X_OGBFILE.IO
+	INC	X_STANDARD.SR
+
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. End of <A1510231.ps> 
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

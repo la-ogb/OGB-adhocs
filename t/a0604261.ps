@@ -1,0 +1,353 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0604261.ps
++    Description    :  Create MEMO delete from list.                        
++    Author         :  apeks
++    Date created   :  04/20/2005
++    Project Number :  A0503221
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++   apeks  04/20/2004  A0503221 - DEV - Initial Version
++------------------------------------------------------------------------------
++                                REVISIONS
++------------------------------------------------------------------------------
++   apeks  06/27/2006  A0604261 - MOD - Fixed program problems
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demo File
+              INC       MEMO.RL              ...Member Other Coverage File
+              INC       MEME.RL              ...Member Enrollment File
+              INC       D_MEMO.RL            ...d_memo.ps load layout
+              INC       MEMCL.RL             ...Clinical History
+              
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+. Required fields to read memci file
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+.
+MASTER        DIM       @
+ENROLL_ID     DIM       @
+
+. -----------------------------
+...Output files
+. -----------------------------
+
+OUT_FILE      FILE  VAR=700,TEXT
+OUT_NAME      INIT  "x_mdfix.txt"
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+W_PROG          INIT    "mdfix"
+
+DIM2            DIM     2
+DIM3            DIM     3
+
+TIMESTAMP       DIM     14
+CURRDATE        DIM     8
+WRITE_COUNT     FORM    8
+ERROR_COUNT     FORM    8
+TRAP_DATA       DIM     500
+TODAY           DIM     8
+CAL_CLOCK       DIM     21
+ORIG_RETURN     FORM    5
+CURR_RETURN     FORM    5
+CNT1_4          DIM     4
+CNT1_3          DIM     3
+IN_FILE_RETCODE FORM    1
+MEM_RET_CODE    FORM    1
+MEMO_RET_CODE   FORM    1
+VAL_RET_CODE    FORM    1
+MEME_FOUND      INIT   "N"
+ESRD_FOUND      INIT   "N"
+FOUND_MEDA      INIT   "N"
+FOUND_MEDB      INIT   "N"
+HLD_STAT        DIM     1
+W_LOC           DIM     2
+LAST_RUN_DATE   DIM     8
+LAST_RUN_DATE6  DIM     6
+TODAY_CCYYMM    DIM     6
+L_CCYY          DIM     4
+L_MM            FORM    2
+L_DD            DIM     2
+T_CCYY          DIM     4
+T_MM            FORM    2
+T_DD            DIM     2
+NO_OF_MONTHS    FORM    2
+DATE_OF_65TH    DIM     8
+CHK_DATE        DIM     6
+LEV1_1          DIM     1
+JUNK2           DIM     2
+LEV1_2          DIM     2
+HOLD_RETIRE_DATE DIM    8
+O_EFF_CCYYMM    DIM     6
+O_TRM_CCYYMM    DIM     6
+NEW_MEMO_EFF    DIM     8
+UPDATED_MEDA    INIT   "N"
+UPDATED_MEDB    INIT   "N"
+ERR_SWT         INIT   "N"
+JUNK13          DIM    13
+JUNK17          DIM    17
+NOTE2_DATE      DIM    10
+NOTE2_MM        DIM     2
+NOTE2_DD        DIM     2
+NOTE2_CCYY      DIM     4
+NOTE3_DATE      DIM    10
+NOTE3_MM        DIM     2
+NOTE3_DD        DIM     2
+NOTE3_CCYY      DIM     4
+SLASH1          DIM     1
+SLASH2          DIM     1
+DATE_RSLT       DIM     2
+MEDA_NOTE_DATE  DIM     8
+MEDB_NOTE_DATE  DIM     8
+HOLD_MEDA_TRM   DIM     8
+HOLD_MEDB_TRM   DIM     8
+OUT_CCYY        DIM     4
+OUT_MM          DIM     2
+OUT_DD          DIM     2
+FRM_YES_NO      DIM     1
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+
+INP_FILE        FILE    VAR=25,TEXT
+INP_NAME        INIT    "/w/mdfix.inp"
+INP_LIST        LIST
+INP_MEM         DIM     8
+INP_MAXR        DIM     4
+                LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "MEMO DELETE" TO  C_OPER
+         MOVE      W_PROG                TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         CALL      GET_RECS  
+
+         CALL      NEOJ
+         
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Reformat files
+. ----------------------------
+
+GET_RECS  
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         
+         CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         LOOP
+            CALL READ_OGBFILE USING INP_FILE,INP_NAME,INP_LIST
+            IF (RESULT <> 1)
+               BREAK
+            ENDIF
+         
+            PACK MEMO_FK11 WITH INP_MEM,BLANKS
+            CALL      FILE_READ USING MEMO_FD:    ...File declaration list
+                      MEMO_FN:  ...File name list
+                      MEMO_FC:  ...(I)ndex or (A)imdex
+                      MEMO_FV:  ...File key varlists
+                      MEMO_FK:  ...File key sizes
+                      MEMO_LIST: ...File record (field list)
+                      MEMO_REC: ...File record (packed)
+                      MEMO_OLD: ...File saved when read
+                      MEMO_QTY: ...Number of files
+                      1         ...File number for this read
+            LOOP
+               CALL      FILE_NEXT USING MEMO_FD:    ...File declaration list
+                         MEMO_FN:  ...File name list
+                         MEMO_FC:  ...(I)ndex or (A)imdex
+                         MEMO_FV:  ...File key varlists
+                         MEMO_FK:  ...File key sizes
+                         MEMO_LIST: ...File record (field list)
+                         MEMO_REC: ...File record (packed)
+                         MEMO_OLD: ...File saved when read
+                         MEMO_QTY: ...Number of files
+                         1         ...File number for this read
+
+               WHILE (RESULT = 1)
+               WHILE (INP_MEM = MEMO_ID1)
+               
+               CONTINUE IF (MEMO_ID2 <= INP_MAXR)
+
+               debug
+               PACK MELO_REC WITH MEMO_LIST
+               UNPACK MELO_REC INTO MELO_LIST
+               CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,MELO_LIST  
+
+            REPEAT
+
+         REPEAT
+
+         RETURN
+         
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. -----------------------
+.   Normal End of Job  
+. -----------------------
+
+NEOJ
+
+. ...Normal End-Of-Job
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="23",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="PROGRAM COMPLETED NORMALLY":
+                          TEXT="----------------------------------":
+                          TEXT="  Press any key to continue       ":
+                          FIELD=WCHAR 
+         ENDIF
+
+
+
+
+. -------------------------------------------------------------
+.   Set up for reading Clinical records by I/O routine "POP.IO"
+. -------------------------------------------------------------
+
+SETPOP_MEMCL
+         MOVEADR   MEMCL_REC   TO POP_REC
+         MOVEADR   MEMCL_SW    TO POP_SW
+         MOVEADR   MEMCL_DECL  TO POP_DECL
+         MOVEADR   MEMCL_NAME  TO POP_NAME
+         MOVEADR   MEMCL_KEY   TO POP_KEY
+         MOVEADR   MEMCL_OLD   TO POP_OLD
+         MOVEADR   MEMCL_BASE  TO POP_ID
+         MOVEADR   MEMCL_LINE  TO POP_LINE
+         RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       POP.IO        
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of ELG0360.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,736 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0410211.PS
++    Description    :  Extracts member who have a status code of DECEAS and 
++                   :  do not have a death date filled in (MEM_DOD).  The      
++                   :  date of death needs to be calculated from the MEM_NOTE1 
++                   :  field or the last date of the month in which health   
++                   :  coverage was valid.                               
++    Author         :  Lisa Spurlock 
++    Date created   :  10/21/2004
++    Project #      :  a0410211
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                          REVISIONS
+.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       MEMO.RL           
+    INC       D_MEMMEM.CB          ...Member Import Layout
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+DECEAS_FILE       FILE      VAR=8,TEXT
+.DECEAS_NAME       INIT      "mem.deceas"  
+DECEAS_NAME       INIT      "/ogb/work/mem.deceas"  
+
+DECEAS_LIST       LIST
+DECEAS_KEY1       DIM       08
+                  LISTEND
+
+.~~~~~~~~~~OUTPUT FILES
+OUTPUT_FILE       FILE      VAR=2300,TEXT
+OUTPUT_NAME       INIT      "a0410211.out"
+.OUTPUT_NAME       INIT      "/ogb/work/a0410211.out"
+
+
+OUT_FILE          FILE      VAR=67,TEXT
+OUT_NAME          INIT      "/ogb/work/a0410211.txt"
+
+OUT_LIST     LIST
+OUT_MEM_ID1       DIM       08
+OUT_MEM_SSN       DIM       09
+OUT_MEM_REL       DIM       02
+OUT_DOD           DIM       08
+OUT_NOTE1         DIM       40
+             LISTEND
+
+ERR_FILE          FILE      VAR=50,TEXT
+ERR_NAME          INIT      "/ogb/work/a0410211.err"
+
+ERR_LIST     LIST
+ERR_ID1           DIM       08
+ERR_REL           DIM       02
+ERR_REASON        DIM       40
+             LISTEND
+
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+TODAY           	DIM      8
+TODAY_CCYY           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+ENR                     INIT     "01"
+SP1                     DIM      01      
+SP2                     DIM      01      
+BLANK6                  INIT     "      "
+BLANK8                  INIT     "        "
+HLD_MEME_NET            DIM      05  
+HLD_REC                 DIM      1300
+HLD_MEM_ESSN            DIM      09  
+FIRST_MEME_READ         DIM       1 
+INP_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+TERM_DATE               DIM      8
+
+WS_MEM_LIFE             DIM      02      
+WS_MEM_LIFE_END         DIM      04
+      
+DOD_MM                  DIM      02      
+DOD_DD                  DIM      02      
+DOD_CC                  DIM      02      
+DOD_YY                  DIM      02      
+
+DIMX                    DIM      01      
+DIM2                    DIM      01      
+
+DASH1                   DIM      01      
+DASH2                   DIM      01      
+
+WS_DOD_3                DIM      03      
+WS_DOD_37               DIM      37      
+
+WS_DECEA_8              DIM      08      
+WS_DECEA_32             DIM      32      
+
+ERROR_1                 INIT    "MEMBER RECORD ID NOT FOUND.             "
+ERROR_2                 INIT    "MEMBER HAS NO MEME RECORD TO CALC 'DOD' "
+ERROR_3                 INIT    "MEMBER HAS ACTIVE HEALTH AND/OR LIFE REC"
+
+TICKEY                  INIT     "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 		    chains to the print program
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "P0410211"                 TO    C_NEXT
+.     MOVE      "MENU"                     TO    C_NEXT
+      MOVE      "Correct MEM_DOD field"    TO    C_OPER
+      MOVE      "a0410211"                 TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+
+  CALL      INITIALIZE
+
+. ...Reformat MEM file
+  CALL      REFORMAT_MEM
+
+  DEBUG
+  CALL      OPEN_FILES
+  CALL      EXTRACT_OUTPUT_FILE    
+  CALL      CLOSE_FILES
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "P0410211"                 TO    C_NEXT
+. MOVE      "MENU"                     TO    C_NEXT
+  MOVE      "Correct MEM_DOD field"    TO    C_OPER
+  MOVE      "a0410211"                 TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Records to Update:   " TO X_CNTDESC2
+  MOVE "                     " TO X_CNTDESC3
+  MOVE "Error Records Found: " TO X_CNTDESC4
+  MOVE "Records Processed: " TO X_CNTDESC5
+  MOVE "                     " TO X_CNTDESC6
+  DISPLAY *ES
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+  UNPACK TODAY INTO TODAY_CCYY,TODAY_MM,TODAY_DD
+
+ RETURN
+
+.............................................................................
+
+.-------------------------------
+. Reformat MEM  file
+.-------------------------------
+REFORMAT_MEM 
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+...Get only records that contain something in the MEM_LIFE (Status Field) 
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "mem.dbf /ogb/work/mem.deceas":
+              " -p300-305ne#"",BLANK6,"#" 1-8 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(mem.deceas)"
+               CHAIN     "MENU"
+         ENDIF
+
+    SORT "/ogb/work/mem.deceas /ogb/work/mem.deceas 1-8 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(mem.deceas)"
+               CHAIN     "MENU"
+         ENDIF
+ 
+    RETURN
+
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+    CALL OPEN_OGBFILE USING DECEAS_FILE,DECEAS_NAME
+ 
+    CALL PREP_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+    CALL PREP_OGBFILE USING ERR_FILE,ERR_NAME
+
+    CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME   
+
+  RETURN
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file (mem.deceas)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING DECEAS_FILE,DECEAS_NAME,DECEAS_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the MEM file for the Member 
+
+        CLEAR     INM_REC
+        CLEAR     ERR_REASON
+        CLEAR     MEME_SAV
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH DECEAS_KEY1
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+
+... If the Member is not found, the program writes to an error file
+... and then continues to the next record to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            MOVE ERROR_1 TO ERR_REASON
+            MOVE "  "    TO ERR_REL    
+            CALL WRITE_ERROR_RECS 
+            CONTINUE         
+        ENDIF
+
+        MOVE MEM_ID1 TO OUT_MEM_ID1
+        MOVE MEM_ESSN TO OUT_MEM_SSN
+        MOVE MEM_REL TO OUT_MEM_REL
+        MOVE MEM_REL TO ERR_REL
+        PACK MEM_SAV WITH MEM_REC
+
+        UNPACK MEM_LIFE INTO WS_MEM_LIFE,WS_MEM_LIFE_END
+        IF (WS_MEM_LIFE = "DE")
+            IF (SQUEEZE MEM_DOD <> "")
+                CONTINUE
+            ENDIF
+        ELSE
+            CONTINUE
+        ENDIF
+
+        IF (SQUEEZE MEM_NOTE1 = "")
+            CALL READ_MEME
+            CONTINUE
+        ENDIF
+
+        UNPACK MEM_NOTE1 INTO WS_DOD_3,WS_DOD_37 
+        IF ((WS_DOD_3 = "DOD") AND (SQUEEZE WS_DOD_37 <> ""))
+          UNPACK WS_DOD_37 INTO SP1,SP2,DOD_MM,DASH1,DOD_DD,DASH2,DOD_CC,DOD_YY
+          IF (SP2 = " ")
+              CALL GET_DOD
+          ELSE
+            UNPACK WS_DOD_37 INTO SP1,DOD_MM,DASH1,DOD_DD,DASH2,DOD_CC,DOD_YY
+            IF ((SP1 = " ") OR (SP1 = "-"))
+                CALL GET_DOD
+            ELSE
+                CALL READ_MEME
+                CONTINUE         
+            ENDIF
+          ENDIF
+        ELSE
+         UNPACK MEM_NOTE1 INTO WS_DECEA_8,WS_DECEA_32
+         IF ((WS_DECEA_8 = "DECEASED") AND (SQUEEZE WS_DECEA_32 <> ""))
+         UNPACK WS_DECEA_32 INTO SP1,SP2,DOD_MM,DASH1,DOD_DD,DASH2,DOD_CC,DOD_YY
+           IF (SP2 = " ")
+             CALL GET_DECEASED
+           ELSE
+             UNPACK WS_DECEA_32 INTO SP1,DOD_MM,DASH1,DOD_DD,DASH2,DOD_CC,DOD_YY
+             IF ((SP1 = " ") OR (SP1 = "-"))
+               CALL GET_DECEASED
+             ELSE
+               CALL READ_MEME
+               CONTINUE         
+             ENDIF
+           ENDIF
+         ELSE
+           CALL READ_MEME
+           CONTINUE         
+         ENDIF
+        ENDIF
+
+GET_MEM_RET  
+  REPEAT
+ RETURN
+
+READ_MEME
+... Clearing the FIRST_MEME_READ Switch and Read the MEME record with the
+... Member's Record ID
+
+        MOVE " " TO FIRST_MEME_READ
+        CLEAR HLD_MEME_NET   
+        CLEAR TERM_DATE
+        CLEAR MEME_SAV
+        PACK MEME_FK11 WITH MEM_ID1,BLANKS
+ 
+        CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                             MEME_FN:             ...FILE NAME LIST
+                             MEME_FC:             ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                             MEME_FV:             ...FILE KEY VARLIST
+                             MEME_FK:             ...FILE KEY SIZES
+                             MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                             MEME_REC:            ...FILE RECORD (PACKED)
+                             MEME_OLD:            ...FILE SAVED WHEN READ
+                             MEME_QTY:            ...NUMBER OF FILES
+                             1                    ...FILE NUMBER FOR THIS READ
+
+        LOOP
+            CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST
+                                 MEME_FN:         ...FILE NAME LIST
+                                 MEME_FC:         ...TYPE OF INDEX
+.                                                 ...(I)NDEX or (A)IMDEX
+                                 MEME_FV:         ...FILE KEY VARLIST
+                                 MEME_FK:         ...FILE KEY SIZES
+                                 MEME_LIST:       ...FILE RECORD (FIELD LIST)
+                                 MEME_REC:        ...FILE RECORD (PACKED)
+                                 MEME_OLD:        ...FILE SAVED WHEN READ
+                                 MEME_QTY:        ...NUMBER OF FILES
+                                 1                ...FILE NUMBER FOR THIS READ
+
+... If NO MEME record is found, write to the error file and reads next record
+
+            IF (RESULT <> 1) 
+                MOVE ERROR_2 TO ERR_REASON
+                CALL WRITE_ERROR_RECS 
+                BREAK 
+            ENDIF
+
+... If not equal and the FIRST_MEME_READ switch is blank then reads next record
+
+            IF (MEM_ID1 <> MEME_ID1)
+                IF (FIRST_MEME_READ = " ")
+                    MOVE ERROR_2 TO ERR_REASON
+                    CALL WRITE_ERROR_RECS 
+                    GOTO READ_MEME_RET
+                ELSE 
+                    BREAK
+                ENDIF
+            ELSE
+                MOVE "N" TO FIRST_MEME_READ
+            ENDIF
+
+
+... Excludes Blank Fields              
+            IF (SQUEEZE MEME_NET = "") 
+               CONTINUE
+            ENDIF
+
+            IF (SQUEEZE MEME_TRM = "")
+                MOVE ERROR_3 TO ERR_REASON
+                CALL WRITE_ERROR_RECS 
+                GOTO READ_MEME_RET
+            ENDIF
+
+            IF (MEME_TRM >= TERM_DATE)
+                PACK TERM_DATE WITH MEME_TRM
+                PACK MEME_SAV WITH MEME_REC 
+            ENDIF
+
+        REPEAT
+
+        UNPACK MEME_SAV INTO MEME_LIST
+
+        PACK OUT_DOD WITH MEME_TRM
+        CALL WRITE_OUT_RECS
+
+READ_MEME_RET  
+  RETURN
+
+
+GET_DOD  
+    IF (SQUEEZE DOD_YY = "")
+      UNPACK DOD_CC INTO DIMX,DIM2                       
+      IF (DIMX = "0")
+          PACK DOD_CC WITH "20"
+          PACK DOD_YY WITH DIMX,DIM2
+          IF ((DOD_MM <= "12") AND (DOD_DD <= "31"))
+              PACK OUT_DOD WITH DOD_CC,DOD_YY,DOD_MM,DOD_DD
+              TYPE OUT_DOD   
+              IF NOT EQUAL
+                  MOVE MEM_NOTE1 TO ERR_REASON
+                  CALL WRITE_ERROR_RECS 
+                  GOTO GET_DOD_RET      
+              ENDIF
+              CALL WRITE_OUT_RECS 
+              GOTO GET_DOD_RET      
+          ELSE
+              MOVE MEM_NOTE1 TO ERR_REASON
+              CALL WRITE_ERROR_RECS 
+              GOTO GET_DOD_RET      
+          ENDIF
+      ELSE 
+        IF (DIMX = "1")
+          PACK DOD_CC WITH "19"
+          PACK DOD_YY WITH DIMX,DIM2
+          IF ((DOD_MM <= "12") AND (DOD_DD <= "31"))
+              PACK OUT_DOD WITH DOD_CC,DOD_YY,DOD_MM,DOD_DD
+              TYPE OUT_DOD   
+              IF NOT EQUAL
+                  MOVE MEM_NOTE1 TO ERR_REASON
+                  CALL WRITE_ERROR_RECS 
+                  GOTO GET_DOD_RET      
+              ENDIF
+              CALL WRITE_OUT_RECS 
+              GOTO GET_DOD_RET      
+          ELSE
+              MOVE MEM_NOTE1 TO ERR_REASON
+              CALL WRITE_ERROR_RECS 
+              GOTO GET_DOD_RET         
+          ENDIF
+        ELSE
+          CALL READ_MEME
+          GOTO GET_DOD_RET 
+        ENDIF
+      ENDIF
+    ELSE
+      UNPACK DOD_CC INTO DIMX,DIM2                       
+      IF ((DIMX = "1") OR (DIMX = "2"))
+          IF ((DOD_MM <= "12") AND (DOD_DD <= "31"))
+              PACK OUT_DOD WITH DOD_CC,DOD_YY,DOD_MM,DOD_DD
+              TYPE OUT_DOD   
+              IF NOT EQUAL
+                  MOVE MEM_NOTE1 TO ERR_REASON
+                  CALL WRITE_ERROR_RECS 
+                  GOTO GET_DOD_RET 
+              ENDIF
+              CALL WRITE_OUT_RECS 
+              GOTO GET_DOD_RET 
+          ELSE
+              CALL READ_MEME
+.             MOVE MEM_NOTE1 TO ERR_REASON
+.             CALL WRITE_ERROR_RECS 
+              GOTO GET_DOD_RET 
+          ENDIF
+      ELSE 
+          CALL READ_MEME
+          GOTO GET_DOD_RET 
+      ENDIF
+    ENDIF
+
+GET_DOD_RET  
+  RETURN
+
+
+GET_DECEASED  
+    IF (SQUEEZE DOD_YY = "")
+        UNPACK DOD_CC INTO DIMX,DIM2                       
+        IF (DIMX = "0")
+            PACK DOD_CC WITH "20"
+            PACK DOD_YY WITH DIMX,DIM2
+            IF ((DOD_MM <= "12") AND (DOD_DD <= "31"))
+                PACK OUT_DOD WITH DOD_CC,DOD_YY,DOD_MM,DOD_DD
+                TYPE OUT_DOD   
+                IF NOT EQUAL
+                    MOVE MEM_NOTE1 TO ERR_REASON
+                    CALL WRITE_ERROR_RECS 
+                    GOTO GET_DECEASED_RET 
+                ENDIF
+                CALL WRITE_OUT_RECS 
+                GOTO GET_DECEASED_RET 
+            ELSE 
+                MOVE MEM_NOTE1 TO ERR_REASON
+                CALL WRITE_ERROR_RECS 
+                GOTO GET_DECEASED_RET 
+            ENDIF
+        ELSE 
+            PACK DOD_CC WITH "19"
+            PACK DOD_YY WITH DIMX,DIM2
+            IF ((DOD_MM <= "12") AND (DOD_DD <= "31"))
+                PACK OUT_DOD WITH DOD_CC,DOD_YY,DOD_MM,DOD_DD
+                TYPE OUT_DOD   
+                IF NOT EQUAL
+                    MOVE MEM_NOTE1 TO ERR_REASON
+                    CALL WRITE_ERROR_RECS 
+                    GOTO GET_DECEASED_RET 
+                ENDIF
+                CALL WRITE_OUT_RECS 
+                GOTO GET_DECEASED_RET 
+            ELSE
+                MOVE MEM_NOTE1 TO ERR_REASON
+                CALL WRITE_ERROR_RECS 
+                GOTO GET_DECEASED_RET 
+            ENDIF
+        ENDIF
+    ELSE
+        IF ((DOD_MM <= "12") AND (DOD_DD <= "31"))
+            PACK OUT_DOD WITH DOD_CC,DOD_YY,DOD_MM,DOD_DD
+            TYPE OUT_DOD   
+            IF NOT EQUAL
+                MOVE MEM_NOTE1 TO ERR_REASON
+                CALL WRITE_ERROR_RECS 
+                GOTO GET_DECEASED_RET 
+            ENDIF
+            CALL WRITE_OUT_RECS 
+            GOTO GET_DECEASED_RET 
+        ELSE
+            CALL READ_MEME
+.           MOVE MEM_NOTE1 TO ERR_REASON
+.           CALL WRITE_ERROR_RECS 
+            GOTO GET_DECEASED_RET 
+        ENDIF
+    ENDIF
+
+GET_DECEASED_RET  
+  RETURN
+
+.##############################################################################
+WRITE_OUTPUT_RECS
+.##############################################################################
+.---------------
+...Write records
+.---------------
+
+
+.   PACK HLD_REC WITH MEM_SAV,MEME_SAV
+    PACK HLD_REC WITH MEM_SAV
+    UNPACK HLD_REC INTO INM_LIST
+    PACK INM_DOD  WITH OUT_DOD   
+    CALL WRITE_OGBREC USING OUTPUT_FILE:
+                            OUTPUT_NAME:
+                            INM_LIST
+
+    ADD 1 TO X_CNT2
+
+
+
+WRITE_OUTPUT_RECS_RET
+  RETURN
+
+.##############################################################################
+.
+.******************************************************************************
+WRITE_ERROR_RECS      
+.******************************************************************************
+ 
+    MOVE DECEAS_KEY1 TO ERR_ID1
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING ERR_FILE:
+                            ERR_NAME:
+                            ERR_LIST
+
+    ADD 1 TO X_CNT4
+
+  RETURN
+ 
+.
+.******************************************************************************
+WRITE_OUT_RECS      
+.******************************************************************************
+ 
+    MOVE MEM_NOTE1 TO OUT_NOTE1
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+
+    ADD 1 TO X_CNT5
+
+    CALL WRITE_OUTPUT_RECS
+
+  RETURN
+ 
+.
+.******************************************************************************
+ 
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+
+  CALL CLOSE_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  CALL CLOSE_OGBFILE USING ERR_FILE,ERR_NAME
+
+  CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+  RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "    A0410211  Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

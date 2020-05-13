@@ -1,0 +1,497 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0405032.PS 
++    Description    :  FIX-FIX VESTING ADDRESSES                             
++    APSJM 05/03/2004 A0405032  FIX-INITIAL VERSION            
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       RETVST.RL
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment   
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+O_VEST_FD       FILE    VAR=745,TEXT
+O_VEST_NAME     INIT    "/w/retvst.txt"
+.
+N_VEST_FD       FILE    VAR=783,TEXT
+N_VEST_NAME     INIT    "/w/n_vest.txt"
+N_VEST_LIST     LIST
+N_VEST_DIM783   DIM     783
+                LISTEND
+.
+LINK_FD         FILE    VAR=16,TEXT
+LINK_NAME       INIT    "/w/a0405032.link"
+LINK_LIST       LIST
+LINK_ID1        DIM     8
+LINK_EFF        DIM     8
+                LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+W_ADD1        DIM      35
+W_ADD2        DIM      35
+W_CITY        DIM      30
+W_STATE       DIM      2
+W_ZIP         DIM      13
+SVE_ACCU      DIM      8
+RETVST_REC    DIM      745
+TEST_ADD1     DIM      25
+N_VEST_REC    DIM      783
+W_DIM133      DIM      133 
+W_DIM77       DIM      77
+W_DIM535      DIM      535
+W_DIM1        DIM      1
+W_DIM3        DIM      3
+W_DIM2        DIM      2
+W_DIM4        DIM      4 
+LOOP_CNT      FORM  1
+ACCU_ID1      DIM   8
+LPTR          FORM  2
+FIRST_MEM_READ DIM  1
+SLASH         INIT  "/"
+DASH          INIT  "-"
+WS_CCYY       DIM   4
+WS_MM         DIM   2
+WS_DD         DIM   2
+WS_CTR        FORM  6
+WS_TRM_DTE    DIM  8
+EEFFDT        DIM  8
+SAVE_TRM      DIM  8
+SEND_SW       DIM  1
+MEM_RESULT    FORM 1
+BLANK8        INIT "        "
+N             INIT "N"     
+Y             FORM 2
+LIFE          INIT "LIFE "
+DIM8          INIT "        "
+DIM16         DIM  16               
+FORM2         FORM 2
+CNT_4         DIM  4
+CNT_3         DIM  3
+DIM2          DIM  2
+DIM19         DIM  19
+DIMMM         DIM  2
+DIMDD         DIM  2
+DIMCCYY       DIM  4
+WS_DIM1       DIM       1
+WS_DIM4       DIM       4
+WS_DOB        DIM       8
+WS_SSN        DIM       9
+WS_MEMID      DIM       8
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "menu"              TO  C_NEXT
+         MOVE      "FIX VEST ADDR" TO  C_OPER
+         MOVE      "A0405032"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+.        CALL      PRINT_PICK      .this routine gives the user a printer list
+.        RETURN    IF (RESULT = 2)
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_OLD_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_OLD_FILE
+ LOOP      
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING O_VEST_FD,O_VEST_NAME,RETVST_LIST      
+    IF (RESULT <> 1)
+         BREAK 
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    CALL PREP_OGBFILE USING LINK_FD,LINK_NAME 
+    CLEAR MEM_AIM
+    IF (RETVST_ESSN = RETVST_MSSN)
+      UNPACK RETVST_ESSN INTO W_DIM3,W_DIM1,W_DIM2,W_DIM1,W_DIM4
+      PACK  MEM_AIM1 WITH "01X",W_DIM3,W_DIM2,W_DIM4,BLANKS
+      PACK  MEM_AIM3 WITH "03X","01"                           
+    ELSE
+      UNPACK RETVST_ESSN INTO W_DIM3,W_DIM1,W_DIM2,W_DIM1,W_DIM4
+      PACK  MEM_AIM1 WITH "01X",W_DIM3,W_DIM2,W_DIM4,BLANKS
+      UNPACK RETVST_MSSN INTO W_DIM3,W_DIM1,W_DIM2,W_DIM1,W_DIM4
+      IF (SQUEEZE W_DIM3 <> "")
+        PACK  MEM_AIM2 WITH "02X",W_DIM3,W_DIM2,W_DIM4,BLANKS
+      ELSE
+        PACK RETVST_REC WITH RETVST_LIST
+        UNPACK RETVST_REC INTO W_DIM133,W_DIM77,W_DIM535
+        MOVE RETVST_ADDR1 INTO W_ADD1
+        SETLPTR W_ADD1 TO 35
+        UNPACK RETVST_ADDR2 INTO W_ADD2
+        SETLPTR W_ADD2 TO 35
+        UNPACK RETVST_CITY INTO W_CITY
+        SETLPTR W_CITY TO 30
+        UNPACK RETVST_STATE INTO W_STATE
+        UNPACK RETVST_ZIP INTO W_ZIP
+        SETLPTR W_ZIP TO 13
+        PACK N_VEST_REC WITH W_DIM133,W_ADD1,W_ADD2,W_CITY,W_STATE,W_ZIP,W_DIM535
+        UNPACK N_VEST_REC INTO N_VEST_LIST
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING N_VEST_FD,N_VEST_NAME,N_VEST_LIST
+        CONTINUE
+      ENDIF
+    ENDIF
+    CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                           MEM_FN:        ...FILE NAME LIST
+                           MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                           MEM_FV:        ...FILE KEY VARLISTS
+                           MEM_AIM:       ...FILE KEY SIZES
+                           MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                           MEM_REC:       ...FILE RECORD (PACKED)
+                           MEM_OLD:       ...FILE SAVED WHEN READ
+                           MEM_QTY:       ...NUMBER OF FILES
+                           2              ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+        PACK RETVST_REC WITH RETVST_LIST
+        UNPACK RETVST_REC INTO W_DIM133,W_DIM77,W_DIM535
+        MOVE RETVST_ADDR1 INTO W_ADD1
+        SETLPTR W_ADD1 TO 35
+        UNPACK RETVST_ADDR2 INTO W_ADD2
+        SETLPTR W_ADD2 TO 35
+        UNPACK RETVST_CITY INTO W_CITY
+        SETLPTR W_CITY TO 30
+        UNPACK RETVST_STATE INTO W_STATE
+        UNPACK RETVST_ZIP INTO W_ZIP
+        SETLPTR W_ZIP TO 13
+        PACK N_VEST_REC WITH W_DIM133,W_ADD1,W_ADD2,W_CITY,W_STATE,W_ZIP,W_DIM535
+        UNPACK N_VEST_REC INTO N_VEST_LIST
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING N_VEST_FD,N_VEST_NAME,N_VEST_LIST
+        CONTINUE
+        DEBUG 
+    ENDIF
+    MOVE MEM_ID1 TO ACCU_ID1
+    MOVE MEM_ID1 TO SVE_ACCU
+    MOVE 1 TO LOOP_CNT
+    CALL GET_MOST_CURR
+    CALL CLOSE_OGBFILE USING LINK_FD,LINK_NAME: 
+                                     LINK_LIST 
+    PACK SCRATCH WITH LINK_NAME," ",LINK_NAME," 9-16 -t -r"
+    SORT      SCRATCH
+       IF OVER
+          ERROR     HORZ="22",VERT="20":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT FAILED(a0405032.link)"     
+                    CHAIN     "MENU"
+       ENDIF
+    CALL OPEN_OGBFILE USING LINK_FD,LINK_NAME 
+    CALL READ_OGBFILE USING LINK_FD,LINK_NAME,LINK_LIST
+    IF (RESULT <> 1)
+          DEBUG
+          PACK RETVST_REC WITH RETVST_LIST
+          UNPACK RETVST_REC INTO W_DIM133,W_DIM77,W_DIM535
+          MOVE RETVST_ADDR1 INTO W_ADD1
+          SETLPTR W_ADD1 TO 35
+          UNPACK RETVST_ADDR2 INTO W_ADD2
+          SETLPTR W_ADD2 TO 35
+          UNPACK RETVST_CITY INTO W_CITY
+          SETLPTR W_CITY TO 30
+          UNPACK RETVST_STATE INTO W_STATE
+          UNPACK RETVST_ZIP INTO W_ZIP
+          SETLPTR W_ZIP TO 13
+          PACK N_VEST_REC WITH W_DIM133,W_ADD1,W_ADD2,W_CITY,W_STATE,W_ZIP,W_DIM535
+          UNPACK N_VEST_REC INTO N_VEST_LIST
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING N_VEST_FD,N_VEST_NAME,N_VEST_LIST
+          CONTINUE
+    ENDIF
+    PACK MEM_FK11 WITH LINK_ID1
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+        DEBUG
+    ENDIF
+    PACK RETVST_REC WITH RETVST_LIST
+    UNPACK RETVST_REC INTO W_DIM133,W_DIM77,W_DIM535
+    PACK N_VEST_REC WITH W_DIM133,MEM_ADDR1,MEM_ADDR2,MEM_CITY,MEM_STATE,MEM_ZIP,W_DIM535
+    UNPACK N_VEST_REC INTO N_VEST_LIST
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING N_VEST_FD,N_VEST_NAME,N_VEST_LIST
+    CONTINUE
+ REPEAT
+ RETURN 
+
+GET_MOST_CURR
+ LOOP
+    IF (LOOP_CNT <> 1)
+      IF (ACCU_ID1 = SVE_ACCU)
+         BREAK
+      ENDIF
+    ENDIF
+    IF (SQUEEZE ACCU_ID1 = "")
+       BREAK
+    ENDIF  
+    IF (LOOP_CNT > 7)
+       BREAK
+    ENDIF
+    PACK MEM_FK11 WITH ACCU_ID1
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+          ERROR     HORZ="22",VERT="20":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="READ FAILED(MEM-2)"     
+                    CHAIN     "MENU"
+    ENDIF
+    ADD 1 TO LOOP_CNT
+    MOVE MEM_ACCU TO ACCU_ID1
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             LOOP
+                CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+                IF ((MEM_ID1 <> MEME_ID1) OR (RESULT <> 1))
+                   BREAK
+                ENDIF
+                IF (SQUEEZE MEME_NET = "LIFE")
+                    CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                    MOVE "99999999" TO MEME_TRM
+                ENDIF               
+                IF (MEME_TRM < MEME_EFF)
+                    CONTINUE
+                ENDIF
+                MOVE MEME_ID1 TO LINK_ID1
+                MOVE MEME_EFF TO LINK_EFF
+                MOVE OGB_SEQ1 TO OGB_SEQ
+                CALL WRITE_OGBREC USING LINK_FD,LINK_NAME,LINK_LIST
+             REPEAT 
+ REPEAT
+ RETURN
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING O_VEST_FD,O_VEST_NAME
+         CALL      PREP_OGBFILE USING N_VEST_FD,N_VEST_NAME 
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING O_VEST_FD,O_VEST_NAME
+         CALL      CLOSE_OGBFILE USING N_VEST_FD,N_VEST_NAME 
+         RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of ELG4000.PS
+. +++++++++++++++++++++++++++++++++++++

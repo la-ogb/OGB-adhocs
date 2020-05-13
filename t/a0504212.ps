@@ -1,0 +1,432 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0504212.PS 
++    Description    :  Prints the over/under coverages                     
++    apsjm 02/02/2005 a0504211 dev - initial version                      
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+      	      INC	COMMON.CB	...Common work area
+              INC       X_COMMON.CB     ...OGB Common Work Area
+              INC     	PRT.RL	        ...Printer Definition File
+              INC       VALID.RL        ...Valid codes
+              INC       X_OGBFILE.CB    ...OGB Custom File Handler
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+COVL_ERR_FD     FILE    VAR=68,TEXT
+COVL_ERR_NAME   INIT    "/w/a0504211.txt"    
+COVL_ERR_LIST   LIST
+COVL_ERR_RID    DIM     8
+COVL_ERR_NET    DIM     5
+COVL_ERR_PRD    DIM     5
+COVL_ERR_DESC   DIM     50
+                LISTEND
+.
+.
+. ----------------------------
+. Detail Lines Definition
+. ----------------------------
+
+DET_REC      LIST
+..<Begin>..............................................................................
+DET_SP1       DIM	1 
+DET_RID       DIM       8
+DET_SP6       DIM	4 
+DET_ERR       DIM       50
+..<END>.........................................................................
+	      LISTEND
+
+. ----------------------------
+. Header Lines Definition
+. ----------------------------
+HDR1_REC      LIST
+..<BEGIN>..............................................................................
+H1FL_1	      DIM       53
+H1FL_2	      INIT      "Health Coverage Level Errors"
+..<END>.........................................................................
+	      LISTEND
+
+HDR2_REC      LIST
+..<BEGIN>..............................................................................
+H2DR_RID       INIT      "Record ID"
+H2DR_SP2       DIM       2                                   
+H2DR_ERR       INIT      "Error Message"
+..<END>.........................................................................
+             LISTEND
+
+HDR3_REC      LIST
+..<BEGIN>..............................................................................
+H3DR_RID       INIT      "---------"
+H3DR_SP2       DIM       2                                   
+H3DR_ERR       INIT      "-------------"
+..<END>.........................................................................
+             LISTEND
+
+. ----------------------------
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+BOLD_10	      DIM       29
+BOLD_12	      DIM       26
+BOLD_16	      DIM       33
+CAL_CLOCK     DIM       21         					.
+CNT1_4	      DIM       4                 
+CNT1_3	      DIM	3                    
+CNT3_4	      DIM       4                 
+CNT3_3	      DIM       3                 
+CURRDATE      DIM       8
+CURR_RETURN   FORM      5				     	            
+ESC_CHAR      EQU       27
+FIRST_PAGE    DIM	1 
+FIRST_READ    INIT	"Y"                
+ 
+LINE_MAX      FORM      "63"
+LINE_NO       FORM      3
+JUNK1 	      DIM	11
+JUNK2	      DIM	12
+NO	      INIT      "N"
+NORM_10	      DIM       29
+NORM_12	      DIM       26
+NORM_16	      DIM       33
+ORIG_RETURN   FORM      5          
+PAGE_NO       FORM      5      				     
+PARAM_LIST    LIST
+PARAM_XXX     DIM       10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM      	8
+       	      LISTEND
+PREM_FORM5    FORM	5.2
+R_DATE	      DIM       10
+R_PAGE_NO     DIM       5
+R_TIME	      DIM      	8
+TIMESTAMP     DIM	14    
+TODAY	      DIM	8   
+TOTFLAMT      FORM	5
+TRAP_DATA     DIM       500
+WLFLAG	      DIM	2  
+WRITE_COUNT   FORM	8           
+WS_AGY	      DIM	4 
+WS_LOC	      DIM	2   
+XCAPE         INIT      ESC_CHAR
+YES           INIT      "Y"
+
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+SRH_LEFT1     INIT	"Program name: "
+SRH_LEFT2     INIT	"Date Printed: "
+SRH_TITLE1    INIT	"   STATE OF LOUISIANA	 "
+SRH_TITLE2    INIT	"OFFICE	OF GROUP BENEFITS"
+SRH_RIGHT1    INIT	"Page Number: "
+SRH_RIGHT2    INIT	"Report	Time: "
+SRH_DASH      INIT	"-"
+
+. ----------------------------
+. Begin	Program
+. ----------------------------
+
+. ----------------------------
+. Start	here if	selected from menu
+. ----------------------------
+
+         CALL	   RUN_NOW
+ 
+         CHAIN	   C_NEXT
+
+. ----------------------------
+. Start	here if	called by the Scheduler
+. ----------------------------
+
+	 INC	   SCHED_WP.SR		    Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+	 RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         CLEAR X_CNT1
+	 MOVE	   "MENU"	       TO  C_NEXT
+	 MOVE	   "COV LVL ERRS" TO  C_OPER
+	 MOVE	   "ELG5510"	       TO  C_PROG
+	 MOVE	   BLANKS	       TO  C_LABEL
+	 MOVE	   BLANKS	       TO  C_FILE
+	 MOVE	   BLANKS	       TO  C_KEYS
+	 CLOCK	   CALENDAR	     INTO  CAL_CLOCK
+
+	 CALL      X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+
+. ...Set Applicable Traps
+	 TRAPSAVE  TRAP_DATA
+	 TRAPCLR   ALL
+	 TRAP	   QUIT	  NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+
+         MOVE      "00000025" TO C_PRTUSR
+	 CALL	   PRINT_PICK	   .this routine gives the user	a printer list
+	 RETURN	   IF (RESULT =	2)
+
+. ----------------------------
+. Get scheduler	information
+. ----------------------------
+
+	 CALL	   SCHED_PICK
+
+	 IF (RUN_MODE =	"B" OR RUN_MODE	= "N")
+	     CALL      MAIN_PROCESS
+	 ENDIF
+	 RETURN
+
++++++++++++++++++<BEGIN	MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         DEBUG
+
+. ...Initialize
+	 CALL	   INITIALIZE
+	
+. ...Open Files	
+	 CALL	   OPEN_FILES
+
+. ...Prepare Report
+	 CALL	   REPORT_PREP
+
+. ...Print Heading
+	 CALL	   PRINT_HEADING
+
+. ...Spool Report
+	 CALL	   PRINT_REPORT
+
+. ...Splclose and Send Spooled Report to Printer 
+         CALL      PRINT_DONE
+
+. ...Close Files & Printer Queue
+	 CALL	   CLOSE_FILES
+
+. ...Return Control Back to Chain - End	of Program	
+	 TRAPREST  TRAP_DATA
+	 MOVE	   SCH_RTSUCC  TO  SCH@RTCODE
+	 RETURN
+
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END	OF MAIN	PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+	 CLOCK	   TIMESTAMP INTO TIMESTAMP
+	 CLOCK	   TIMESTAMP INTO CURRDATE
+	 CLOCK	   TIMESTAMP TO TODAY
+
+. ...Display Counters
+	 MOVE	   "Records Read:     "	TO X_CNTDESC1
+	
+	 CALL	   X_DISPLAY_COUNTS
+
+	 RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+	 CALL	   OPEN_OGBFILE	USING COVL_ERR_FD,COVL_ERR_NAME
+
+	 RETURN
+
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+	 UNPACK	   TIMESTAMP   INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+	 PACK	   R_DATE      WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+	 PACK	   R_TIME      WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+	 MOVE	   0	       TO  WRITE_COUNT
+	 MOVE	   YES         TO  FIRST_PAGE
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+.Print Portrait 
+         PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+         PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+         PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+         PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+         PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+         PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s3b0T"
+         PACK      C_PRTFILE WITH OGB_PATH,"a0504212.prt" 
+  CALL   PRINT_PREP
+	 RETURN
+
+. ----------------------------
+. Print	the report heading
+. ----------------------------
+
+PRINT_HEADING
+
+	 ADD	   1	       TO  PAGE_NO
+	 MOVE	   PAGE_NO     TO  R_PAGE_NO
+
+	 IF (FIRST_PAGE	= YES)
+	     MOVE      NO	  TO  FIRST_PAGE
+	 ELSE
+	     PRINT     *F;
+	 ENDIF
+
+	 PRINT	   BOLD_16,*C
+
+         PRINT     SRH_LEFT1,C_PROG:
+                   *54,SRH_TITLE1:
+		   *110,SRH_RIGHT1,(SQUEEZE R_PAGE_NO):
+		   *N:
+		   SRH_LEFT2,R_DATE:
+		   *54,SRH_TITLE2:
+		   *110,SRH_RIGHT2,R_TIME
+	 MOVE	   2		 TO LINE_NO
+	 RETURN
+
+. ----------------------------
+. Print	Subheadings
+. ----------------------------
+
+PRINT_SUBHDGS
+
+	 PRINT	   HDR1_REC,*N,*N
+
+	 PRINT	   HDR2_REC:
+		   *N:
+		   HDR3_REC
+	 ADD       5 TO LINE_NO
+	 RETURN
+
+PRINT_REPORT
+	 LOOP
+	     IF	(LINE_NO > LINE_MAX)
+	         CALL      PRINT_HEADING
+	         CALL      PRINT_SUBHDGS
+	     ENDIF
+
+	     MOVE      OGB_SEQ1 TO OGB_SEQ
+	     CALL      READ_OGBFILE USING COVL_ERR_FD,COVL_ERR_NAME:
+                                          COVL_ERR_LIST
+	     IF	((RESULT <> 1) AND (FIRST_READ = "Y"))
+                 CALL      PRINT_SUBHDGS
+                 PRINT     *N,*N,*34,"NO RECORDS TO PRINT",*N,*N
+                 BREAK
+	     ENDIF
+	     IF	(RESULT	<> 1)
+		    BREAK
+	     ENDIF
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+               CALL X_DISPLAY_COUNTS
+             ENDIF
+	     IF	(FIRST_READ = "Y")
+                 CALL PRINT_SUBHDGS
+                 MOVE "N" TO FIRST_READ
+	     ENDIF
+
+	     MOVE      COVL_ERR_RID  TO DET_RID 
+             MOVE      COVL_ERR_DESC TO DET_ERR
+	     PRINT     DET_REC:
+	               *N
+	     ADD       2 TO LINE_NO
+
+	 REPEAT
+
+	 RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+	 IF (C_RMODE = "I")
+	     error     horz="23",vert="19":
+		       bgcol=C_ERRB,fgcol=C_ERRF:
+		       lncol=C_ERRL,shade="Y":
+		       text=" Process Aborted by	Operator ":
+		      text="-----------------------------"
+	     messageerase
+	 ENDIF
+
+	 CLEAR	   C_NOHIST
+
+	 TRAPREST  TRAP_DATA
+
+	 IF (RUN_MODE =	"B")
+	    LOOP
+	        RETCOUNT	 CURR_RETURN
+	        WHILE	 (CURR_RETURN >	ORIG_RETURN)
+	        NORETURN
+	    REPEAT
+	    MOVE      SCH_RTABRT  TO  SCH@RTCODE
+	    RETURN
+	 ENDIF
+	 CHAIN	   C_NEXT
+
+. ----------------------------
+. Close	Files
+. ----------------------------
+
+CLOSE_FILES
+
+	 CALL	   CLOSE_OGBFILE USING COVL_ERR_FD,COVL_ERR_NAME
+
+	 RETURN
+
+. ----------------------------
+. Subroutines and other	includes
+. ----------------------------
+
+	      INC	UTIL.SR
+	      INC	VALID.IO
+	      INC	PRINT.SR
+	      INC	X_STANDARD.SR
+	      INC	FILE.IO 
+	      INC	X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of ELG5510.PS
+. +++++++++++++++++++++++++++++++++++++

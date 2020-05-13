@@ -1,0 +1,296 @@
++    Program Name   :  a0710102.ps 
++    Description    :  Extracts libility file for LSU                   
++    apsjm 10/10/2007 a0710101 adh - initial version                      
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       VALID.RL
+              INC       X_OGBFILE.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL               Member Demographics File 
+              INC       MEMO.RL              Member Other Coverage       
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+.
+.
+LSU_I_DEM_FD      FILE    VAR=36,TEXT
+LSU_I_DEM_NAME    INIT      "/w/lsu_dem.txt"
+LSU_I_DEM_LIST    LIST
+LSU_I_DEM_ID1     DIM  8
+LSU_I_DEM_ESSN    DIM  9
+LSU_I_DEM_SEX     DIM  1
+LSU_I_DEM_REL     DIM  2
+LSU_I_DEM_DOB     DIM  8
+LSU_I_DEM_RETD    DIM  8
+                LISTEND
+SAVE_DEM          DIM  36
+.
+LSU_O_DEM_FD      FILE    VAR=52,TEXT
+LSU_O_DEM_NAME    INIT      "/w/lsuo_dem.txt"
+LSU_O_DEM_LIST    LIST
+LSU_O_DEM_ID1     DIM  8
+LSU_O_DEM_ESSN    DIM  9
+LSU_O_DEM_SEX     DIM  1
+LSU_O_DEM_REL     DIM  2
+LSU_O_DEM_DOB     DIM  8
+LSU_O_DEM_RETD    DIM  8
+LSU_O_DEM_MEDA    DIM  8
+LSU_O_DEM_MEDB    DIM  8
+                LISTEND
+LSU_O_DEM_REC     DIM  52
+
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+...Work file variables
+TODAY         INIT "20070831"
+W_ESSN        DIM  9
+LIFE          INIT "LIFE "
+B_DATE        DIM  8
+WAIVER        INIT      "WAIVER"
+DIM_1         DIM       1
+DIM_3         DIM       3
+FIRST_READ    DIM       1
+SP_DOB        DIM        8
+SP_SEX        DIM        1
+MYMEME_SRTKEY  INIT      "1-8 -t -u"
+FIRST_TIME     FORM      "1"
+
+BLANK8         INIT      "        "
+
+PARAM_LIST     LIST
+PARAM_FILL     DIM       1
+               LISTEND
+
+PARAM_DATE     DIM       8
+PARAM_FORM     FORM      8
+
+TRAP_DATA      DIM       500
+
+DIM_2          DIM       2
+ORIG_RETURN    FORM      5
+CURR_RETURN    FORM      5
+SEQ            FORM      "-1"
+CAL_CLOCK      DIM       21
+CURRDATE       DIM       8
+SWT_UPS        DIM       1
+SWT_REL        DIM       2
+SVE_MEMEKEY    DIM       12
+.Used to display screen counters
+CNT_5            DIM       5
+CNT_2            DIM       2
+
++ ------------------------------------------------------------------------
++   Begin Program
++ ------------------------------------------------------------------------
+
+START
+         CALL INITIAL
+.
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         CLOCK     CALENDAR             TO  CAL_CLOCK
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<EXTRACT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
+         TRAP      QUIT NORESET  IF F9
+. -----------------------
+. Ask to schedule or not
+. -----------------------
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         CHAIN C_NEXT 
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+. -------------------------------
+. Run Now
+. -------------------------------
+
+RUN_NOW
+         TRAPSAVE  TRAP_DATA
+         RETCOUNT  ORIG_RETURN
+
+         IF (RUN_MODE <> "N")
+            CALL INITIAL
+         ENDIF
+         CALL MAIN_PROCESS
+         MOVE      SCH_RTSUCC TO SCH@RTCODE
+         RETURN
+
+.--------------------
+MAIN_PROCESS
+.--------------------
+         DEBUG
+         CALL OPEN_FILES
+         CALL EXT_MED     
+         CALL CLOSE_FILES
+         RETURN
+
+EXT_MED           
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING LSU_I_DEM_FD,LSU_I_DEM_NAME,LSU_I_DEM_LIST
+
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+        PACKLEN SAVE_DEM WITH LSU_I_DEM_LIST
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF 
+        CALL GET_MED     
+        PACKLEN LSU_O_DEM_REC WITH SAVE_DEM,LSU_O_DEM_MEDA,LSU_O_DEM_MEDB
+        UNPACK LSU_O_DEM_REC INTO LSU_O_DEM_LIST
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING LSU_O_DEM_FD,LSU_O_DEM_NAME,LSU_O_DEM_LIST
+        CLEAR LSU_O_DEM_LIST
+    REPEAT
+    RETURN
+
+GET_MED
+  PACK MEMO_FK11 WITH LSU_I_DEM_ID1,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> LSU_I_DEM_ID1))
+          BREAK                  
+      ENDIF	
+
+      IF ((SQUEEZE MEMO_TRM <> "") AND (MEMO_TRM <= B_DATE))
+          CONTINUE
+      ENDIF
+
+      IF (SQUEEZE MEMO_EFF = "")
+          CONTINUE
+      ENDIF
+      IF (MEMO_VER <> "Y")
+          CONTINUE
+      ENDIF
+      SWITCH MEMO_TYPE
+             CASE "MEDA"
+                  PACK LSU_O_DEM_MEDA WITH MEMO_EFF,BLANKS 
+           CASE "MEDB"
+                  PACK LSU_O_DEM_MEDB WITH MEMO_EFF,BLANKS
+         ENDSWITCH
+  REPEAT
+
+  RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+    CALL PREP_OGBFILE USING LSU_O_DEM_FD,LSU_O_DEM_NAME               
+    CALL OPEN_OGBFILE USING LSU_I_DEM_FD,LSU_I_DEM_NAME               
+    RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+    RETURN
+
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+       IF (SQUEEZE C_SMODE = "")
+           error     horz="25",vert="17":
+                     bgcol=C_ERRB,fgcol=C_ERRF:
+                     lncol=C_ERRL,shade="Y":
+                     text="Operator Pressed":
+                     text="   F9 to Exit   "
+           messageerase
+       ENDIF
+++++++++++++++++++++++++++++<END OF MAIN PROCESS>++++++++++++++++++++++
+
+. -------------------------------
+. Initialize program info
+. -------------------------------
+INITIAL
+       CLOCK     TIMESTAMP INTO CURRDATE
+       MOVE      "menu"         TO C_NEXT
+       MOVE      "a0710102"  TO C_PROG
+       MOVE      "LSU LIB" TO C_OPER
+       MOVE      1 TO C_LEVEL
+       MOVE      BLANKS TO C_LABEL
+       MOVE      BLANKS TO C_FILE
+       MOVE      BLANKS TO C_KEYS
+
+. ...Display Counters
+	 MOVE      "Records Read:     " TO X_CNTDESC1
+	 MOVE      "Records Written:  " TO X_CNTDESC2
+	 MOVE      "                  " TO X_CNTDESC3
+	 MOVE      "                  " TO X_CNTDESC4
+	 MOVE      "                  " TO X_CNTDESC5
+	 MOVE      "                  " TO X_CNTDESC6
+	 
+       CALL DATE_CALC USING TODAY,"SUB","MONTHS",24,B_DATE       
+       RETURN
+
+. -------------------------------
+. Subroutines and other includes
+. -------------------------------
+
+       INC       UTIL.SR
+       INC       FILE.IO
+       INC       VALID.IO
+       INC       X_OGBFILE.IO
+       INC       X_STANDARD.SR

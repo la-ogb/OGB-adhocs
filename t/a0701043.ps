@@ -1,0 +1,487 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0701043.PS 
++    Description    :  CUS - TERMS DEFINITY ELIGIBILITY                    
++    Author         :  Stephen J. McDonald
++    APSJM A0701041 01/11/2007 - INITIAL VERSION                                
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       MEMO.RL          ...Member Other Cov     
+              INC       MEMS.RL          ...Member Salary        
+              INC       DEFINITY.RL      ...Definity Eligibility
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+              INC       EVE.RL 
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+DEF_WRK_FD    IFILE     VAR=275,KEYL=9,DUP,TEXT
+DEF_WRK_NME   INIT     "/w/defelgtrm.ix1"
+.
+DEF_SEQ_FD    FILE     VAR=275,TEXT
+DEF_SEQ_NME   INIT     "/w/defelgtrm.srt2"
+.
+DEF_KEY       DIM      9
+.
+U_DEF_FD      FILE     VAR=2300,TEXT
+U_DEF_NAME    INIT    "a0701043.txt"      
+.
+DEF_SKIP_FD   IFILE   VAR=24,KEYL=8,TEXT
+DEF_SKIP_NME  INIT    "/w/def_skip.ix1"
+DEF_SKIP_LIST LIST
+DEF_SKIP_ID1  DIM     8
+DEF_SKIP_REST DIM     16
+              LISTEND
+.
+INC_TRM_FD    FILE    VAR=283,TEXT
+INC_TRM_NME   INIT    "/w/a0701043_trm.txt"
+INC_TRM_LIST  LIST
+INC_TRM_REC   DIM     283
+              LISTEND
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+SUB_DEF_EFF   DIM       8
+SUB_DEF_TRM   DIM       8
+G_EFF         DIM       8
+G_TRM         DIM       8
+FIRST_READ    DIM       1
+G_SUB_EFF     DIM       8
+G_SUB_TRM     DIM       8
+DIFF_DAYS     FORM      5
+W_MMDD        DIM       4
+W_CCYY        DIM       4
+W_DEF_EFF     DIM       8
+W_DEF_TRM     DIM       8
+W_DEF_ID1    DIM        8
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "TRM DEF ELG" TO  C_OPER
+         MOVE      "A0701043"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_WRK_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_WRK_FILE
+ LOOP      
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING DEF_SEQ_FD,DEF_SEQ_NME,DEF_LIST
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACK DEF_REC WITH DEF_LIST
+    PACK W_DEF_TRM WITH DEF_TRM 
+    PACK W_DEF_EFF WITH DEF_EFF           
+    UNPACK DEF_GRPID INTO W_DEF_ID1
+    CALL READ_OGBFILE_IX USING DEF_SKIP_FD,DEF_SKIP_NME,W_DEF_ID1:
+                               DEF_SKIP_LIST
+    IF (RESULT = 1)
+        CONTINUE
+    ENDIF
+    PACK MEM_FK11 WITH W_DEF_ID1,BLANKS
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    CLEAR G_EFF
+    CLEAR G_TRM
+    PACK MEME_FK11 WITH W_DEF_ID1,BLANKS
+    CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                         MEME_FN:             ...FILE NAME LIST
+                         MEME_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEME_FV:             ...FILE KEY VARLIST
+                         MEME_FK:             ...FILE KEY SIZES
+                         MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEME_REC:            ...FILE RECORD (PACKED)
+                         MEME_OLD:            ...FILE SAVED WHEN READ
+                         MEME_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    LOOP 
+       CALL FILE_NEXT USING MEME_FD:             ...FILE DECLARATION LIST
+                            MEME_FN:             ...FILE NAME LIST
+                            MEME_FC:             ...TYPE OF INDEX
+.                                                ...(I)NDEX or (A)IMDEX
+                            MEME_FV:             ...FILE KEY VARLIST
+                            MEME_FK:             ...FILE KEY SIZES
+                            MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                            MEME_REC:            ...FILE RECORD (PACKED)
+                            MEME_OLD:            ...FILE SAVED WHEN READ
+                            MEME_QTY:            ...NUMBER OF FILES
+                            1                     ...FILE NUMBER FOR THIS READ
+        IF ((RESULT <> 1) OR (W_DEF_ID1 <> MEME_ID1))
+           BREAK    
+        ENDIF
+        IF (SQUEEZE MEME_NET <> "DEFIN")
+           CONTINUE
+        ENDIF
+        IF (SQUEEZE G_EFF = "")
+           PACK MEME_SAV WITH MEME_REC
+           MOVE MEME_EFF TO G_EFF
+           MOVE MEME_TRM TO G_TRM
+        ELSE
+           IF (MEME_EFF > G_EFF)
+              PACK MEME_SAV WITH MEME_REC
+              MOVE MEME_EFF TO G_EFF
+              MOVE MEME_TRM TO G_TRM
+           ENDIF
+        ENDIF
+    REPEAT
+    UNPACK MEME_SAV INTO MEME_LIST
+    IF (SQUEEZE G_EFF = "")
+       CONTINUE
+    ENDIF
+    IF (SQUEEZE G_TRM = "") 
+       MOVE "99999999" TO G_TRM
+    ENDIF
+    IF (DEF_REL <> "18")
+       CALL GET_SUB_TRM
+       IF (SQUEEZE G_SUB_TRM <> "") 
+         IF (G_SUB_TRM  < W_DEF_TRM)
+           MOVE G_SUB_TRM TO W_DEF_TRM
+         ENDIF
+       ENDIF
+    ENDIF
+.   IF (W_DEF_TRM < G_TRM)
+.     IF (MEME_EFF = W_DEF_EFF)
+.        IF (((MEME_CHGDT = "20070112") AND (SQUEEZE MEME_CHGBY = "CRSOH")):
+.             OR (MEME_CHGDT = "20070119"))
+.                MOVE "C" TO MEME_TLET
+.                MOVE TODAY TO MEME_TRUN
+.        ELSE
+.             CONTINUE
+.        ENDIF
+.     ELSE
+.             CONTINUE
+.     ENDIF
+.   ELSE
+    IF (W_DEF_TRM > G_TRM)
+      IF ((MEME_CHGDT = "20070116") AND (SQUEEZE MEME_CHGBY = "CRSOH"))
+      ELSE
+            CONTINUE
+      ENDIF
+    ELSE
+         CONTINUE
+    ENDIF
+    IF (W_DEF_TRM > TODAY)
+       MOVE "~" TO MEME_TLET
+       MOVE "~~~~~~~~" TO MEME_TRUN
+       MOVE "~~~~~~~~" TO MEME_TRM
+       CALL READ_EVE
+    ELSE
+       MOVE W_DEF_TRM TO MEME_TRM
+    ENDIF
+    PACK MEME_SAV WITH MEME_LIST
+    CLEAR MEMO_REC
+    CLEAR MEMS_REC
+    PACKLEN INM_REC WITH MEM_REC,MEME_SAV,MEMO_REC,MEMS_REC
+    UNPACK INM_REC INTO INM_LIST
+    MOVE BLANKS TO INME_CHGDT
+    MOVE BLANKS TO INME_NEWDT
+    MOVE BLANKS TO INME_CHGBY
+    MOVE BLANKS TO INME_NEWBY
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING U_DEF_FD,U_DEF_NAME,INM_LIST
+    CLEAR INM_LIST
+ REPEAT
+ RETURN
+
+GET_SUB_TRM
+ CLEAR G_SUB_EFF
+ CLEAR G_SUB_TRM
+ MOVE "Y" TO FIRST_READ
+ PACK DEF_KEY WITH DEF_EMPSSN
+ LOOP
+   IF (FIRST_READ = "Y")
+     CALL READ_OGBFILE_IX USING DEF_WRK_FD,DEF_WRK_NME,DEF_KEY,DEF_LIST
+     MOVE "N" TO FIRST_READ
+   ELSE
+     CALL READKS_OGBFILE_IX USING DEF_WRK_FD,DEF_WRK_NME,DEF_LIST
+   ENDIF
+   IF (RESULT <> 1)
+     BREAK
+   ENDIF
+   IF (DEF_REL <> "18")
+     CONTINUE
+   ENDIF
+   IF (DEF_KEY <> DEF_EMPSSN)
+     BREAK
+   ENDIF
+   PACK SUB_DEF_EFF WITH DEF_EFF                  
+   PACK SUB_DEF_TRM WITH DEF_TRM 
+   IF (SQUEEZE G_SUB_EFF = "")
+     MOVE SUB_DEF_EFF TO G_SUB_EFF       
+     MOVE SUB_DEF_TRM TO G_SUB_TRM
+   ELSE
+     IF (SUB_DEF_EFF > G_SUB_EFF)
+        MOVE SUB_DEF_EFF TO G_SUB_EFF       
+        MOVE SUB_DEF_TRM TO G_SUB_TRM
+     ENDIF
+   ENDIF
+ REPEAT
+ RETURN
+.
+READ_EVE
+        CLEAR EVE_AIM
+        PACK      EVE_AIM1 WITH "01X",W_DEF_ID1,BLANKS
+        PACK      EVE_AIM5 WITH "05X","LT",BLANKS
+        MOVE "Y" TO FIRST_READ
+...packing aimdex1 with patient record id number
+        LOOP
+            IF (FIRST_READ = "Y")
+                CALL      FILE_READ USING EVE_FD:    ...File declaration list
+                   EVE_FN:   ...File name list
+                   EVE_FC:   ...(I)ndex or (A)imdex
+                   EVE_FV:   ...File key varlists
+                   EVE_AIM:  ...File key sizes
+                   EVE_LIST: ...File record (field list)
+                   EVE_REC:  ...File record (packed)
+                   EVE_OLD:  ...File saved when read
+                   EVE_QTY:  ...Number of files
+                   2         ...File idx used (*custom*)
+                MOVE "N" TO FIRST_READ   
+            ELSE
+                CALL       FILE_NEXT USING EVE_FD:
+                   EVE_FN:   ...File name list
+                   EVE_FC:   ...(I)ndex or (A)imdex
+                   EVE_FV:   ...File key varlists
+                   EVE_AIM:  ...File key sizes
+                   EVE_LIST: ...File record (field list)
+                   EVE_REC:  ...File record (packed)
+                   EVE_OLD:  ...File saved when read
+                   EVE_QTY:  ...Number of files
+                   2         ...File idx used (*custom*)
+            ENDIF
+
+            BREAK IF (RESULT <> 1)
+            BREAK IF (EVE_MMEM <> W_DEF_ID1)
+
+            IF ((EVE_REAS1 = "TA") OR (EVE_REAS2 = "TA"))
+                IF (EVE_EFF = "20070116")
+                   PACK INC_TRM_REC WITH DEF_REC,G_TRM
+                   UNPACK INC_TRM_REC INTO INC_TRM_LIST
+                   MOVE OGB_SEQ1 TO OGB_SEQ
+                   CALL WRITE_OGBREC USING INC_TRM_FD,INC_TRM_NME,INC_TRM_LIST
+                   CLEAR INC_TRM_LIST
+                   BREAK
+                ENDIF
+            ENDIF
+        REPEAT
+        RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING INC_TRM_FD,INC_TRM_NME       
+         CALL      PREP_OGBFILE USING U_DEF_FD,U_DEF_NAME  
+         CALL      OPEN_OGBFILE_IX USING DEF_WRK_FD,DEF_WRK_NME
+         CALL      OPEN_OGBFILE USING DEF_SEQ_FD,DEF_SEQ_NME
+         CALL      OPEN_OGBFILE_IX USING DEF_SKIP_FD,DEF_SKIP_NME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING INC_TRM_FD,INC_TRM_NME       
+         CALL      CLOSE_OGBFILE USING U_DEF_FD,U_DEF_NAME  
+         CALL      CLOSE_OGBFILE_IX USING DEF_WRK_FD,DEF_WRK_NME
+         CALL      CLOSE_OGBFILE_IX USING DEF_SKIP_FD,DEF_SKIP_NME
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0701043.PS
+. +++++++++++++++++++++++++++++++++++++

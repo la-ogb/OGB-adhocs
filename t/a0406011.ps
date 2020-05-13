@@ -1,0 +1,511 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0406011.PS
++    Description    :  Identifies duplicate memo records for deletion.
++    apdlm 08/23/2004 A0406011 - Initial Version
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL
+              INC       MEMO.RL
+              INC       D_MEMO.RL
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+MMO_FILE     FILE      FIX=216,TEXT
+MMO_NAME     INIT      "a0406011memo.txt"
+
+MMO_RECORD         DIM     216  
+
+MMO_REC            LIST
+.<BEGIN>..................................................................
+MMO_HIC      DIM    12      0001 0012   .> Member HIC#
+MMO_LNAME    DIM    6       0013 0018   .> Member last name
+MMO_FINIT    DIM    1       0019 0019   .> Member first initial
+MMO_DOB      DIM    8       0020 0027   .> Member DOB
+MMO_SSN      DIM    17      0028 0044   .> Member SSN
+MMO_EFF      DIM    8       0045 0052   .> Effective Date (Medicare Secondary Payer)
+MMO_TRM      DIM    8       0053 0060   .> Term Date (Medicare Secondary Payer)
+MMO_REL      DIM    2       0061 0062   .> Member Relationship
+MMO_ESSN     DIM    9       0063 0071   .> Employee SSN
+MMO_MEMID1   DIM    8       0072 0079   .> Impact Member ID
+MMO_MEMID2   DIM    4       0080 0083   .> Impact Memo Last 4
+MMO_JDTE     DIM    7       0084 0090   .> Julian year and date in original file
+MMO_RANK     DIM    1       0091 0091   .> Rank 0=active, 1=retiree
+MMO_QUIK1    DIM    40      0092 0131   .> Quick Note 1
+MMO_QUIK2    DIM    40      0132 0171   .> Quick Note 2
+MMO_QUIK3    DIM    40      0172 0211   .> Quick Note 3
+MMO_VERIFY   DIM    1       0212 0212   .> Verify
+MMO_TYPE     DIM    4       0213 0216   .> COB Type
+..<END>...................................................................
+                   LISTEND 
+
+SAVE_MMO_REC            LIST
+.<BEGIN>..................................................................
+SAVE_MMO_HIC      DIM       12       0001 0012    .> Member HIC#
+SAVE_MMO_LNAME    DIM       6        0013 0018    .> Member last name
+SAVE_MMO_FINIT    DIM       1        0019 0019    .> Member first initial
+SAVE_MMO_DOB      DIM       8        0020 0027    .> Member DOB
+SAVE_MMO_SSN      DIM       17       0028 0044    .> Member SSN
+SAVE_MMO_EFF      DIM       8        0045 0052    .> Effective Date (Medicare Secondary Payer)
+SAVE_MMO_TRM      DIM       8        0053 0060    .> Term Date (Medicare Secondary Payer)
+SAVE_MMO_REL      DIM       2        0061 0062    .> Member Relationship
+SAVE_MMO_ESSN     DIM       9        0063 0071    .> Employee SSN
+SAVE_MMO_MEMID1   DIM       8        0072 0079    .> Impact Member ID
+SAVE_MMO_MEMID2   DIM       4        0080 0083    .> Impact Memo Last 4
+SAVE_MMO_JDTE     DIM       7        0084 0090    .> Julian year and date in original file
+SAVE_MMO_RANK     DIM       1        0091 0091    .> Rank 0=active, 1=retiree
+SAVE_MMO_QUIK1    DIM       40       0092 0131    .> Quick Note 1
+SAVE_MMO_QUIK2    DIM       40       0132 0171    .> Quick Note 2
+SAVE_MMO_QUIK3    DIM       40       0172 0211    .> Quick Note 3
+SAVE_MMO_VERIFY   DIM       1        0212 0212    .> Verify
+SAVE_MMO_TYPE     DIM       4        0213 0216    .> COB Type
+..<END>...................................................................
+                   LISTEND 
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+
+MELO_NAME1    INIT  "memodel.txt"
+MMO_NAME1     DIM   30
+
+...enrollee SSN, relation code, medtype UNIQUE
+MMO_SRTKEY    INIT  "213-216 72-79 45-52 -R -T"
+
+
+TYPE3         DIM   3
+TYPE1         DIM   1
+SWT_MEDA      DIM   1
+SWT_MEDB      DIM   1
+SWT_R1        DIM   1
+SWT_R2        DIM   1
+CNT_RATE      FORM  1
+CURRENT_SWT   DIM   1
+
+HLD_MEM_REL   DIM   2
+HLD_MMO_ESSN  DIM   9
+HLD_MEM_ESSN  DIM   9
+HLD_MEMO_ID1  DIM   8       .> Last member read
+HLD_MEMO_ID2  DIM   4       .> Last member read
+HLD_RATE      DIM   2       .> R1 or R2
+HLD_MEM_ID1   DIM   8
+ENR_FNAME     DIM  15
+ENR_LNAME     DIM  20
+ENR_ID1       DIM   8
+
+FIRST_READ    DIM   1
+FIRST_MEMO    INIT  "Y"
+SPACES        DIM   8
+
+MEMO_RESULT2  FORM 1
+MEMO_RESULT   FORM 1
+MEM_RESULT    FORM 1
+MMO_RESULT    FORM 1
+
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "" TO  C_OPER
+         MOVE      ""           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   
+   CALL INITIALIZE
+ 
+   CALL PROCESS_MEMO_WRK
+   
+   DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+. ----------------------------
+. Write records 
+. ----------------------------
+WRITE_REC 
+  
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING MELO_SEQ,MELO_NAME1,MELO_LIST
+
+        ADD 1 TO X_CNT3
+        UNPACK X_CNT3 INTO CNT_4,CNT_3
+        IF (CNT_3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+    RETURN
+. ----------------------------
+.
+. ----------------------------
+PROCESS_MEMO_WRK
+
+        PACK MEMO_FK11 WITH BLANKS
+        CALL FILE_READ USING MEMO_FD:    ...File declaration list
+                      MEMO_FN:          ...File name list
+                      MEMO_FC:          ...(I)ndex or (A)imdex
+                      MEMO_FV:          ...File key varlists
+                      MEMO_FK:          ...File key sizes
+                      MEMO_LIST:        ...File record (field list)
+                      MEMO_REC:         ...File record (packed)
+                      MEMO_OLD:         ...File saved when read
+                      MEMO_QTY:         ...Number of files
+                      1                 ...File number for this read
+
+    LOOP
+        CALL FILE_NEXT USING MEMO_FD:    ...File declaration list
+                      MEMO_FN:          ...File name list
+                      MEMO_FC:          ...(I)ndex or (A)imdex
+                      MEMO_FV:          ...File key varlists
+                      MEMO_FK:          ...File key sizes
+                      MEMO_LIST:        ...File record (field list)
+                      MEMO_REC:         ...File record (packed)
+                      MEMO_OLD:         ...File saved when read
+                      MEMO_QTY:         ...Number of files
+                      1                 ...File number for this read
+
+        ADD 1 TO X_CNT3
+        UNPACK X_CNT3 INTO CNT_4,CNT_3
+        IF (CNT_3 = "025")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        MOVE RESULT TO MEMO_RESULT
+        IF (MEMO_RESULT <> 1) 
+            BREAK
+        ENDIF
+
+        CONTINUE IF ((SQUEEZE MEMO_TRM <>"") AND (MEMO_TRM <= CURRDATE))
+        UNPACK MEMO_TYPE INTO TYPE3,TYPE1
+        CONTINUE IF (TYPE3 <> "MED")
+
+        CALL WRITE_WORK_REC
+
+        CLEAR MMO_REC 
+
+    REPEAT
+  
+    CALL CLOSE_OGBFILE USING MMO_FILE,MMO_NAME1
+    CALL SORT_OGBFILE USING MMO_NAME1,MMO_NAME1,MMO_SRTKEY 
+        IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED"
+               CHAIN     "menu"
+        ENDIF
+
+    CALL OPEN_OGBFILE USING MMO_FILE,MMO_NAME1
+
+    CALL READ_MMO_WORK
+ 
+    RETURN
+
+. ----------------------------
+. Writing out work record of memo rec
+. ----------------------------
+WRITE_WORK_REC
+
+    CALL READ_MEM
+
+        MOVE MEMO_POL   TO MMO_HIC
+        MOVE MEMO_EFF   TO MMO_EFF
+        MOVE MEMO_TRM   TO MMO_TRM
+        MOVE MEMO_ID1   TO MMO_MEMID1
+        MOVE MEMO_ID2   TO MMO_MEMID2
+        MOVE MEMO_RANK  TO MMO_RANK
+        MOVE MEMO_NOTE1 TO MMO_QUIK1
+        MOVE MEMO_NOTE2 TO MMO_QUIK2
+        MOVE MEMO_NOTE3 TO MMO_QUIK3
+        MOVE MEMO_VER   TO MMO_VERIFY
+        MOVE MEMO_TYPE  TO MMO_TYPE
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING MMO_FILE,MMO_NAME1,MMO_REC
+
+    ADD 1 TO X_CNT4
+    UNPACK X_CNT4 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+         CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+
+. ----------------------------
+. Read mem.dbf   
+. ----------------------------
+READ_MEM
+
+    PACK      MEM_FK11 WITH MEMO_ID1
+
+    CALL      FILE_READ USING MEM_FD:    ...File declaration list
+        MEM_FN:   ...File name list
+        MEM_FC:   ...(I)ndex or (A)imdex
+        MEM_FV:   ...File key varlists
+        MEM_FK:   ...File key sizes
+        MEM_LIST: ...File record (field list)
+        MEM_REC:  ...File record (packed)
+        MEM_OLD:  ...File saved when read
+        MEM_QTY:  ...Number of files
+        1         ...File number for this read
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1) 
+            RETURN
+        ENDIF
+
+        MOVE MEM_LNAME TO MMO_LNAME
+        MOVE MEM_FNAME TO MMO_FINIT
+        MOVE MEM_DOB   TO MMO_DOB
+        MOVE MEM_PSSN  TO MMO_SSN
+        MOVE MEM_ESSN  TO MMO_ESSN
+        MOVE MEM_REL   TO MMO_REL
+        MOVE MEM_ESSN  TO MMO_ESSN
+
+    RETURN
+
+. ----------------------------
+. Read mmo work file and checking the rate
+. ----------------------------
+READ_MMO_WORK
+  DEBUG
+    MOVE "Y" TO FIRST_READ
+    LOOP
+
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        MOVE MMO_NAME TO C_FILE
+        CALL READ_OGBFILE USING MMO_FILE, MMO_NAME1, MMO_REC
+
+        MOVE RESULT TO MMO_RESULT
+        IF (MMO_RESULT <> 1)
+            BREAK
+        ENDIF
+            
+        IF ((FIRST_READ <> "Y") AND (MMO_MEMID1 = SAVE_MMO_MEMID1)) 
+            PACK MMO_RECORD WITH SAVE_MMO_REC
+            UNPACK MMO_RECORD INTO MELO_LIST
+            CALL WRITE_REC
+.            CALL WRITE_MEMO_REC
+        ENDIF
+
+        IF (FIRST_READ = "Y")
+            MOVE "N" TO FIRST_READ
+        ENDIF
+
+        PACK MMO_RECORD WITH MMO_REC
+        UNPACK MMO_RECORD INTO SAVE_MMO_REC
+
+    REPEAT
+
+    RETURN
+
+. ----------------------------
+. Write records from MEMO process
+. ----------------------------
+WRITE_MEMO_REC
+   
+    IF ((MMO_EFF > SAVE_MMO_EFF) AND (MMO_TYPE = SAVE_MMO_TYPE))
+        PACK MMO_RECORD WITH SAVE_MMO_REC
+        UNPACK MMO_RECORD INTO MELO_LIST
+        CALL WRITE_REC
+    ENDIF
+
+    UNPACK X_CNT5 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Initialize
+. ----------------------------
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "              " TO X_CNTDESC1
+	 MOVE      "                 " TO X_CNTDESC2
+	 MOVE      "MEMO Recs Read" TO X_CNTDESC3
+	 MOVE      "WORK MEMO RECS   " TO X_CNTDESC4
+	 MOVE      "MEMO Recs Written" TO X_CNTDESC5
+
+         CALL X_DISPLAY_COUNTS
+
+         PACK MMO_NAME1 WITH OGB_PATH, MMO_NAME
+
+         CALL OPEN_FILES 
+
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+ 
+        CALL PREP_OGBFILE USING MELO_SEQ,MELO_NAME1
+        CALL PREP_OGBFILE USING MMO_FILE,MMO_NAME1
+
+        RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+CLOSE_FILES
+   
+         CALL CLOSE_OGBFILE USING MELO_SEQ,MELO_NAME1
+         CALL CLOSE_OGBFILE USING MMO_FILE,MMO_NAME1
+
+         RETURN
+
+. ----------------------------
+. Includes
+. ----------------------------
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of 
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,423 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0511291.PS
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Enrollment   
+              INC       MEME.RL
+              INC       CLI.RL
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+CLI_ERR_FD    FILE    VAR=25,TEXT
+CLI_ERR_NAME  INIT     "/w/cli_err.txt"
+CLI_ERR_LIST      LIST
+CLI_ERR_SSN       DIM     9
+CLI_ERR_ID1       DIM     8
+CLI_ERR_CLIR      DIM     8
+                  LISTEND
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+.
+ZIP_CSV_RESULT FORM 1
+W_DIM1        DIM  1
+FIRST_READ    DIM  1
+WS_AGE        DIM  3
+W_DIM5        DIM  5
+SVE_ACCU      DIM  8
+ACCU_ID1      DIM  8
+LOOP_CNT      FORM 1
+SVE_LINK_ID   DIM  8
+SVE_LINK_SSN  DIM  9
+MAIN_LOOP_ID  DIM  8
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "A0512071" TO  C_OPER
+         MOVE      "CLI ID ERRS"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL OPEN_FILES
+   CALL PROCESS_MEM
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+.
+PROCESS_MEM
+  PACK   MEM_FK11 WITH BLANKS   
+  CALL   FILE_READ USING MEM_FD:    ...File declaration list
+               MEM_FN:   ...File name list
+               MEM_FC:   ...(I)ndex or (A)imdex
+               MEM_FV:   ...File key varlists
+               MEM_FK:   ...File key sizes
+               MEM_LIST: ...File record (field list)
+               MEM_REC:  ...File record (packed)
+               MEM_OLD:  ...File saved when read
+               MEM_QTY:  ...Number of files
+               1         ...File number for this read
+     LOOP
+          CALL      FILE_NEXT USING MEM_FD:    ...File declaration list
+                     MEM_FN:   ...File name list
+                     MEM_FC:   ...(I)ndex or (A)imdex
+                     MEM_FV:   ...File key varlists
+                     MEM_FK:   ...File key sizes
+                     MEM_LIST: ...File record (field list)
+                     MEM_REC:  ...File record (packed)
+                     MEM_OLD:  ...File saved when read
+                     MEM_QTY:  ...Number of files
+                     1         ...File number for this read
+          BREAK IF (RESULT <> 1)
+          ADD 1 TO X_CNT1
+          UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+          IF (CNT1_3 = "000")
+              CALL X_DISPLAY_COUNTS
+          ENDIF
+          IF ((SQUEEZE MEM_TRM <> "") AND (MEM_TRM < CURRDATE))
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEM_DOD <> "")
+             CONTINUE
+          ENDIF
+          IF (MEM_REL <> "01")
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEM_RETD = "")
+             CONTINUE
+          ENDIF
+          PACK MEME_FK11 WITH MEM_ID1,BLANKS
+          CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             LOOP
+                CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+                IF ((MEM_ID1 <> MEME_ID1) OR (RESULT <> 1))
+                   BREAK
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                    CONTINUE
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < CURRDATE))
+                   CONTINUE
+                ENDIF
+                UNPACK MEME_LEV1 INTO W_DIM1
+                IF (W_DIM1 = "R")
+                  CALL GET_CLI_ID
+                  IF (CLI_ID1 <> MEME_CLIR)
+                     MOVE MEM_ESSN TO CLI_ERR_SSN
+                     MOVE MEME_ID1 TO CLI_ERR_ID1
+                     IF (RESULT <> 1)
+                        MOVE BLANKS TO CLI_ERR_CLIR
+                     ELSE
+                        MOVE CLI_ID1 TO CLI_ERR_CLIR 
+                     ENDIF
+                     MOVE OGB_SEQ1 TO OGB_SEQ
+                     CALL WRITE_OGBREC USING CLI_ERR_FD,CLI_ERR_NAME:
+                                             CLI_ERR_LIST
+                     CLEAR CLI_ERR_LIST
+                     CALL READ_DEPS
+                     BREAK
+                  ENDIF
+                ENDIF   
+             REPEAT
+     REPEAT
+     RETURN
+
+GET_CLI_ID
+   CLEAR CLI_AIM
+   PACK CLI_AIM1 WITH "01X",MEME_LEV1
+   PACK CLI_AIM2 WITH "02X",MEME_LEV2
+   CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                             CLI_FN:      ...File Name List
+                             CLI_FC:      ...(I)ndex Or (A)imdex
+                             CLI_FV:      ...File Key Varlists
+                             CLI_AIM:     ...File Key Sizes
+                             CLI_LIST:    ...File Record (Field List)
+                             CLI_REC:     ...File Record (Packed)
+                             CLI_OLD:     ...File Saved When Read
+                             CLI_QTY:     ...Number Of Files
+                             2            ...File Number For This Read
+
+   RETURN 
+
+READ_DEPS   
+    MOVE      "Y" TO FIRST_READ
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+ LOOP
+    IF (FIRST_READ = "Y")
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+       MOVE "N" TO FIRST_READ
+    ELSE
+       CALL      FILE_NEXT USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+    ENDIF
+    IF (RESULT <> 1)
+       BREAK    
+    ENDIF
+    IF (MEM_REL = "01")
+       CONTINUE
+    ENDIF
+    IF ((SQUEEZE MEM_TRM <> "") AND (MEME_TRM < CURRDATE))
+       CONTINUE
+    ENDIF
+    IF (SQUEEZE MEM_DOD <> "")
+       CONTINUE
+    ENDIF
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+	                   MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             LOOP
+                CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+                IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                      BREAK
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                    CONTINUE
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < CURRDATE))
+                   CONTINUE
+                ENDIF
+                UNPACK MEME_LEV1 INTO W_DIM1
+                IF (W_DIM1 = "R")
+                  CALL GET_CLI_ID
+                  IF (CLI_ID1 <> MEME_CLIR)
+                     MOVE MEM_ESSN TO CLI_ERR_SSN
+                     MOVE MEME_ID1 TO CLI_ERR_ID1
+                     IF (RESULT <> 1)
+                        MOVE BLANKS TO CLI_ERR_CLIR
+                     ELSE
+                        MOVE CLI_ID1 TO CLI_ERR_CLIR 
+                     ENDIF
+                     MOVE OGB_SEQ1 TO OGB_SEQ
+                     CALL WRITE_OGBREC USING CLI_ERR_FD,CLI_ERR_NAME:
+                                             CLI_ERR_LIST
+                     CLEAR CLI_ERR_LIST
+                     BREAK
+                  ENDIF
+                ENDIF   
+             REPEAT
+ REPEAT
+ RETURN
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "MEM  Recs Read:    " TO X_CNTDESC1
+	 MOVE      "MEME Recs Read:    " TO X_CNTDESC2
+	 MOVE      "Recs Written  :    " TO X_CNTDESC3
+
+	 CALL      X_DISPLAY_COUNTS
+
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING CLI_ERR_FD,CLI_ERR_NAME
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING CLI_ERR_FD,CLI_ERR_NAME
+         RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End
+. +++++++++++++++++++++++++++++++++++++

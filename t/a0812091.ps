@@ -1,0 +1,366 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: a0812091                                            *
+.     * DESCRIPTION: ISIS 92 RETIREMENT         
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APSJM 12/03/2004 A0412031 DEV - INITIAL VERSION.                  *
+.     *********************************************************************
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       CLI.RL           ...Client Demographics 
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrolllment
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+ISIS92_FD    FILE    VAR=10,TEXT
+ISIS92_NAME  INIT    "/w/isis92.txt"
+ISIS92_LIST  LIST
+ISIS92_ESSN   DIM     9
+ISIS92_FP    DIM     1
+             LISTEND
+.
+O_ISIS92_FD    FILE     VAR=100,TEXT
+O_ISIS92_NAME  INIT     "/w/isis92_ret.txt"
+O_ISIS92_LIST  LIST
+O_ISIS92_ESSN   DIM      9
+O_ISIS92_LNAME DIM      20
+O_ISIS92_FNAME DIM      15
+O_ISIS92_MI    DIM      1
+O_ISIS92_LEV1  DIM      5
+O_ISIS92_LEV2  DIM      5
+O_ISIS92_RETD  DIM      8
+O_ISIS92_RC    DIM      2
+               LISTEND
+.
+.
+. ----------------------------
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+FIRST_READ    DIM  1
+CMP_TRM       DIM  9
+FORM_MM       FORM 2
+FORM_CCYY     FORM 4
+DATE_RESULT   DIM  2
+DIM_4         DIM  4
+DIM_1         DIM  1
+DIM_3         DIM  3
+DIM_10        DIM  10
+W_RATE        DIM  2
+W_RETD        DIM  8
+W_CCYY        DIM  4
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "A0812091"        TO  C_OPER
+         MOVE      "ISIS 92"        TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL OPEN_FILES
+   CALL PROCESS_FILE
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_FILE
+    MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+    CALL READ_OGBFILE USING ISIS92_FD,ISIS92_NAME,ISIS92_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    IF (ISIS92_FP = "P")
+        CONTINUE
+    ENDIF
+    CLEAR MEM_SAV
+    MOVE "Y" TO FIRST_READ
+    CLEAR MEM_AIM
+    PACK  MEM_AIM1 WITH "01X",ISIS92_ESSN,BLANKS
+    PACK  MEM_AIM3 WITH "03X","01",BLANKS
+    LOOP 
+     IF (FIRST_READ = "Y")
+         CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                            MEM_FN:        ...FILE NAME LIST
+                            MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:        ...FILE KEY VARLISTS
+                            MEM_AIM:       ...FILE KEY SIZES
+                            MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                            MEM_REC:       ...FILE RECORD (PACKED)
+                            MEM_OLD:       ...FILE SAVED WHEN READ
+                            MEM_QTY:       ...NUMBER OF FILES
+                            2              ...FILE NUMBER FOR THIS READ
+         MOVE "N" TO FIRST_READ
+     ELSE
+         CALL  FILE_NEXT USING MEM_FD:        ...FILE DECLARATION LIST
+                            MEM_FN:        ...FILE NAME LIST
+                            MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:        ...FILE KEY VARLISTS
+                            MEM_AIM:       ...FILE KEY SIZES
+                            MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                            MEM_REC:       ...FILE RECORD (PACKED)
+                            MEM_OLD:       ...FILE SAVED WHEN READ
+                            MEM_QTY:       ...NUMBER OF FILES
+                            2              ...FILE NUMBER FOR THIS READ
+     ENDIF
+     IF (RESULT <> 1)
+        BREAK 
+     ENDIF
+     IF ((SQUEEZE MEM_TRM <> "") AND (MEM_TRM < TODAY))
+       CONTINUE
+     ENDIF
+     IF ((SQUEEZE MEM_DOD <> "") AND (MEM_DOD < TODAY))
+       CONTINUE
+     ENDIF
+     PACKLEN MEM_SAV WITH MEM_LIST 
+    REPEAT
+    IF (SQUEEZE MEM_SAV = "")
+     CONTINUE
+    ENDIF
+    UNPACK MEM_SAV INTO MEM_LIST
+    IF (SQUEEZE MEM_RETD = "")
+      CONTINUE
+    ENDIF
+    CALL READ_MEME_92
+    IF (SQUEEZE MEME_SAV = "")
+       CONTINUE
+    ENDIF
+    UNPACK MEME_SAV INTO MEME_LIST
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    MOVE MEM_ESSN TO O_ISIS92_ESSN
+    MOVE MEM_LNAME TO O_ISIS92_LNAME
+    MOVE MEM_FNAME TO O_ISIS92_FNAME
+    MOVE MEM_MINIT TO O_ISIS92_MI
+    CMATCH "R",MEME_LEV1
+      IF EQUAL
+         MOVE MEME_LEV2 TO O_ISIS92_LEV1
+         MOVE BLANKS TO O_ISIS92_LEV2
+      ELSE
+         MOVE MEME_LEV1 TO O_ISIS92_LEV1
+         MOVE MEME_LEV2 TO O_ISIS92_LEV2
+      ENDIF
+    MOVE MEM_RETD TO O_ISIS92_RETD
+    MOVE MEME_RT TO O_ISIS92_RC
+    CALL WRITE_OGBREC USING O_ISIS92_FD,O_ISIS92_NAME,O_ISIS92_LIST
+    CLEAR O_ISIS92_LIST 
+ REPEAT
+ RETURN
+
+READ_MEME_92
+    CLEAR MEME_SAV
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+	                   MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+             LOOP
+                CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+                IF ((MEME_ID1 <> MEM_ID1) OR (RESULT <> 1))
+                   BREAK
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_NET = "LIFE")
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                   FILL "9" IN CMP_TRM
+                ELSE
+                   MOVE MEME_TRM TO CMP_TRM
+                ENDIF
+                IF (SQUEEZE MEME_LEV2 = "92")
+                   CONTINUE
+                ENDIF
+                IF ((TODAY >= MEME_EFF) AND (TODAY < CMP_TRM))
+                   PACKLEN MEME_SAV WITH MEME_LIST
+                   BREAK
+                ENDIF
+             REPEAT
+             RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "Input Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written  :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING ISIS92_FD,ISIS92_NAME
+         CALL      PREP_OGBFILE USING O_ISIS92_FD,O_ISIS92_NAME
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0812091.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,1201 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0602081.PS 
++    Description    :  MATCH ISIS DEMOGRAPHIC DATA AGAINST IMPACT DATA.  
++    Author         :  Lisa Spurlock
++    Date created   :  10/10/2005
++    apsjm 02/08/2006 a0507131 mod - write out demo data from isis to be
++                                    auto updated
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                          REVISIONS
+.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL           ...Member demographic Record
+    INC       MEME.RL           
+    INC       MEMO.RL           
+    INC       MEMS.RL           
+    INC       CLI.RL           
+    INC       D_MEMMEM.CB
+    INC       ISIS_ERRORS.RL   ...ERROR OUTPUT Layout
+
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+
+ACTMEM_FILE       FILE      VAR=12,TEXT
+ACTMEM_NAME       INIT      "/ogb/work/meme.act"
+
+ACTMEM_LIST       LIST
+ACTMEM_KEY1       DIM       08
+ACTMEM_ID2        DIM       04
+                  LISTEND
+
+ISIS_FILE         IFILE      VAR=157,KEYL=9,NODUP,TEXT
+ISIS_NAME         INIT      "/ogb/work/isis_demdata.ix1"   
+
+ISIS_FILE_TXT     FILE      VAR=157,TEXT
+ISIS_NAME_TXT     INIT      "/ogb/work/isis_demdata.txt"   
+
+ISIS_LIST         LIST
+ISIS_SSN          DIM       09
+ISIS_AGENCY       DIM       04
+ISIS_LNAME        DIM       16
+ISIS_FNAME        DIM       16
+ISIS_MINIT        DIM       01
+ISIS_SUFFIX       DIM       02
+ISIS_SEX          DIM       01
+ISIS_DOB          DIM       08
+ISIS_ADDR1        DIM       35
+ISIS_ADDR2        DIM       25
+ISIS_CITY         DIM       20
+ISIS_STATE        DIM       02
+ISIS_ZIP          DIM       10
+ISIS_RUNDATE      DIM       08
+                  LISTEND
+W_LIST            LIST
+W_FIL1            DIM       64
+W_ADDR1           DIM       35
+W_ADDR2           DIM       35
+W_CITY            DIM       30
+W_STATE           DIM       2
+W_ZIP             DIM       13
+                  LISTEND
+
+.~~~~~~~~~~OUTPUT FILES
+
+U_DEMO_FD     FILE     VAR=2300,TEXT
+U_DEMO_NAME   INIT     "isis_dem.txt"
+
+OUTPUT_FILE       FILE      VAR=594,TEXT
+OUTPUT_NAME       INIT      "/ogb/work/isis_recerrs.txt"
+
+OUT_FILE          IFILE      VAR=9,KEYL=9,NODUP,TEXT
+OUT_NAME          INIT      "/ogb/work/isis_ssn.ix1" 
+OUT_NAME_TXT      INIT      "/ogb/work/isis_ssn.txt" 
+
+OUT_LIST     LIST
+OUT_SSN           DIM       09
+             LISTEND
+
+ERR_FILE          FILE      VAR=57,TEXT
+ERR_NAME          INIT      "/ogb/work/isis_demdata.err"
+
+ERR_LIST     LIST
+ERR_ID            DIM       08
+ERR_SSN           DIM       09
+ERR_REASON        DIM       40
+             LISTEND
+
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+FIRST_READ              DIM     1
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+TODAY           	DIM      8
+TODAY_CCYY           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+DOB_CCYY            	DIM      4
+DOB_MM            	DIM      2
+DOB_DD            	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+FORM10                  FORM     10 
+FORM72                  FORM     7.2
+DIM9                    DIM      09
+DIM8                    DIM      08
+DIM7                    DIM      07
+DIM5                    DIM      05
+DIM3                    DIM      03
+DIM2                    DIM      02
+DIM10                   DIM      10
+BLANK8                  INIT     "        "
+UPS                     INIT     "U"
+CLI_RESULT              FORM      1 
+INP_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+MEME_RESULT             FORM      1 
+MEMS_RESULT             FORM      1 
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+TERM_DATE               DIM      8
+RUNDATE                 DIM      8
+SAVE_MEME_ID1           DIM      08
+SPACES                  DIM      35
+TICKEY                  INIT     "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+
+ERROR_1                 INIT    "ENROLLEE RECORD ID NOT FOUND            "
+ERROR_2                 INIT    "DEPENDENT RECORD FOUND (NOT ENROLLEE)   "
+
+DIM49                   DIM      049
+
+WS_LEV1_1               DIM      01 
+WS_LEV1_4               DIM      04 
+
+HLD_MEM_ESSN            DIM      09
+HLD_MEME_NET            DIM      05
+HLD_REC                 DIM      1300
+
+FIRST_MEME_READ         DIM       1 
+
+IS_AG_1                 DIM      01 
+IS_AG_3                 DIM      03 
+
+MEME_AG_1               DIM      01 
+MEME_AG_3               DIM      03 
+MEME_AG_LAST            DIM      01 
+
+WS_ISIS_SALARY          DIM      10 
+SALARY_1                DIM      01 
+SALARY_9                DIM      09 
+
+I_ADDR1                 DIM      35 
+I_ADDR2                 DIM      25 
+I_CITY                  DIM      20 
+I_ZIP                   DIM      05 
+M_ADDR1                 DIM      35 
+M_ADDR2                 DIM      25 
+M_CITY                  DIM      20 
+M_ZIP                   DIM      05 
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 		    chains to the print program
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "MENU"                     TO    C_NEXT
+      MOVE      "MATCH ISIS DEMOGRAPHICS"  TO    C_OPER
+      MOVE      "A0602081"                  TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+
+  CALL      INITIALIZE
+
+. ...Reformat MEME file
+  CALL      REFORMAT_MEME
+  DEBUG
+  CALL      INDEX_FILES
+ 
+  CALL      OPEN_FILES
+  DEBUG
+  CALL      EXTRACT_OUTPUT_FILE    
+. CALL      EXTRACT_OUTPUT_FILE_PT2 
+  CALL      CLOSE_FILES
+. CALL      UPDATE_VALTBL
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "MENU"                     TO    C_NEXT
+  MOVE      "MATCH ISIS DEMOGRAPHICS"  TO    C_OPER
+  MOVE      "ELG0905"                  TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Impact Records Read: " TO X_CNTDESC1
+  MOVE "Records Written:     " TO X_CNTDESC2
+  MOVE "Records Processed    " TO X_CNTDESC3
+  MOVE "Error Records Found: " TO X_CNTDESC4
+  MOVE "ISIS Records Read:   " TO X_CNTDESC5
+  MOVE "                     " TO X_CNTDESC6
+  DISPLAY *ES
+
+.....Get last date program was run
+         PACK VAL_KEY1 WITH "155ELG905"
+         CALL VAL_READ1
+         MOVE RESULT TO VAL_RESULT    
+         IF (VAL_RESULT = 1)
+             MOVE VAL_OPT TO PARAM_DATE 
+         ELSE
+             ERROR    HORZ="15",VERT="19":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="LAST RUN DATE INVALID NOT FOUND"
+             CHAIN    "MENU"
+         ENDIF         
+
+         IF (TODAY <= PARAM_DATE)
+             ERROR    HORZ="15",VERT="19":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="ISIS_DEM. DATE (ELG905) ALREADY RUN"
+             CHAIN    "MENU"
+         ENDIF
+     RETURN
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+  UNPACK TODAY INTO TODAY_CCYY,TODAY_MM,TODAY_DD
+
+ RETURN
+
+.............................................................................
+
+
+.-------------------------------
+. Reformat MEME file
+.-------------------------------
+REFORMAT_MEME
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+.-------------------------------------
+...Get only Records without term dates
+.-------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.act":
+              " -p104-111eq#"",BLANK8,"#" 1-12 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.dbf)"
+               CHAIN     "MENU"
+         ENDIF
+
+.------------------------------------------
+...Get only Records with term dates > today
+.------------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.act":
+              " -p104-111gt#"",TODAY,"#" 1-12 -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.act append)"
+               CHAIN     "MENU"
+         ENDIF
+
+    SORT "/ogb/work/meme.act /ogb/work/meme.act 1-8 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(meme.act)"
+               CHAIN     "MENU"
+         ENDIF
+
+    RETURN
+
+.............................................................................
+.##############################################################################
+INDEX_FILES
+.##############################################################################
+
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+  MESSAGE HORZ="22",VERT="20":
+          BGCOL=C_DLGB,FGCOL=C_DLGF:
+          LNCOL=C_DLGL,SHADE="y": 
+          TEXT="INDEXING FILES ....... PLEASE WAIT";
+    
+  SORT  "/ogb/work/isis_demdata.txt /ogb/work/isis_demdata.txt 1-9 -u -t" 
+  IF OVER
+      ERROR     HORZ="22",VERT="20":
+                BGCOL=C_ERRB,FGCOL=C_ERRF:
+                LNCOL=C_ERRL,SHADE="Y":
+                TEXT="SORT FAILED (isis_demdata.ix1)"    
+      CHAIN     "MENU"
+  ENDIF
+  INDEX "/ogb/work/isis_demdata.txt /ogb/work/isis_demdata.ix1 1-9" 
+  IF OVER
+      ERROR     HORZ="22",VERT="20":
+                BGCOL=C_ERRB,FGCOL=C_ERRF:
+                LNCOL=C_ERRL,SHADE="Y":
+                TEXT="INDEX FAILED (isis_demdata.ix1)"    
+      CHAIN     "MENU"
+  ENDIF
+
+.-------------------------------------------------------
+...Display message to operator that indexing is complete
+.-------------------------------------------------------
+  MESSAGE HORZ="22",VERT="20":
+          BGCOL=C_DLGB,FGCOL=C_DLGF:
+          LNCOL=C_DLGL,SHADE="y":
+          TEXT="     !!!!! INDEXING COMPLETE !!!!!     ";
+
+  RETURN
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+
+    CALL OPEN_OGBFILE USING ACTMEM_FILE,ACTMEM_NAME
+
+    CALL OPEN_OGBFILE_IX USING ISIS_FILE,ISIS_NAME
+ 
+    CALL OPEN_OGBFILE USING ISIS_FILE_TXT,ISIS_NAME_TXT
+ 
+    CALL PREP_OGBFILE USING U_DEMO_FD,U_DEMO_NAME
+
+.   CALL PREP_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+    CALL OPEN_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+    CALL PREP_OGBFILE USING ERR_FILE,ERR_NAME
+
+    CALL PREP_OGBFILE_IX USING OUT_FILE,OUT_NAME   
+
+  RETURN
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file (meme.act)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ACTMEM_FILE,ACTMEM_NAME,ACTMEM_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Reading the MEME record with the Member's Record ID
+
+        CLEAR MEME_SAV
+        PACK MEME_FK11 WITH ACTMEM_KEY1,ACTMEM_ID2
+        CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                              MEME_FN:  ...FILE NAME LIST  
+                              MEME_FC:  ...TYPE OF INDEX   
+.                                       ...(I)NDEX OR (A)IMDEX
+                              MEME_FV:  ...FILE KEY VARLISTS
+                              MEME_FK:  ...FILE KEY SIZES  
+                              MEME_LIST:...FILE RECORD (FIELD LIST)
+                              MEME_REC: ...FILE RECORD (PACKED)
+                              MEME_OLD: ...FILE SAVED WHEN READ
+                              MEME_QTY: ...NUMBER OF FILES 
+                              1         ...FILE NUMBER FOR THIS READ
+
+         MOVE RESULT TO MEME_RESULT
+         IF  (MEME_RESULT <> 1)
+             CONTINUE
+         ENDIF
+
+         IF  (SQUEEZE MEME_LEV2 <> "00")
+             CONTINUE
+         ENDIF
+
+         CLEAR CLI_AIM
+         PACK CLI_AIM1 WITH "01X",MEME_LEV1,BLANKS 
+         PACK CLI_AIM2 WITH "02X",MEME_LEV2,BLANKS 
+         CALL     FILE_READ USING CLI_FD:      ...File Declaration List
+                             CLI_FN:      ...File Name List
+                             CLI_FC:      ...(I)ndex Or (A)imdex
+                             CLI_FV:      ...File Key Varlists
+                             CLI_AIM:     ...File Key Sizes
+                             CLI_LIST:    ...File Record (Field List)
+                             CLI_REC:     ...File Record (Packed)
+                             CLI_OLD:     ...File Saved When Read
+                             CLI_QTY:     ...Number Of Files
+                             2            ...File Number For This Read
+
+         MOVE RESULT TO CLI_RESULT
+         IF (CLI_RESULT = 1)
+             IF (CLI_US02 <> "U")
+                 CONTINUE
+             ENDIF
+         ELSE 
+             CONTINUE
+         ENDIF
+
+... Read the MEM file for the Member 
+
+        CLEAR     ERR_REASON
+        CLEAR     ERR_ID     
+        CLEAR     ERR_SSN     
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH ACTMEM_KEY1
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+... If the Member is not found, the program writes to an error file
+... and then continues to the next record to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            MOVE ERROR_1 TO ERR_REASON
+            MOVE ACTMEM_KEY1 TO ERR_ID
+            MOVE ACTMEM_ID2 TO ERR_SSN
+            CALL WRITE_ERROR_RECS 
+            CONTINUE         
+        ENDIF
+
+        IF (MEM_REL <> "01")     
+            CONTINUE         
+        ENDIF
+
+        IF (SQUEEZE MEM_DOD <> "")     
+            CONTINUE         
+        ENDIF
+         
+        PACK MEM_SAV WITH MEM_REC
+
+        CALL READ_ISIS_FILE
+
+   REPEAT
+ RETURN
+
+.******************************************************************************
+READ_ISIS_FILE
+
+... Read the Indexed ISIS file(isis_demdata.ix1)
+
+        PACK ISIS_SSN WITH MEM_ESSN
+        CALL READ_OGBFILE_IX USING ISIS_FILE,ISIS_NAME,ISIS_SSN,ISIS_LIST
+        MOVE ISIS_RUNDATE TO RUNDATE
+        IF (RESULT <> 1)
+.           CALL WRITE_OGB_FIELDS
+        ELSE 
+            REPLACE "* "    IN ISIS_LNAME
+            REPLACE "* "    IN ISIS_FNAME
+            REPLACE "* "    IN ISIS_ADDR1
+            REPLACE "* "    IN ISIS_ADDR2 
+            REPLACE "* "    IN ISIS_CITY
+            REPLACE "* "    IN ISIS_STATE
+            REPLACE "* "    IN ISIS_ZIP 
+            REPLACE "* "    IN ISIS_SEX
+            REPLACE "* "    IN ISIS_DOB
+
+            MOVE ISIS_ADDR1 TO I_ADDR1 
+            REPLACE "- " IN I_ADDR1
+            REPLACE ". " IN I_ADDR1
+            REPLACE "' " IN I_ADDR1
+            REPLACE ", " IN I_ADDR1
+            REPLACE "/ " IN I_ADDR1
+            REPLACE "` " IN I_ADDR1
+            REPLACE "# " IN I_ADDR1
+
+            MOVE ISIS_ADDR2 TO I_ADDR2 
+            REPLACE "- " IN I_ADDR2
+            REPLACE ". " IN I_ADDR2
+            REPLACE "' " IN I_ADDR2
+            REPLACE ", " IN I_ADDR2
+            REPLACE "/ " IN I_ADDR2
+            REPLACE "` " IN I_ADDR2
+            REPLACE "# " IN I_ADDR2
+
+            MOVE MEM_ADDR1 TO M_ADDR1 
+            REPLACE "- " IN M_ADDR1
+            REPLACE ". " IN M_ADDR1
+            REPLACE "' " IN M_ADDR1
+            REPLACE ", " IN M_ADDR1
+            REPLACE "/ " IN M_ADDR1
+            REPLACE "` " IN M_ADDR1
+            REPLACE "# " IN M_ADDR1
+
+            MOVE MEM_ADDR2 TO M_ADDR2 
+            REPLACE "- " IN M_ADDR2
+            REPLACE ". " IN M_ADDR2
+            REPLACE "' " IN M_ADDR2
+            REPLACE ", " IN M_ADDR2
+            REPLACE "/ " IN M_ADDR2
+            REPLACE "` " IN M_ADDR2
+            REPLACE "# " IN M_ADDR2
+
+            MOVE ISIS_CITY  TO I_CITY  
+            REPLACE "- " IN I_CITY 
+            REPLACE ". " IN I_CITY 
+            REPLACE "' " IN I_CITY 
+            REPLACE ", " IN I_CITY 
+            REPLACE "/ " IN I_CITY 
+            REPLACE "` " IN I_CITY 
+            REPLACE "# " IN I_CITY 
+
+            MOVE MEM_CITY TO M_CITY  
+            REPLACE "- " IN M_CITY
+            REPLACE ". " IN M_CITY
+            REPLACE "' " IN M_CITY
+            REPLACE ", " IN M_CITY
+            REPLACE "/ " IN M_CITY
+            REPLACE "` " IN M_CITY
+            REPLACE "# " IN M_CITY
+
+            UNPACK ISIS_ZIP INTO I_ZIP, DIM5
+            UNPACK MEM_ZIP  INTO M_ZIP, DIM5
+
+            IF (ISIS_SEX = "1")
+                MOVE "M" TO ISIS_SEX
+            ELSE
+                IF (ISIS_SEX = "2")
+                    MOVE "F" TO ISIS_SEX
+                ELSE
+                    MOVE " " TO ISIS_SEX
+                ENDIF
+            ENDIF
+
+            SETLPTR MEM_LNAME TO 16
+            IF (ISIS_LNAME <> MEM_LNAME)
+.             CALL WRITE_BOTH_FIELDS
+            ELSE
+              SETLPTR ISIS_FNAME TO 15
+              IF (ISIS_FNAME <> MEM_FNAME)
+.               CALL WRITE_BOTH_FIELDS
+              ELSE
+                IF (SQUEEZE I_ADDR1 <> SQUEEZE M_ADDR1)
+                  CALL WRITE_BOTH_FIELDS
+                ELSE
+                  IF ((SQUEEZE I_ADDR2 <> SQUEEZE M_ADDR2):
+                     AND (SQUEEZE I_ADDR2 <> ""))
+                    CALL WRITE_BOTH_FIELDS
+                  ELSE
+                    IF (I_CITY <> M_CITY)
+                      CALL WRITE_BOTH_FIELDS
+                    ELSE
+                      IF (ISIS_STATE <> MEM_STATE)
+                        CALL WRITE_BOTH_FIELDS
+                      ELSE
+                        IF (I_ZIP <> M_ZIP)
+                          CALL WRITE_BOTH_FIELDS
+                        ELSE
+                          IF (ISIS_SEX <> MEM_SEX)
+.                           CALL WRITE_BOTH_FIELDS
+                          ELSE
+                            IF (ISIS_DOB <> MEM_DOB)
+.                             CALL WRITE_BOTH_FIELDS
+                            ELSE
+                              MOVE MEM_ESSN TO OUT_SSN
+                              CALL WRITE_OUT_RECS
+                            ENDIF
+                          ENDIF
+                        ENDIF
+                      ENDIF
+                    ENDIF
+                  ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+        ENDIF
+
+READ_ISIS_FILE_END
+    RETURN
+
+.******************************************************************************
+
+.******************************************************************************
+WRITE_OGB_FIELDS
+
+    MOVE "1"        TO IERR_REC_TYPE
+
+    MOVE MEM_ESSN   TO IERR_SSN
+    MOVE MEM_ESSN   TO OUT_SSN
+
+    MOVE MEM_LNAME  TO IERR_IMP_LNAME
+    MOVE SPACES     TO IERR_ISIS_LNAME
+
+    MOVE MEM_FNAME  TO IERR_IMP_FNAME
+    MOVE SPACES     TO IERR_ISIS_FNAME
+
+    MOVE MEM_ADDR1  TO IERR_IMP_ADD_1
+    MOVE SPACES     TO IERR_ISIS_ADD_1
+
+    MOVE MEM_ADDR2  TO IERR_IMP_ADD_2
+    MOVE SPACES     TO IERR_ISIS_ADD_2
+
+    MOVE MEM_CITY   TO IERR_IMP_CITY
+    MOVE SPACES     TO IERR_ISIS_CITY
+
+    MOVE MEM_STATE  TO IERR_IMP_ST   
+    MOVE SPACES     TO IERR_ISIS_ST
+
+    MOVE MEM_ZIP    TO IERR_IMP_ZCOD
+    MOVE SPACES     TO IERR_ISIS_ZCOD
+
+    MOVE MEM_SEX    TO IERR_IMP_SCOD
+    MOVE SPACES     TO IERR_ISIS_SCOD
+
+    MOVE MEM_DOB    TO IERR_IMP_DOB
+    MOVE SPACES     TO IERR_ISIS_DOB
+
+    CALL WRITE_OUT_RECS
+
+    CALL WRITE_OUTPUT_RECS       
+
+  RETURN
+
+.******************************************************************************
+WRITE_BOTH_FIELDS
+.******************************************************************************
+ 
+    UNPACK MEM_SAV INTO MEM_LIST
+    IF ((MEM_CHGDT < "20060608") AND (MEM_BADR <> "Y"))
+       MOVE ISIS_ADDR1 TO MEM_ADDR1 
+       MOVE ISIS_ADDR2 TO MEM_ADDR2 
+       MOVE ISIS_CITY  TO MEM_CITY
+       MOVE ISIS_STATE TO MEM_STATE    
+       MOVE ISIS_ZIP   TO MEM_ZIP        
+       MOVE BLANKS TO MEM_CHGBY
+       PACK MEM_REC WITH MEM_LIST
+       CLEAR MEME_LIST
+       CLEAR MEMO_LIST
+       CLEAR MEMS_LIST
+       PACKLEN INM_REC WITH MEM_LIST,MEME_LIST,MEMO_LIST,MEMS_LIST
+       UNPACK INM_REC INTO INM_LIST
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       CALL WRITE_OGBREC USING U_DEMO_FD,U_DEMO_NAME,INM_LIST
+       CLEAR INM_LIST
+       CALL GET_DEPS
+    ENDIF
+  RETURN
+
+GET_DEPS
+    MOVE      "Y" TO FIRST_READ
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+ LOOP
+    IF (FIRST_READ = "Y")
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+       MOVE "N" TO FIRST_READ
+    ELSE
+       CALL      FILE_NEXT USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+    ENDIF
+    IF (RESULT <> 1)
+       BREAK    
+    ENDIF
+    IF (MEM_REL = "01")
+       CONTINUE
+    ENDIF
+    IF ((SQUEEZE MEM_TRM <> "") AND (MEM_TRM < CURRDATE))
+       CONTINUE
+    ENDIF
+    IF (SQUEEZE MEM_DOD <> "")
+       CONTINUE
+    ENDIF
+    MOVE ISIS_ADDR1 TO MEM_ADDR1
+    MOVE ISIS_ADDR2 TO MEM_ADDR2 
+    MOVE ISIS_CITY  TO MEM_CITY
+    MOVE ISIS_STATE TO MEM_STATE    
+    MOVE ISIS_ZIP   TO MEM_ZIP        
+    MOVE BLANKS TO MEM_CHGBY
+    PACK MEM_REC WITH MEM_LIST
+    CLEAR MEME_LIST
+    CLEAR MEMO_LIST
+    CLEAR MEMS_LIST
+    PACKLEN INM_REC WITH MEM_LIST,MEME_LIST,MEMO_LIST,MEMS_LIST
+    UNPACK INM_REC INTO INM_LIST
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING U_DEMO_FD,U_DEMO_NAME,INM_LIST
+    CLEAR INM_LIST
+ REPEAT
+ RETURN
+
+.******************************************************************************
+.******************************************************************************
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE_PT2     
+.##############################################################################
+... Read the ISIS Input file (isis_demdata.txt)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ISIS_FILE_TXT,ISIS_NAME_TXT,ISIS_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT5
+        UNPACK X_CNT5 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the OUT Indexed file for the Member 
+
+        PACK OUT_SSN WITH ISIS_SSN
+        CALL READ_OGBFILE_IX USING OUT_FILE,OUT_NAME:
+                                   OUT_SSN,OUT_LIST
+
+        IF (RESULT <> 1)
+            CALL READ_MEM_SSN
+        ENDIF
+        
+    REPEAT
+  RETURN
+.
+.******************************************************************************
+READ_MEM_SSN     
+.******************************************************************************
+
+    CLEAR     MEM_SAV
+    CLEAR     MEM_AIM
+    PACK      MEM_AIM1 WITH "01X",ISIS_SSN,BLANKS
+    PACK      MEM_AIM3 WITH "03X","01",BLANKS   
+    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                        MEM_FN:          ...FILE NAME LIST
+                        MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                        MEM_FV:          ...FILE KEY VARLISTS
+                        MEM_AIM:         ...FILE KEY SIZES
+                        MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                        MEM_REC:         ...FILE RECORD (PACKED)
+                        MEM_OLD:         ...FILE SAVED WHEN READ
+                        MEM_QTY:         ...NUMBER OF FILES
+                        2                 ...FILE NUMBER FOR THIS READ
+
+    MOVE RESULT TO MEM_RESULT
+    IF (MEM_RESULT <> 1)
+.       CALL WRITE_ISIS_FIELDS
+        GOTO READ_MEM_SSN_RET
+    ENDIF
+
+    IF (MEM_ESSN <> ISIS_SSN) 
+.       CALL WRITE_ISIS_FIELDS
+        GOTO READ_MEM_SSN_RET
+    ENDIF
+
+    IF (MEM_REL <> "01")
+.       CALL WRITE_ISIS_FIELDS
+        GOTO READ_MEM_SSN_RET
+    ELSE 
+      PACK MEM_SAV WITH MEM_REC
+      CALL COMPARE_DATA_FIELDS             
+      GOTO READ_MEM_SSN_RET
+    ENDIF
+
+READ_MEM_SSN_RET
+ RETURN
+.
+
+.******************************************************************************
+COMPARE_DATA_FIELDS
+.******************************************************************************
+
+            REPLACE "* "    IN ISIS_LNAME
+            REPLACE "* "    IN ISIS_FNAME
+            REPLACE "* "    IN ISIS_ADDR1
+            REPLACE "* "    IN ISIS_ADDR2 
+            REPLACE "* "    IN ISIS_CITY
+            REPLACE "* "    IN ISIS_STATE
+            REPLACE "* "    IN ISIS_ZIP 
+            REPLACE "* "    IN ISIS_SEX
+            REPLACE "* "    IN ISIS_DOB
+
+            MOVE ISIS_ADDR1 TO I_ADDR1 
+            MOVE ISIS_ADDR2 TO I_ADDR2 
+            REPLACE "- " IN I_ADDR1
+            REPLACE ". " IN I_ADDR1
+            REPLACE "' " IN I_ADDR1
+            REPLACE ", " IN I_ADDR1
+            REPLACE "/ " IN I_ADDR1
+            REPLACE "` " IN I_ADDR1
+            REPLACE "# " IN I_ADDR1
+
+            REPLACE "- " IN I_ADDR2
+            REPLACE ". " IN I_ADDR2
+            REPLACE "' " IN I_ADDR2
+            REPLACE ", " IN I_ADDR2
+            REPLACE "/ " IN I_ADDR2
+            REPLACE "` " IN I_ADDR2
+            REPLACE "# " IN I_ADDR2
+
+            MOVE MEM_ADDR1 TO M_ADDR1 
+            MOVE MEM_ADDR2 TO M_ADDR2 
+            REPLACE "- " IN M_ADDR1
+            REPLACE ". " IN M_ADDR1
+            REPLACE "' " IN M_ADDR1
+            REPLACE ", " IN M_ADDR1
+            REPLACE "/ " IN M_ADDR1
+            REPLACE "` " IN M_ADDR1
+            REPLACE "# " IN M_ADDR1
+
+            REPLACE "- " IN M_ADDR2
+            REPLACE ". " IN M_ADDR2
+            REPLACE "' " IN M_ADDR2
+            REPLACE ", " IN M_ADDR2
+            REPLACE "/ " IN M_ADDR2
+            REPLACE "` " IN M_ADDR2
+            REPLACE "# " IN M_ADDR2
+
+            MOVE ISIS_CITY  TO I_CITY  
+            REPLACE "- " IN I_CITY 
+            REPLACE ". " IN I_CITY 
+            REPLACE "' " IN I_CITY 
+            REPLACE ", " IN I_CITY 
+            REPLACE "/ " IN I_CITY 
+            REPLACE "` " IN I_CITY 
+            REPLACE "# " IN I_CITY 
+
+            MOVE MEM_CITY TO M_CITY  
+            REPLACE "- " IN M_CITY
+            REPLACE ". " IN M_CITY
+            REPLACE "' " IN M_CITY
+            REPLACE ", " IN M_CITY
+            REPLACE "/ " IN M_CITY
+            REPLACE "` " IN M_CITY
+            REPLACE "# " IN M_CITY
+
+            UNPACK ISIS_ZIP INTO I_ZIP, DIM5
+            UNPACK MEM_ZIP  INTO M_ZIP, DIM5
+
+            IF (ISIS_SEX = "1")
+                MOVE "M" TO ISIS_SEX
+            ELSE
+                IF (ISIS_SEX = "2")
+                    MOVE "F" TO ISIS_SEX
+                ELSE
+                    MOVE " " TO ISIS_SEX
+                ENDIF
+            ENDIF
+
+            SETLPTR MEM_LNAME TO 16
+            IF (ISIS_LNAME <> MEM_LNAME)
+              CALL WRITE_BOTH_FIELDS
+            ELSE
+              SETLPTR ISIS_FNAME TO 15
+              IF (ISIS_FNAME <> MEM_FNAME)
+                CALL WRITE_BOTH_FIELDS
+              ELSE
+                IF (SQUEEZE I_ADDR1 <> SQUEEZE M_ADDR1)
+                  CALL WRITE_BOTH_FIELDS
+                ELSE
+                  IF (SQUEEZE I_ADDR2 <> SQUEEZE M_ADDR2)
+                    CALL WRITE_BOTH_FIELDS
+                  ELSE
+                    IF (I_CITY <> M_CITY)
+                      CALL WRITE_BOTH_FIELDS
+                    ELSE
+                      IF (ISIS_STATE <> MEM_STATE)
+                        CALL WRITE_BOTH_FIELDS
+                      ELSE
+                        IF (I_ZIP <> M_ZIP)
+                          CALL WRITE_BOTH_FIELDS
+                        ELSE
+                          IF (ISIS_SEX <> MEM_SEX)
+                            CALL WRITE_BOTH_FIELDS
+                          ELSE
+                            IF (ISIS_DOB <> MEM_DOB)
+                              CALL WRITE_BOTH_FIELDS
+                            ELSE
+                              MOVE ISIS_SSN TO OUT_SSN
+                              CALL WRITE_OUT_RECS
+                            ENDIF
+                          ENDIF
+                        ENDIF
+                      ENDIF
+                    ENDIF
+                  ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+
+  RETURN
+
+.******************************************************************************
+WRITE_ISIS_FIELDS
+.******************************************************************************
+
+    REPLACE "* "    IN ISIS_LNAME
+    REPLACE "* "    IN ISIS_FNAME
+    REPLACE "* "    IN ISIS_ADDR1
+    REPLACE "* "    IN ISIS_ADDR2 
+    REPLACE "* "    IN ISIS_CITY
+    REPLACE "* "    IN ISIS_STATE
+    REPLACE "* "    IN ISIS_ZIP 
+    REPLACE "* "    IN ISIS_SEX
+    REPLACE "* "    IN ISIS_DOB
+
+    IF (ISIS_SEX = "1")
+        MOVE "M" TO ISIS_SEX
+    ELSE
+        IF (ISIS_SEX = "2")
+            MOVE "F" TO ISIS_SEX
+        ELSE
+            MOVE " " TO ISIS_SEX
+        ENDIF
+    ENDIF
+
+    MOVE "1"        TO IERR_REC_TYPE   
+
+    MOVE ISIS_SSN   TO IERR_SSN
+    MOVE ISIS_SSN   TO OUT_SSN
+
+    MOVE ISIS_LNAME  TO IERR_ISIS_LNAME
+    MOVE SPACES      TO IERR_IMP_LNAME
+
+    MOVE ISIS_FNAME  TO IERR_ISIS_FNAME
+    MOVE SPACES      TO IERR_IMP_FNAME
+
+    MOVE ISIS_ADDR1  TO IERR_ISIS_ADD_1
+    MOVE SPACES      TO IERR_IMP_ADD_1
+
+    MOVE ISIS_ADDR2  TO IERR_ISIS_ADD_2
+    MOVE SPACES      TO IERR_IMP_ADD_2
+
+    MOVE ISIS_CITY   TO IERR_ISIS_CITY
+    MOVE SPACES      TO IERR_IMP_CITY
+
+    MOVE ISIS_STATE  TO IERR_ISIS_ST
+    MOVE SPACES      TO IERR_IMP_ST     
+
+    MOVE ISIS_ZIP    TO IERR_ISIS_ZCOD
+    MOVE SPACES      TO IERR_IMP_ZCOD
+
+    MOVE ISIS_SEX    TO IERR_ISIS_SCOD
+    MOVE SPACES      TO IERR_IMP_SCOD
+
+    MOVE ISIS_DOB    TO IERR_ISIS_DOB
+    MOVE SPACES      TO IERR_IMP_DOB
+
+    CALL WRITE_OUT_RECS
+
+    CALL WRITE_OUTPUT_RECS       
+
+  RETURN
+
+.******************************************************************************
+
+.##############################################################################
+WRITE_OUTPUT_RECS
+.##############################################################################
+.---------------
+...Write records
+.---------------
+
+    MOVE OGB_SEQ3 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUTPUT_FILE:
+                            OUTPUT_NAME:
+                            IERR_LIST
+
+    ADD 1 TO X_CNT2
+
+  RETURN
+.
+.##############################################################################
+.******************************************************************************
+WRITE_ERROR_RECS      
+.******************************************************************************
+ 
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING ERR_FILE:
+                            ERR_NAME:
+                            ERR_LIST
+
+    ADD 1 TO X_CNT4
+
+  RETURN
+.
+.******************************************************************************
+WRITE_OUT_RECS      
+.******************************************************************************
+ 
+ 
+    CALL READ_OGBFILE_IX USING OUT_FILE,OUT_NAME:
+                               OUT_SSN,OUT_LIST
+    IF (RESULT = 2)
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC_IX USING OUT_FILE,OUT_NAME:
+                                   OUT_SSN,OUT_LIST  
+        ADD 1 TO X_CNT3
+    ENDIF
+
+  RETURN
+.
+.******************************************************************************
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+
+  CALL CLOSE_OGBFILE USING U_DEMO_FD,U_DEMO_NAME
+
+  CALL CLOSE_OGBFILE USING ACTMEM_FILE,ACTMEM_NAME
+
+  CALL CLOSE_OGBFILE_IX USING ISIS_FILE,ISIS_NAME
+
+  CALL CLOSE_OGBFILE USING ISIS_FILE_TXT,ISIS_NAME_TXT
+
+  CALL CLOSE_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  CALL CLOSE_OGBFILE USING ERR_FILE,ERR_NAME
+
+  CALL CLOSE_OGBFILE_IX USING OUT_FILE,OUT_NAME
+
+  RETURN
+. -----------------------------------------------------
+
+
+UPDATE_VALTBL
+         DEBUG
+         PACK VAL_TYPE WITH "155",BLANKS
+         PACK VAL_CODE WITH "ELG905",BLANKS
+         PACK VAL_DESC WITH "LAST RUN DATE FOR ISIS_DEM":
+                             "DATA",BLANKS
+         PACK VAL_OPT  WITH RUNDATE,BLANKS
+         PACK VAL_FILL WITH BLANKS
+         CALL VAL_WRITE
+    RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "   A0602081  Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

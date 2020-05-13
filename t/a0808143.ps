@@ -1,0 +1,282 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0808143.ps 
++    Description    :  Deleting Medicare D Records in MEMO                     
++    Author         :  aplap
++    Date created   :  03/13/2009
++    Project Number :  A0808143
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++------------------------------------------------------------------------------
++                                REVISIONS
++------------------------------------------------------------------------------
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demo File
+              INC       MEMO.RL              ...Member Other Coverage File
+              
+. ----------------------------
+... File Declarations
+. ----------------------------
+
+. -----------------------------
+...Output files
+. -----------------------------
+
+REF_FILE      FILE  VAR=700,TEXT
+REF_NAME      INIT  "a0808143.txt"
+
+REF_LIST      LIST
+REF_MEM        DIM    8
+REF_TYPE       DIM    4
+REF_COD1       DIM    2
+              LISTEND
+
+
+. -------------------------------------------------
+... Program Specific Variables & Working Storage
+. -------------------------------------------------
+
+TIMESTAMP       DIM     14
+CURRDATE        DIM     8
+WRITE_COUNT     FORM    8
+ERROR_COUNT     FORM    8
+TRAP_DATA       DIM     500
+TODAY           DIM     8
+CAL_CLOCK       DIM     21
+ORIG_RETURN     FORM    5
+CURR_RETURN     FORM    5
+CNT1_4          DIM     4
+CNT1_3          DIM     3
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+
+. ----------------------------
+... Begin Program
+. ----------------------------
+
+. -------------------------------------
+... Start here if selected from menu   
+. -------------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------------------
+... Start here if called by the Scheduler    
+. ----------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                    TO  C_NEXT
+         MOVE      "CLEAN UP MEDD IN MEMO"   TO  C_OPER
+         MOVE      "A0808143"                TO  C_PROG
+         MOVE      BLANKS                    TO  C_LABEL
+         MOVE      BLANKS                    TO  C_FILE
+         MOVE      BLANKS                    TO  C_KEYS
+         CLOCK     CALENDAR                INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. -----------------------------------------
+... Set Applicable Traps
+. -----------------------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ------------------------------------------------
+... Get scheduler information
+. ------------------------------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------------------------------
+... Main Process
+. ----------------------------------------------------
+
+MAIN_PROCESS
+
+        CALL   INITIALIZE
+
+        CALL   REFORMAT_MEMO
+ 
+        CALL   CLOSE_FILES
+
+        CALL   NORMAL_EOJ
+         
+. ...Return Control Back to Chain - End of Program
+       TRAPREST  TRAP_DATA
+       MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+     RETURN
+
+. ---------------------------------------------------------
+... Initialize
+. ---------------------------------------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+         MOVE      "Recs Read       : " TO X_CNTDESC1
+         MOVE      "Records Written : " TO X_CNTDESC2
+         MOVE      "                : " TO X_CNTDESC3
+         MOVE      "                : " TO X_CNTDESC4
+         MOVE      "                : " TO X_CNTDESC5
+         MOVE      "                : " TO X_CNTDESC6
+
+         CALL X_DISPLAY_COUNTS
+
+     RETURN
+
+. -----------------------------------------------------------------
+... Reformat MEMO 
+. -----------------------------------------------------------------
+
+REFORMAT_MEMO 
+ DEBUG
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="20",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="Reformatting records...please wait";
+
+   PACK SCRATCH WITH BLANKS
+   PACK SCRATCH WITH "memo.dbf"," ",REF_NAME:
+         " -p13-16eq","MEDD":
+         " -p470-471eq","MD":
+         " 1-12 13-16 17-469 470-471 472-700 -t -j"
+
+  REFORMAT SCRATCH
+        IF OVER
+            ERROR     HORZ="15",VERT="19":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="REFORMAT FAILED(inp_name)"
+            CHAIN     "MENU"
+         ENDIF
+
+         PACK SCRATCH WITH REF_NAME," ",REF_NAME," 1-8 -j -u -t",BLANKS
+         SORT SCRATCH
+
+             IF OVER
+                ERROR   HORZ="15",VERT="19":
+                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+                        LNCOL=C_ERRL,SHADE="Y":
+                        TEXT="SORT FAILED"
+                CHAIN     "menu"
+             ENDIF
+
+...Display message to Operator that reformat completed
+            MESSAGE HORZ="20",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="******* REFORMAT COMPLETE *******";
+
+    RETURN
+
+. -------------------------------------
+... Close files
+. -------------------------------------
+
+CLOSE_FILES
+
+    CALL CLOSE_OGBFILE USING REF_FILE, REF_NAME
+
+    RETURN
+
+. ----------------------------
+... Operator pressed F9
+. ----------------------------
+
+QUIT
+    IF (C_RMODE = "I")
+        error     horz="23",vert="19":
+                  bgcol=C_ERRB,fgcol=C_ERRF:
+                  lncol=C_ERRL,shade="Y":
+                  text=" Process Aborted by Operator ":
+                  text="-----------------------------"
+        messageerase
+    ENDIF
+
+        CLEAR     C_NOHIST
+
+        TRAPREST  TRAP_DATA
+
+    IF (RUN_MODE = "B")
+        LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE     (CURR_RETURN > ORIG_RETURN)
+          WHILE     (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+        REPEAT
+          MOVE      SCH_RTABRT  TO  SCH@RTCODE
+        RETURN
+    ENDIF
+         CHAIN     "MENU"
+
+. -----------------------
+... Normal End of Job  
+. -----------------------
+
+NORMAL_EOJ
+
+    IF (RUN_MODE = "N")
+        DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL
+        MOVE      "        NEOJ        " TO X_FINISH_STATUS
+.        MOVE      "  a0808143 Completed   " TO X_PROG_FINISH
+.        CALL      X_END_OF_JOB
+    ENDIF
+        CALL        X_DISPLAY_COUNTS
+
+    RETURN
+
+. ----------------------------
+... Program Specific Includes
+. ----------------------------
+
+        INC   X_OGBFILE.IO
+        INC   UTIL.SR      
+        INC   VALID.IO
+        INC   X_STANDARD.SR
+        INC   FILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+...     End of a0808143.PS
+. +++++++++++++++++++++++++++++++++++++

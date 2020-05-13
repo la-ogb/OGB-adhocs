@@ -1,0 +1,617 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  a0910281.ps   
++    Description    :  M1 events with no sent date before 10/01/2009
++                   :  where plan member has MEDA but no MEDB
++    Author         :  Eileen Stark
++    Project #      :  A0910281
++    Date created   :  10/28/2009
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                             Revisions
++    apiii mm/dd/ccyy Ayymmdd# - Description               
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       X_RGNXREF.WS
+              INC       VALID.RL
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL                Member Demographics File
+              INC       MEME.RL          
+              INC       MEMO.RL          
+              INC       CLI.RL
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+REF_FILE        FILE      VAR=16,TEXT
+REF_NAME        INIT      "/w/a0910281.ref"
+REF_LIST        LIST
+REF_MEM         DIM       8
+REF_CLI         DIM       8
+                LISTEND
+
+LABELS_FILE     FILE      VAR=175,TEXT
+LABELS_NAME     INIT      "/w/a0910281.txt"
+LABEL_LIST      LIST
+LABEL_LNAME     DIM       20        .001-020
+LABEL_FNAME     DIM       15        .021-035
+LABEL_MINIT     DIM       1         .036-036
+LABEL_ADDRESS1  DIM       35        .037-071          
+LABEL_ADDRESS2  DIM       35        .072-106           
+LABEL_CITY      DIM       30        .107-136                    
+LABEL_STATE     DIM       2         .137-138       
+LABEL_ZIP       DIM       13        .139-151     
+LABEL_MEM       DIM       8         .152-159
+                LISTEND
+
+LABAGY_FILE     FILE      VAR=375,TEXT
+LABAGY_NAME     INIT      "/w/a0910281a.txt"
+LABAG_LIST      LIST
+LABAG_AGYCONT   DIM       35        .001-035          
+LABAG_AGYNAME   DIM       35        .036-070          
+LABAG_ADDRESS1  DIM       35        .071-105          
+LABAG_ADDRESS2  DIM       35        .106-140           
+LABAG_CITY      DIM       30        .141-170                    
+LABAG_STATE     DIM       2         .171-172       
+LABAG_ZIP       DIM       13        .173-185     
+LABAG_LNAME     DIM       20        .186-205
+LABAG_FNAME     DIM       15        .206-220
+LABAG_MINIT     DIM       1         .221-221
+                LISTEND
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+DISP3           DIM       3
+DISP4           DIM       4
+ACT_RESULT      FORM      1 
+MEM_RESULT      FORM      1 
+MEME_RESULT     FORM      1 
+MEMO_RESULT     FORM      1 
+VAL_RESULT      FORM      1 
+LABEL_SRTKEY    INIT      "139-143 1-36 -T -U"
+LPTR            FORM      2
+WRK_DIM1        DIM       1
+WRK_DIM4        DIM       4
+DATE1           DIM       8
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+SPACES          DIM       8
+WS_MEME_ID1     DIM       8
+WS_MEME_ID2     DIM       4
+PREV_MEME_ID1   DIM       8
+PREV_MEME_PRD   DIM       5
+PREV_MEME_PLAN  DIM       4
+VALID_HEALTH_CODE  DIM    1        
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+VALID_DATE      DIM       1          
+YN_ANS          DIM       1          
+BLANK8          INIT      "        "
+SPACE1          INIT      " "
+SPACE30         DIM       30 
+LIFE            INIT      "LIFE "
+MCOV_CUR        FORM      1
+MEDA_CUR        FORM      1
+MEDB_CUR        FORM      1
+MEDD_ELG        FORM      1
+HOLD_ESSN       DIM       9
+HOLD_LNAME      DIM       20        .>enrollee last name
+HOLD_FNAME      DIM       15        .>enrollee first name
+HOLD_MINIT      DIM       1         .>enrollee middle initial 
+HOLD_ADDR2      DIM       35        .>address line 2           
+HOLD_CITY       DIM       30        .>city                     
+HOLD_STATE      DIM       2         .>state        
+HOLD_ZIP        DIM       13        .>zip code     
+
+W_CLI           DIM       4
+
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "M1 events not sent" TO  C_OPER
+         MOVE      "a0910281"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         MOVE "N" TO RUN_MODE
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         CALL      INITIALIZE
+       	 CALL      EXT_LABEL_FILES 
+         CALL      SORT_OUTPUT 
+         CALL      DISPLAY_LABEL_COUNT      
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Records Read:    " TO X_CNTDESC1
+       	 MOVE      "Records Found:   " TO X_CNTDESC2
+       	 MOVE      "" TO X_CNTDESC3
+       	 MOVE      "LABELS GENERATED:" TO X_CNTDESC4
+       	 MOVE      "" TO X_CNTDESC5
+       	 MOVE      "" TO X_CNTDESC6
+	 
+       	 CALL      X_DISPLAY_COUNTS
+
+         MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT"
+
+. reformat M1 events with no sent date
+. grab only those created before 10/01/2009    
+         PACK SCRATCH WITH BLANKS 
+         PACK SCRATCH WITH "eve.dbf ",REF_NAME: 
+                      " -p9-10=LT":                .. event type
+                      " -p954-955=M1":             .. letter series
+                      " -p1109-1116lt20091001":     .. when letter created
+                      " -p1161-1168=#"",BLANK8,"#"":      .. letter sent date 
+                      " 32-39 568-575 -t -j"        .. mem id, cli id
+
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(eve.dbf)"
+             CHAIN "MENU"
+         ENDIF
+ 
+         MESSAGE HORZ="22",VERT="20":
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:
+                 LNCOL=C_DLGL,SHADE="y": 
+                 TEXT="******* REFORMAT COMPLETE *******";
+ 
+       	 MOVE      REF_NAME TO C_FILE
+	 CALL  	   OPEN_OGBFILE USING REF_FILE,REF_NAME
+
+       	 MOVE      LABELS_NAME TO C_FILE
+	 CALL 	   PREP_OGBFILE USING LABELS_FILE,LABELS_NAME
+
+       	 MOVE      LABAGY_NAME TO C_FILE
+	 CALL 	   PREP_OGBFILE USING LABAGY_FILE,LABAGY_NAME
+
+         RETURN
+
+. ----------------------------
+. Extract Label Information
+. ----------------------------
+EXT_LABEL_FILES
+
+         debug
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING REF_FILE,REF_NAME,REF_LIST
+            IF (RESULT <> 1)
+               BREAK   
+            ENDIF
+
+            ADD 1 TO X_CNT1
+            UNPACK X_CNT1 INTO DISP4,DISP3
+            IF (DISP3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF
+            PACK MEM_FK11 WITH REF_MEM
+            CALL FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+	 	                 MEM_FN:  ...FILE NAME LIST  
+		                 MEM_FC:  ...TYPE OF INDEX   
+.		                          ...(I)NDEX OR (A)IMDEX
+		                 MEM_FV:  ...FILE KEY VARLISTS
+		                 MEM_FK:  ...FILE KEY SIZES  
+		                 MEM_LIST:...FILE RECORD (FIELD LIST)
+        	                 MEM_REC: ...FILE RECORD (PACKED)
+		                 MEM_OLD: ...FILE SAVED WHEN READ
+		                 MEM_QTY: ...NUMBER OF FILES 
+		                 1        ...FILE NUMBER FOR THIS READ
+
+            IF (RESULT <> 1)
+                 CONTINUE    
+            ENDIF
+
+. Suppress letter to deceased members
+            CONTINUE IF (SQUEEZE MEM_DOD <> "")
+
+. Include only those with current health coverage
+            CALL CHECK_MEME 
+            IF (NOT MCOV_CUR)
+               CONTINUE
+            ENDIF
+
+. Include those who have verified MEDA and no verified MEDB
+            CALL CHECK_MEMO              
+            IF (MEDA_CUR)
+               IF (NOT MEDB_CUR) 
+. ...Write out the label information
+                   MOVE MEM_LNAME TO LABEL_LNAME
+.                  SETLPTR LABEL_LNAME TO 20
+                   MOVE MEM_FNAME TO LABEL_FNAME
+.                  SETLPTR LABEL_FNAME TO 15
+                   MOVE MEM_MINIT TO LABEL_MINIT
+                   MOVE MEM_ADDR1 TO LABEL_ADDRESS1
+.                  SETLPTR LABEL_ADDRESS1 TO 35
+                   MOVE MEM_ADDR2 TO LABEL_ADDRESS2
+.                  SETLPTR LABEL_ADDRESS2 TO 35
+                   MOVE MEM_CITY TO LABEL_CITY
+.                  SETLPTR LABEL_CITY TO 30
+                   MOVE MEM_STATE TO LABEL_STATE
+                   MOVE MEM_ZIP TO LABEL_ZIP
+.                  SETLPTR LABEL_ZIP TO 13
+                   MOVE LABEL_ZIP TO RGN_ZIP_CODE
+                   MOVE REF_MEM   TO LABEL_MEM
+                   MOVE      OGB_SEQ1 TO OGB_SEQ
+                   CALL WRITE_OGBREC USING LABELS_FILE,LABELS_NAME,LABEL_LIST 
+                   ADD   1  TO X_CNT2
+. Get agency data
+                   CLEAR CLI_AIM
+                   PACK CLI_AIM1 WITH "01X",W_CLI,BLANKS
+                   PACK CLI_AIM2 WITH "02XBILL",BLANKS
+                   CALL FILE_READ USING CLI_FD:  ...FILE DECLARATION LIST
+	 	                 CLI_FN:  ...FILE NAME LIST  
+		                 CLI_FC:  ...TYPE OF INDEX   
+.		                          ...(I)NDEX OR (A)IMDEX
+		                 CLI_FV:  ...FILE KEY VARLISTS
+		                 CLI_AIM: ...FILE KEY SIZES  
+		                 CLI_LIST:...FILE RECORD (FIELD LIST)
+        	                 CLI_REC: ...FILE RECORD (PACKED)
+		                 CLI_OLD: ...FILE SAVED WHEN READ
+		                 CLI_QTY: ...NUMBER OF FILES 
+		                 2        ...FILE NUMBER FOR THIS READ
+
+                  IF (RESULT <> 1)
+                     CONTINUE    
+                  ENDIF  
+                  
+		  PACK LABAG_AGYCONT  WITH CLI_CONT,BLANKS
+                  PACK LABAG_AGYNAME  WITH CLI_NAME
+                  PACK LABAG_ADDRESS1 WITH CLI_ADDR1
+                  PACK LABAG_ADDRESS2 WITH CLI_ADDR2
+                  PACK LABAG_CITY     WITH CLI_CITY
+                  PACK LABAG_STATE    WITH CLI_STATE 
+                  PACK LABAG_ZIP      WITH CLI_ZIP
+                  PACK LABAG_LNAME    WITH MEM_LNAME 
+                  PACK LABAG_FNAME    WITH MEM_FNAME,BLANKS
+                  PACK LABAG_MINIT    WITH MEM_MINIT
+                  CALL WRITE_OGBREC USING LABAGY_FILE,LABAGY_NAME,LABAG_LIST 
+               ENDIF  
+            ENDIF  
+         REPEAT  
+
+         RETURN
+
+    
+. -----------------------------------------------------------------------
+. This checks for MEDA and MEDB                               
+. -----------------------------------------------------------------------
+
+CHECK_MEMO 
+         CLEAR     MEDA_CUR 
+         CLEAR     MEDB_CUR 
+         CLEAR     MEMO_RESULT
+         PACK      MEMO_FK11 WITH REF_MEM,BLANKS
+         CALL      FILE_READ USING MEMO_FD:     ...FILE DECLARATION LIST
+                                   MEMO_FN:     ...FILE NAME LIST  
+                                   MEMO_FC:     ...TYPE OF INDEX   
+.                                               ...(I)NDEX OR (A)IMDEX
+                                   MEMO_FV:     ...FILE KEY VARLISTS
+                                   MEMO_FK:     ...FILE KEY SIZES  
+                                   MEMO_LIST:   ...FILE RECORD (FIELD LIST)
+                                   MEMO_REC:    ...FILE RECORD (PACKED)
+                                   MEMO_OLD:    ...FILE SAVED WHEN READ
+                                   MEMO_QTY:    ...NUMBER OF FILES 
+                                   1            ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEMO_FD:     ...FILE DECLARATION LIST
+                                   MEMO_FN:     ...FILE NAME LIST  
+                                   MEMO_FC:     ...TYPE OF INDEX   
+.                                               ...(I)NDEX OR (A)IMDEX
+                                   MEMO_FV:     ...FILE KEY VARLISTS
+                                   MEMO_FK:     ...FILE KEY SIZES  
+                                   MEMO_LIST:   ...FILE RECORD (FIELD LIST)
+                                   MEMO_REC:    ...FILE RECORD (PACKED)
+                                   MEMO_OLD:    ...FILE SAVED WHEN READ
+                                   MEMO_QTY:    ...NUMBER OF FILES 
+                                   1            ...FILE NUMBER FOR THIS READ
+             IF (REF_MEM <> MEMO_ID1) OR (MEMO_RESULT <> 1))
+                BREAK           
+             ENDIF
+
+. Consider only MEDA and MEDB
+             IF (MEMO_TYPE <> "MEDA" AND MEMO_TYPE <> "MEDB")
+                CONTINUE
+             ENDIF
+
+. Exclude future effective dates
+.            IF (MEMO_EFF1 > CURRDATE)
+.               CONTINUE
+.            ENDIF
+
+. Exclude records termed prior to extract date
+             IF (MEMO_TRM1 < CURRDATE AND SQUEEZE MEMO_TRM1 <> "")
+                CONTINUE
+             ENDIF
+
+. Include only verified records
+            debug
+             IF (MEMO_VER <> "Y")
+                CONTINUE
+             ENDIF
+
+             IF (MEMO_TYPE = "MEDA")
+                SET MEDA_CUR            . MEDA record eff as of extract date
+             ELSE
+                SET MEDB_CUR            . MEDB record eff as of extract date
+             ENDIF
+
+         REPEAT
+
+         RETURN
+
+. -----------------------------------------------------------------------
+. This checks for current health coverage                     
+. -----------------------------------------------------------------------
+
+CHECK_MEME 
+         CLEAR     MCOV_CUR 
+         CLEAR     W_CLI    
+         PACK      MEME_FK11 WITH REF_MEM,BLANKS
+         CALL      FILE_READ USING MEME_FD:     ...FILE DECLARATION LIST
+                                   MEME_FN:     ...FILE NAME LIST  
+                                   MEME_FC:     ...TYPE OF INDEX   
+.                                               ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:     ...FILE KEY VARLISTS
+                                   MEME_FK:     ...FILE KEY SIZES  
+                                   MEME_LIST:   ...FILE RECORD (FIELD LIST)
+                                   MEME_REC:    ...FILE RECORD (PACKED)
+                                   MEME_OLD:    ...FILE SAVED WHEN READ
+                                   MEME_QTY:    ...NUMBER OF FILES 
+                                   1            ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:     ...FILE DECLARATION LIST
+                                   MEME_FN:     ...FILE NAME LIST  
+                                   MEME_FC:     ...TYPE OF INDEX   
+.                                               ...(I)NDEX OR (A)IMDEX
+                                   MEME_FV:     ...FILE KEY VARLISTS
+                                   MEME_FK:     ...FILE KEY SIZES  
+                                   MEME_LIST:   ...FILE RECORD (FIELD LIST)
+                                   MEME_REC:    ...FILE RECORD (PACKED)
+                                   MEME_OLD:    ...FILE SAVED WHEN READ
+                                   MEME_QTY:    ...NUMBER OF FILES 
+                                   1            ...FILE NUMBER FOR THIS READ
+             IF (REF_MEM <> MEME_ID1) OR (RESULT <> 1))
+                BREAK           
+             ENDIF
+
+. Consider only health coverage
+             IF ((SQUEEZE MEME_NET) = "LIFE" OR (SQUEEZE MEME_NET) = "NOCOV")
+                CONTINUE
+             ENDIF
+
+             IF ((SQUEEZE MEME_TRM) = "") OR (SQUEEZE MEME_TRM) > CURRDATE)
+                SET MCOV_CUR
+                UNPACK MEME_LEV1 INTO DIM1
+                IF (DIM1 = "R")
+                   PACK W_CLI WITH MEME_LEV2
+                ELSE
+                   PACK W_CLI WITH MEME_LEV1
+                ENDIF
+                BREAK
+             ENDIF
+
+         REPEAT
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+
+. ----------------------------
+. Sort Output by Zip Code
+. ----------------------------
+SORT_OUTPUT
+        MOVE      LABELS_NAME TO C_FILE
+       	CALL 	    CLOSE_OGBFILE USING LABELS_FILE,LABELS_NAME  
+        DISPLAY   *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                  *P30:21,"SORTING FILE...",*BOLDOFF
+        MOVE      LABEL_SRTKEY TO C_KEYS
+        CALL      SORT_OGBFILE USING LABELS_NAME,LABELS_NAME,LABEL_SRTKEY
+        IF OVER
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT FAILED(label.txt)"
+            CHAIN   "MENU"
+        ENDIF
+
+        RETURN
+
+
+. -----------------------------
+. Count the Output Records again
+. since some are eliminated by the
+. unique sort.  The Operators must 
+. give a count of Labels to Generate 
+. so this number is important.
+. -----------------------------
+DISPLAY_LABEL_COUNT
+         MOVE      LABELS_NAME TO C_FILE
+         CALL 	   OPEN_OGBFILE USING LABELS_FILE,LABELS_NAME  
+
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING LABELS_FILE,LABELS_NAME,LABEL_LIST
+            MOVE RESULT TO ACT_RESULT
+            IF (ACT_RESULT <> 1)
+                BREAK   
+            ENDIF
+
+            ADD 1 TO X_CNT4
+            UNPACK X_CNT4 INTO DISP4,DISP3
+            IF (DISP3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF
+
+         REPEAT
+
+         RETURN
+
+
+. ----------------------------
+. The Label file was closed before
+. it was sorted.
+. ----------------------------
+CLOSE_FILES
+       	 MOVE      REF_NAME TO C_FILE
+	 CALL  	   CLOSE_OGBFILE USING REF_FILE,REF_NAME
+
+       	 MOVE      LABELS_NAME TO C_FILE
+	 CALL  	   CLOSE_OGBFILE USING LABELS_FILE,LABELS_NAME
+
+    RETURN
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+       	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	        MOVE      "    A0910281 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       VALID.IO
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       X_RGNXREF.EX
+              INC       UTIL.SR 
+
+.----------------------------------------------------------------------------
+.End of A0910281.PS   
+.----------------------------------------------------------------------------

@@ -1,0 +1,466 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0503141.PS
++    Description    :  Extract member records whose agency have elected to 
++                   :  no longer use OGB for their insurance provider.
++    Author         :  Lisa Spurlock
++    Date created   :  10/01/2004
++    Project #      :  a0503141
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                          REVISIONS
+.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       MEMO.RL           
+    INC       D_MEMMEM.CB          ...Member Import Layout
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+REF_FD      FILE      VAR=12,TEXT
+REF_NAME    INIT      "/w/meme_ref_act.txt"  
+
+REF_LIST       LIST
+REF_ID1        DIM       08
+REF_ID2        DIM       04
+                  LISTEND
+
+.~~~~~~~~~~OUTPUT FILES
+
+OUT_FILE          FILE      VAR=125,TEXT
+OUT_NAME          INIT      "/ogb/work/a0503141.txt"
+
+OUT_LIST     LIST
+OUT_MEM_LNAME     DIM       16
+OUT_MEM_FNAME     DIM       16
+OUT_MEM_MINIT     DIM       01
+OUT_MEM_ADDR1     DIM       25
+OUT_MEM_ADDR2     DIM       25
+OUT_MEM_CITY      DIM       15
+OUT_MEM_STATE     DIM       02
+OUT_MEM_ZIP       DIM       10
+OUT_MEME_AGENCY   DIM       06
+OUT_MEM_ESSN      DIM       09
+             LISTEND
+
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+W_DIM3                  DIM     3
+W_DIM2                  DIM     2
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+TERM_LETR_DATE  	DIM      8
+TODAY           	DIM      8
+.TODAY           	INIT     "20041231"
+TODAY_CCYY           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+CAL_CLOCK       	DIM      21
+DISP4                   DIM      04
+DISP3                   DIM      03
+BLANK8                  INIT     "        "
+HLD_MEM_ID1             DIM      08  
+INP_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+MEME_RESULT             FORM      1 
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+TERM_DATE               DIM      8
+
+TICKEY                  INIT     "~~~~"
+
+AGCY_NBR                INIT     "1901 "    
+MEME_LEV1_1             DIM      1          
+MEME_LEV1_23            DIM      2          
+MEME_LEV1_45            DIM      2          
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 		    chains to the print program
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "MENU"                     TO    C_NEXT
+      MOVE      "Extract 1901 SVSP's"      TO    C_OPER
+      MOVE      "A0503141"                 TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+
+  CALL      INITIALIZE
+
+. ...Reformat MEME file
+  CALL      REFORMAT_MEME
+
+  DEBUG
+  CALL      OPEN_FILES
+  DEBUG
+  CALL      EXTRACT_OUTPUT_FILE    
+  CALL      CLOSE_FILES
+  SORT "/w/a0503141.txt /w/a0503141.txt 117-125 -u -t"
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "MENU"                     TO    C_NEXT
+  MOVE      "Extract 1901 SVSP's"      TO    C_OPER
+  MOVE      "A0503141"                 TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Records Read:        " TO X_CNTDESC1
+  MOVE "Records Written:     " TO X_CNTDESC2
+  MOVE "Records Processed    " TO X_CNTDESC3
+  MOVE "Error Records Found: " TO X_CNTDESC4
+  MOVE "                     " TO X_CNTDESC5
+  MOVE "                     " TO X_CNTDESC6
+  DISPLAY *ES
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+  UNPACK TODAY INTO TODAY_CCYY,TODAY_MM,TODAY_DD
+
+ RETURN
+
+.............................................................................
+
+.-------------------------------
+. Reformat MEME file
+.-------------------------------
+REFORMAT_MEME
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+.-------------------------------------------------------------
+...Get only Records for the agency that was keyed in MEME_LEV1
+.-------------------------------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf meme.ref": 
+              " -p021-025eq#"",AGCY_NBR,"#" -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.dbf)"
+               CHAIN     "MENU"
+         ENDIF
+    
+.-------------------------------------------------------------
+...Get only Records for the agency that was keyed in MEME_LEV2
+.-------------------------------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf meme.ref": 
+              " -p026-030eq#"",AGCY_NBR,"#" -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.ref append)"
+               CHAIN     "MENU"
+         ENDIF
+    
+.----------------------------------------
+...Get only Records without term dates
+.----------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.ref /w/meme_ref_act.txt": 
+              " -p104-111eq#"",BLANK8,"#" 1-12 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.agymems)"
+               CHAIN     "MENU"
+         ENDIF
+
+.------------------------------------------
+...Get only Records with term dates > today
+.------------------------------------------
+
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.ref /w/meme_ref_act.txt":     
+              " -p104-111gt#"",TODAY,"#" 1-12 -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.agymems append)"
+               CHAIN     "MENU"
+         ENDIF
+
+    SORT "/w/meme_ref_act.txt /w/meme_ref_act.txt 1-12 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(meme.agymems)"
+               CHAIN     "MENU"
+         ENDIF
+ 
+    RETURN
+
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+    CALL OPEN_OGBFILE USING REF_FD,REF_NAME             
+ 
+    CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME   
+
+  RETURN
+
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file (meme.agymems)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING REF_FD,REF_NAME,REF_LIST
+        IF (RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the MEM file for the Member 
+
+        PACK      MEM_FK11 WITH REF_ID1
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+
+... If the Member is not found, the program writes to an error file
+... and then continues to the next record to be read.
+
+        IF (RESULT <> 1)
+            CONTINUE
+        ENDIF
+        IF (MEM_REL <> "01")
+            CONTINUE         
+        ENDIF
+
+
+... Read the MEME record with the Member's Record ID 
+
+        PACK MEME_FK11 WITH REF_ID1,REF_ID2
+        CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                              MEME_FN:  ...FILE NAME LIST  
+                              MEME_FC:  ...TYPE OF INDEX   
+.                                       ...(I)NDEX OR (A)IMDEX
+                              MEME_FV:  ...FILE KEY VARLISTS
+                              MEME_FK:  ...FILE KEY SIZES  
+                              MEME_LIST:...FILE RECORD (FIELD LIST)
+                              MEME_REC: ...FILE RECORD (PACKED)
+                              MEME_OLD: ...FILE SAVED WHEN READ
+                              MEME_QTY: ...NUMBER OF FILES 
+                              1         ...FILE NUMBER FOR THIS READ
+             IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                CONTINUE
+             ENDIF
+             UNPACK MEME_LEV1 INTO W_DIM3,W_DIM2
+             IF (W_DIM2 = "SV")
+                CALL WRITE_OUT_RECS
+                CONTINUE
+             ELSE
+              IF ((SQUEEZE MEME_LEV2 = "94") OR (SQUEEZE MEME_LEV2 = "95"))
+                CALL WRITE_OUT_RECS
+                CONTINUE
+              ENDIF
+             ENDIF
+  REPEAT
+  RETURN
+
+.
+.******************************************************************************
+WRITE_OUT_RECS      
+.******************************************************************************
+ 
+    MOVE MEM_ESSN  TO OUT_MEM_ESSN
+    MOVE MEM_LNAME TO OUT_MEM_LNAME
+    MOVE MEM_FNAME TO OUT_MEM_FNAME
+    MOVE MEM_MINIT TO OUT_MEM_MINIT
+    MOVE MEM_ADDR1 TO OUT_MEM_ADDR1
+    MOVE MEM_ADDR2 TO OUT_MEM_ADDR2
+    MOVE MEM_CITY  TO OUT_MEM_CITY
+    MOVE MEM_STATE TO OUT_MEM_STATE
+    MOVE MEM_ZIP   TO OUT_MEM_ZIP  
+    IF (SQUEEZE MEME_LEV1 = "1901")
+         PACK OUT_MEME_AGENCY WITH (SQUEEZE MEME_LEV1),(SQUEEZE MEME_LEV2)
+    ELSE
+        PACK OUT_MEME_AGENCY WITH (SQUEEZE MEME_LEV2),MEME_LEV1_23
+    ENDIF
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME:
+                            OUT_LIST  
+
+    ADD 1 TO X_CNT3
+
+  RETURN
+ 
+.
+.******************************************************************************
+
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+
+  CALL OPEN_OGBFILE  USING REF_FD,REF_NAME    
+
+  CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+  RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "   A0503141  Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

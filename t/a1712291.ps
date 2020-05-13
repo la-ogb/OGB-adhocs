@@ -1,0 +1,179 @@
+./* ====================================================================
+. *          Name : a1712291.ps
+. *   Description : Fix an issue with the LAGOV 834 ADDR2 delete routine
+. *         New record put through the D_MEMMEM process don't have "~"
+. *         replaced by " ". This caused some new members to have "~"
+. *         filled ADDR2 fields.
+. *
+. *         Fortunately, simply rewriting those MEM records will cause
+. *         the "~" to be removed, as they aren't new anymore.
+. * ...........................CHANGE LOG...............................
+. *  apjwh - 12/29/2017 - DEV - Initial Version
+. * ================================================================= */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC MEM.RL ...demographic
+    INC D_MEMMEM.CB ...Impact update record
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+UPDATE_FD       FILE VAR=X_INM_SIZE,TEXT
+UPDATE_FILE     INIT "a1712291.upd"
+
+LOG_FD          FILE VAR=50,TEXT
+LOG_FILE        INIT "/w/a1712291.log"
+LOG_LIST        LIST
+LOG_REC         CHAR 50
+                LISTEND
+
+PROG_NAME       INIT "ADH001"
+
+PARAM_LIST      LIST WITH NAMES
+.// add parameter variables here
+                LISTEND
+
+./* =============
+. * Begin Program
+. * ============= */
+
+.// Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+.// Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW LROUTINE
+./* Set runtime variables
+. */
+... Check return stack
+    RETCOUNT  ORIG_RETURN
+
+    MOVE "A1712291" TO C_PROG
+    MOVE "Fix MEMs With #"~#"" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG // signal start to Autosys
+    ENDIF
+
+.   // Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.   // Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+    CALL INIT_DISPLAY
+    debug
+    CALL FIND_TILDE_MEMS
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+INIT_DISPLAY LROUTINE
+    CALL X_ZERO_COUNTS
+
+    IF (C_RMODE = "I" & NOT C_CMDPAR)
+        MOVE "MEMs Reviewed" TO X_CNTDESC1
+        MOVE "MEMs With Tildes" TO X_CNTDESC2
+        MOVE "" TO X_CNTDESC3
+        MOVE "" TO X_CNTDESC4
+        MOVE "" TO X_CNTDESC5
+        MOVE "" TO X_CNTDESC6
+        CALL X_BLANK_SCREEN
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+FIND_TILDE_MEMS LROUTINE
+./* Read through all MEM records. If there is a "~" in it, rewrite the
+. * record.
+. */
+CURRENT_TIME    CHAR 8
+...
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+...Set up the log CSV
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    MOVE ("MEM ID Updated") TO LOG_REC
+    CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+
+    CALL UTIL_XMESSAGE USING "Read Through Alls MEMs, Searching for #"~#"s To Purge",26
+
+    CLOCK TIMESTAMP INTO DATE_CCYYMMDD
+    CLOCK TIME INTO CURRENT_TIME
+    CALL UTIL_XMESSAGE USING ("Start Time: "+CURRENT_TIME),30
+
+...Since this is a one time run, it's brute force. If this is set to run
+...periodically, it should be changed to work from a reformatted file
+...instead. Takes about 4 minutes to run currently, much of that is
+...wasted processor time reviewing old records
+
+    debug
+    CALL UTIL_MEM_FIND USING BLANKS
+    LOOP
+        CALL FILE_NEXT
+        BREAK IF (RESULT != 1)
+        CALL UTIL_XCOUNTER USING X_CNT1, 1000
+
+        SCAN "~" IN MEM_REC
+        CONTINUE IF (NOT EQUAL)
+
+        CALL UTIL_XCOUNTER USING X_CNT2,10
+
+        PACKLEN INM_REC WITH MEM_LIST
+        UNPACK INM_REC INTO INM_LIST
+        MOVE PROG_NAME TO INM_CHGBY
+        MOVE DATE_CCYYMMDD TO INM_CHGDT
+        CALL WRITE_OGBREC USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+        MOVE INM_ID1 TO LOG_REC
+        CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+    REPEAT
+
+    CLOCK TIME INTO CURRENT_TIME
+    CALL UTIL_XMESSAGE USING ("Complete Time: "+CURRENT_TIME),34
+
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+    INC UTIL_MEM.SR       // MEM read routines
+    INC UTIL_COMMON.SR    // OGB Compilation of Standard UTIL routines
+
+./* ==============
+. * End of program
+. * ============== */

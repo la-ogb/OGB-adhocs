@@ -1,0 +1,1116 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  A0612011
++    Description    :  Extract all members with any health insurance then   
++                      check to see if they have any Medicare.  If the before
++                      mentioned criteria is met then extract to a label file.
++ 
++    Author         :  Lisa Spurlock    
++    Date created   :  09/20/2006
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             Revisions
++    APDLM A061211 12/04/2006 - Created from Lisa's original program A0612011
++                               This version only considers MEDA and the 
++                               thru date was removed. 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       VALID.RL
+              INC       PRT.RL               ...Printer Definition File
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL                Member Demographics File
+              INC       MEME.RL          
+              INC       MEMO.RL          
+              INC       X_RGNXREF.WS
+
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+
+ACTOGB_FILE     FILE      VAR=12,TEXT      
+ACTOGB_NAME     INIT	  "meme.actogb"
+ 	    	 
+OUTPUT_FILE     FILE      VAR=80,TEXT 
+OUTPUT_NAME     INIT      "a0612011.txt"
+ 	    	 
+.----------------------------------------------------------------------------
+.Output File Lists                                 
+.----------------------------------------------------------------------------
+
+ACTOGB_LIST     LIST	   
+ACTOGB_KEY1     DIM       12
+	        LISTEND 	 	    	 
+
+OUTPUT_HDR1     LIST  
+FILLER1         DIM       13                              
+ACTIVES         INIT      " ACTIVES  "                     
+FILLER2         DIM       10                                
+COBRAS          INIT      "  COBRAS  "                       
+FILLER3         DIM       10                              
+RETIREES        INIT      " RETIREES "                    
+                LISTEND
+
+OUTPUT_HDR2     LIST  
+FILLER4         DIM       13                            
+A_DASHES        INIT      "----------"         
+FILLER5         DIM       10                              
+C_DASHES        INIT      "----------"           
+FILLER6         DIM       10                           
+R_DASHES        INIT      "----------"        
+                LISTEND
+
+OUTPUT_LIST     LIST
+FILLER7         DIM       13                            
+ACT_CONTR       FORM      10        .>ACTIVE CONTRACTS    
+FILLER8         DIM       10                            
+COB_CONTR       FORM      10        .>COBRA CONTRACTS    
+FILLER9         DIM       10                            
+RET_CONTR       FORM      10        .>RETIREE CONTRACTS    
+                LISTEND
+
+OUT_LIST        LIST
+FILLER10        INIT   "                 "
+FILLER11        INIT      "Utilization Review contract counts for "
+MM_CCYY         DIM       07                              
+                LISTEND
+
+MSG_FILE          FILE        VAR=500,TEXT
+MSG_NAME          INIT        "/emails/a0612011.msg"
+
+MSG_REC          LIST
+MS
+MSG_LINE1         INIT  "The U.R. contract counts are located on " 
+MSG_LINE3         INIT  "I:\Groups\Shared\ --> filename is utr0100_"
+COUNT_DATE        DIM   6                         
+                  LISTEND
+
+. ----------------------------
+. Sub Heading Line Definitions
+. ----------------------------   
+
+SUB1_REC      LIST
+..<Begin>.......................................................................
+.......
+SUB1_FL1      DIM    45
+SUB1_FL2      INIT   "UTILIZATION REVIEW CONTRACT COUNTS"               
+..<End>.........................................................................
+.......
+              LISTEND
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+
+
+DISP3           DIM       3
+DISP4           DIM       4
+ACT_RESULT      FORM      1 
+MEM_RESULT      FORM      1 
+MEME_RESULT     FORM      1 
+MEMO_RESULT     FORM      1 
+VAL_RESULT      FORM      1 
+LPTR            FORM      2
+WRK_DIM1        DIM       1
+WRK_DIM4        DIM       4
+DATE1           DIM       8
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+MONTH_CONT_DATE DIM       7
+SPACES          DIM       8
+FIRST_MEME_READ DIM       1 
+ANSWER          DIM       1
+WS_MEME_ID1     DIM       8
+WS_MEME_ID2     DIM       4
+PREV_MEME_ID1   DIM       8
+PREV_MEME_PRD   DIM       5
+PREV_MEME_PLAN  DIM       4
+VALID_HEALTH_CODE  DIM    1        
+HLD_ID1         DIM       8
+
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+VALID_DATE      DIM       1          
+YN_ANS          DIM       1          
+BLANK8          INIT      "        "
+PRIOR_YRMO      DIM       6       
+PRIOR_DATE      DIM       8       
+PRIOR_YR        DIM       4       
+PRIOR_MO        DIM       2
+PR_CCYY         DIM       4
+PR_MM           DIM       2
+PR_DD           DIM       2
+
+EXT_DATE        DIM       8       
+DIM_08          DIM       8       
+SLASH           INIT      "/"
+.THRU_PRI_DT     DIM       8       
+KEYIN_DATE      DIM       8          
+KEYIN_CCYY      DIM       4          
+KEYIN_MM        DIM       2          
+KEYIN_DD        DIM       2          
+SPACE1          INIT      " "
+SPACE30         DIM       30 
+LIFE            INIT      "LIFE "
+PPO             INIT      "PPO  "
+EPO             INIT      "EPO  "
+WS_MEDA         DIM       4
+WS_MEDB         DIM       4
+
+HLD_CNTRC_CNT   FORM      2
+HLD_MEME_NET    DIM       5
+ENR_MEME_DEPC   DIM       2
+ENR_MEME_NET    DIM       5
+ENR_MEME_PRD    DIM       5
+ENR_MEME_EFF    DIM       8
+ENR_MEME_RT     DIM       2
+HLD_ESSN        DIM       9
+
+ZIP_SRCH        DIM       5
+ZIP_REST        DIM       8
+
+OUT_REC         DIM       80
+
+ERRMSG          INIT    "YOU HAVE ENTERED AN INVALID RESPONSE !"          
+
+. ...Report Fields
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+.PARAM_XXX     DIM      10
+.PARAM_YYY     DIM       5
+.PARAM_DATE    DIM       8
+PARAM_CCYY    FORM      4         
+PARAM_MM      FORM      2        
+PARAM_DD      FORM      2         
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Count EPO&PPO contracts" TO  C_OPER
+.        MOVE      "U.R. Contract Count" TO  C_OPER
+         MOVE      "A0612011"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CLOCK     TIMESTAMP           INTO CURRDATE
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+
+         MOVE      "00000004" TO C_PRTUSR
+         CALL      PRINT_PICK      .this routine gives the user a printer list
+         RETURN    IF (RESULT = 2)
+
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+...Packing first day of current month into default prior date
+         UNPACK CURRDATE INTO PARAM_CCYY,PARAM_MM,PARAM_DD
+         PACK PRIOR_DATE WITH PARAM_CCYY,PARAM_MM,"01"          
+         REPLACE " 0" IN PRIOR_DATE
+         PACK PRIOR_YRMO WITH PARAM_CCYY,PARAM_MM          
+         REPLACE " 0" IN PRIOR_YRMO
+         UNPACK PRIOR_YRMO INTO PRIOR_YR,PRIOR_MO
+         PACK MONTH_CONT_DATE WITH PRIOR_MO,SLASH,PRIOR_YR
+         PACK COUNT_DATE      WITH PRIOR_YR,PRIOR_MO
+
+
+         DISPLAY *ES
+         DISPLAY *P15:8, "EXTRACT CLAIMS FOR THE MONTH OF ",MONTH_CONT_DATE
+         DISPLAY *P15:10, "WOULD YOU LIKE TO EXTRACT DIFFERENT DATES (Y/N): "
+         KEYIN   *P64:10, *UC,YN_ANS
+         IF (YN_ANS = "Y")
+             CALL KEYIN_DATES
+         ENDIF
+
+. ...Initialize
+         CALL      INITIALIZE
+	 
+         DEBUG
+
+. ...Reformat MEM file
+         DISPLAY *ES
+         CALL      REFORMAT_MEME
+         
+. ...Open Files	
+         CALL      OPEN_FILES 
+         
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+    DISPLAY *ES
+. ...Screen Display
+         MOVE      "Count EPO&PPO contracts" TO  C_OPER
+         MOVE      "A0612011"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. ...Extract Contract files 
+	 CALL      EXT_CONTRACT_FILES 
+
+
+. ...Prepare Report
+         CALL      REPORT_PREP
+
+. ...Print Report
+         CALL      PRINT_REPORT
+
+. ...Print Done
+         CALL      PRINT_DONE
+
+
+. ...FTP PDFs TO NT
+         DEBUG
+         CALL      FTP_PDFS
+         
+. ...Create Mail Message File
+...testing
+.         CALL      CREATE_MSG
+         
+. ...Send Emails
+...testing
+.         CALL      SEND_EMAILS
+
+
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Keying in date for the month that you want to extract counts for.
+. The "day" is changed to "01" so that we are always checking the 1st of month
+. ----------------------------
+KEYIN_DATES
+
+    CLEAR ANSWER
+    DISPLAY *ES
+    LOOP
+        MOVE "00000000" TO PRIOR_DATE
+
+        KEYIN *P=10:5, "ENTER THE START (FROM) DATE (CCYYMMDD): ":
+              *UC, PRIOR_DATE, *P=10:5, *EL
+        UNPACK PRIOR_DATE INTO PR_CCYY, PR_MM, PR_DD
+        MOVE "01" TO PR_DD
+        PACK PRIOR_DATE WITH PR_CCYY, PR_MM, PR_DD
+        MOVE PRIOR_DATE TO KEYIN_DATE
+        MOVE " " TO VALID_DATE
+        CALL VALIDATE_KEYIN_DATE
+        IF (VALID_DATE = "Y")
+            PACK MONTH_CONT_DATE WITH KEYIN_MM,SLASH,KEYIN_CCYY
+            PACK COUNT_DATE      WITH KEYIN_CCYY,KEYIN_MM
+            MOVE " " TO VALID_DATE
+            CALL VALIDATE_KEYIN_DATE
+            IF (VALID_DATE = "Y")
+                DISPLAY *P=10:5, *EL
+                DISPLAY *P=10:6, *EL
+                DISPLAY *P=10:8, *EL
+                DISPLAY *P=20:6,"FROM: ", PRIOR_DATE
+                KEYIN   *P=20:8,"IS THE ABOVE CORRECT (Y/N) ? ", *UC, ANSWER:
+                        *P=10:5, *ES
+                IF (ANSWER = "Y")
+                    BREAK
+                ELSE
+                    CONTINUE
+                ENDIF
+            ELSE
+                DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                        *P=10:6, *EL    
+                CONTINUE
+            ENDIF
+        ELSE  
+            DISPLAY *P=20:6, *REVON, ERRMSG, *REVOFF, *W=5:
+                    *P=10:6, *EL    
+            CONTINUE
+        ENDIF
+   
+     REPEAT
+
+   RETURN
+
+. ----------------------------
+. Checking to see that it is a valid date occurring on or after 1/1/2000
+. ----------------------------
+VALIDATE_KEYIN_DATE
+
+    TYPE KEYIN_DATE
+    IF NOT EQUAL
+        RETURN
+    ENDIF
+   
+    UNPACK KEYIN_DATE INTO KEYIN_CCYY, KEYIN_MM, KEYIN_DD
+
+    IF (KEYIN_CCYY >= "2000") 
+        IF ((KEYIN_MM > "00") AND (KEYIN_MM <= "12"))
+            IF ((KEYIN_DD > "00") AND (KEYIN_DD <= "31"))
+                MOVE "Y" TO VALID_DATE
+            ENDIF
+        ENDIF
+    ENDIF
+
+  RETURN
+.............................................................................
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         DEBUG
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Records Read:  " TO X_CNTDESC1
+	 MOVE      "Records Found: " TO X_CNTDESC2
+	 MOVE      "Active Recs.:  " TO X_CNTDESC3
+	 MOVE      "Cobra Recs.:   " TO X_CNTDESC4
+	 MOVE      "Retired Recs.: " TO X_CNTDESC5
+	 MOVE      "" TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+. ---------------------------------
+
+
+.
+.-------------------------------
+. Reformat MEME file
+.-------------------------------
+REFORMAT_MEME
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+...Get only records with OGB Network and PPO Product
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.ogb": 
+                      " -p117-121eq#"",PPO,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(meme.dbf)"
+        CHAIN "MENU"
+    ENDIF
+ 
+...Get only records with OGB Network and EPO Product
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.ogb": 
+                      " -p117-121eq#"",EPO,"#" -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(meme.dbf append)"
+        CHAIN "MENU"
+    ENDIF
+ 
+...Get only Records without term dates
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/ogb/work/meme.ogb /ogb/work/meme.actogb": 
+              " -p104-111eq#"",BLANK8,"#" 1-12 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.ogb)"
+               CHAIN     "MENU"
+         ENDIF
+
+...Get only Records with term dates > the prior date
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/ogb/work/meme.ogb /ogb/work/meme.actogb":     
+              " -p104-111gt#"",PRIOR_DATE,"#" 1-12 -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.actogb append)"
+               CHAIN     "MENU"
+         ENDIF
+
+...Display message to Operator that reformat completed
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="******* REFORMAT COMPLETE *******";
+
+    SORT "/ogb/work/meme.actogb /ogb/work/meme.actogb 1-12 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(meme.actppo)"
+               CHAIN     "MENU"
+         ENDIF
+ 
+    RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+
+         PACK      OGB_NAME WITH OGB_PATH,ACTOGB_NAME
+	 MOVE      ACTOGB_NAME TO C_FILE
+	 CALL 	   OPEN_OGBFILE USING ACTOGB_FILE,OGB_NAME
+
+         PACK      OGB_NAME WITH OGB_PATH,OUTPUT_NAME
+	 MOVE      OUTPUT_NAME TO C_FILE
+	 CALL 	   PREP_OGBFILE USING OUTPUT_FILE,OGB_NAME  
+
+    RETURN
+
+. ----------------------------
+. Reading down the file we created to count all contracts where there
+. is at least one member without MEDA. The reformatted file consists of only
+. members with PPO coverage that is not termed before the extract date (may
+. include future effective dates which will be eliminated).
+. This version also includes EPO's in the input file
+. The input file was sorted unique by MEME_ID1 and MEME_ID2
+. ----------------------------
+EXT_CONTRACT_FILES
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ACTOGB_FILE,ACTOGB_NAME,ACTOGB_LIST
+  DEBUG
+        MOVE RESULT TO ACT_RESULT
+        IF (ACT_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        CLEAR HLD_CNTRC_CNT
+
+        UNPACK ACTOGB_KEY1 INTO WS_MEME_ID1,WS_MEME_ID2
+        PACK MEME_FK11 WITH ACTOGB_KEY1
+        CALL FILE_READ USING MEME_FD:       ...FILE DECLARATION LIST
+                             MEME_FN:       ...FILE NAME LIST
+                             MEME_FC:       ...TYPE OF INDEX
+.                                           ...(I)NDEX or (A)IMDEX
+                             MEME_FV:       ...FILE KEY VARLIST
+                             MEME_FK:       ...FILE KEY SIZES
+                             MEME_LIST:     ...FILE RECORD (FIELD LIST)
+                             MEME_REC:      ...FILE RECORD (PACKED)
+                             MEME_OLD:      ...FILE SAVED WHEN READ
+                             MEME_QTY:      ...NUMBER OF FILES
+                             1              ...FILE NUMBER FOR THIS READ
+
+         MOVE RESULT TO MEME_RESULT
+         IF (MEME_RESULT <> 1)
+             CONTINUE       
+         ENDIF
+
+         IF (WS_MEME_ID1 <> MEME_ID1) 
+             CONTINUE       
+         ENDIF
+
+...95's have 2 records.  This keeps us from processing them twice.
+         IF ((SQUEEZE MEME_LEV2 = "95") AND (MEME_ID1 = HLD_ID1))
+             CONTINUE
+         ELSE
+             MOVE MEME_ID1 TO HLD_ID1
+         ENDIF
+
+         IF (SQUEEZE MEME_TRM = "")
+             MOVE "99999999" TO MEME_TRM
+         ENDIF
+
+...Coverage must be effective on keying date (keyin date is always 1st of mo.)
+         IF ((MEME_EFF <= PRIOR_DATE) AND (MEME_TRM >= PRIOR_DATE))  
+             MOVE MEME_DEPC TO ENR_MEME_DEPC
+             MOVE MEME_NET  TO ENR_MEME_NET
+             MOVE MEME_PRD  TO ENR_MEME_PRD
+             MOVE MEME_EFF  TO ENR_MEME_EFF
+             MOVE MEME_RT   TO ENR_MEME_RT 
+         ELSE
+             CONTINUE 
+         ENDIF
+
+         PACK MEM_FK11 WITH WS_MEME_ID1
+         CALL FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+	 	              MEM_FN:  ...FILE NAME LIST  
+		              MEM_FC:  ...TYPE OF INDEX   
+.		                       ...(I)NDEX OR (A)IMDEX
+		              MEM_FV:  ...FILE KEY VARLISTS
+		              MEM_FK:  ...FILE KEY SIZES  
+		              MEM_LIST:...FILE RECORD (FIELD LIST)
+        	              MEM_REC: ...FILE RECORD (PACKED)
+		              MEM_OLD: ...FILE SAVED WHEN READ
+		              MEM_QTY: ...NUMBER OF FILES 
+		              1        ...FILE NUMBER FOR THIS READ
+
+          MOVE RESULT TO MEM_RESULT
+          IF ((WS_MEME_ID1 <> MEM_ID1) OR (MEM_RESULT <> 1))
+              CONTINUE    
+          ENDIF
+
+          IF (MEM_REL <> "01")
+              CONTINUE
+          ENDIF 
+ 
+          IF (SQUEEZE ENR_MEME_PRD = "EPO")
+              UNPACK MEM_ZIP INTO ZIP_SRCH,ZIP_REST
+              MOVE ZIP_SRCH TO RGN_ZIP_CODE
+              CALL RGN_LOOKUP
+              IF (RGN_NUMBER = "06")
+                  CONTINUE
+              ENDIF
+          ENDIF
+
+          MOVE MEM_ESSN TO HLD_ESSN
+
+          CALL GET_MED
+
+...Counting contract if enrollee doesn't have MEDA
+          IF (SQUEEZE WS_MEDA = "")
+     DEBUG
+              SWITCH MEME_RT
+                  CASE "AC"
+                      ADD 1 TO X_CNT3
+                  CASE "CB" OR "CD" OR "CP"
+                      ADD 1 TO X_CNT4
+                  CASE "R1" OR "R2" OR "RN"
+                      ADD 1 TO X_CNT5
+              ENDSWITCH
+              CONTINUE
+          ELSE
+              IF (MEME_DEPC = "EE")
+                  CONTINUE
+              ELSE
+...Checking to see if any of the covered deps don't have MEDA
+                  CALL CHECK_DEPENDENTS
+              ENDIF
+          ENDIF
+
+    REPEAT  
+
+    MOVE MONTH_CONT_DATE TO MM_CCYY
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUTPUT_FILE,OUTPUT_NAME,OUT_LIST    
+
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUTPUT_FILE,OUTPUT_NAME,OUTPUT_HDR1 
+
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUTPUT_FILE,OUTPUT_NAME,OUTPUT_HDR2 
+
+    MOVE X_CNT3 TO ACT_CONTR
+    MOVE X_CNT4 TO COB_CONTR
+    MOVE X_CNT5 TO RET_CONTR
+
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUTPUT_FILE,OUTPUT_NAME,OUTPUT_LIST 
+
+   RETURN
+
+. -----------------------------------------------------------------------
+.Checks to see if the member has MEDA
+. -----------------------------------------------------------------------
+GET_MED      
+        CLEAR     WS_MEDA
+        CLEAR     WS_MEDB
+        CLEAR     MEMO_RESULT
+        PACK      MEMO_FK11 WITH WS_MEME_ID1,BLANKS
+        CALL      FILE_READ USING MEMO_FD:     ...FILE DECLARATION LIST
+                         MEMO_FN:           ...FILE NAME LIST  
+                         MEMO_FC:           ...TYPE OF INDEX   
+.                                           ...(I)NDEX OR (A)IMDEX
+                         MEMO_FV:           ...FILE KEY VARLISTS
+                         MEMO_FK:           ...FILE KEY SIZES  
+                         MEMO_LIST:         ...FILE RECORD (FIELD LIST)
+                         MEMO_REC:          ...FILE RECORD (PACKED)
+                         MEMO_OLD:          ...FILE SAVED WHEN READ
+                         MEMO_QTY:          ...NUMBER OF FILES 
+                         1                  ...FILE NUMBER FOR THIS READ
+    LOOP
+        CALL  FILE_NEXT USING MEMO_FD:  ...FILE DECLARATION LIST
+                         MEMO_FN:        ...FILE NAME LIST  
+                         MEMO_FC:        ...TYPE OF INDEX   
+.                                        ...(I)NDEX OR (A)IMDEX
+
+                         MEMO_FV:        ...FILE KEY VARLISTS
+                         MEMO_FK:        ...FILE KEY SIZES  
+                         MEMO_LIST:      ...FILE RECORD (FIELD LIST)
+                         MEMO_REC:       ...FILE RECORD (PACKED)
+                         MEMO_OLD:       ...FILE SAVED WHEN READ
+                         MEMO_QTY:       ...NUMBER OF FILES 
+                         1               ...FILE NUMBER FOR THIS READ
+        MOVE RESULT TO MEMO_RESULT
+        IF ((WS_MEME_ID1 <> MEMO_ID1) OR (MEMO_RESULT <> 1))
+            BREAK           
+        ENDIF
+
+...Checking for MEDA effective on the 1st of the month we are extracting for
+        SWITCH MEMO_TYPE
+            CASE "MEDA"
+                IF (SQUEEZE MEMO_EFF <> "")
+                    IF (SQUEEZE MEMO_TRM = "")
+                        MOVE "99999999" TO MEMO_TRM
+                    ENDIF
+                    IF ((MEMO_EFF <= PRIOR_DATE) AND (MEMO_TRM >=PRIOR_DATE))  
+                        MOVE MEMO_TYPE TO WS_MEDA
+                    ENDIF
+                ENDIF
+        ENDSWITCH
+    REPEAT
+
+  RETURN
+
+. -----------------------------------------------------------------------
+.Checks to see if the dependents have MEDA
+. -----------------------------------------------------------------------
+CHECK_DEPENDENTS
+
+     CLEAR     MEM_SAV
+     CLEAR     MEM_AIM
+     PACK      MEM_AIM1 WITH "01X",HLD_ESSN,BLANKS
+     CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                         MEM_FN:          ...FILE NAME LIST
+                         MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                         MEM_FV:          ...FILE KEY VARLISTS
+                         MEM_AIM:         ...FILE KEY SIZES
+                         MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                         MEM_REC:         ...FILE RECORD (PACKED)
+                         MEM_OLD:         ...FILE SAVED WHEN READ
+                         MEM_QTY:         ...NUMBER OF FILES
+                         2                ...FILE NUMBER FOR THIS
+
+     MOVE RESULT TO MEM_RESULT
+     IF (MEM_RESULT <> 1)
+         GOTO CHECK_DEPENDENTS_RET
+     ENDIF
+
+     CALL GET_REST_DEPS_INFO
+
+     IF (HLD_CNTRC_CNT = 1)
+    DEBUG
+          SWITCH ENR_MEME_RT
+              CASE "AC"
+                  ADD 1 TO X_CNT3
+              CASE "CB" OR "CD" OR "CP"
+                  ADD 1 TO X_CNT4
+              CASE "R1" OR "R2" OR "RN"
+                  ADD 1 TO X_CNT5
+          ENDSWITCH
+          GOTO CHECK_DEPENDENTS_RET
+     ENDIF
+ 
+     LOOP
+         CALL FILE_NEXT USING MEM_FD:         ...FILE DECLARATION LIST
+                              MEM_FN:         ...FILE NAME LIST
+                              MEM_FC:         ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                              MEM_FV:         ...FILE KEY VARLIST
+                              MEM_AIM:        ...FILE KEY SIZES
+                              MEM_LIST:       ...FILE RECORD (FIELD LIST)
+                              MEM_REC:        ...FILE RECORD (PACKED)
+                              MEM_OLD:        ...FILE SAVED WHEN READ
+                              MEM_QTY:        ...NUMBER OF FILES
+                              2               ...FILE NUMBER FOR THIS READ
+
+         MOVE RESULT TO MEM_RESULT
+         IF (MEM_RESULT <> 1)
+             BREAK
+         ENDIF
+
+         IF (MEM_ESSN <> HLD_ESSN)
+             BREAK
+         ELSE
+             IF (MEM_REL = "01")
+                 CONTINUE
+             ELSE
+                 CALL GET_REST_DEPS_INFO 
+                 IF (HLD_CNTRC_CNT = 1)
+    DEBUG
+                     SWITCH ENR_MEME_RT
+                         CASE "AC"
+                             ADD 1 TO X_CNT3
+                         CASE "CB" OR "CD" OR "CP"
+                             ADD 1 TO X_CNT4
+                         CASE "R1" OR "R2" OR "RN"
+                             ADD 1 TO X_CNT5
+                     ENDSWITCH
+                     BREAK
+                 ENDIF
+             ENDIF
+         ENDIF
+     REPEAT
+
+CHECK_DEPENDENTS_RET
+  RETURN
+
+.##############################################################################
+.Checks the dependents for any enrollee who has MEDA;
+.If we find a dep w/o MEDA, we count the contract.
+.##############################################################################
+GET_REST_DEPS_INFO
+
+...Already checked the enrollee
+     IF (MEM_REL = "01")
+         GOTO GET_REST_DEPS_INFO_RET
+     ENDIF
+
+     MOVE MEM_ID1 TO WS_MEME_ID1
+
+     MOVE " " TO FIRST_MEME_READ
+     CLEAR HLD_MEME_NET
+     CLEAR MEME_SAV
+     PACK MEME_FK11 WITH MEM_ID1,BLANKS
+
+     CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                          MEME_FN:             ...FILE NAME LIST
+                          MEME_FC:             ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                          MEME_FV:             ...FILE KEY VARLIST
+                          MEME_FK:             ...FILE KEY SIZES
+                          MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                          MEME_REC:            ...FILE RECORD (PACKED)
+                          MEME_OLD:            ...FILE SAVED WHEN READ
+                          MEME_QTY:            ...NUMBER OF FILES
+                          1                    ...FILE NUMBER FOR THIS READ
+
+     LOOP
+         CALL FILE_NEXT USING MEME_FD:         ...FILE DECLARATION LIST
+                              MEME_FN:         ...FILE NAME LIST
+                              MEME_FC:         ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                              MEME_FV:         ...FILE KEY VARLIST
+                              MEME_FK:         ...FILE KEY SIZES
+                              MEME_LIST:       ...FILE RECORD (FIELD LIST)
+                              MEME_REC:        ...FILE RECORD (PACKED)
+                              MEME_OLD:        ...FILE SAVED WHEN READ
+                              MEME_QTY:        ...NUMBER OF FILES
+                              1                ...FILE NUMBER FOR THIS READ
+
+         IF (RESULT <> 1)
+             GOTO GET_REST_DEPS_INFO_RET
+         ENDIF
+
+         IF (MEM_ID1 <> MEME_ID1)
+             IF (FIRST_MEME_READ = " ")
+                 GOTO GET_REST_DEPS_INFO_RET
+             ELSE
+                 IF (SQUEEZE HLD_MEME_NET = "")
+                     GOTO GET_REST_DEPS_INFO_RET
+                 ELSE
+                     BREAK
+                 ENDIF
+             ENDIF
+         ELSE
+             MOVE "N" TO FIRST_MEME_READ
+         ENDIF
+
+         IF (SQUEEZE MEME_NET <> SQUEEZE ENR_MEME_NET)
+             CONTINUE
+         ENDIF
+
+         IF (SQUEEZE MEME_TRM = "")
+             PACK MEME_SAV WITH MEME_REC
+             BREAK
+         ENDIF
+
+         IF ((MEME_TRM >= PRIOR_DATE)  AND (MEME_EFF <= ENR_MEME_EFF))
+             PACK HLD_MEME_NET WITH MEME_NET
+             PACK MEME_SAV WITH MEME_REC
+         ENDIF
+
+
+     REPEAT
+
+     UNPACK MEME_SAV INTO MEME_LIST
+
+     IF (MEME_NET <> ENR_MEME_NET)
+         GOTO GET_REST_DEPS_INFO_RET
+     ENDIF
+
+     CALL GET_MED
+
+     IF (SQUEEZE WS_MEDA = "")
+         ADD 1 TO HLD_CNTRC_CNT
+     ENDIF
+
+GET_REST_DEPS_INFO_RET
+  RETURN
+
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+         UNPACK    TIMESTAMP   INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+         PACK      R_DATE      WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+         PACK      R_TIME      WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+.        MOVE      0             TO  WRITE_COUNT
+.        MOVE      YES           TO  FIRST_PAGE
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+
+. This set of code is for printing portrait
+.        PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+.        PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+.        PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+.        PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+.        PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+.        PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s3b0T"
+
+         PACK      C_PRTFILE WITH "/w/a0612011.pdf"
+         MOVE      "P" TO C_ORIENT
+         CALL      PRINT_PREP
+        RETURN
+
+
+
+. ----------------------------
+. Print Report
+. ----------------------------
+
+   DEBUG
+PRINT_REPORT
+
+    PRINT   *N,OUT_LIST,*FLUSH
+
+    PRINT   *N,OUTPUT_HDR1,*FLUSH
+
+    PRINT   *N,OUTPUT_HDR2,*FLUSH
+
+    PRINT   *N,OUTPUT_LIST,*FLUSH
+
+   RETURN
+
+
+. ----------------------------
+. FTP PDFs
+. ----------------------------
+FTP_PDFS
+         PACK SCRATCH WITH BLANKS
+         PACK SCRATCH WITH "a0612011_pdf.ftp ",COUNT_DATE
+
+         ROLLOUT SCRATCH
+
+         IF OVER
+            ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="FTP FAILED(a0612011_pdf)"
+            CHAIN     "MENU"
+         ENDIF           
+
+         RETURN
+         
+
+. ----------------------------
+. Create Mail Message File
+. ----------------------------
+
+CREATE_MSG
+
+         MOVE MSG_NAME TO C_FILE
+         CALL PREP_OGBFILE USING MSG_FILE,MSG_NAME
+         
+         CALL WRITE_OGBREC USING MSG_FILE,MSG_NAME,MSG_REC
+         
+         CALL CLOSE_OGBFILE USING MSG_FILE,MSG_NAME
+
+         RETURN
+
+ 
+. ----------------------------
+. Send Emails
+. ----------------------------
+
+SEND_EMAILS
+         PACK SCRATCH WITH BLANKS
+         PACK SCRATCH WITH "a0612011.mail"
+         ROLLOUT SCRATCH
+         
+         IF OVER
+            ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="FTP FAILED(a0612011.mail)"
+            CHAIN     "MENU"
+         ENDIF           
+
+         RETURN
+         
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+    
+
+CLOSE_FILES
+
+
+	 CALL 	   CLOSE_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME  
+
+    RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    A0612011 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+    RETURN
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       VALID.IO
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       X_RGNXREF.EX 
+              INC       UTIL.SR 
+              INC       PRINT.SR 
+
+.----------------------------------------------------------------------------
+.End of A0612011.PS          
+.----------------------------------------------------------------------------

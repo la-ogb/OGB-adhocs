@@ -1,0 +1,493 @@
+.     *********************************************************************
+.     *             STATE EMPLOYEES GROUP BENEFITS PROGRAM                *
+.     *********************************************************************
+.     *                                                                   *
+.     * PROGRAM NAME: A1210251                                            *
+.     *                                                                   *
+.     * DESCRIPTION: (1)Eliminate all term dates on 5005-01 contracts     * 
+.     *              active on or after 01/01/2013
+.     *              (2)Term all 5005-00 contracts on 12/31/2012         
+.     *                                                                   *
+.     * PROGRAM NOTES AND REVISIONS:                                      *
+.     *                                                                   *
+.     * APSJM 02/06/2012 A1202031 dev  - INITIAL VERSION                  *
+.     *********************************************************************
+................................Revisions..................................
+.     * apazw 06/12/2017 - mod - increase file size
+...........................................................................
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       CMDPARAM.CB
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics 
+              INC       MEME.RL          ...Member Enrollment   
+              INC       D_MEMMEM.CB      ...Eligibility load
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+ACTCHIP5_LEV1_FILE            FILE      VAR=33,TEXT
+ACTCHIP5_LEV1_NAME            INIT      "/w/lev1.actchip5"
+ACTCHIP5_LEV1_LIST            LIST
+ACTCHIP5_LEV1_KEY1            DIM       008
+ACTCHIP5_LEV1_KEY2            DIM       004
+ACTCHIP5_LEV1_LEV2            DIM       005
+ACTCHIP5_LEV1_EFF             DIM       008
+ACTCHIP5_LEV1_TRM             DIM       008
+                          LISTEND
+.
+ACTCHIP5_LEV0_FILE            FILE      VAR=33,TEXT
+ACTCHIP5_LEV0_NAME            INIT      "/w/lev0.actchip5"
+ACTCHIP5_LEV0_LIST            LIST
+ACTCHIP5_LEV0_KEY1            DIM       008
+ACTCHIP5_LEV0_KEY2            DIM       004
+ACTCHIP5_LEV0_LEV2            DIM       005
+ACTCHIP5_LEV0_EFF             DIM       008
+ACTCHIP5_LEV0_TRM             DIM       008
+                          LISTEND
+.
+ACTCHIP5_FILE            FILE      VAR=33,TEXT
+ACTCHIP5_NAME            INIT      "/w/actchip5.txt"
+ACTCHIP5_LIST            LIST
+ACTCHIP5_KEY1            DIM       008
+ACTCHIP5_KEY2            DIM       004
+ACTCHIP5_LEVL            DIM       005
+ACTCHIP5_EFF             DIM       008
+ACTCHIP5_TRM             DIM       008
+                          LISTEND
+.
+.
+U_CHIP5_FD    FILE     VAR=X_INM_SIZE,TEXT
+U_CHIP5_NAME  INIT     "a1210251.txt"
+.
+.
+. ----------------------------
+. ----------------------------
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+CHIP5         INIT "CHIP5"
+LEV01            INIT "01   "
+LEV00            INIT "00   "
+W_20130101    INIT "20130101"
+BLANK8        INIT "        "
+W_CCYY        DIM  4
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+CNT_4         DIM  4
+CNT_3         DIM  3
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines(no printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "A1210251"        TO  C_PROG
+         MOVE      "CHIP5 TERM DATES"        TO  C_OPER
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL REFORMAT_MEME
+   CALL OPEN_FILES
+   CALL PROCESS_WRK
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_WRK
+    MOVE OGB_SEQ1 TO OGB_SEQ
+  LOOP
+    CALL READ_OGBFILE USING ACTCHIP5_FILE,ACTCHIP5_NAME,ACTCHIP5_LIST
+    IF (RESULT <> 1)
+        BREAK
+    ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+    IF (CNT1_3 = "000")
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+    PACK MEM_FK11 WITH ACTCHIP5_KEY1,BLANKS
+    CALL  FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+                           MEM_FN:  ...FILE NAME LIST
+                           MEM_FC:  ...TYPE OF INDEX
+.                                    ...(I)NDEX OR (A)IMDEX
+                           MEM_FV:  ...FILE KEY VARLISTS
+                           MEM_FK:  ...FILE KEY SIZES
+                           MEM_LIST:...FILE RECORD (FIELD LIST)
+                           MEM_REC: ...FILE RECORD (PACKED)
+                           MEM_OLD: ...FILE SAVED WHEN READ
+                           MEM_QTY: ...NUMBER OF FILES
+                           1         ...FILE NUMBER FOR THIS READ
+   IF (RESULT <> 1)
+      CONTINUE
+   ENDIF
+   PACK MEME_FK11 WITH ACTCHIP5_KEY1,ACTCHIP5_KEY2,BLANKS
+   CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                           MEME_FN:  ...FILE NAME LIST
+                           MEME_FC:  ...TYPE OF INDEX
+.                                    ...(I)NDEX OR (A)IMDEX
+                           MEME_FV:  ...FILE KEY VARLISTS
+                           MEME_FK:  ...FILE KEY SIZES
+                           MEME_LIST:...FILE RECORD (FIELD LIST)
+                           MEME_REC: ...FILE RECORD (PACKED)
+                           MEME_OLD: ...FILE SAVED WHEN READ
+                           MEME_QTY: ...NUMBER OF FILES
+                           1         ...FILE NUMBER FOR THIS READ
+   IF (RESULT <> 1)
+      DEBUG     
+   ENDIF
+   IF (SQUEEZE ACTCHIP5_LEVL = "01")
+    IF (SQUEEZE MEME_TRM <> "")
+      CLEAR INM_REC
+      PACKLEN INM_REC WITH MEM_REC,MEME_REC
+      UNPACK INM_REC INTO INM_LIST
+      FILL "~" IN INME_TRM
+      FILL "~" IN INME_TLET
+      MOVE BLANKS TO INME_NEWBY
+      MOVE BLANKS TO INME_CHGBY
+      MOVE BLANKS TO INME_TRUN
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING U_CHIP5_FD:
+                              U_CHIP5_NAME:
+                              INM_LIST
+    ELSE
+      CONTINUE
+    ENDIF
+   ENDIF 
+   IF (SQUEEZE ACTCHIP5_LEVL = "00")
+      MOVE "20121231" TO MEME_TRM
+      PACKLEN MEME_REC WITH MEME_LIST
+      CLEAR INM_REC
+      PACKLEN INM_REC WITH MEM_REC,MEME_REC
+      UNPACK INM_REC INTO INM_LIST
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      MOVE BLANKS TO INME_NEWBY
+      MOVE BLANKS TO INME_CHGBY
+      MOVE BLANKS TO INME_TRUN
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING U_CHIP5_FD:
+                              U_CHIP5_NAME:
+                              INM_LIST
+   ENDIF
+  REPEAT
+  RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+. ...Display Counters
+	 MOVE      "Input Recs Read:    " TO X_CNTDESC1
+	 MOVE      "Recs Written  :    " TO X_CNTDESC2
+	 CALL      X_DISPLAY_COUNTS
+
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING ACTCHIP5_FILE,ACTCHIP5_NAME
+         CALL      PREP_OGBFILE USING U_CHIP5_FD,U_CHIP5_NAME
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+REFORMAT_MEME
+.******************************************************************************
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+.----------------------------------
+...Get only CHIP5 LEV1 records                 
+.----------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /w/lev1.chip5":  
+                      " -p117-121eq#"",CHIP5,"#"":
+                      " -p26-30eq#"",LEV01,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(lev1.chip5)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+            CALL CMD_ERROR USING "lev1.chip5"
+            STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+.-------------------------------------------------------------------------
+...Get only CHIP5 LEV1 records active on or after 01/01/2013
+.-------------------------------------------------------------------------
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "/w/lev1.chip5 /w/lev1.actchip5 1-12 26-30 96-111":
+                      " -p104-111eq#"",BLANK8,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+         ERROR HORZ="15",VERT="19":
+               BGCOL=C_ERRB,FGCOL=C_ERRF:
+               LNCOL=C_ERRL,SHADE="Y":
+               TEXT="REFORMAT FAILED(lev1.actchip5)"
+         CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+           CALL CMD_ERROR USING "lev1.actchip5"
+           STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+.-----------------------------------------------------------------------------
+...Get only CHIP5 LEV1 records active on or after 01/01/2013
+.-----------------------------------------------------------------------------
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "/w/lev1.chip5 /w/lev1.actchip5 1-12 26-30 96-111": 
+                      " -p104-111gt#"",W_20130101,"#" -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(lev1.actchip5 append)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+           CALL CMD_ERROR USING "lev1.actchip5 append"
+           STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+.----------------------------------
+...Get only CHIP5 LEV0 records                 
+.----------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /w/lev0.chip5":  
+                      " -p117-121eq#"",CHIP5,"#"":
+                      " -p26-30eq#"",LEV00,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(lev0.chip5)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+            CALL CMD_ERROR USING "lev0.chip5"
+            STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+.-------------------------------------------------------------------------
+...Get only CHIP5 LEV0 records active on or after 01/01/2013
+.-------------------------------------------------------------------------
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "/w/lev0.chip5 /w/lev0.actchip5 1-12 26-30 96-111":
+                      " -p104-111eq#"",BLANK8,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+         ERROR HORZ="15",VERT="19":
+               BGCOL=C_ERRB,FGCOL=C_ERRF:
+               LNCOL=C_ERRL,SHADE="Y":
+               TEXT="REFORMAT FAILED(lev0.actchip5)"
+         CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+           CALL CMD_ERROR USING "lev0.actchip5"
+           STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+.-----------------------------------------------------------------------------
+...Get only CHIP5 LEV0 records active on or after 01/01/2013
+.-----------------------------------------------------------------------------
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "/w/lev0.chip5 /w/lev0.actchip5 1-12 26-30 96-111": 
+                      " -p104-111gt#"",W_20130101,"#" -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(lev0.actchip5 append)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+           CALL CMD_ERROR USING "lev0.actchip5 append"
+           STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "cat /w/lev1.actchip5 /w/lev0.actchip5 > /w/actchip5.txt"
+ ROLLOUT SCRATCH
+ IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(actchip5)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+            CALL CMD_ERROR USING "actchip5"
+            STOP
+        ENDIF
+      ENDIF
+ ENDIF
+.-------------------------------------------------------
+...Display message to operator that reformat is complete
+.-------------------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="     !!!!! REFORMAT COMPLETE !!!!!     ";
+    RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+    INC       X_OGBFILE.IO
+    INC       CMDPARAM.SR
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1210251.PS
+. +++++++++++++++++++++++++++++++++++++

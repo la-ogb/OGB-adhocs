@@ -1,0 +1,464 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1006251.PS
++    Description    :  ADH - Plugging the correct life rider in LF01 records
++                            on ISIS outbound's work file.
++                          
++    APSJM A1006251 06/25/2010 - INITIAL VERSION                                
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+              INC       ISIS_DLY.RL      ...Layouts for daily isis files
+. ----------------------------
+. File Declarations
+.Input Files
+
+ISISREF_FILE          FILE      VAR=76,TEXT
+ISISREF_NAME          INIT      "elg0902ref.txt"
+ISISREF_NAME1         DIM       30
+ISISREF_REC           DIM       76
+
+ISISREF_LIST          LIST
+..<BEGIN>....................................................................
+.                                     LOCATION     DESCRIPTION
+ISISREF_TYPE          DIM       4     001-004      Determined from table below
+ISISREF_EMP_SSN       DIM       9     005-013      MEM_ESSN
+ISISREF_AGENCY        DIM       4     014-017      MEME_LEV1
+ISISREF_EFFDATE       DIM       8     018-025      MEME_EFF
+ISISREF_TRMDATE       DIM       8     026-033      MEME_TRM
+ISISREF_NETWORK       DIM       5     034-038      MEME_NET
+ISISREF_PRODUCT       DIM       5     039-043      MEME_PRD
+ISISREF_PLANCODE      DIM       4     044-047      MEME_PLAN
+ISISREF_COVLEVEL      DIM       2     048-049      MEME_DEPC
+ISISREF_RIDER         DIM       4     050-053      MEME_RD01 thru MEME_RD10
+ISISREF_FACELIFE      DIM       5     054-058      BILD_IVOL
+ISISREF_PREMIUM       DIM       7     059-065      BILD_RATE
+ISISREF_VESTLEV       DIM       1     066-066      MEM_US01
+ISISREF_70FLAG        DIM       1     067-067      "Y" if age >= 70
+ISISREF_FLXRSN        DIM       1     068-068      Flex reason code from meme
+ISISREF_RUNDATE       DIM       8     069-076      Date program was run
+..<END>.......................................................................
+                      LISTEND
+
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+ISISWRK_KEY   DIM  13
+HLD_ID1       DIM  8
+HLD_TRM       DIM  8
+HLD_RIDERS    DIM  40
+DEP_RIDER     DIM  4
+
+DIM_2         DIM  2
+DIM_3         DIM  3
+Y             INIT "Y"
+CMP_MEMF_TRM       DIM  8
+CMP_MEME_TRM       DIM  8
+CNT_5         DIM  5
+CNT_4         DIM  4
+CNT_3         DIM  3
+CNT_2         DIM  2
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "FIND LIFE RIDER  " TO  C_OPER
+         MOVE      "A1006251"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL REFORMAT_WRK 
+    CALL OPEN_FILES
+    CALL READ_REF
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+. ----------------------------
+READ_REF
+. ----------------------------
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        MOVE REFMEME_NAME TO LOG_FIL
+        CALL READ_OGBFILE USING ISISREF_FILE, ISISREF_NAME, ISISREF_LIST
+
+        IF (RESULT <> 1)
+            BREAK
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO CNT_5,CNT_2
+        IF (CNT_2 = "00")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+        CLEAR HLD_ID1
+        CALL READ_MEM
+        IF (SQUEEZE HLD_ID1 = "")
+            CONTINUE
+        ENDIF
+
+        CALL READ_MEME 
+        CALL UPDATE_REC
+
+    REPEAT
+
+    RETURN
+
+
+. ----------------------------
+READ_MEM
+. ----------------------------
+
+     CLEAR     MEM_AIM
+     PACK      MEM_AIM1 WITH "01X",ISISREF_EMP_SSN,BLANKS
+     PACK      MEM_AIM3 WITH "03X","01",BLANKS
+     CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                               MEM_FN:          ...FILE NAME LIST
+                               MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                               MEM_FV:          ...FILE KEY VARLISTS
+                               MEM_AIM:          ...FILE KEY SIZES
+                               MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                               MEM_REC:         ...FILE RECORD (PACKED)
+                               MEM_OLD:         ...FILE SAVED WHEN READ
+                               MEM_QTY:         ...NUMBER OF FILES
+                               2                 ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+        RETURN
+    ENDIF
+
+    MOVE MEM_ID1 TO HLD_ID1
+
+    RETURN
+
+. ----------------------------
+READ_MEME
+. ----------------------------
+
+    CLEAR HLD_TRM
+    CLEAR HLD_RIDERS
+    CLEAR DEP_RIDER
+
+    PACK MEME_FK11 WITH HLD_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              IF ((MEME_ID1 <> HLD_ID1) OR (RESULT <> 1))
+                  BREAK       
+              ENDIF
+
+              IF (SQUEEZE MEME_NET <> "LIFE")
+                  CONTINUE
+              ENDIF
+
+              PACK HLD_RIDERS WITH MEME_RD01, MEME_RD02, MEME_RD03:
+                                   MEME_RD04, MEME_RD05, MEME_RD06, MEME_RD07:
+                                   MEME_RD08, MEME_RD09, MEME_RD10
+
+              IF (SQUEEZE MEME_TRM <> "")
+                  IF ((SQUEEZE HLD_TRM = "") OR (MEME_TRM > HLD_TRM))
+                      RESET HLD_RIDERS
+                      SCAN "DLBL" IN HLD_RIDERS
+                      IF EQUAL
+                          MOVE "DLBL" TO DEP_RIDER
+                          MOVE MEME_TRM TO HLD_TRM
+                      ENDIF
+                      RESET HLD_RIDERS
+                      SCAN "DLBH" IN HLD_RIDERS
+                      IF EQUAL
+                          MOVE "DLBH" TO DEP_RIDER
+                          MOVE MEME_TRM TO HLD_TRM
+                      ENDIF
+                      RESET HLD_RIDERS
+                      SCAN "DLSL" IN HLD_RIDERS
+                      IF EQUAL
+                          MOVE "DLSL" TO DEP_RIDER
+                          MOVE MEME_TRM TO HLD_TRM
+                      ENDIF
+                      RESET HLD_RIDERS
+                      SCAN "DLSH" IN HLD_RIDERS
+                      IF EQUAL
+                          MOVE "DLSH" TO DEP_RIDER
+                          MOVE MEME_TRM TO HLD_TRM
+                      ENDIF
+                  ENDIF
+              ENDIF
+
+        REPEAT
+
+    RETURN
+
+. ----------------------------
+UPDATE_REC
+. ----------------------------
+
+        PACK ISISWRK_KEY WITH ISISREF_EMP_SSN,ISISREF_TYPE
+        CALL READ_OGBFILE_IX USING ISISWRK_FILE:
+                                   ISISWRK_NAME1:
+                                   ISISWRK_KEY:
+                                   ISISWRK_LIST
+
+        MOVE DEP_RIDER TO ISISWRK_RIDER
+
+        CALL UPDATE_OGBREC_IX USING ISISWRK_FILE,ISISWRK_LIST
+
+    RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+REFORMAT_WRK 
+. ----------------------------
+
+        MESSAGE HORZ="22",VERT="20":
+        BGCOL=C_DLGB,FGCOL=C_DLGF:
+        LNCOL=C_DLGL,SHADE="y":
+        TEXT="REFORMATTING FILE ... PLEASE WAIT";
+
+        PACK SCRATCH WITH BLANKS
+        PACK SCRATCH WITH ISISWRK_FNAME1," ",ISISREF_NAME1," ":
+                          "-p1-4eqLF01 ":
+                          "-p34-34eq* ":
+                          "-p50-53eq**** -t"
+
+
+
+        REFORMAT SCRATCH
+            IF OVER
+                ERROR     HORZ="15",VERT="19":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="REFORMAT FAILED      "
+                CHAIN     "MENU"
+            ENDIF
+   
+        MESSAGE HORZ="22",VERT="20":
+                BGCOL=C_DLGB,FGCOL=C_DLGF:
+                LNCOL=C_DLGL,SHADE="y":
+          
+                TEXT="******* REFORMAT COMPLETE *******";
+
+    RETURN
+
+. ----------------------------
+INITIALIZE
+. ----------------------------
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+
+         PACK ISISREF_NAME1 WITH OGB_PATH,ISISREF_NAME
+         PACK ISISWRK_NAME1 WITH OGB_PATH,ISISWRK_NAME
+         PACK ISISWRK_FNAME1 WITH OGB_PATH,ISISWRK_FNAME
+
+    RETURN
+
+. ----------------------------
+OPEN_FILES
+. ----------------------------
+
+        CALL OPEN_OGBFILE USING ISISREF_FILE,ISISREF_NAME1  
+        CALL OPEN_OGBFILE_IX USING ISISWRK_FILE,ISISWRK_NAME1 
+   
+    RETURN
+
+. ----------------------------
+CLOSE_FILES
+. ----------------------------
+
+        CALL CLOSE_OGBFILE USING ISISREF_FILE,ISISREF_NAME1  
+        CALL CLOSE_OGBFILE_IX USING ISISWRK_FILE,ISISWRK_NAME1 
+
+    RETURN
+
+.________________________________________________________________________
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1001284.PS
+. +++++++++++++++++++++++++++++++++++++

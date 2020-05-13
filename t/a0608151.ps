@@ -1,0 +1,606 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0608151.ps
++    Description    :  Identify members who have Medicare -- by Plan and by ZIP
++    Author         :  apeks
++    Date created   :  08/15/2006
++    Project Number :  A0608151
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++   apeks  03/22/2005  A0608151 - DEV - Initial Version
++                                REVISIONS
++------------------------------------------------------------------------------
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demo File
+              INC       MEMO.RL              ...Member Other Coverage File
+              INC       MEME.RL              ...Member Enrollment File
+              INC       X_RGNXREF.WS         ...Region Cross Reference
+              
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+. ----------------------------
+...Input file -- Reformatted from MEM
+. ----------------------------
+
+INP_FILE       FILE  VAR=20,TEXT
+INP_NAME       INIT  "/w/a0608151.inp"
+INP_LIST       LIST
+INP_MEM        DIM   8
+               LISTEND 
+
+MASTER        DIM       @
+ENROLL_ID     DIM       @
+
+MCS@DIM1      DIM       @
+
+. -----------------------------
+...Output files
+. -----------------------------
+
+TMP1_NAME     INIT  "/w/a0608151.tmp1"
+TMP2_NAME     INIT  "/w/a0608151.tmp2"
+
+OUTP_FILE     IFILE  VAR=100,KEYL=5,TEXT
+OUTP_NAME     INIT  "/w/a0608151pln.ix1"
+OUTP_LIST     LIST
+OUTP_NET      DIM   5
+OUTP_CM1      DIM   1
+OUTP_ECNT     FORM  10
+OUTP_CM2      DIM   1
+OUTP_SCNT     FORM  10
+              LISTEND
+
+OUTP_TEXT     INIT  "/w/a0608151pln.txt"
+OUTP_CSV      INIT  "/w/a0608151pln.csv"
+
+OUTZ_FILE     IFILE  VAR=100,KEYL=5,TEXT
+OUTZ_NAME     INIT  "/w/a0608151zpc.ix1"
+OUTZ_LIST     LIST
+OUTZ_ZIPC     DIM   5 
+OUTZ_CM1      DIM   1
+OUTZ_ECNT     FORM  10
+OUTZ_CM2      DIM   1
+OUTZ_SCNT     FORM  10
+              LISTEND
+
+OUTZ_TEXT     INIT  "/w/a0608151zpc.txt"
+OUTZ_CSV      INIT  "/w/a0608151zpc.csv"
+
+OUTR_FILE     IFILE  VAR=100,KEYL=2,TEXT
+OUTR_NAME     INIT  "/w/a0608151rgn.ix1"
+OUTR_LIST     LIST
+OUTR_RGNC     DIM   2 
+OUTR_CM1      DIM   1
+OUTR_RGNN     DIM   20
+OUTR_CM2      DIM   1
+OUTR_ECNT     FORM  10
+OUTR_CM3      DIM   1
+OUTR_SCNT     FORM  10
+              LISTEND
+
+OUTR_TEXT     INIT  "/w/a0608151rgn.txt"
+OUTR_CSV      INIT  "/w/a0608151rgn.csv"
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+DIM8            DIM     8
+
+TIMESTAMP       DIM     14
+CURRDATE        DIM     8
+WRITE_COUNT     FORM    8
+ERROR_COUNT     FORM    8
+TRAP_DATA       DIM     500
+ORIG_RETURN     FORM    5
+CURR_RETURN     FORM    5
+CAL_CLOCK       DIM     21
+CNT1_4          DIM     4
+CNT1_3          DIM     3
+
+COMMA           INIT    "," 
+
+MEME_FOUND      INIT   "N"
+DATE_RSLT       DIM     2
+
+W_EARLY         DIM     8
+W_LATE          DIM     8
+
+W_ZIPC          DIM     5
+W_REL           DIM     2
+W_NET           DIM     5
+
+PARAM_LIST      LIST
+PARAM_FROM      DIM       8
+PARAM_THRU      DIM       8 
+                LISTEND
+
+. ----------------------------
+. Begin Program
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "Medicare Stats" TO  C_OPER
+         MOVE      "A0608151"            TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         CALL      INITIALIZE
+
+         CALL      READ_INPUT
+
+         CALL      SORT_FILES
+
+         CALL      NEOJ
+         
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+        
+. ...Clear Counters
+         MOVE 0 TO X_CNT1
+         MOVE 0 TO X_CNT2
+         MOVE 0 TO X_CNT3
+         MOVE 0 TO X_CNT4
+         MOVE 0 TO X_CNT5
+         MOVE 0 TO X_CNT6
+ 
+. ...Display Counters
+	 MOVE      "Members  Read   : " TO X_CNTDESC1
+	 MOVE      "Not Used        : " TO X_CNTDESC2
+	 MOVE      "Not Used        : " TO X_CNTDESC3
+	 MOVE      "Not Used        : " TO X_CNTDESC4
+	 MOVE      "Not Used        : " TO X_CNTDESC5
+	 MOVE      "Not Used        : " TO X_CNTDESC6
+	 
+         CALL X_DISPLAY_COUNTS	 
+
+
+         
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="20",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="Reformatting records...please wait";
+
+.Reformat MEMO records For MEDA          
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "memo.dbf ",TMP1_NAME," -t -j":
+                           " -p13-15=MEDA":               ... Medicare 
+                           " 1-8 ",BLANKS    ... Mem ID
+         REFORMAT SCRATCH
+             
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - memo.dbf to TMP1"
+             CHAIN     "menu"
+         ENDIF  
+
+.Reformat MEMO records For MEDB          
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "memo.dbf ",TMP2_NAME," -t -j":
+                           " -p13-15=MEDB":               ... Medicare 
+                           " 1-8 ",BLANKS    ... Mem ID
+         REFORMAT SCRATCH
+             
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - memo.dbf to TMP2"
+             CHAIN     "menu"
+         ENDIF  
+
+. Concatenate files into input file
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "cat ",TMP1_NAME," ",TMP2_NAME:
+                           " > ",INP_NAME,BLANKS
+         ROLLOUT SCRATCH
+
+. Sort input file
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH INP_NAME," ",INP_NAME," 1-8 -j -u -t",BLANKS
+         SORT SCRATCH
+
+. Open Files
+         CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+         CALL PREP_OGBFILE_IX USING OUTP_FILE,OUTP_NAME
+         CALL PREP_OGBFILE_IX USING OUTZ_FILE,OUTZ_NAME
+         CALL PREP_OGBFILE_IX USING OUTR_FILE,OUTR_NAME
+
+         RETURN
+
+. ----------------------------
+.  Read Input file
+. ----------------------------
+
+READ_INPUT
+
+         LOOP    
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING INP_FILE,INP_NAME,INP_LIST
+            IF (RESULT <> 1)
+                CALL X_DISPLAY_COUNTS             
+                BREAK
+            ENDIF             
+
+            ADD 1 TO X_CNT1
+            UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+            IF (CNT1_3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF  
+
+            debug
+            CALL FIND_MEME
+            CONTINUE IF (SQUEEZE W_NET = "")
+
+            CALL GET_MEM   
+            IF (SQUEEZE W_ZIPC <> "")
+               CALL ADD_ZIPC
+            ENDIF
+
+            CALL ADD_PLAN
+
+         REPEAT
+
+         RETURN
+
+. ----------------------------
+.  Find MEME
+. ----------------------------
+
+FIND_MEME
+
+             CLEAR W_NET
+
+             PACK      MEME_FK11 WITH INP_MEM,BLANKS
+             CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                       MEME_FN:  ...File name list
+                       MEME_FC:  ...(I)ndex or (A)imdex
+                       MEME_FV:  ...File key varlists
+                       MEME_FK:  ...File key sizes
+                       MEME_LIST: ...File record (field list)
+                       MEME_REC: ...File record (packed)
+                       MEME_OLD: ...File saved when read
+                       MEME_QTY: ...Number of files
+                       1         ...File number for this read
+             LOOP
+                CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                          MEME_FN:  ...File name list
+                          MEME_FC:  ...(I)ndex or (A)imdex
+                          MEME_FV:  ...File key varlists
+                          MEME_FK:  ...File key sizes
+                          MEME_LIST: ...File record (field list)
+                          MEME_REC: ...File record (packed)
+                          MEME_OLD: ...File saved when read
+                          MEME_QTY: ...Number of files
+                          1         ...File number for this read
+            
+                IF (RESULT <> 1)
+                    BREAK 
+                ENDIF
+
+                IF (MEME_ID1 <> INP_MEM)
+                    BREAK
+                ENDIF
+
+                CONTINUE IF (SQUEEZE MEME_PRD = "LIFE")
+                CONTINUE IF (MEME_EFF > CURRDATE)
+                CONTINUE IF (MEME_TRM < CURRDATE AND SQUEEZE MEME_TRM <> "")
+
+                debug
+                PACK W_NET  WITH MEME_NET  
+
+            REPEAT
+
+            RETURN
+
+. ----------------------------
+. Get MEM 
+. ----------------------------
+
+GET_MEM 
+
+         PACK W_ZIPC WITH BLANKS
+. Read MEM record
+         PACK     MEM_FK11 WITH INP_MEM,BLANKS 
+         CALL     FILE_READ USING MEM_FD:   ...File Declaration List
+                                  MEM_FN:   ...File Name List
+                                  MEM_FC:   ...(I)ndex or (A)imdex
+                                  MEM_FV:   ...File Key Varlists
+                                  MEM_FK:   ...File Key Sizes
+                                  MEM_LIST: ...File Record(Field List)
+                                  MEM_REC:  ...File Record(Packed)
+                                  MEM_OLD:  ...File Saved When Read
+                                  MEM_QTY:  ...Number Of Files
+                                  1         ...File Number For This Read
+                                  
+         IF (RESULT <> 1)
+            GOTO GET_MEM_END
+         ENDIF
+
+         IF (SQUEEZE MEM_ZIP > "00000")
+            UNPACK MEM_ZIP INTO W_ZIPC
+            PACK W_REL WITH MEM_REL
+         ENDIF
+
+GET_MEM_END 
+         RETURN
+
+. ----------------------------
+.  Add to Zipcode file
+. ----------------------------
+
+ADD_ZIPC
+
+         CLEAR OUTZ_LIST
+         CALL READ_OGBFILE_IX USING OUTZ_FILE,OUTZ_NAME,W_ZIPC,OUTZ_LIST
+         IF (RESULT = 1)
+            debug
+            SWITCH W_REL
+                   CASE "01"
+                        ADD 1 TO OUTZ_ECNT
+                   CASE "02"
+                        ADD 1 TO OUTZ_SCNT
+            ENDSWITCH 
+            CALL UPDATE_OGBREC_IX USING OUTZ_FILE,OUTZ_LIST
+         ELSE
+            debug
+            CLEAR OUTZ_LIST
+            SWITCH W_REL
+                   CASE "01"
+                        MOVE 1 TO OUTZ_ECNT
+                   CASE "02"
+                        MOVE 1 TO OUTZ_SCNT
+            ENDSWITCH
+
+            PACK OUTZ_ZIPC WITH W_ZIPC
+            PACK OUTZ_CM1 WITH COMMA
+            PACK OUTZ_CM2 WITH COMMA
+
+            CALL WRITE_OGBREC_IX USING OUTZ_FILE,OUTZ_NAME,OUTZ_ZIPC,OUTZ_LIST 
+         ENDIF  
+
+. Find Region
+         MOVE W_ZIPC TO RGN_ZIP_CODE          
+         CLEAR OUTR_LIST
+         CALL RGN_LOOKUP
+              IF (RGN_RESULT = "00")                     
+                 PACK OUTR_RGNC WITH "00"
+                 PACK OUTR_RGNN WITH "Out of State",BLANKS 
+              ELSE
+                 PACK OUTR_RGNC WITH RGN_NUMBER
+                 PACK OUTR_RGNN WITH (SQUEEZE RGN_NAME),BLANKS
+              ENDIF
+         CALL READ_OGBFILE_IX USING OUTR_FILE,OUTR_NAME,OUTR_RGNC,OUTR_LIST
+         IF (RESULT = 1)
+            debug
+            SWITCH W_REL
+                CASE "01"
+                     ADD 1 TO OUTR_ECNT
+                CASE "02"
+                     ADD 1 TO OUTR_SCNT
+            ENDSWITCH 
+            CALL UPDATE_OGBREC_IX USING OUTR_FILE,OUTR_LIST
+         ELSE
+            debug
+            SWITCH W_REL
+                   CASE "01"
+                        MOVE 1 TO OUTR_ECNT
+                   CASE "02"
+                        MOVE 1 TO OUTR_SCNT
+            ENDSWITCH
+
+            PACK OUTR_CM1 WITH COMMA
+            PACK OUTR_CM2 WITH COMMA
+            PACK OUTR_CM3 WITH COMMA
+
+            CALL WRITE_OGBREC_IX USING OUTR_FILE,OUTR_NAME,OUTR_RGNC,OUTR_LIST 
+         ENDIF   
+
+         RETURN
+
+. ----------------------------
+.  Add to Plan file
+. ----------------------------
+
+ADD_PLAN
+
+         CLEAR OUTP_LIST
+         CALL READ_OGBFILE_IX USING OUTP_FILE,OUTP_NAME,W_NET,OUTP_LIST
+         IF (RESULT = 1)
+            SWITCH W_REL
+                   CASE "01"
+                        ADD 1 TO OUTP_ECNT
+                   CASE "02"
+                        ADD 1 TO OUTP_SCNT
+            ENDSWITCH 
+            CALL UPDATE_OGBREC_IX USING OUTP_FILE,OUTP_LIST
+         ELSE
+            CLEAR OUTP_LIST
+            SWITCH W_REL
+                   CASE "01"
+                        MOVE 1 TO OUTP_ECNT
+                   CASE "02"
+                        MOVE 1 TO OUTP_SCNT
+            ENDSWITCH
+
+            PACK OUTP_NET  WITH W_NET 
+            PACK OUTP_CM1  WITH COMMA
+            PACK OUTP_CM2  WITH COMMA
+
+            CALL WRITE_OGBREC_IX USING OUTP_FILE,OUTP_NAME,OUTP_NET,OUTP_LIST 
+
+         ENDIF   
+
+         RETURN
+
+. ----------------------------
+.  sort output files
+. ----------------------------
+
+SORT_FILES
+
+         CALL CLOSE_OGBFILE_IX USING OUTZ_FILE
+         CALL CLOSE_OGBFILE_IX USING OUTP_FILE
+         CALL CLOSE_OGBFILE_IX USING OUTR_FILE
+         CALL CLOSE_OGBFILE    USING INP_FILE
+
+         CALL ERASE_OGBFILE USING TMP1_NAME
+         CALL ERASE_OGBFILE USING TMP2_NAME
+         CALL ERASE_OGBFILE USING INP_NAME
+
+. Sort zipcode file
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH OUTZ_TEXT," ",OUTZ_CSV," 1-5 -j -t",BLANKS
+         SORT SCRATCH
+
+. Sort network file
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH OUTP_TEXT," ",OUTP_CSV," 1-5 -j -t",BLANKS
+         SORT SCRATCH
+
+. Sort region file
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH OUTR_TEXT," ",OUTR_CSV," 1-2 -j -t",BLANKS
+         SORT SCRATCH
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. -----------------------
+.   Normal End of Job  
+. -----------------------
+
+NEOJ
+
+. ...Normal End-Of-Job
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="23",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="PROGRAM COMPLETED NORMALLY":
+                          TEXT="----------------------------------":
+                          TEXT="  Press any key to continue       ":
+                          FIELD=WCHAR 
+         ENDIF
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       X_RGNXREF.EX
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0608151.PS

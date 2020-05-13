@@ -1,0 +1,307 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : A0403251.PS
++    Description    : MERGES RETIREEES EXCEL FILES FORM STATE POLICE RETIREMENT
++    APSJM 03/25/2004 A0403251 ADH - INITIAL VERSION                       
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+
+. ---------------------------------------------
+. ~~~~~~~~~~   File  Declarations   ~~~~~~~~~~
+. ---------------------------------------------
+STP_RET          FILE    VAR=100,TEXT
+STP_NAME         INIT    "/w/strtret.txt"
+STP_RET_LIST     LIST
+STP_RET_SSN3     DIM     3 
+STP_RET_FIL1     DIM     1
+STP_RET_SSN2     DIM     2
+STP_RET_FIL2     DIM     1
+STP_RET_SSN4     DIM     4
+STP_RET_FIL3     DIM     1
+STP_RET_NAME     DIM     29
+STP_RET_DOB      DIM     8
+STP_RET_FIL4     DIM     3
+STP_RET_DOR      DIM     8
+                 LISTEND
+.
+STP_DRP          IFILE   VAR=9,KEYL=9,TEXT
+STP_DRP_NAME     INIT    "/w/strtdropssn.ix1"
+STP_DRP_LIST     LIST           
+STP_DRP_SSN      DIM     9
+                 LISTEND
+STP_DRP_KEY      DIM     9
+.
+STP_MERGE        FILE    VAR=55,TEXT
+STP_MERGE_NAME   INIT    "/w/strtreturn.txt"
+STP_MERGE_LIST   LIST
+STP_MERGE_SSN    DIM     9
+STP_MERGE_FIL1   DIM     1
+STP_MERGE_ENAME  DIM     26
+STP_MERGE_FIL2   DIM     1
+STP_MERGE_DOB    DIM     8
+STP_MERGE_FIL3   DIM     1
+STP_MERGE_DOR    DIM     8
+STP_MERGE_DSW    DIM     1
+                 LISTEND
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       6
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+
+PARAM_LIST       LIST
+PARAM_XXX        DIM      10
+PARAM_YYY        DIM       5
+PARAM_DATE       DIM       8
+                 LISTEND
+
+                         
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.     Program Specific Varibles
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+                          
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Merge State Police Retire" TO  C_OPER  ...(20-bytes Max)
+         MOVE      "A0403251"             TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      BLANKS                 TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. ~~~~~~~ Main Process ~~~~~~~
+. ----------------------------
+
+MAIN_PROCESS
+         DEBUG
+. ...Initialize
+         CALL      INITIALIZE
+	 
+. ...Open Files	
+         CALL      OPEN_FILES 
+
+.....Process Input File
+         CALL      PROCESS_INPUT
+
+. ...Close Files
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+.        CALL      NORMAL_EOJ
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+++++++++++++++++++<< END OF MAIN PROCESS >>++++++++++++++++++++++++++++++++++++
+PROCESS_INPUT
+         MOVE OGB_SEQ1 TO OGB_SEQ
+   LOOP
+         CALL READ_OGBFILE USING STP_RET,STP_RET_NAME,STP_RET_LIST
+         IF (RESULT <> 1)
+            BREAK
+         ENDIF
+         ADD 1 TO X_CNT1                        ...Display Counters
+         UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+         IF (CNT1_3 = "000")
+            CALL X_DISPLAY_COUNTS
+         ENDIF    
+         PACK STP_MERGE_SSN WITH STP_RET_SSN3,STP_RET_SSN2,STP_RET_SSN4
+         MOVE STP_RET_NAME TO STP_MERGE_ENAME
+         UNPACK STP_RET_DOB INTO W_MM,DIM1,W_DD,DIM1,W_YY
+         PACK STP_MERGE_DOB WITH W_MM,W_DD,"19",W_YY
+         UNPACK STP_RET_DOR INTO W_MM,DIM1,W_DD,DIM1,W_YY
+         SWITCH W_YY
+           CASE "00" OR "01" OR "02" OR "03" OR "04"
+              PACK STP_MERGE_DOR WITH W_MM,W_DD,"20",W_YY
+           DEFAULT
+              PACK STP_MERGE_DOR WITH W_MM,W_DD,"19",W_YY
+         ENDSWITCH
+         MOVE STP_MERGE_SSN TO STP_DRP_KEY
+         CALL READ_OGBFILE_IX USING STP_DRP,STP_DRP_NAME,STP_DRP_KEY:
+                                    STP_DRP_LIST
+         IF (RESULT = 1)
+            MOVE "Y" TO STP_MERGE_DSW
+         ELSE
+            MOVE "N" TO STP_MERGE_DSW
+         ENDIF
+         CALL WRITE_OGBREC USING STP_MERGE,STP_MERGE_NAME,STP_MERGE_LIST
+         ADD 1 TO X_CNT2                       ...Display Counters
+         UNPACK X_CNT2 INTO CNT1_4,CNT1_3
+         IF (CNT1_3 = "000")
+             CALL X_DISPLAY_COUNTS
+         ENDIF    
+   REPEAT
+   RETURN
+         
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+
+. ...Display Counters
+	 MOVE      "Input Recs Read : " TO X_CNTDESC1
+	 MOVE      "Records Written : " TO X_CNTDESC2
+	 MOVE      "                : " TO X_CNTDESC3
+	 MOVE      "                : " TO X_CNTDESC4
+	 MOVE      "                : " TO X_CNTDESC5
+	 MOVE      "                : " TO X_CNTDESC6
+	 
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+         CALL OPEN_OGBFILE USING STP_RET,STP_NAME
+         CALL OPEN_OGBFILE_IX USING STP_DRP,STP_DRP_NAME
+         CALL PREP_OGBFILE USING STP_MERGE,STP_MERGE_NAME
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         UNLOAD    "schema"
+         
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+         CALL CLOSE_OGBFILE USING STP_RET,STP_RET_NAME
+         CALL CLOSE_OGBFILE_IX USING STP_DRP,STP_DRP_NAME
+         CALL CLOSE_OGBFILE USING STP_MERGE,STP_MERGE_NAME
+         RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "   A0403251 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         RETURN
+. --------------------------------
+. Subroutines and other includes
+. --------------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                             End of A0403251.PS
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

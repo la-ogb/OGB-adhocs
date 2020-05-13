@@ -1,0 +1,985 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A041206C.PS
++    Description    :  Match between LSU file of State
++                      Employees and OGB Membership file.
++
++                   :  Outputs a file of Full Time LSU Employees
++                   :  who do not currently have one of OGB's Health Plans.
++                                
++    Author         :  Amy Poole
++    Date created   :  12/13/2004
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ apajp 02/21/2005 a0412061 - Mod - Modified a041206b.ps to output        
++                                   LSU Full Timers who don't have health.
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common work area
+              INC       VALID.RL             ...Valid codes
+              INC       MEM.RL               ...Member demographic Record
+              INC       MEME.RL              ...Member enrollment Record
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+. ----------------------------------------------
+.                 Program Files
+. ----------------------------------------------
+
+.~~~~~~INPUT FILES
+CSIN_FD     FILE   VAR=212,TEXT
+CSIN_FILE   INIT   "/w/lsuemps.txt"
+CSIN_LIST   LIST
+CSIN_AGCY   DIM    4      --Agency Code
+CSIN_F0     DIM    3      --Filler
+CSIN_ANAME  DIM    11     --Agency Name
+CSIN_AGRP   DIM    4      --Major Dept. or Group within Agency
+CSIN_F1     DIM    7      --Filler
+CSIN_SSN    DIM    9      --Employee SSN
+CSIN_F1A    DIM    3      --Filler 
+CSIN_NAME   DIM    23     --Employee Name (Last, Comma, First)
+CSIN_CIND   DIM    1      --Classified/Unclassified Indicator
+CSIN_F2     DIM    7      --Filler
+CSIN_TIND   DIM    1      --Full-Time/Part-Time Indicator
+CSIN_F3     DIM    12     --Filler
+CSIN_FTE    DIM    3      --Full Time Equivalency Percentage
+CSIN_TYPE   DIM    3      --Employee Type
+CSIN_F4     DIM    5      --Filler
+CSIN_PAYSCH DIM    2      --Civil Service Pay Schedule
+CSIN_PAYRNG DIM    3      --Civil Service Pay Range (BLANK)
+CSIN_F5     DIM    3      --Filler
+CSIN_SEX    DIM    1      --Gender
+CSIN_F6     DIM    7      --Filler
+CSIN_ETHCD  DIM    2      --Ethnicity Code
+CSIN_F6A    DIM    6      --Filler
+CSIN_ETHDSC DIM    8      --Ethnicity Description
+CSIN_DOB    DIM    8      --Employee Date of Birth (YYYYMMDD)
+CSIN_AGEY   DIM    2      --Employee Age in Years
+CSIN_F7     DIM    2      --Filler
+CSIN_AGEM   DIM    3      --Employee Age in Months
+CSIN_ADDR1  DIM    30     --Employee Address 1
+CSIN_CITY   DIM    22     --Employee City, State
+CSIN_ZIP    DIM    5      --Employee Zip
+CSIN_F8     DIM    3      --Filler                              
+CSIN_PHONE  DIM    8      --Phone (999-9999)            
+CSIN_EOR    DIM    1      --End of Record ("X")
+           LISTEND
+
+
+.~~~~~~OUTPUT FILES
+OUT_FD     FILE    VAR=218,TEXT                                   
+OUT_NAME   INIT    "/mcsora/non_impact_load/a0412061.txt"                                        
+OUT_LIST   LIST   
+OUT_AGCY   DIM    4       1-4   
+OUT_ANAME  DIM    40      5-44  
+OUT_AGRP   DIM    4      45-49   
+OUT_SSN    DIM    9      50-58    
+OUT_FNAME  DIM    20     59-78     
+OUT_LNAME  DIM    20     79-98   
+OUT_CIND   DIM    1      99-99   
+OUT_TIND   DIM    1     100-100   
+OUT_FTE    DIM    3     101-103   
+OUT_TYPE   DIM    3     104-106 
+OUT_PAYSCH DIM    2     107-108   
+OUT_PAYRNG DIM    3     109-111   
+OUT_SEX    DIM    1     112-112   
+OUT_ETHCD  DIM    2     113-114   
+OUT_ETHDSC DIM    40    115-154   
+OUT_DOB    DIM    8     155-162  --ccyymmdd      
+OUT_AGEY   DIM    2     163-164   
+OUT_AGEM   DIM    2     165-166   
+OUT_PFRQ   DIM    1     167-167
+OUT_SAL    FORM   7.2   168-177
+OUT_HRSAL  FORM   7.2   178-187
+OUT_RECID  DIM    8     188-195  --(Only populated if Emp. on OGB MEM file)
+OUT_NET    DIM    5     196-200  --(Only populated if Emp. active w/OGB Health) 
+OUT_PROD   DIM    5     201-205  --(Only populated if Emp. active w/OGB Health)
+OUT_PLAN   DIM    5     206-210  --(Only populated if Emp. active w/OGB Health)
+OUT_RUNDT  DIM    8     211-218  --Date this Program was Run (ccyymmdd)
+          LISTEND 
+
+                                                          
+SVY_FD     FILE   VAR=314,TEXT
+SVY_FILE   INIT   "/w/a041206c.out"
+SVY_LIST   LIST
+SVY_AGCY   DIM    4      --Agency Code
+SVY_ANAME  DIM    40     --Agency Name
+SVY_AGRP   DIM    4      --Major Dept. or Group within Agency
+SVY_SSN    DIM    9      --Employee SSN 
+SVY_NAME   DIM    30     --Employee Name (Last, Comma, First)
+SVY_CIND   DIM    1      --Classified/Unclassified Indicator
+SVY_TIND   DIM    1      --Full-Time/Part-Time Indicator
+SVY_FTE    DIM    3      --Full Time Equivalency Percentage
+SVY_TYPE   DIM    3      --Employee Type
+SVY_PAYSCH DIM    2      --Civil Service Pay Schedule
+SVY_PAYRNG DIM    3      --Civil Service Pay Range
+SVY_SEX    DIM    1      --Gender
+SVY_ETHCD  DIM    2      --Ethnicity Code
+SVY_ETHDSC DIM    40     --Ethnicity Description
+SVY_DOB    DIM    10     --Employee Date of Birth
+SVY_AGEY   DIM    2      --Employee Age in Years
+SVY_AGEM   DIM    2      --Employee Age in Months
+SVY_PFRQ   DIM    1      --Pay Frequency
+SVY_SAL    DIM    9      --Employee Annual Salary
+SVY_HRSAL  DIM    9      --Employee Hourly Salary
+SVY_ADDR1  DIM    40     --Employee Address 1
+SVY_ADDR2  DIM    40     --Employee Address 2
+SVY_CITY   DIM    25     --Employee City
+SVY_STATE  DIM    2      --Employee State
+SVY_ZIP    DIM    10     --Employee Zip
+SVY_MAREA  DIM    3      --Mailing Address Phone - Area Code
+SVY_MPHN   DIM    7      --Mailing Address Phone Number
+SVY_PAREA  DIM    3      --Physical Address Phone - Area Code
+SVY_PPHN   DIM    7      --Physical Address Phone Number
+SVY_EOR    DIM    1      --End of Record ("X")
+           LISTEND
+
+
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+TRAP_DATA         DIM       500
+CAL_CLOCK         DIM       21
+ORIG_RETURN       FORM      5
+CURR_RETURN       FORM      5
+TODAY             DIM       8
+TIMESTAMP         DIM       14
+CURRDATE          DIM       8
+PARAM_LIST        LIST
+PARAM_XXX         DIM      10
+PARAM_YYY         DIM       5
+PARAM_DATE        DIM       8
+                  LISTEND
+
+
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                             
+.     Program Specific Varibles                                                 
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+COMMA             INIT      "," 
+DATE_RSLT         DIM       2
+DEC               INIT      "." 
+DIM2              DIM       2                                           
+DIM3              DIM       3
+DIM4              DIM       4                                                       
+DIM5              DIM       5
+DIM7              DIM       7                                                       
+DIM11             DIM       11                                                      
+DIMTHREE          DIM       3                                                       
+DIMFIVE           DIM       5 
+DOB_CC            DIM       2
+DOB_YY            DIM       2
+DOB_MM            DIM       2
+DOB_DD            DIM       2
+FIRSTNAME         DIM       30
+FORM2             FORM      2                                                       
+FORM_2            FORM      2                                                       
+FORMTWO           FORM      2
+INB_CC            DIM       2
+INB_YY            DIM       2
+INB_MM            DIM       2
+INB_DD            DIM       2
+MEM_RET_CODE      FORM      1
+MEME_RET_CODE     FORM      1
+PSSN_OK           DIM       1
+SHORTFIRST        DIM       30
+SSN_OK            DIM       1
+STATENAME         DIM       22
+W_DOB             DIM       1
+W_FIRST           DIM       1
+W_LAST            DIM       1
+W_OKAY            DIM       1
+WS_AMT            DIM       10
+WS_NAME           DIM       30
+NAMESSN_OK        DIM       1
+NAMESSN_RECID     DIM       8
+
+
+. --------------------------------------------------                            
+. ~~~~~~~~~~~~ << < Begin Program > >> ~~~~~~~~~~~~~                            
+. --------------------------------------------------                            
+. ----------------------------------                                            
+. Start here if selected from menu                                              
+. ----------------------------------                                            
+                                                                                
+       CALL      RUN_NOW                                                      
+                                                                                
+       CHAIN     C_NEXT   chains back to the menu                                                  
+                                                                                
+. ---------------------------------------                                       
+. Start here if called by the Scheduler                                         
+. ---------------------------------------                                       
+                                                                                
+       INC       SCHED_NP.SR              Scheduler routines (no printer)  
+
+RUN_NOW
+
+                                                                                
+. ...Check return stack                                                         
+       RETCOUNT  ORIG_RETURN
+
+
+. --------------------
+.   Fill top of screen
+. --------------------
+
+. ...Screen Display
+       MOVE      "menu"             TO  C_NEXT
+       MOVE      "LSU / OGB Match"  TO  C_OPER
+       MOVE      "A041206C"         TO  C_PROG
+       MOVE      BLANKS             TO  C_LABEL
+       MOVE      BLANKS             TO  C_FILE
+       MOVE      BLANKS             TO  C_KEYS
+       CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+       CALL      X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+                                                                                
+. ...Set Applicable Traps                                                       
+       TRAPSAVE  TRAP_DATA
+       TRAPCLR   ALL
+       TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+
+       CALL SCHED_PICK
+
+       IF (RUN_MODE = "B" OR RUN_MODE = "N")  
+           CALL      MAIN_PROCESS
+       ENDIF
+   RETURN
+
+
+
+                                                                                
++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++++++++ 
+                                                                                
+. ----------------------------                                                  
+. ~~~~~~~ Main Process ~~~~~~~                                                  
+. ----------------------------                                                  
+                                                                                
+MAIN_PROCESS                                                                    
+       debug
+       CALL      INITIALIZE    ---Files Opened Here                                                  
+       CALL      MATCH_FILES   
+       CALL      CLOSE_FILES                                                  
+
+. ...Normal End-Of-Job                                                          
+       CALL      NORMAL_EOJ                                                   
+                                                                                
+. ...Return Control Back to Chain - End of Program                              
+       TRAPREST  TRAP_DATA                                                    
+       MOVE      SCH_RTSUCC  TO  SCH@RTCODE                                   
+       RETURN                                                                 
+
+                                                                                
+.++++++++++++++++++<< END OF MAIN PROCESS >>++++++++++++++++++++++++++++++++++++
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+INITIALIZE
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+         CLOCK      TIMESTAMP  INTO  TIMESTAMP
+         CLOCK      TIMESTAMP  INTO  CURRDATE
+         CLOCK      TIMESTAMP    TO  TODAY
+
+. ...Display Counters
+         MOVE       "INPUT RECS READ:" TO X_CNTDESC1
+         MOVE       "OUTPUT WRITTEN :" TO X_CNTDESC2 
+         CALL       X_DISPLAY_COUNTS
+
+         MOVE CSIN_FILE TO C_FILE
+         CALL OPEN_OGBFILE USING CSIN_FD,CSIN_FILE
+
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FD,OUT_NAME
+
+         MOVE SVY_FILE TO C_FILE
+         CALL PREP_OGBFILE USING SVY_FD,SVY_FILE
+
+  RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+.  For each Full Time employee on the incoming LSU file, check for
+.  him/her on OGB'S Membership file.  If he/she is an OGB member with Health
+.  coverage currently in effect, continue.  Otherwise, write all Full Timers 
+.  with no OGB Health to output file. 
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+MATCH_FILES
+       debug
+       MOVE OGB_SEQ1 TO OGB_SEQ
+       LOOP
+          MOVE OUT_NAME TO C_FILE
+          CALL READ_OGBFILE USING CSIN_FD, CSIN_FILE, CSIN_LIST
+          IF (RESULT <> 1)
+              BREAK 
+          ENDIF
+
+          ADD 1 TO X_CNT1
+          UNPACK X_CNT1 INTO DIM4, DIM3
+          IF (DIM3 = "000")
+              CALL X_DISPLAY_COUNTS
+          ENDIF 
+
+          UNPACK CSIN_SSN INTO DIM5, DIM4  ---There are some bogus ssn's if
+          IF (DIM5 = "99999")              ---on employees CS can't obtain 
+             CONTINUE                      ---ssn's for.  Disregard them.
+          ENDIF
+ 
+          IF (CSIN_TIND <> "F")
+             CONTINUE                      ---Want Full Timers Only
+          ENDIF
+ 
+          MOVE CSIN_AGCY TO OUT_AGCY
+          MOVE CSIN_ANAME TO OUT_ANAME
+          MOVE CSIN_AGRP TO OUT_AGRP
+          MOVE CSIN_SSN TO OUT_SSN
+          MOVE CSIN_NAME TO WS_NAME
+ 
+          RESET FIRSTNAME
+          MOVE CSIN_NAME TO FIRSTNAME
+          SCAN COMMA IN FIRSTNAME
+          BUMP FIRSTNAME BY 1
+          MOVE FIRSTNAME TO OUT_FNAME
+.
+          RESET SHORTFIRST
+          MOVE OUT_FNAME TO SHORTFIRST  --FIRSTNAME might contain MI
+          SCAN SPACE IN SHORTFIRST
+          BUMP SHORTFIRST BY -1
+          LENSET SHORTFIRST
+          RESET SHORTFIRST
+.
+          SCAN COMMA IN CSIN_NAME
+          BUMP CSIN_NAME BY -1
+          LENSET CSIN_NAME
+          RESET CSIN_NAME
+          MOVE CSIN_NAME TO OUT_LNAME
+
+          MOVE CSIN_CIND TO OUT_CIND
+          MOVE CSIN_TIND TO OUT_TIND
+          MOVE CSIN_FTE TO OUT_FTE
+          MOVE CSIN_TYPE TO OUT_TYPE
+          MOVE CSIN_PAYSCH TO OUT_PAYSCH
+          MOVE CSIN_PAYRNG TO OUT_PAYRNG
+          MOVE CSIN_SEX TO OUT_SEX
+          MOVE CSIN_ETHCD TO OUT_ETHCD
+          MOVE CSIN_ETHDSC TO OUT_ETHDSC
+             
+          UNPACK CSIN_DOB INTO INB_CC,INB_YY,INB_MM,INB_DD
+          PACK OUT_DOB WITH INB_CC,INB_YY,INB_MM,INB_DD
+       
+          MOVE CSIN_AGEY TO OUT_AGEY
+          MOVE CSIN_AGEM TO OUT_AGEM
+
+          MOVE CURRDATE TO OUT_RUNDT
+
+          CLEAR OUT_RECID, OUT_NET, OUT_PROD, OUT_PLAN, NAMESSN_RECID
+          MOVE "N" TO NAMESSN_OK 
+ 
+          CALL GET_MEM_SSN          ---Returns Out_Recid
+
+          IF (SQUEEZE(OUT_RECID) <> "")
+              CALL READ_MEME        ---Returns Out_Net, Out_Prod, Out_Plan
+          ENDIF
+
+          IF (SQUEEZE(OUT_NET) = "")
+              CALL WRITE_OUTPUT
+          ENDIF         
+
+       REPEAT
+   RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. Attempt to find the LSU Employee by Social Security Number.  
+. (Remember that a person could be on the Civil Service file under one ssn and 
+.  could be on our MEM file as a dependent and therefore under another ssn).
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+GET_MEM_SSN                                                                     
+   CLEAR     MEM_AIM                                                      
+   PACK      MEM_AIM1 WITH "01X",CSIN_SSN,BLANKS                         
+   CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST          
+                  MEM_FN:          ...FILE NAME LIST                       
+                  MEM_FC:          ...(I)NDEX OR (A)IMDEX                  
+                  MEM_FV:          ...FILE KEY VARLISTS                    
+                  MEM_AIM:          ...FILE KEY SIZES                      
+                  MEM_LIST:        ...FILE RECORD (FIELD LIST)             
+                  MEM_REC:         ...FILE RECORD (PACKED)                 
+                  MEM_OLD:         ...FILE SAVED WHEN READ                 
+                  MEM_QTY:         ...NUMBER OF FILES                      
+                  2                ...FILE NUMBER FOR THIS READ           
+
+   MOVE RESULT TO MEM_RET_CODE
+   IF (MEM_RET_CODE = 1)
+       CALL EVALUATE_DATA          ---Returns W_OKAY                                                         
+       IF (W_OKAY = "Y")
+           MOVE MEM_ID1 TO OUT_RECID
+           GOTO GET_SSN_RETURN
+       ENDIF 
+   ELSE
+       CALL LOOKUP_NAME            ---Evaluation done & OUT_RECID assignment
+       GOTO GET_SSN_RETURN         ---made within this routine.
+   ENDIF 
+     
+. ...Read for next member with this SSN
+   LOOP                                                                   
+       CALL      FILE_NEXT                                               
+       MOVE RESULT TO MEM_RET_CODE
+       IF (MEM_RET_CODE <> 1 OR MEM_ESSN <> CSIN_SSN)
+           BREAK                       
+       ENDIF                                                             
+                                                                                
+       CALL EVALUATE_DATA                                                    
+       IF (W_OKAY = "Y")                                                 
+           MOVE MEM_ID1 TO OUT_RECID
+           BREAK
+       ENDIF                                                             
+                                                                                
+       REPEAT                                                            
+
+       IF (W_OKAY <> "Y" AND NAMESSN_OK = "Y")
+           MOVE NAMESSN_RECID TO OUT_RECID
+       ENDIF
+
+GET_SSN_RETURN
+   RETURN                                                                 
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. The social is not on file so the lookup on the MEM file will be done by 
+. matching the exact first, last names, and date of birth.                                                             
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+LOOKUP_NAME                                                                              
+                                                                                
+. Read MEM file by aimdex for first and last name and DOB                                              
+
+       CLEAR     MEM_AIM                                                      
+       PACK      MEM_AIM4 WITH "04X",OUT_LNAME,BLANKS                         
+       PACK      MEM_AIM5 WITH "05X",OUT_FNAME,BLANKS                         
+       PACK      MEM_AIM10 WITH "10X",OUT_DOB,BLANKS                        
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST          
+                     MEM_FN:          ...FILE NAME LIST                       
+                     MEM_FC:          ...(I)NDEX OR (A)IMDEX                  
+                     MEM_FV:          ...FILE KEY VARLISTS                    
+                     MEM_AIM:          ...FILE KEY SIZES                      
+                     MEM_LIST:        ...FILE RECORD (FIELD LIST)             
+                     MEM_REC:         ...FILE RECORD (PACKED)                 
+                     MEM_OLD:         ...FILE SAVED WHEN READ                 
+                     MEM_QTY:         ...NUMBER OF FILES                     
+                     2                 ...FILE NUMBER FOR THIS READ           
+                                                                                
+       MOVE RESULT TO MEM_RET_CODE
+       IF (MEM_RET_CODE = 1)
+          CALL EVALUATE_DATA
+          IF (W_OKAY = "Y")
+              MOVE MEM_ID1 TO OUT_RECID
+              GOTO LOOKUP_RETURN                                                      
+          ENDIF
+       ENDIF                                                                  
+      
+. Often times, the civil service file includes a MI where we are just
+. expecting a first name.  Ignore any characters after the first space in
+. the FIRSTNAME field and read MEM file again by aimdex for first name,                                          
+. last name, and DOB                                              
+       CLEAR     MEM_AIM                                                      
+       PACK      MEM_AIM4 WITH "04X",OUT_LNAME,BLANKS                         
+       PACK      MEM_AIM5 WITH "05X",SHORTFIRST,BLANKS                         
+       PACK      MEM_AIM10 WITH "10X",OUT_DOB,BLANKS                        
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST          
+                     MEM_FN:          ...FILE NAME LIST                       
+                     MEM_FC:          ...(I)NDEX OR (A)IMDEX                  
+                     MEM_FV:          ...FILE KEY VARLISTS                    
+                     MEM_AIM:          ...FILE KEY SIZES                      
+                     MEM_LIST:        ...FILE RECORD (FIELD LIST)             
+                     MEM_REC:         ...FILE RECORD (PACKED)                 
+                     MEM_OLD:         ...FILE SAVED WHEN READ                 
+                     MEM_QTY:         ...NUMBER OF FILES                     
+                     2                 ...FILE NUMBER FOR THIS READ           
+                                                                                
+       MOVE RESULT TO MEM_RET_CODE
+       IF (MEM_RET_CODE = 1)
+          CALL EVALUATE_DATA
+          IF (W_OKAY = "Y")
+              MOVE MEM_ID1 TO OUT_RECID
+              GOTO LOOKUP_RETURN                                                      
+          ENDIF
+       ENDIF                                                                  
+                                                                                
+                                                                                
+. Read MEM file by aimdex for first and last name                                              
+       CLEAR     MEM_AIM                                                      
+       PACK      MEM_AIM4 WITH "04X",OUT_LNAME,BLANKS                         
+       PACK      MEM_AIM5 WITH "05X",OUT_FNAME,BLANKS                         
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                     MEM_FN:          ...FILE NAME LIST                       
+                     MEM_FC:          ...(I)NDEX OR (A)IMDEX                  
+                     MEM_FV:          ...FILE KEY VARLISTS                    
+                     MEM_AIM:          ...FILE KEY SIZES                      
+                     MEM_LIST:        ...FILE RECORD (FIELD LIST)             
+                     MEM_REC:         ...FILE RECORD (PACKED)                 
+                     MEM_OLD:         ...FILE SAVED WHEN READ                 
+                     MEM_QTY:         ...NUMBER OF FILES                      
+                     2                 ...FILE NUMBER FOR THIS READ           
+                                                                                
+       MOVE RESULT TO MEM_RET_CODE
+       IF (MEM_RET_CODE = 1)
+          CALL EVALUATE_DATA
+          IF (W_OKAY = "Y")
+              MOVE MEM_ID1 TO OUT_RECID
+              GOTO LOOKUP_RETURN
+          ENDIF
+       ENDIF
+
+. Often times, the civil service file includes a MI where we are just
+. expecting a first name.  Ignore any characters after the first space in
+. the FIRSTNAME field and read MEM file again by aimdex for first and                                         
+. last name.                                              
+       CLEAR     MEM_AIM                                                      
+       PACK      MEM_AIM4 WITH "04X",OUT_LNAME,BLANKS                         
+       PACK      MEM_AIM5 WITH "05X",SHORTFIRST,BLANKS                         
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                     MEM_FN:          ...FILE NAME LIST                       
+                     MEM_FC:          ...(I)NDEX OR (A)IMDEX                  
+                     MEM_FV:          ...FILE KEY VARLISTS                    
+                     MEM_AIM:          ...FILE KEY SIZES                      
+                     MEM_LIST:        ...FILE RECORD (FIELD LIST)             
+                     MEM_REC:         ...FILE RECORD (PACKED)                 
+                     MEM_OLD:         ...FILE SAVED WHEN READ                 
+                     MEM_QTY:         ...NUMBER OF FILES                      
+                     2                 ...FILE NUMBER FOR THIS READ           
+                                                                                
+       MOVE RESULT TO MEM_RET_CODE
+       IF (MEM_RET_CODE = 1)
+          CALL EVALUATE_DATA
+          IF (W_OKAY = "Y")
+              MOVE MEM_ID1 TO OUT_RECID
+              GOTO LOOKUP_RETURN
+          ENDIF
+       ENDIF
+
+. Read MEM file by aimdex for last name and DOB                                 
+       CLEAR     MEM_AIM                                                      
+       PACK      MEM_AIM4 WITH "04X",OUT_LNAME,BLANKS                         
+       PACK      MEM_AIM10 WITH "10X",OUT_DOB,BLANKS                        
+       CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST          
+                     MEM_FN:          ...FILE NAME LIST                       
+                     MEM_FC:          ...(I)NDEX OR (A)IMDEX                  
+                     MEM_FV:          ...FILE KEY VARLISTS                    
+                     MEM_AIM:         ...FILE KEY SIZES                      
+                     MEM_LIST:        ...FILE RECORD (FIELD LIST)             
+                     MEM_REC:         ...FILE RECORD (PACKED)                 
+                     MEM_OLD:         ...FILE SAVED WHEN READ                 
+                     MEM_QTY:         ...NUMBER OF FILES                      
+                     2                 ...FILE NUMBER FOR THIS READ           
+                                                                                
+       MOVE RESULT TO MEM_RET_CODE
+       IF (MEM_RET_CODE = 1)
+          CALL EVALUATE_DATA                                                      
+          IF (W_OKAY = "Y")
+              MOVE MEM_ID1 TO OUT_RECID
+              GOTO LOOKUP_RETURN                                          
+          ENDIF
+       ENDIF
+                                                                                
+LOOKUP_RETURN                                                                                
+   RETURN                                                                 
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. Evaluating all the Data collected in order to identify the Patient and 
+. Enrollee's information from our files so that we have the latest data such
+. as address and name.                                                               
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+EVALUATE_DATA                                                                       
+
+       MOVE "N" TO W_OKAY                                                         
+       
+.~~ SSN Match                                                               
+       PACK SSN_OK WITH "N"                                                   
+       IF (CSIN_SSN = MEM_ESSN)                                              
+          PACK SSN_OK WITH "Y"                                                
+       ENDIF                                                                  
+
+.~~ Patient SSN Match
+       PACK PSSN_OK WITH "N"
+       IF (CSIN_SSN = MEM_PSSN)
+          PACK PSSN_OK WITH "Y"
+       ENDIF
+                                                                                
+.~~ DOB match                                                               
+       CALL MATCH_DOB                                                         
+
+.~~ Last Name match                                                         
+       CALL MATCH_LAST                                                        
+
+.~~ First Name match                                                        
+       CALL MATCH_FIRST                                                       
+
+
+. Accept transposition of exact names                                           
+
+       IF (W_LAST <> "Y" OR W_FIRST <> "Y")                               
+          IF (SQUEEZE OUT_LNAME = SQUEEZE MEM_FNAME)                             
+             IF (SQUEEZE OUT_FNAME = SQUEEZE MEM_LNAME)                          
+                 PACK W_FIRST WITH "Y"                                            
+                 PACK W_LAST WITH "Y"                                             
+             ENDIF                                                               
+          ENDIF                                                               
+       ENDIF                                                                  
+
+       IF (W_LAST <> "Y" OR W_FIRST <> "Y")                               
+          IF (SQUEEZE OUT_LNAME = SQUEEZE MEM_FNAME)                             
+             IF (SQUEEZE SHORTFIRST = SQUEEZE MEM_LNAME)                          
+                 PACK W_FIRST WITH "Y"                                            
+                 PACK W_LAST WITH "Y"                                             
+             ENDIF                                                               
+          ENDIF                                                               
+       ENDIF                                                                  
+
+                                                                                
+. Match criteria: SSN; First and/or Last name; DOB; Sex           
+       IF (SSN_OK = "Y")
+          IF (W_LAST <> "N" AND W_FIRST <> "N")                               
+             IF (W_DOB <> "N")                                                
+                PACK W_OKAY WITH "Y"    
+             ENDIF                                                            
+          ELSE                                                                
+             IF (W_LAST <> "N" OR W_FIRST <> "N")                             
+                IF (W_DOB <> "N" AND MEM_SEX = CSIN_SEX)                           
+                   PACK W_OKAY WITH "Y"    
+                ENDIF                                                         
+             ENDIF                                                            
+          ENDIF                                                               
+       ENDIF    
+
+. Match criteria: SSN and DOB and Sex                                        
+       IF (W_OKAY <> "Y" AND SSN_OK = "Y")                                     
+          IF (W_DOB <> "N" AND MEM_SEX = CSIN_SEX)                                                   
+             PACK W_OKAY WITH "Y"    
+          ENDIF                                                               
+       ENDIF                                                               
+
+. Match criteria: No SSN; First & last name; DOB; & sex            
+       IF (W_OKAY <> "Y" AND SSN_OK = "N")                                     
+          IF (W_LAST <> "N" AND W_FIRST <> "N")                                
+             IF (W_DOB <> "N" AND MEM_SEX = CSIN_SEX)                              
+                PACK W_OKAY WITH "Y"    
+             ENDIF                                                            
+          ENDIF                                                               
+       ENDIF                                                                  
+ 
+. Match criteria: Patient SSN           
+       IF (W_OKAY <> "Y")                                     
+          IF (PSSN_OK <> "N")                                
+              PACK W_OKAY WITH "Y"    
+          ENDIF                                                               
+       ENDIF                                                                  
+ 
+. Match criteria:  SSN and Name (This is very loose match criteria but 
+.                  for the purposes of this program it is better to count
+.                  somebody as a match who isn't than to put somebody on the
+.                  output file who actually is one of our members).
+        IF (W_OKAY <> "Y" AND SSN_OK = "Y")
+            IF (W_LAST <> "N" AND W_FIRST <> "N")
+                PACK NAMESSN_OK WITH "Y"        --Set a 'possible match' flag;
+                MOVE MEM_ID1 TO NAMESSN_RECID     still want to look at other
+            ENDIF                                 family members.
+        ENDIF
+
+    RETURN                                                                 
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+.  Match Birth date                                                             
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+MATCH_DOB                                                                       
+                                                                                
+       MOVE "N" TO W_DOB                                                      
+                                                                                
+       CLEAR DATE_RSLT                                                        
+       CALL VALID_DATE USING OUT_DOB,DATE_RSLT                              
+       IF (DATE_RSLT <> "OK")                                                 
+           RETURN
+       ENDIF                                                                  
+                                                                                
+       IF (OUT_DOB = MEM_DOB)                                               
+          MOVE "Y" TO W_DOB                                                   
+          RETURN
+       ENDIF                                                                  
+                                                                                
+       UNPACK OUT_DOB INTO INB_CC,INB_YY,INB_MM,INB_DD                      
+       UNPACK MEM_DOB INTO DOB_CC,DOB_YY,DOB_MM,DOB_DD                        
+       IF (INB_YY = DOB_YY AND INB_MM = DOB_MM)
+          MOVE "M" TO W_DOB                                                   
+       ENDIF  
+                                                                
+    RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+.  Match Last Name                                                              
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+MATCH_LAST                                                                      
+                                                                                
+       MOVE "N" TO W_LAST                                                     
+                                                                                
+       IF (SQUEEZE OUT_LNAME = "")                                            
+           RETURN                                                 
+       ENDIF                                                                  
+                                                                                
+       REPLACE ". " IN OUT_LNAME                                              
+       REPLACE ". " IN MEM_LNAME                                              
+       REPLACE ", " IN OUT_LNAME                                              
+       REPLACE ", " IN MEM_LNAME                                              
+       REPLACE "- " IN OUT_LNAME                                              
+       REPLACE "- " IN MEM_LNAME                                              
+       REPLACE "' " IN OUT_LNAME                                              
+       REPLACE "' " IN MEM_LNAME                                              
+                                                                                
+       IF (SQUEEZE OUT_LNAME = SQUEEZE MEM_LNAME)                                 
+          MOVE "Y" TO W_LAST
+          RETURN                                                  
+       ENDIF                                                                  
+                                                                                
+       PACK DIM5 WITH OUT_LNAME                                            
+       PACK DIMFIVE WITH MEM_LNAME                                         
+       IF (DIM5 = DIMFIVE)                                                 
+           MOVE "5" TO W_LAST                                               
+       ENDIF                                                               
+                                                                                
+   RETURN                                                                 
+
+                                                                                
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+.  Match First Name                                                             
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+MATCH_FIRST                                                                     
+                                                                                
+       MOVE "N" TO W_FIRST                                                    
+
+       IF (SQUEEZE OUT_FNAME = "")                                            
+          RETURN                                                
+       ENDIF                                                                  
+                                                                                
+       REPLACE ". " IN MEM_FNAME                                              
+       REPLACE ". " IN OUT_FNAME                                              
+       REPLACE ". " IN SHORTFIRST                                              
+       REPLACE ", " IN MEM_FNAME                                              
+       REPLACE ", " IN OUT_FNAME                                              
+       REPLACE ", " IN SHORTFIRST                                             
+       REPLACE "- " IN MEM_FNAME                                              
+       REPLACE "- " IN OUT_FNAME                                              
+       REPLACE "- " IN SHORTFIRST                                             
+       REPLACE "' " IN MEM_FNAME                                              
+       REPLACE "' " IN OUT_FNAME                                              
+       REPLACE "' " IN SHORTFIRST                                             
+       
+       IF (SQUEEZE OUT_FNAME = SQUEEZE MEM_FNAME)                             
+          MOVE "Y" TO W_FIRST
+          RETURN
+       ENDIF 
+                                                                 
+       IF (SQUEEZE SHORTFIRST = SQUEEZE MEM_FNAME)                             
+          MOVE "Y" TO W_FIRST
+          RETURN
+       ENDIF 
+                                                                                
+       PACK DIM5 WITH OUT_FNAME,BLANKS                                     
+       PACK DIMFIVE WITH MEM_FNAME,BLANKS                                  
+       IF (DIM5 = DIMFIVE)                                                 
+           MOVE "5" TO W_FIRST 
+           RETURN                                             
+       ENDIF                                                               
+                                                                                
+       IF (W_FIRST = "N")                                                     
+          PACK DIM3 WITH OUT_FNAME,BLANKS                                     
+          PACK DIMTHREE WITH MEM_FNAME,BLANKS                                 
+          IF (DIM3 = DIMTHREE)                                                
+             MOVE "3" TO W_FIRST                                              
+          ENDIF                                                               
+       ENDIF                                                                  
+                                                                                
+   RETURN                                                                 
+                                                                                
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+. Read MEME file for Civil Service Employees we found an Impact Record Id for.
+. We need to determine whether or not that employee currently carries OGB 
+. Health Coverage.                                       
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+READ_MEME                                                                       
+    PACK    MEME_FK11 WITH OUT_RECID,BLANKS                                      
+    CALL    FILE_READ USING MEME_FD:    ...FILE DECLARATION LIST                
+                      MEME_FN:          ...FILE NAME LIST                       
+                      MEME_FC:          ...(I)NDEX OR (A)IMDEX                  
+                      MEME_FV:          ...FILE KEY VARLISTS                    
+                      MEME_FK:          ...FILE KEY SIZES                       
+                      MEME_LIST:        ...FILE RECORD (FIELD LIST)             
+                      MEME_REC:         ...FILE RECORD (PACKED)                 
+                      MEME_OLD:         ...FILE SAVED WHEN READ                 
+                      MEME_QTY:         ...NUMBER OF FILES                      
+                      1                 ...FILE NUMBER FOR THIS READ            
+       LOOP                                                                     
+            CALL  FILE_NEXT USING MEME_FD:                                      
+                                  MEME_FN:  ...FILE NAME LIST                   
+                                  MEME_FC:  ...(I)NDEX OR (A)IMDEX              
+                                  MEME_FV:     ...FILE KEY VARLISTS                
+                                  MEME_FK:     ...FILE KEY SIZES                   
+                                  MEME_LIST:   ...FILE RECORD (FIELD LIST)         
+                                  MEME_REC:    ...FILE RECORD (PACKED)             
+                                  MEME_OLD:    ...FILE SAVED WHEN READ             
+                                  MEME_QTY:    ...NUMBER OF FILES                  
+                                  1            ...FILE NUMBER FOR THIS READ        
+
+            MOVE RESULT TO MEME_RET_CODE                                        
+            IF ((OUT_RECID <> MEME_ID1) OR (MEME_RET_CODE <> 1))                 
+                 BREAK                                                               
+            ENDIF                                                               
+                                                                                
+..> Make sure this is a Health coverage record in the MEME Record and not       
+..> a Life record.                                                              
+            IF (MEME_NET = "LIFE ")            
+                CONTINUE                                                        
+            ENDIF                                                               
+                                                                                
+..> Find Enrollment record Active as of Today's date and capture Health
+..> Coverage information.       
+            IF (CURRDATE >= MEME_EFF AND:                                     
+                CURRDATE <= MEME_TRM OR SQUEEZE MEME_TRM = "")  
+                MOVE MEME_NET TO OUT_NET
+                MOVE MEME_PRD TO OUT_PROD
+                MOVE MEME_PLAN TO OUT_PLAN            
+                BREAK                                   
+            ENDIF                                                               
+                                                                                
+    REPEAT                                                                      
+  RETURN                                                                      
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+WRITE_OUTPUT
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+              MOVE CSIN_AGCY TO SVY_AGCY
+              PACK SVY_ANAME WITH CSIN_ANAME,BLANKS
+              MOVE CSIN_AGRP TO SVY_AGRP
+              MOVE CSIN_SSN TO SVY_SSN 
+              PACK SVY_NAME WITH WS_NAME,BLANKS
+              MOVE CSIN_CIND TO SVY_CIND
+              MOVE CSIN_TIND TO SVY_TIND
+              MOVE CSIN_FTE TO SVY_FTE
+              MOVE CSIN_TYPE TO SVY_TYPE
+              MOVE CSIN_PAYSCH TO SVY_PAYSCH
+              MOVE CSIN_PAYRNG TO SVY_PAYRNG    
+              MOVE CSIN_SEX TO SVY_SEX
+              MOVE CSIN_ETHCD TO SVY_ETHCD
+              PACK SVY_ETHDSC WITH CSIN_ETHDSC, BLANKS 
+              PACK SVY_DOB WITH INB_MM,"/",INB_DD,"/",INB_CC,INB_YY
+              MOVE CSIN_AGEY TO SVY_AGEY
+              MOVE BLANKS TO SVY_AGEM
+              MOVE BLANKS TO SVY_PFRQ
+              MOVE BLANKS TO SVY_SAL
+              MOVE BLANKS TO SVY_HRSAL
+              PACK SVY_ADDR1 WITH CSIN_ADDR1, BLANKS
+              MOVE BLANKS TO SVY_ADDR2
+.
+              RESET STATENAME
+              MOVE CSIN_CITY TO STATENAME
+              SCAN COMMA IN STATENAME
+              BUMP STATENAME BY 2
+              MOVE STATENAME TO SVY_STATE
+.
+              SCAN COMMA IN CSIN_CITY
+              BUMP CSIN_CITY BY -1
+              LENSET CSIN_CITY
+              RESET CSIN_CITY
+              MOVE CSIN_CITY TO SVY_CITY
+.
+              PACK SVY_ZIP WITH CSIN_ZIP, BLANKS
+              MOVE BLANKS TO SVY_MAREA
+              UNPACK CSIN_PHONE INTO DIM3,DIM1,DIM4
+              PACK SVY_MPHN WITH DIM3,DIM4
+              MOVE BLANKS TO SVY_PAREA
+              MOVE BLANKS TO SVY_PPHN
+              MOVE "X" TO SVY_EOR
+.
+              MOVE SVY_NAME TO C_FILE
+              CALL WRITE_OGBREC USING SVY_FD, SVY_NAME, SVY_LIST
+              ADD 1 TO X_CNT2
+
+       RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+CLOSE_FILES
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+       CALL CLOSE_OGBFILE USING CSIN_FD,CSIN_FILE 
+       CALL CLOSE_OGBFILE USING OUT_FD,OUT_NAME
+       CALL CLOSE_OGBFILE USING SVY_FD,SVY_NAME
+
+   RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+NORMAL_EOJ
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       IF (RUN_MODE = "N")              ---Manual Run; Not Scheduled          
+           CALL      X_BLANK_SCREEN                                                
+           PACK      X_FINISH_STATUS WITH "   ", "NEOJ","   "                 
+           MOVE      "A041206C Completed      " TO X_PROG_FINISH               
+           CALL      X_END_OF_JOB                                               
+       ENDIF                                                                  
+                                                                                
+                                                                                
+. ...Return Control Back to Chain - End of Program                              
+       TRAPREST  TRAP_DATA                                                    
+       MOVE      SCH_RTSUCC TO SCH@RTCODE                                     
+
+  RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+. Operator pressed F9
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+QUIT
+  IF (C_RMODE = "I")
+     error     horz="23",vert="19":
+               bgcol=C_ERRB,fgcol=C_ERRF:
+               lncol=C_ERRL,shade="Y":
+               text=" Process Aborted by Operator ":
+               text="-----------------------------"
+    messageerase
+  ENDIF
+
+  CLEAR     C_NOHIST
+
+  TRAPREST  TRAP_DATA
+
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     C_NEXT
+
+.+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. Required Includes
+.+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+            INC       UTIL.SR
+            INC       VALID.IO
+            INC       X_STANDARD.SR
+            INC       FILE.IO
+            INC       X_OGBFILE.IO
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+.///////////////              End of A041206C.PS           \\\\\\\\\\\\\\\\\.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               

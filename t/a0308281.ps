@@ -1,0 +1,1030 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  ELG3000.PS 
++    Description    :  CUS - RETIREE VESTING LETTER EXTRACT                  
++    Author         :  Stephen J. McDonald
++    Date created   :  03/11/2003
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       CLI.RL           ...Client Demographics
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment   
+              INC       RETVST.RL        ...Retiree Vesting                
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+RETVST_FD       FILE     VAR=713,TEXT
+RETVST_NAME     INIT     "/ogb/work/retvst.txt"
+.
+RVSTFULL_FD     FILE     VAR=713,TEXT
+RVSTFULL_NAME   INIT     "/ogb/work/retfulvt.txt"
+.
+RVSTRID_FD      IFILE    VAR=8,KEYL=8,TEXT
+RVSTRID_NAME    INIT     "/ogb/work/retfulvstrid.ix1"
+.
+RVSTRID_LIST    LIST     
+RVSTRID_RID     DIM      8
+RVSTRID_AOD     DIM      6
+                LISTEND
+.
+SEQCTR_FD       IFILE    VAR=12,KEYL=6,TEXT
+SEQCTR_NAME     INIT     "/ogb/work/retvstctr.ix1"
+SEQCTR_LIST     LIST
+SEQCTR_DATE     DIM     6
+DIM_CTR         DIM     6
+                LISTEND
+.
+MEME_ERR_FD     FILE    VAR=16,TEXT
+MEME_ERR_NME    INIT    "/ogb/work/elg5000.meme.err"
+MEME_ERR_LIST   LIST
+MEME_ERR_RID1   DIM     8
+MEME_ERR_RID2   DIM     8
+                LISTEND
+.
+MEME_WRK_FD     FILE     VAR=25,TEXT
+MEME_WRK_NME    INIT    "/ogb/work/elg3000.retvst"
+MEME_WRK_LIST   LIST
+MEME_WRK_ID1    DIM     8
+MEME_WRK_EFF    DIM     8
+MEME_WRK_TRM    DIM     8
+MEME_WRK_RB     DIM     1
+                 LISTEND 
+MEME_DTE_FD     FILE    VAR=16,TEXT
+MEME_DTE_NME    INIT    "/ogb/work/elg3000.dte"
+MEME_DTE_LIST   LIST
+MEME_FROM_DTE   DIM     8
+MEME_THRU_DTE   DIM     8
+                LISTEND
+.
+XREF_FD         IFILE    VAR=16,KEYL=8,DUP,TEXT
+XREF_NAME       INIT     "/ogb/work/elgxref.ix1"
+XREF_LIST       LIST
+XREF_FRID       DIM     8
+XREF_THID       DIM     8
+                LISTEND
+.
+XREF2_FD         IFILE    VAR=16,KEYL=8,DUP,TEXT
+XREF2_NAME       INIT     "/ogb/work/elgxref2.ix1"
+XREF2_LIST       LIST
+XREF2_FRID       DIM     8
+XREF2_THID       DIM     8
+                LISTEND
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+RETVST_SKY    INIT  "177-186 -T"
+COMB_HIST_SW  DIM   1
+WS_ID1        DIM   8
+SLASH         INIT  "/"
+DASH          INIT  "-"
+AS_OF_AGENCY  DIM   4
+WS_CCYY       DIM   4
+WS_MM         DIM   2
+WS_DD         DIM   2
+WS_CTR        FORM  6
+RVST_1        FORM "    0.00"
+RVST_2        FORM "   10.00" 
+RVST_3        FORM "   15.00"
+RVST_4        FORM "   20.00" 
+DAYS_IN_YR    FORM "365"
+ACC_DAYS      FORM 007
+DIFF_DAYS     FORM 005
+WS_TRM_DTE    DIM  8
+EEFFDT        DIM  8
+WS_FROM_DTE   DIM  8
+WS_THRU_DTE   DIM  8
+SAVE_TRM      DIM  8
+SEND_SW       DIM  1
+DTE_ARRAY     DIM  16(50)
+XREF_RESULT   FORM 1
+SEQCTR_RESULT FORM 1
+MEM_RESULT    FORM 1
+MEME_RESULT   FORM 1
+MEME_DTE_RESULT   FORM 1
+EARLIST_EFF   DIM  8
+BLANK8        INIT "        "
+N             INIT "N"     
+Y             FORM 2
+MEME_ERR_SW   DIM  1 
+FMT_FROM_DTE  DIM  10
+FMT_THRU_DTE  DIM  10
+LIFE          INIT "LIFE "
+DIM8          INIT "        "
+DIM16         DIM  16               
+FORM2         FORM 2
+CNT_4         DIM  4
+CNT_3         DIM  3
+AS_OF_DATE    DIM  8
+AS_OF_MM      DIM  2
+AS_OF_CCYY    DIM  4
+YN_ANS        DIM  1
+SSN2          DIM  2          
+SSN3          DIM  3
+SSN4          DIM  4
+DIM7          DIM  7
+DIM2          DIM  2
+DIM19         DIM  19
+DIMMM         DIM  2
+DIMDD         DIM  2
+DIMCCYY       DIM  4
+WS_DIM1       DIM       1
+WS_DIM4       DIM       4
+WS_DOB        DIM       8
+WS_SSN        DIM       9
+WS_MEMID      DIM       8
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "RET VEST EXT" TO  C_OPER
+         MOVE      "ELG3000"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+.        CALL      PRINT_PICK      .this routine gives the user a printer list
+.        RETURN    IF (RESULT = 2)
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL KEYIN_AS_OF_DATE
+    CALL INITIALIZE
+    CALL REFORMAT_MEME
+    CALL OPEN_FILES
+    MOVE OGB_SEQ1 TO OGB_SEQ
+.   CALL READ_OGBFILE USING MEME_ERR_FD,MEME_ERR_NME,MEME_ERR_LIST 
+.   IF (RESULT = 1)
+.           ERROR     HORZ="22",VERT="20":
+.                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                     LNCOL=C_ERRL,SHADE="Y":
+.                     TEXT="OVERLAPPING DATE ERRORS"     
+.                     CHAIN     "MENU"
+.   ENDIF
+.   MOVE OGB_SEQ1 TO OGB_SEQ
+.   CALL READKS_OGBFILE_IX USING XREF_FD,XREF_NAME,XREF_LIST 
+.   IF (RESULT = 1)
+.           ERROR     HORZ="22",VERT="20":
+.                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+.                     LNCOL=C_ERRL,SHADE="Y":
+.                     TEXT="XREF ERRORS"     
+.                     CHAIN     "MENU"
+.   ENDIF
+    CALL PROCESS_WRK_FILE
+....Close Files
+    MOVE WS_CTR TO DIM_CTR
+    REPLACE " 0" IN DIM_CTR
+    IF (SEQCTR_RESULT = 1)
+        CALL UPDATE_OGBREC_IX USING SEQCTR_FD,SEQCTR_LIST
+    ELSE
+        CALL WRITE_OGBREC_IX USING SEQCTR_FD,SEQCTR_NAME:
+                                   SEQCTR_DATE,SEQCTR_LIST
+    ENDIF
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    DISPLAY   *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+              *P30:21,"SORTING VESTING FILES ...",*BOLDOFF
+    CALL      SORT_OGBFILE   USING  RETVST_NAME,RETVST_NAME:
+                                    RETVST_SKY
+    IF OVER
+           ERROR     HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="VESTING SORT BY ZIP - 1 FAILED"
+    ENDIF
+    CALL      SORT_OGBFILE   USING  RVSTFULL_NAME,RVSTFULL_NAME:
+                                    RETVST_SKY
+    IF OVER
+           ERROR     HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="VESTING SORT BY ZIP - 2 FAILED"
+    ENDIF
+    ROLLOUT   "elg3000.ftp"
+         IF OVER
+              ERROR     HORZ="15",VERT="19":
+                        BGCOL=C_ERRB,FGCOL=C_ERRF:
+                        LNCOL=C_ERRL,SHADE="Y":
+                        TEXT="ROLLOUT FAILED"
+              CHAIN     "MENU"
+         ENDIF
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_WRK_FILE
+ LOOP      
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME,MEME_WRK_LIST
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    MOVE "0" TO COMB_HIST_SW
+    CALL CLOSE_OGBFILE USING MEME_DTE_FD,MEME_DTE_NME,MEME_DTE_LIST 
+    CALL PREP_OGBFILE USING MEME_DTE_FD,MEME_DTE_NME 
+    PACK MEM_FK11 WITH MEME_WRK_ID1 
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       CONTINUE
+    ENDIF
+    IF ( SQUEEZE MEM_HOLD = "TFER")
+        CONTINUE
+    ENDIF 
+    PACK MEME_FK11 WITH MEM_ID1,BLANKS
+    CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              MOVE RESULT TO MEME_RESULT
+              IF ((MEME_WRK_ID1 <> MEME_ID1) OR (MEME_RESULT <> 1))
+                IF (SQUEEZE MEM_ACCU <> "")
+                     MOVE "1" TO COMB_HIST_SW
+                     MOVE MEM_ACCU TO WS_ID1
+                     CALL GET_FROM_ID_DTES
+                ENDIF
+                MOVE MEM_ID1 TO XREF_THID
+                CALL READ_OGBFILE_IX USING XREF_FD,XREF_NAME:
+                                          XREF_THID,XREF_LIST
+                MOVE RESULT TO XREF_RESULT
+                IF (XREF_RESULT = 1)
+                   MOVE XREF_FRID TO XREF2_FRID
+                   MOVE XREF_THID TO XREF2_THID
+                   CALL WRITE_OGBREC_IX USING XREF2_FD,XREF2_NAME:
+                                          XREF2_THID,XREF2_LIST
+                   BREAK
+                   MOVE "2" TO COMB_HIST_SW
+                   MOVE XREF_FRID TO WS_ID1
+                   CALL GET_FROM_ID_DTES
+                ENDIF
+                BREAK
+                CALL CLOSE_OGBFILE USING MEME_DTE_FD,MEME_DTE_NME,MEME_DTE_LIST 
+                PACK SCRATCH WITH MEME_DTE_NME," ",MEME_DTE_NME," 1-16 -t -u"
+                SORT      SCRATCH
+                   IF OVER
+                      ERROR     HORZ="22",VERT="20":
+                      BGCOL=C_ERRB,FGCOL=C_ERRF:
+                      LNCOL=C_ERRL,SHADE="Y":
+                      TEXT="SORT FAILED(elg3000.dte)"     
+                      CHAIN     "MENU"
+                   ENDIF
+                CALL OPEN_OGBFILE USING MEME_DTE_FD,MEME_DTE_NME 
+                CLEAR WS_FROM_DTE
+                CLEAR WS_THRU_DTE
+                CLEAR MEME_ERR_SW
+                CALL PROCESS_DTE_FILE
+                BREAK       
+              ENDIF
+              IF (SQUEEZE MEME_NET = "LIFE")
+                 CONTINUE
+              ENDIF
+              IF (MEME_EFF > AS_OF_DATE)
+                CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_TRM = "")
+                MOVE "99999999" TO MEME_TRM
+              ENDIF               
+              IF (MEME_TRM <= MEME_EFF)
+                CONTINUE
+              ENDIF
+              IF ((MEME_EFF <= AS_OF_DATE) AND (MEME_TRM > AS_OF_DATE))
+                UNPACK MEME_LEV1 INTO WS_DIM1,WS_DIM4
+                IF (WS_DIM1 = "R") 
+                  MOVE MEME_LEV2 TO AS_OF_AGENCY
+                ELSE
+                  MOVE MEME_LEV1 TO AS_OF_AGENCY
+                ENDIF
+                IF (MEME_US06 = "Y")
+                  CONTINUE
+                ENDIF
+              ENDIF
+              MOVE MEME_EFF TO MEME_FROM_DTE
+              MOVE MEME_TRM TO MEME_THRU_DTE
+              MOVE OGB_SEQ1 TO OGB_SEQ
+              CALL WRITE_OGBREC USING MEME_DTE_FD,MEME_DTE_NME,MEME_DTE_LIST 
+         REPEAT
+ REPEAT
+ RETURN
+
+GET_FROM_ID_DTES
+   PACK MEME_FK11 WITH WS_ID1,BLANKS
+   CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+        	           MEME_FN:  ...FILE NAME LIST  
+		           MEME_FC:  ...TYPE OF INDEX   
+.	  		             ...(I)NDEX OR (A)IMDEX
+		           MEME_FV:  ...FILE KEY VARLISTS
+		           MEME_FK:  ...FILE KEY SIZES  
+		           MEME_LIST:...FILE RECORD (FIELD LIST)
+		           MEME_REC: ...FILE RECORD (PACKED)
+		           MEME_OLD: ...FILE SAVED WHEN READ
+		           MEME_QTY: ...NUMBER OF FILES 
+			   1	     ...FILE NUMBER FOR THIS READ
+         LOOP
+             CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+  	          	           MEME_FN:  ...FILE NAME LIST  
+		                   MEME_FC:  ...TYPE OF INDEX   
+.	  		                     ...(I)NDEX OR (A)IMDEX
+		                   MEME_FV:  ...FILE KEY VARLISTS
+		                   MEME_FK:  ...FILE KEY SIZES  
+		                   MEME_LIST:...FILE RECORD (FIELD LIST)
+		                   MEME_REC: ...FILE RECORD (PACKED)
+		                   MEME_OLD: ...FILE SAVED WHEN READ
+		                   MEME_QTY: ...NUMBER OF FILES 
+			           1	     ...FILE NUMBER FOR THIS READ
+              MOVE RESULT TO MEME_RESULT
+              IF ((WS_ID1 <> MEME_ID1) OR (MEME_RESULT <> 1))
+                BREAK       
+              ENDIF
+              IF (SQUEEZE MEME_NET = "LIFE")
+                 CONTINUE
+              ENDIF
+              IF (MEME_EFF > AS_OF_DATE)
+                CONTINUE
+              ENDIF
+              IF (SQUEEZE MEME_TRM = "")
+                MOVE "99999999" TO MEME_TRM
+              ENDIF               
+              IF (MEME_TRM <= MEME_EFF)
+                CONTINUE
+              ENDIF
+              IF ((MEME_EFF <= AS_OF_DATE) AND (MEME_TRM > AS_OF_DATE))
+                UNPACK MEME_LEV1 INTO WS_DIM1,WS_DIM4
+                IF (WS_DIM1 = "R")
+                  MOVE MEME_LEV2 TO AS_OF_AGENCY
+                ELSE
+                  MOVE MEME_LEV1 TO AS_OF_AGENCY
+                ENDIF
+                IF (MEME_US06 = "Y")
+                  CONTINUE
+                ENDIF
+              ENDIF
+              MOVE MEME_EFF TO MEME_FROM_DTE
+              MOVE MEME_TRM TO MEME_THRU_DTE
+              MOVE OGB_SEQ1 TO OGB_SEQ
+              CALL WRITE_OGBREC USING MEME_DTE_FD,MEME_DTE_NME,MEME_DTE_LIST 
+         REPEAT
+   RETURN
+
+PROCESS_DTE_FILE
+   MOVE 1 TO Y
+   LOOP
+    IF (Y > 25)
+      BREAK
+    ENDIF
+    CLEAR DTE_ARRAY(Y)
+    ADD 1 TO Y
+   REPEAT
+   MOVE 1 TO Y
+   LOOP
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING MEME_DTE_FD,MEME_DTE_NME,MEME_DTE_LIST 
+      MOVE RESULT TO MEME_DTE_RESULT
+      IF (MEME_DTE_RESULT <> 1)
+        BREAK
+      ENDIF
+      IF ((SQUEEZE WS_FROM_DTE = "") OR (MEME_FROM_DTE < WS_FROM_DTE))
+           MOVE MEME_FROM_DTE TO WS_FROM_DTE
+      ENDIF
+      IF (SQUEEZE WS_THRU_DTE = "")
+         MOVE MEME_THRU_DTE TO WS_THRU_DTE
+         PACK DTE_ARRAY(Y) WITH WS_FROM_DTE,WS_THRU_DTE
+         CONTINUE
+      ELSE
+         IF (WS_THRU_DTE < MEME_FROM_DTE)
+           CALL DELTA_DAYS USING MEME_FROM_DTE,WS_THRU_DTE,DIFF_DAYS
+           IF (DIFF_DAYS = 1)
+              MOVE MEME_THRU_DTE TO WS_THRU_DTE
+              PACK DTE_ARRAY(Y) WITH WS_FROM_DTE,WS_THRU_DTE
+           ELSE
+              PACK DTE_ARRAY(Y) WITH WS_FROM_DTE,WS_THRU_DTE
+              ADD 1 TO Y
+              PACK DTE_ARRAY(Y) WITH MEME_FROM_DTE,MEME_THRU_DTE
+              MOVE MEME_FROM_DTE TO WS_FROM_DTE
+              MOVE MEME_THRU_DTE TO WS_THRU_DTE
+           ENDIF
+         ELSE
+              MOVE "1" TO MEME_ERR_SW
+              SWITCH COMB_HIST_SW
+                 CASE "0"
+                    MOVE MEM_ID1 TO MEME_ERR_RID1
+                    CLEAR MEME_ERR_RID2
+                 CASE "1"
+                    MOVE MEM_ID1 TO MEME_ERR_RID2
+                    MOVE MEM_ACCU TO MEME_ERR_RID1
+                 CASE "2"
+                    MOVE MEM_ID1 TO MEME_ERR_RID2
+                    MOVE XREF_FRID TO MEME_ERR_RID1
+              ENDSWITCH
+.             CALL WRITE_OGBREC USING MEME_ERR_FD,MEME_ERR_NME,MEME_ERR_LIST 
+              BREAK
+         ENDIF
+      ENDIF
+   REPEAT        
+   IF (MEME_ERR_SW = "1")
+      GOTO PROCESS_DTE_FILE_RET 
+   ENDIF
+   MOVE "N" TO SEND_SW
+   MOVE 0 TO Y
+   CLEAR EEFFDT
+   CLEAR SAVE_TRM
+   CLEAR ACC_DAYS
+   CLEAR WS_TRM_DTE
+   LOOP
+      IF (Y > 24)
+        SWITCH MEM_REL
+          CASE "01"
+            DIVIDE DAYS_IN_YR INTO ACC_DAYS GIVING RETVST_YRS_COV
+            IF (RETVST_YRS_COV >= RVST_4)
+              MOVE MEM_ID1 TO RVSTRID_RID
+              CALL READ_OGBFILE_IX USING RVSTRID_FD,RVSTRID_NAME:
+                                        RVSTRID_RID,RVSTRID_LIST
+              IF (RESULT <> 1)
+                CALL WRITE_FULL_VEST
+                BREAK
+              ELSE
+                BREAK
+              ENDIF
+            ENDIF
+            IF ((EEFFDT < "20020101") AND (SEND_SW = "N"))
+              MOVE MEM_ID1 TO RVSTRID_RID
+              CALL READ_OGBFILE_IX USING RVSTRID_FD,RVSTRID_NAME:
+                                        RVSTRID_RID,RVSTRID_LIST
+              IF (RESULT <> 1)
+                CALL WRITE_FULL_VEST
+                BREAK
+              ELSE
+                BREAK
+              ENDIF
+            ENDIF
+            IF ((EEFFDT >= "20020101") OR (SEND_SW = "Y"))
+              IF (RETVST_YRS_COV < RVST_4)
+                CALL WRITE_REC
+                BREAK
+              ELSE
+                BREAK
+              ENDIF
+            ELSE
+              BREAK
+            ENDIF
+          DEFAULT  
+            DIVIDE DAYS_IN_YR INTO ACC_DAYS GIVING RETVST_YRS_COV
+            IF (RETVST_YRS_COV >= RVST_4)
+              MOVE MEM_ID1 TO RVSTRID_RID
+              CALL READ_OGBFILE_IX USING RVSTRID_FD,RVSTRID_NAME:
+                                        RVSTRID_RID,RVSTRID_LIST
+              IF (RESULT <> 1)
+                CALL WRITE_FULL_VEST
+                BREAK
+              ELSE
+                BREAK
+              ENDIF
+            ENDIF
+            IF ((EEFFDT < "20020701") AND (SEND_SW = "N"))
+              MOVE MEM_ID1 TO RVSTRID_RID
+              CALL READ_OGBFILE_IX USING RVSTRID_FD,RVSTRID_NAME:
+                                        RVSTRID_RID,RVSTRID_LIST
+              IF (RESULT <> 1)
+                CALL WRITE_FULL_VEST
+                BREAK
+              ELSE
+                BREAK
+              ENDIF
+            ENDIF
+            IF ((EEFFDT >= "20020701") OR (SEND_SW = "Y"))
+              IF (RETVST_YRS_COV < RVST_4)
+                CALL WRITE_REC
+                BREAK
+              ELSE
+                BREAK
+              ENDIF
+            ELSE
+              BREAK
+            ENDIF
+          ENDSWITCH
+      ENDIF
+      ADD 1 TO Y
+      UNPACK DTE_ARRAY(Y) INTO WS_FROM_DTE,WS_THRU_DTE
+      IF (SQUEEZE WS_FROM_DTE = "")
+         CONTINUE
+      ENDIF
+      IF (WS_THRU_DTE > AS_OF_DATE)
+         MOVE AS_OF_DATE TO WS_TRM_DTE
+      ELSE
+         MOVE WS_THRU_DTE TO WS_TRM_DTE 
+      ENDIF
+      CALL DELTA_DAYS USING WS_TRM_DTE,WS_FROM_DTE,DIFF_DAYS
+      MOVE (DIFF_DAYS + ACC_DAYS) TO ACC_DAYS
+      IF ((SQUEEZE EEFFDT = "") OR (WS_FROM_DTE < EEFFDT))
+          MOVE WS_FROM_DTE TO EEFFDT
+      ENDIF
+.     SWITCH MEM_REL
+.       CASE "01"
+.         IF ((WS_FROM_DTE < "20020101") AND (WS_THRU_DTE >= AS_OF_DATE))
+.           MOVE "N" TO SEND_SW
+.         ENDIF
+.       DEFAULT   
+.         IF ((WS_FROM_DTE < "20020701") AND (WS_THRU_DTE >= AS_OF_DATE))
+.           MOVE "N" TO SEND_SW
+.         ENDIF
+.     ENDSWITCH
+      IF (SQUEEZE SAVE_TRM = "")
+        MOVE WS_THRU_DTE TO SAVE_TRM
+        CONTINUE
+      ENDIF
+      CALL DELTA_DAYS USING WS_FROM_DTE,SAVE_TRM,DIFF_DAYS
+      MOVE WS_THRU_DTE TO SAVE_TRM
+      SWITCH MEM_REL
+        CASE "01"
+          IF ((DIFF_DAYS > 1) AND (WS_FROM_DTE >= "20020101"))
+            MOVE "Y" TO SEND_SW
+          ENDIF
+        DEFAULT
+          IF ((DIFF_DAYS > 1) AND (WS_FROM_DTE >= "20020701"))
+            MOVE "Y" TO SEND_SW
+          ENDIF
+      ENDSWITCH
+   REPEAT        
+
+PROCESS_DTE_FILE_RET
+   RETURN
+
+WRITE_REC
+   PACK    RETVST_DATE WITH AS_OF_MM,SLASH,AS_OF_CCYY
+   PACK    RETVST_DATE_2 WITH AS_OF_CCYY,AS_OF_MM
+   UNPACK MEM_ESSN INTO SSN3,SSN2,SSN4
+   PACK RETVST_ESSN WITH SSN3,DASH,SSN2,DASH,SSN4
+   UNPACK TODAY INTO WS_CCYY,WS_MM,WS_DD
+   PACK RETVST_CURR_DATE WITH WS_MM,SLASH,WS_DD,SLASH,WS_CCYY
+   MOVE MEM_LNAME TO RETVST_MLNAME
+   MOVE MEM_FNAME TO RETVST_MFNAME
+   MOVE MEM_MINIT TO RETVST_MMINIT
+   MOVE MEM_ADDR1 TO RETVST_ADDR1
+   MOVE MEM_ADDR2 TO RETVST_ADDR2
+   MOVE MEM_CITY TO RETVST_CITY
+   MOVE MEM_STATE TO RETVST_STATE
+   MOVE MEM_ZIP TO RETVST_ZIP
+   IF (MEM_REL <> "01")
+      UNPACK MEM_PSSN INTO SSN3,SSN2,SSN4
+      PACK RETVST_MSSN WITH SSN3,DASH,SSN2,DASH,SSN4
+      CALL GET_ENROLLEE
+      MOVE MEM_LNAME TO RETVST_ENR_LNAME
+      MOVE MEM_FNAME TO RETVST_ENR_FNAME
+      MOVE MEM_MINIT TO RETVST_ENR_MINIT
+   ELSE
+      UNPACK MEM_ESSN INTO SSN3,SSN2,SSN4
+      PACK RETVST_MSSN WITH SSN3,DASH,SSN2,DASH,SSN4
+      MOVE MEM_LNAME TO RETVST_ENR_LNAME
+      MOVE MEM_FNAME TO RETVST_ENR_FNAME
+      MOVE MEM_MINIT TO RETVST_ENR_MINIT
+   ENDIF
+   MOVE AS_OF_AGENCY TO RETVST_AGENCY
+   MOVE 0 TO Y
+   LOOP
+     IF (Y > 24)
+       BREAK
+     ENDIF
+     ADD 1 TO Y
+     IF (SQUEEZE DTE_ARRAY(Y) = "")
+        CONTINUE
+     ENDIF
+     UNPACK DTE_ARRAY(Y) INTO WS_FROM_DTE,WS_THRU_DTE
+     IF (WS_FROM_DTE >= AS_OF_DATE)
+        CONTINUE
+     ENDIF
+     UNPACK WS_FROM_DTE INTO WS_CCYY,WS_MM,WS_DD
+     PACK FMT_FROM_DTE WITH WS_MM,SLASH,WS_DD,SLASH,WS_CCYY
+     UNPACK WS_THRU_DTE INTO WS_CCYY,WS_MM,WS_DD
+     PACK FMT_THRU_DTE WITH WS_MM,SLASH,WS_DD,SLASH,WS_CCYY
+     IF (WS_THRU_DTE > AS_OF_DATE)
+      UNPACK AS_OF_DATE INTO WS_CCYY,WS_MM,WS_DD
+      PACK FMT_THRU_DTE WITH WS_MM,SLASH,WS_DD,SLASH,WS_CCYY
+      PACK RETVST_COV_DTES(Y) WITH FMT_FROM_DTE,FMT_THRU_DTE
+     ELSE
+      PACK RETVST_COV_DTES(Y) WITH FMT_FROM_DTE,FMT_THRU_DTE
+     ENDIF
+   REPEAT
+   IF ((RETVST_YRS_COV >= RVST_1) AND (RETVST_YRS_COV < RVST_2))
+      MOVE 19 TO RETVST_PCT_CONT
+   ELSE
+    IF ((RETVST_YRS_COV >= RVST_2) AND (RETVST_YRS_COV < RVST_3))
+      MOVE 38 TO RETVST_PCT_CONT
+    ELSE
+     IF ((RETVST_YRS_COV >= RVST_3) AND (RETVST_YRS_COV < RVST_4))
+       MOVE 56 TO RETVST_PCT_CONT
+     ELSE
+        MOVE 75 TO RETVST_PCT_CONT
+     ENDIF
+    ENDIF
+   ENDIF
+   ADD 1 TO WS_CTR
+   MOVE WS_CTR TO RETVST_SEQ_COUNT               
+   REPLACE " 0" IN RETVST_SEQ_COUNT
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING RETVST_FD,RETVST_NAME,RETVST_LIST      
+   CLEAR RETVST_LIST
+   ADD 1 TO X_CNT2
+   UNPACK X_CNT2 INTO CNT_4,CNT_3
+   IF (CNT_3 = "000")
+      CALL X_DISPLAY_COUNTS
+   ENDIF
+   RETURN
+
+WRITE_FULL_VEST
+   PACK    RETVST_DATE WITH AS_OF_MM,SLASH,AS_OF_CCYY
+   PACK    RETVST_DATE_2 WITH AS_OF_CCYY,AS_OF_MM
+   UNPACK MEM_ESSN INTO SSN3,SSN2,SSN4
+   PACK RETVST_ESSN WITH SSN3,DASH,SSN2,DASH,SSN4
+   UNPACK TODAY INTO WS_CCYY,WS_MM,WS_DD
+   PACK RETVST_CURR_DATE WITH WS_MM,SLASH,WS_DD,SLASH,WS_CCYY
+   MOVE MEM_LNAME TO RETVST_MLNAME
+   MOVE MEM_FNAME TO RETVST_MFNAME
+   MOVE MEM_MINIT TO RETVST_MMINIT
+   MOVE MEM_ADDR1 TO RETVST_ADDR1
+   MOVE MEM_ADDR2 TO RETVST_ADDR2
+   MOVE MEM_CITY TO RETVST_CITY
+   MOVE MEM_STATE TO RETVST_STATE
+   MOVE MEM_ZIP TO RETVST_ZIP
+   IF (MEM_REL <> "01")
+      UNPACK MEM_PSSN INTO SSN3,SSN2,SSN4
+      PACK RETVST_MSSN WITH SSN3,DASH,SSN2,DASH,SSN4
+      CALL GET_ENROLLEE
+      MOVE MEM_LNAME TO RETVST_ENR_LNAME
+      MOVE MEM_FNAME TO RETVST_ENR_FNAME
+      MOVE MEM_MINIT TO RETVST_ENR_MINIT
+   ELSE
+      UNPACK MEM_ESSN INTO SSN3,SSN2,SSN4
+      PACK RETVST_MSSN WITH SSN3,DASH,SSN2,DASH,SSN4
+      MOVE MEM_LNAME TO RETVST_ENR_LNAME
+      MOVE MEM_FNAME TO RETVST_ENR_FNAME
+      MOVE MEM_MINIT TO RETVST_ENR_MINIT
+   ENDIF
+   MOVE AS_OF_AGENCY TO RETVST_AGENCY
+   ADD 1 TO WS_CTR
+   MOVE WS_CTR TO RETVST_SEQ_COUNT               
+   REPLACE " 0" IN RETVST_SEQ_COUNT
+   MOVE OGB_SEQ1 TO OGB_SEQ
+   CALL WRITE_OGBREC USING RVSTFULL_FD,RVSTFULL_NAME,RETVST_LIST      
+   CLEAR RETVST_LIST
+   ADD 1 TO X_CNT2
+   UNPACK X_CNT2 INTO CNT_4,CNT_3
+   IF (CNT_3 = "000")
+      CALL X_DISPLAY_COUNTS
+   ENDIF
+   MOVE MEM_ID1 TO RVSTRID_RID
+   PACK RVSTRID_AOD WITH AS_OF_CCYY,AS_OF_MM
+   CALL READ_OGBFILE_IX USING RVSTRID_FD,RVSTRID_NAME:
+                              RVSTRID_RID,RVSTRID_LIST
+   RETURN
+
+GET_ENROLLEE
+        CLEAR     MEM_AIM
+        PACK      MEM_AIM1 WITH "01X",MEM_ESSN,BLANKS
+        PACK      MEM_AIM3 WITH "03X","01",BLANKS
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+        MOVE RESULT TO MEM_RESULT
+        RETURN
+
+REFORMAT_MEME
+   DISPLAY   *P1:21,*EL,*BOLDON, *BGCOLOR=*BLACK, *FGCOLOR=*WHITE:
+             *P30:21, "REFORMATTING MEME", *BOLDOFF
+
+   PACK     SCRATCH WITH BLANKS
+   PACK     SCRATCH WITH "meme.dbf"," ","/ogb/work/elg3000.wrk1":
+            " -p112-116ne",LIFE:                  
+            " 1-8 96-103 104-111 296-296 -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(MEME.DBF)"
+        CHAIN     "MENU"
+    ENDIF
+   PACK     SCRATCH WITH BLANKS
+   PACK     SCRATCH WITH "/ogb/work/elg3000.wrk1"," ","/ogb/work/elg3000.wrk2":
+            " -p25eq",N:                  
+            " -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(ELG3000.WRK1)"
+        CHAIN     "MENU"
+    ENDIF
+   PACK     SCRATCH WITH BLANKS
+   PACK     SCRATCH WITH "/ogb/work/elg3000.wrk2"," ","/ogb/work/elg3000.wrk3":
+            " -p9-16le",AS_OF_DATE:                  
+            " -t -j"
+   REFORMAT SCRATCH
+    IF OVER
+       ERROR     HORZ="22",VERT="20":
+                 BGCOL=C_ERRB,FGCOL=C_ERRF:
+                 LNCOL=C_ERRL,SHADE="Y":
+                 TEXT="REFORMAT FAILED(ELG3000.WRK2)"
+      CHAIN     "MENU"
+    ENDIF
+   PACK     SCRATCH WITH BLANKS
+   PACK     SCRATCH WITH "/ogb/work/elg3000.wrk3"," ",MEME_WRK_NME:
+                  " -p17-24gt",AS_OF_DATE:
+                  " -t -j"
+   REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(ELG3000.WRK3)"
+        CHAIN     "MENU"
+     ENDIF
+   PACK     SCRATCH WITH BLANKS
+   PACK     SCRATCH WITH "/ogb/work/elg3000.wrk3"," ",MEME_WRK_NME:
+              " -p17-24eq#"",BLANK8,"#" -a -t -j"
+   REFORMAT SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="REFORMAT FAILED(ELG3000.WRK3)"
+        CHAIN     "MENU"
+     ENDIF
+   PACK      SCRATCH WITH MEME_WRK_NME," ",MEME_WRK_NME," 1-8 -t -u"
+   SORT      SCRATCH
+     IF OVER
+        ERROR     HORZ="22",VERT="20":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="SORT FAILED(ELG3000.RETVST)"
+        CHAIN     "MENU"
+     ENDIF
+
+   RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         CALL      OPEN_OGBFILE_IX USING SEQCTR_FD,SEQCTR_NAME     
+         PACK      SEQCTR_DATE WITH AS_OF_CCYY,AS_OF_MM
+         CALL READ_OGBFILE_IX USING SEQCTR_FD,SEQCTR_NAME:
+                                    SEQCTR_DATE,SEQCTR_LIST
+         MOVE RESULT TO SEQCTR_RESULT
+         IF (SEQCTR_RESULT = 1)
+            MOVE DIM_CTR TO WS_CTR
+         ENDIF
+         RETURN
+
+KEYIN_AS_OF_DATE
+      LOOP
+        LOOP
+          DISPLAY *P26:12,"/"
+          KEYIN   *P=3:12, "AS OF DATE(MM/CCYY): ":    
+                  *P=24:12,*DE,*RV,*KCON, AS_OF_MM   
+          IF      ((AS_OF_MM > "12") OR (AS_OF_MM < "01"))
+                  CONTINUE
+          ELSE
+                  BREAK
+          ENDIF
+        REPEAT
+        LOOP
+           KEYIN   *P=27:12,*LL,*DE,*RV,*KCON, AS_OF_CCYY 
+           MOVELPTR AS_OF_CCYY TO FORM2
+           IF (FORM2 = 4)
+             BREAK
+           ENDIF
+        REPEAT
+        LOOP
+        KEYIN   *P=10:14, "IS THIS CORRECT? ":    
+                *P=31:14,*UC, YN_ANS
+        REPEAT  UNTIL (YN_ANS = "Y" OR YN_ANS = "N")
+      REPEAT  UNTIL (YN_ANS = "Y") 
+      PACK    AS_OF_DATE WITH AS_OF_CCYY,AS_OF_MM,"01"
+      RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME
+         CALL      PREP_OGBFILE USING RETVST_FD,RETVST_NAME 
+         CALL      PREP_OGBFILE USING RVSTFULL_FD,RVSTFULL_NAME 
+         CALL      PREP_OGBFILE USING MEME_DTE_FD,MEME_DTE_NME 
+         CALL      OPEN_OGBFILE_IX USING RVSTRID_FD,RVSTRID_NAME
+.        CALL      OPEN_OGBFILE USING MEME_ERR_FD,MEME_ERR_NME 
+         CALL      OPEN_OGBFILE_IX USING XREF_FD,XREF_NAME 
+         CALL      PREP_OGBFILE_IX USING XREF2_FD,XREF2_NAME 
+         RETURN
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME
+         CALL      CLOSE_OGBFILE USING RETVST_FD,RETVST_NAME 
+         CALL      CLOSE_OGBFILE_IX USING SEQCTR_FD,SEQCTR_NAME     
+         CALL      CLOSE_OGBFILE USING MEME_ERR_FD,MEME_ERR_NME 
+         CALL      CLOSE_OGBFILE_IX USING XREF_FD,XREF_NAME 
+         CALL      CLOSE_OGBFILE USING RVSTFULL_FD,RVSTFULL_NAME 
+         CALL      CLOSE_OGBFILE_IX USING RVSTRID_FD,RVSTRID_NAME
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of ELG3000.PS
+. +++++++++++++++++++++++++++++++++++++

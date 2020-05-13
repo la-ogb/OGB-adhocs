@@ -1,0 +1,367 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
++    Program name   : A1109201.PS
++    Description    : Letter events for Duplicate Claims                      
++
++    apeks 09/20/2011 a1109201 DEV - Initial Version.
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy ayymmdd# MOD - description of change
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       PRT.RL
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Standard io
+
+. --------------------------------------------------------------------------
+.
+
+DATE1         DIM       8
+DATE2         DIM       8
+DATE3         DIM       8
+IDX_OPTS      DIM       200
+
+DATE_FROM     DIM       8
+DATE_THRU     DIM       8
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+TIMESTAMP     DIM       14
+
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+KEEP_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+COMMA         INIT      ","
+
+
+. Duplicate claims
+DUP_FILE     FILE       FIX=8,TEXT
+DUP_NAME     INIT       "/w/a1109201dup.txt"
+DUP_LIST     LIST    
+DUP_CLM      DIM        8
+             LISTEND 
+
+
+START_DTE    INIT       "20100701"
+. Claims paid since start date
+CPD_FILE     IFILE      FIX=8,TEXT,KEYL=8
+CPD_NAME     INIT       "/w/a1109201clm.ix1"
+CPD_TXT      INIT       "/w/a1109201clm.txt"
+CPD_LIST     LIST
+CPD_CLM      DIM        8
+             LISTEND
+
+
+. Letter events
+LET_FILE     IFILE      VAR=16,TEXT,KEYL=8
+LET_NAME     INIT       "/w/a1109201let.ix1"
+LET_TXT      INIT       "/w/a1109201let.txt"
+LET_LIST     LIST
+LET_CLM      DIM        8
+LET_LET      DIM        6
+LET_TYP      DIM        2
+             LISTEND      
+
+
+OUT_FILE     FILE      VAR=18,TEXT
+OUT_NAME     INIT      "/w/a1109201.txt"
+OUT_LIST     LIST
+OUT_CLM      DIM       8      .Impact ID
+OUT_CM1      DIM       1
+OUT_LET      DIM       6
+OUT_CM2      DIM       1
+OUT_TYP      DIM       2
+             LISTEND
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST
+PARAM_IN      DIM       12
+              LISTEND
+
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+. -----------------
+.   Begin Program
+. -----------------
+
+. ------------------------------------
+.   Start here if selected from menu
+. ------------------------------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "Denied Claim Letters" TO  C_OPER
+         MOVE      "A1109201"            TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+
+         CALL      INIT_PRG
+         CALL      READ_DUPL
+
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. ------------------------------
+. Initialize program          
+. ------------------------------
+
+INIT_PRG
+
+         MOVE      0           TO  READ_COUNT
+         MOVE      0           TO  WRITE_COUNT
+         MOVE      0           TO  KEEP_COUNT
+         MOVE      0           TO  ERROR_COUNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" Read In             ":
+                      text=" Selected            "
+         ENDIF
+
+. Build input files
+. Duplicate claim denials
+         PACK SCRATCH WITH "clme.dbf ",DUP_NAME:
+                           " -p15-17=^10 1-8 -j -t",BLANKS
+         REFORMAT SCRATCH
+
+         PACK SCRATCH WITH DUP_NAME," ",DUP_NAME," 1-8":
+                           " -j -u -t",BLANKS
+         SORT SCRATCH
+
+. Letter events
+         PACK DIM1 WITH BLANKS
+         PACK SCRATCH WITH "eve.dbf ",LET_TXT:
+                           " -p9-10=LT -p1805neDIM1 1805-1818":
+                           " 954-955 -j -t",BLANKS
+         REFORMAT SCRATCH
+
+         PACK SCRATCH WITH LET_TXT," ",LET_TXT," 1-8":
+                           " -j -u -t",BLANKS
+         SORT SCRATCH
+
+         PACK SCRATCH WITH LET_TXT," ",LET_NAME," 1-8",BLANKS 
+         INDEX SCRATCH  
+
+. Claims paid in recent years
+         PACK SCRATCH WITH "clm.dbf ",CPD_TXT:
+                           " -p2496-2503ge",START_DTE," 1-8":
+                           " -j -t",BLANKS
+         REFORMAT SCRATCH
+
+
+         PACK SCRATCH WITH CPD_TXT," ",CPD_NAME," 1-8",BLANKS
+         INDEX SCRATCH
+
+. Read the input file and write to the output file
+         CALL      OPEN_OGBFILE USING DUP_FILE,DUP_NAME
+         CALL      OPEN_OGBFILE_IX USING LET_FILE,LET_NAME
+         CALL      OPEN_OGBFILE_IX USING CPD_FILE,CPD_NAME
+         CALL      PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ------------------------------
+.  Read Duplicate claims file
+. ------------------------------
+
+READ_DUPL
+
+         LOOP
+            debug
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL      READ_OGBFILE USING DUP_FILE,DUP_NAME,DUP_LIST
+            IF (RESULT <> 1)
+               BREAK
+            ENDIF
+
+            ADD       1 TO READ_COUNT
+            IF (C_RMODE = "I")
+               MOVE      READ_COUNT TO WORK_COUNT
+               UNPACK    WORK_COUNT TO FRONT,BACK
+               IF        (BACK = "000")
+                  DISPLAY   *P41:20,READ_COUNT
+               ENDIF
+            ENDIF
+
+. Check if claim paid in period
+            CALL READ_OGBFILE_IX USING CPD_FILE,CPD_NAME,DUP_CLM,CPD_LIST
+            CONTINUE IF (RESULT <> 1)
+
+. Check if letter event exists
+            CALL READ_OGBFILE_IX USING LET_FILE,LET_NAME,DUP_CLM,LET_LIST
+            IF (RESULT = 1)
+               CALL WRITE_OUT
+            ENDIF
+
+            CLEAR OUT_LIST
+
+         REPEAT
+         RETURN
+
+. -----------------------
+.   Write OUTPUT           
+. -----------------------
+
+WRITE_OUT
+
+         PACK OUT_CM1 WITH COMMA
+         PACK OUT_CM2 WITH COMMA
+
+         PACK OUT_CLM WITH DUP_CLM
+         PACK OUT_LET WITH LET_LET
+         PACK OUT_TYP WITH LET_TYP
+
+         MOVE OGB_SEQ3 TO OGB_SEQ
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+
+         CLEAR OUT_LIST
+         ADD 1 TO WRITE_COUNT
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+ 
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       X_OGBFILE.IO
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO

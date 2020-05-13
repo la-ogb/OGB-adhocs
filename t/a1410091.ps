@@ -1,0 +1,631 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1410091.ps     
++    Description    :  Creates LSUSH  enrollemnt file.
++    apsjm 10/09/2014 A1410091 ADH - INitial Version                      
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++
++----------------------------------------------------------------------------
+.
+.--------------------------
+. Required Program Includes
+.--------------------------
+.
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       PRT.RL               ...Printer definition file
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       CLI.RL               ...Client Record
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL              ...Mem. Enr/Elig Record
+    INC       MEMO.RL              ...Member Other Coverage Record
+    INC       CMDPARAM.CB
+
+.------------------
+. File Declarations
+.------------------
+X_ACTCIGNA_FILE            FILE      VAR=29,TEXT
+X_ACTCIGNA_NAME            INIT      "/ogb/work/x_meme.actlsush"
+X_ACTCIGNA_LIST            LIST
+X_ACTCIGNA_KEY1            DIM       008
+X_ACTCIGNA_KEY2            DIM       004
+X_ACTCIGNA_EFF             DIM       008
+X_ACTCIGNA_ESSN            DIM       009
+                          LISTEND 
+.
+X_CUR_FILE                IFILE     VAR=100,NODUP,KEYL=9,TEXT
+X_CUR_NAME               INIT      "/ogb/work/lsush_elg.ix1"
+X_CUR_TXT_NAME           INIT      "/ogb/work/lsush_elg.txt"
+X_CUR_LIST               LIST
+X_CUR_AGY                DIM       4
+X_CUR_ESSN               DIM       9
+X_CUR_LNAME              DIM       20
+X_CUR_FNAME              DIM       15
+X_CUR_HIRE               DIM       08
+X_CUR_EHLTH              DIM       08
+X_CUR_PART               DIM       03
+X_CUR_RT                 DIM       02
+                         LISTEND
+MEME_WRK_FD     FILE      VAR=16,TEXT
+MEME_WRK_NME    INIT     "/w/a1410091.meme.wrk"
+MEME_WRK_LIST   LIST
+MEME_WRK_EFF    DIM       8
+MEME_WRK_TRM    DIM       8
+                LISTEND
+.
+MEME_WRK_SRTKEY INIT    "1-8 -T"
+LSUSH         INIT      "LSUSH"
+ASOT_SRTKEY   INIT      "001-004 014-048 -T"
+VAL_RESULT    FORM      001
+MEMO_RESULT    FORM      001
+
+SAV_HIRE      DIM      8
+SAVE_TRM      DIM      8
+BLANK_24      DIM     24
+S_DATE        DIM      8
+S_TYPE        DIM      1
+FIRST_READ    INIT     "N"
+ACTCIGNA_SKY    INIT     "13-20 -R -T"
+W_CCYY        DIM       4
+FORM_72       FORM      7.2
+DATE1         DIM       008
+FIRST_PAGE    DIM       001
+FIRST_TIME    DIM       001
+WORK_COUNT    DIM       008
+FRONT         DIM       005
+BACK          DIM       003
+TIMESTAMP     DIM       014
+CURRDATE      DIM       008
+READ_COUNT    FORM      008
+KEEP_COUNT    FORM      008
+WRITE_COUNT   FORM      008
+ERROR_COUNT   FORM      008
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+WORK_TEXT     INIT      "JUNK"
+ACTION        DIM       010          
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM       010
+PARAM_YYY     DIM       005
+PARAM_DATE    DIM       008
+              LISTEND
+
+X_SWT_LIST    LIST
+X_SWT_DATE    DIM       008
+              LISTEND
+
+
+
+.---------------------------
+. Program Specific variables
+.---------------------------
+EARLIEST_EFF_DATE       DIM      008
+WORK_DATE     		DIM      008
+NUM_OF_DAYS             FORM     001
+G_TRM                   DIM      008
+BLANK8        		INIT     "        "
+JUNK4         		DIM      004
+TRAP_DATA     		DIM      500
+TODAY         		DIM      008
+CAL_CLOCK     		DIM      021
+CHG_RET_CODE  		FORM     001
+
+PLAN_LIST    	       LIST
+PLAN_BYTE1    		DIM      001
+PLAN_REST     		DIM      003
+ORIG_RETURN   		FORM     005
+CURR_RETURN   		FORM     005
+DISP_3        		DIM      003
+DISP_4        		DIM      004
+FORM_08       		FORM     008
+DIM49                   DIM      049
+WRK_DIM1                DIM      001
+WRK_DIM4    	        DIM      004
+                       LISTEND
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 			    chains to back to the menu
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "menu"                 TO  C_NEXT
+      MOVE      "LSUSH Elig File"     TO  C_OPER
+      MOVE      "a1410091"              TO  C_PROG
+      MOVE      BLANKS                 TO  C_LABEL
+      MOVE      BLANKS                 TO  C_FILE
+      MOVE      BLANKS                 TO  C_KEYS
+      CLOCK     CALENDAR               INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE TRAP_DATA
+      TRAPCLR ALL
+      TRAP QUIT NORESET IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+
+
+.******************************************************************************
+MAIN_PROCESS
+.******************************************************************************
+  DEBUG
+  CALL INITIALIZE
+.
+
+  CALL REFORMAT_MEME
+.
+  CALL      SORT_OGBFILE   USING  X_ACTCIGNA_NAME,X_ACTCIGNA_NAME:
+                                  ACTCIGNA_SKY
+    IF OVER
+           ERROR     HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT FAILED"
+    ENDIF
+.
+  CALL OPEN_FILES
+.
+  CALL CREATE_CURRENT_FILE
+.
+  CALL SORT_CURRENT_FILE
+.
+  CALL CLOSE_FILES
+.
+  TRAPREST TRAP_DATA
+  MOVE SCH_RTSUCC  TO  SCH@RTCODE
+
+  RETURN
+
+.******************************************************************************
+QUIT
+.******************************************************************************
+.--------------------
+. Operator pressed F9
+. -------------------
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR C_NOHIST
+  TRAPREST TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+
+      MOVE SCH_RTABRT  TO  SCH@RTCODE
+
+      RETURN
+  ENDIF
+  CHAIN "MENU"
+
+    
+
+.******************************************************************************
+INITIALIZE
+.******************************************************************************
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.------------------
+...Display Counters
+.------------------
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Records Found: " TO X_CNTDESC2
+  MOVE "Records Updated: " TO X_CNTDESC3
+  CALL X_DISPLAY_COUNTS
+
+  RETURN
+
+.******************************************************************************
+OPEN_FILES
+.******************************************************************************
+  MOVE X_ACTCIGNA_NAME TO C_FILE
+  CALL OPEN_OGBFILE USING X_ACTCIGNA_FILE,X_ACTCIGNA_NAME
+
+  MOVE X_CUR_NAME TO C_FILE
+  CALL PREP_OGBFILE_IX USING X_CUR_FILE,X_CUR_NAME
+
+  RETURN
+
+REFORMAT_MEME
+.******************************************************************************
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+.----------------------------------
+...Get only LSUSH records                
+.----------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/x_meme.lsush": 
+                      " -p112-116eq#"",LSUSH,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(meme.dbf)"
+        CHAIN "MENU"
+    ENDIF
+ 
+.-------------------------------------------------------------------------
+...Get only United Health Care Records From x_meme.lsush without term dates
+.-------------------------------------------------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/w/x_meme.lsush /w/x_meme.actlsush 1-12 96-103 9-17":
+                      " -p104-111eq#"",BLANK8,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(x_meme.actlsush)"
+        CHAIN "MENU"
+    ENDIF
+ 
+.-----------------------------------------------------------------------------
+...Get only LSUSH Records From x_meme.lsush with future term dates 
+.-----------------------------------------------------------------------------
+  MOVE BLANKS TO SCRATCH
+  PACK SCRATCH WITH "/w/x_meme.lsush /w/x_meme.actlsush 1-12 96-103 9-17":    
+                      " -p104-111gt#"",TODAY,"#" -t -j -a"
+  REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(x_meme.actlsush append)"
+        CHAIN "MENU"
+    ENDIF
+ 
+.-------------------------------------------------------
+...Display message to operator that reformat is complete
+.-------------------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="     !!!!! REFORMAT COMPLETE !!!!!     ";
+    RETURN
+
+.******************************************************************************
+CREATE_CURRENT_FILE
+.******************************************************************************
+.-------------------------------------
+. Create current file (lsush_elg.ix1)
+.-------------------------------------
+  LOOP      
+
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING X_ACTCIGNA_FILE,X_ACTCIGNA_NAME,X_ACTCIGNA_LIST
+      IF (RESULT <> 1)
+          CALL X_DISPLAY_COUNTS
+          BREAK 
+      ENDIF
+
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO DISP_4,DISP_3
+      IF (DISP_3 = "000")
+          CALL X_DISPLAY_COUNTS
+      ENDIF
+
+ 
+.-------------------------
+...Get info from MEME_FILE
+.-------------------------
+          PACK MEME_FK11 WITH X_ACTCIGNA_KEY1,X_ACTCIGNA_KEY2
+          CALL FILE_READ USING MEME_FD:       ...FILE DECLARATION LIST
+                           MEME_FN:       ...FILE NAME LIST
+                           MEME_FC:       ...TYPE OF INDEX
+.                                         ...(I)NDEX or (A)IMDEX
+                           MEME_FV:       ...FILE KEY VARLIST
+                           MEME_FK:       ...FILE KEY SIZES
+                           MEME_LIST:     ...FILE RECORD (FIELD LIST)
+                           MEME_REC:      ...FILE RECORD (PACKED)
+                           MEME_OLD:      ...FILE SAVED WHEN READ
+                           MEME_QTY:      ...NUMBER OF FILES
+                           1              ...FILE NUMBER FOR THIS READ
+          IF (RESULT <> 1)
+            CONTINUE
+          ENDIF
+          IF (MEME_EFF > TODAY)
+            CONTINUE
+          ENDIF
+            
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE         
+          ENDIF
+
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE         
+          ENDIF
+
+          IF ((SQUEEZE MEME_TRM <> "") AND (MEME_EFF > MEME_TRM))
+              CONTINUE
+          ENDIF
+            
+          IF (SQUEEZE MEME_NET = "LSUSH")
+          ELSE
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+              CONTINUE
+          ENDIF
+
+
+.------------------------
+...Get info from MEM-FILE
+.------------------------
+          PACK MEM_FK11 WITH X_ACTCIGNA_KEY1
+          CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                               MEM_FN:              ...FILE NAME LIST
+                               MEM_FC:              ...TYPE OF INDEX
+.                                                   ...(I)NDEX or (A)IMDEX
+                               MEM_FV:              ...FILE KEY VARLISTS
+                               MEM_FK:              ...FILE KEY SIZES
+                               MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                               MEM_REC:             ...FILE RECORD (PACKED)
+                               MEM_OLD:             ...FILE SAVED WHEN READ
+                               MEM_QTY:             ...NUMBER OF FIlES
+                               1                    ...FILE NUMBER FOR THIS READ
+
+          IF (RESULT <> 1)
+              CONTINUE
+          ENDIF
+          IF (MEM_REL <> "01")
+             CONTINUE
+          ENDIF
+
+          MOVE X_CUR_NAME TO C_FILE
+          MOVE MEM_ESSN TO X_CUR_ESSN 
+          CALL READ_OGBFILE_IX USING X_CUR_FILE,X_CUR_NAME:
+                                     X_CUR_ESSN,X_CUR_LIST 
+          IF (RESULT = 1)
+              CONTINUE
+          ENDIF
+
+          CMATCH "R",MEME_LEV1
+            IF EQUAL
+                MOVE MEME_LEV2 TO X_CUR_AGY  
+            ELSE
+                MOVE MEME_LEV1 TO X_CUR_AGY   
+            ENDIF
+          MOVE MEME_HIRE  TO X_CUR_HIRE           ...DATE ENROLLEE HIRED    
+
+          MOVE MEM_LNAME TO X_CUR_LNAME             ...MEMBER LAST NAME
+          MOVE MEM_FNAME TO X_CUR_FNAME             ...MEMBER FIRST NAME
+          CLEAR MEME_SAV
+          PACKLEN MEME_SAV WITH MEME_LIST
+          CALL GET_EARLIEST_EFF
+          UNPACK MEME_SAV INTO MEME_LIST
+          MOVE EARLIEST_EFF_DATE TO X_CUR_EHLTH
+          IF (SQUEEZE MEME_HIRE <> "")
+            MOVE MEME_HIRE TO X_CUR_HIRE
+          ELSE
+            IF (SQUEEZE SAV_HIRE <> "")
+               MOVE SAV_HIRE TO X_CUR_HIRE
+            ELSE
+               MOVE BLANKS TO X_CUR_HIRE
+            ENDIF
+          ENDIF
+          MOVE MEME_RT TO X_CUR_RT
+          IF (SQUEEZE MEM_US03 = "")
+             IF (SQUEEZE MEM_US01 <> "")
+                   SWITCH MEM_US01
+                      CASE "1"
+                         MOVE "19%" TO X_CUR_PART
+                      CASE "2"
+                         MOVE "38%" TO X_CUR_PART
+                      CASE "3"
+                         MOVE "56%" TO X_CUR_PART
+                      CASE "4"
+                         MOVE "75%" TO X_CUR_PART
+                    ENDSWITCH
+             ENDIF
+          ENDIF
+          IF (SQUEEZE X_CUR_PART = "")
+                MOVE BLANKS TO X_CUR_PART
+          ENDIF
+
+          
+.--------------
+...Write record
+.--------------
+          MOVE X_CUR_NAME  TO C_FILE
+          CALL WRITE_OGBREC_IX USING X_CUR_FILE:
+                                     X_CUR_NAME:
+                                     X_CUR_ESSN:
+                                     X_CUR_LIST
+          CLEAR X_CUR_LIST
+          ADD 1 TO X_CNT2
+  REPEAT
+  RETURN
+
+GET_EARLIEST_EFF
+.EARLIEST DATE OF UNINTERRUPTED COVERAGE WITHIN HEALTH 
+      DEBUG
+      CLEAR SAV_HIRE
+      CLEAR EARLIEST_EFF_DATE
+      CALL PREP_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME
+      PACK MEME_FK11 WITH X_ACTCIGNA_KEY1,BLANKS     
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          IF  ((X_ACTCIGNA_KEY1 <> MEME_ID1) OR (RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF (SQUEEZE MEME_NET = "LIFE")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_NET = "NOCOV")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_NET = "EGWP")
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_PRD = "HSA") OR (SQUEEZE MEME_PRD = "HSA1T"))
+              CONTINUE
+          ENDIF 
+          IF (SQUEEZE MEME_PRD = "HRA")
+              CONTINUE
+          ENDIF
+
+          IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                  CONTINUE
+              ENDIF
+          ENDIF 
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_HIRE <> "")
+             MOVE MEME_HIRE TO SAV_HIRE
+          ENDIF
+          MOVE MEME_EFF TO MEME_WRK_EFF
+          MOVE MEME_TRM TO MEME_WRK_TRM
+          CALL WRITE_OGBREC USING MEME_WRK_FD,MEME_WRK_NME,MEME_WRK_LIST
+          CLEAR MEME_WRK_LIST
+      REPEAT 
+      CALL CLOSE_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME 
+      CALL SORT_OGBFILE USING MEME_WRK_NME,MEME_WRK_NME,MEME_WRK_SRTKEY
+        IF OVER
+         IF (NOT C_CMDPAR)
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT WORK FILE FAILED"
+            CHAIN "MENU"
+         ELSE  
+           CALL CMD_ERROR USING "Sort work file failed"
+           STOP
+         ENDIF
+        ENDIF
+
+      CALL OPEN_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME 
+      MOVE "99999999" TO EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      LOOP
+         CALL READ_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME,MEME_WRK_LIST
+         IF  (RESULT <> 1)
+               BREAK       
+          ENDIF
+          CLEAR NUM_OF_DAYS
+          IF (EARLIEST_EFF_DATE <> "99999999")
+              CALL DELTA_DAYS USING MEME_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+              IF (NUM_OF_DAYS > 1)
+                   MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+              ENDIF
+          ENDIF
+          MOVE MEME_WRK_TRM TO SAVE_TRM
+          IF (EARLIEST_EFF_DATE = "99999999")
+              MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+          ENDIF
+      REPEAT 
+      RETURN
+
+
+
+.******************************************************************************
+SORT_CURRENT_FILE  
+.******************************************************************************
+  DISPLAY *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+          *P30:21,"SORTING FILE...",*BOLDOFF
+  CALL CLOSE_OGBFILE_IX USING X_CUR_FILE,X_CUR_NAME
+  CALL SORT_OGBFILE USING  X_CUR_TXT_NAME,X_CUR_TXT_NAME,ASOT_SRTKEY
+  IF OVER
+      ERROR     HORZ="15",VERT="19":
+                BGCOL=C_ERRB,FGCOL=C_ERRF:
+                LNCOL=C_ERRL,SHADE="Y":
+                TEXT="SORT FAILED"
+  ENDIF
+  DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+
+  RETURN
+
+
+
+.******************************************************************************
+CLOSE_FILES 
+.******************************************************************************
+
+  RETURN
+
+
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+  INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO
+  INC        CMDPARAM.SR

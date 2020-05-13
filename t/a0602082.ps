@@ -1,0 +1,538 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0602082.PS
++    Description    :  Extract a count, per plan, of all LASERS Retirees with
++                      an OGB Health Plan and Medicare.
++                            
++    Author         :  Amy Poole
++    Date created   :  02/09/2006
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common work area
+              INC       VALID.RL             ...Valid codes
+              INC       MEM.RL               ...Member demographic Record
+              INC       MEME.RL              ...Member enrollment Record
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+. ----------------------------------------------
+.                 Program Files
+. ----------------------------------------------
+
+.~~~~~~INPUT FILES
+CSIN_FILE   IFILE  VAR=314,TEXT,NODUP,KEYL=9
+CSIN_NME    INIT   "/w/civsvc.txt"
+CSIN_IDX    INIT   "/w/civsvc.idx"
+CSIN_KEY    INIT   " 49-57"                  ---SSN
+CSIN_LIST   LIST
+CSIN_AGCY   DIM    4      --Agency Code
+CSIN_ANAME  DIM    40     --Agency Name
+CSIN_AGRP   DIM    4      --Major Dept. or Group within Agency
+CSIN_SSN    DIM    9      --Employee SSN 
+CSIN_NAME   DIM    30     --Employee Name (Last, Comma, First)
+CSIN_CIND   DIM    1      --Classified/Unclassified Indicator
+CSIN_TIND   DIM    1      --Full-Time/Part-Time Indicator
+CSIN_FTE    DIM    3      --Full Time Equivalency Percentage
+CSIN_TYPE   DIM    3      --Employee Type
+CSIN_PAYSCH DIM    2      --Civil Service Pay Schedule
+CSIN_PAYRNG DIM    3      --Civil Service Pay Range
+CSIN_SEX    DIM    1      --Gender
+CSIN_ETHCD  DIM    2      --Ethnicity Code
+CSIN_ETHDSC DIM    40     --Ethnicity Description
+CSIN_DOB    DIM    10     --Employee Date of Birth
+CSIN_AGEY   DIM    2      --Employee Age in Years
+CSIN_AGEM   DIM    2      --Employee Age in Months
+CSIN_PFRQ   DIM    1      --Pay Frequency
+CSIN_SAL    DIM    9      --Employee Annual Salary
+CSIN_HRSAL  DIM    9      --Employee Hourly Salary
+CSIN_FILL   DIM    137    --Filler
+CSIN_EOR    DIM    1      --End of Record ("X")
+            LISTEND
+
+
+.~~~~~~INPUT/OUTPUT FILES
+REF_FILE     FILE   VAR=46, TEXT
+REF_NME      INIT   "/w/a0602082.ref"
+REF_SORT_KEY INIT  "1-8 -u -t"
+REF_LIST     LIST
+REF_ID1      DIM    8     
+REF_CLI1     DIM    5                   
+REF_CLI2     DIM    5                                          
+REF_EFF      DIM    8
+REF_TRM      DIM    8                                               
+REF_NET      DIM    5      
+REF_PROD     DIM    5
+REF_RT       DIM    2
+             LISTEND
+
+.~~~~~~OUTPUT FILES
+OUT_FD       FILE    VAR=46,TEXT                                   
+OUT_NAME     INIT    "/w/a0602082.out"
+OUT_SORT_KEY INIT    "35-44 -t"                                        
+OUT_LIST     LIST         
+OUT_ID1      DIM    8     
+OUT_CLI1     DIM    5                   
+OUT_CLI2     DIM    5                                          
+OUT_EFF      DIM    8
+OUT_TRM      DIM    8                                               
+OUT_NET      DIM    5      
+OUT_PROD     DIM    5
+OUT_COUNT    FORM   1
+             LISTEND                                                           
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+BLANK8            INIT      "        "
+CAL_CLOCK         DIM       21
+CURRDATE          DIM       8
+CURR_RETURN       FORM      5
+DIM3              DIM       3
+DISP3             DIM       3
+DISP4             DIM       4 
+LASERS            FORM      1
+MBR_ESSN          DIM       9
+MEM_RESULT        FORM      1
+MEME_RESULT       FORM      1
+ORIG_RETURN       FORM      5
+PARAM_LIST        LIST
+                  LISTEND
+READ_CTR          FORM      7
+REF_RESULT        FORM      1
+TIMESTAMP         DIM       14
+TODAY             DIM       8
+TRAP_DATA         DIM       500
+
+. -------------------------------------------------
+.  ARRAY VARIABLES
+. -------------------------------------------------
+COUNT             FORM      5(6)
+DEFINASO          EQUATE    1
+FARAMCO           EQUATE    2
+HUMANHMO          EQUATE    3
+OGBPPO            EQUATE    4
+UNITEPO           EQUATE    5
+VANTAHMO          EQUATE    6
+
+
+. --------------------------------------------------                            
+. ~~~~~~~~~~~~ << < Begin Program > >> ~~~~~~~~~~~~~                            
+. --------------------------------------------------                            
+. ----------------------------------                                            
+. Start here if selected from menu                                              
+. ----------------------------------                                            
+                                                                                
+       CALL      RUN_NOW                                                      
+                                                                                
+       CHAIN     C_NEXT   chains back to the menu                                                  
+                                                                                
+. ---------------------------------------                                       
+. Start here if called by the Scheduler                                         
+. ---------------------------------------                                       
+                                                                                
+       INC       SCHED_NP.SR              Scheduler routines (no printer)  
+
+RUN_NOW
+
+                                                                                
+. ...Check return stack                                                         
+       RETCOUNT  ORIG_RETURN
+
+
+. --------------------
+.   Fill top of screen
+. --------------------
+
+. ...Screen Display
+       MOVE      "menu"             TO  C_NEXT
+       MOVE      "LASER Retirees w/Medicare"  TO  C_OPER
+       MOVE      "A0602082"         TO  C_PROG
+       MOVE      BLANKS             TO  C_LABEL
+       MOVE      BLANKS             TO  C_FILE
+       MOVE      BLANKS             TO  C_KEYS
+       CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+       CALL      X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+                                                                                
+. ...Set Applicable Traps                                                       
+       TRAPSAVE  TRAP_DATA
+       TRAPCLR   ALL
+       TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+
+       CALL SCHED_PICK
+
+       IF (RUN_MODE = "B" OR RUN_MODE = "N")  
+           CALL      MAIN_PROCESS
+       ENDIF
+   RETURN
+
+
+
+                                                                                
++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++++++++ 
+                                                                                
+. ----------------------------                                                  
+. ~~~~~~~ Main Process ~~~~~~~                                                  
+. ----------------------------                                                  
+                                                                                
+MAIN_PROCESS                                                                    
+       debug
+       CALL      INITIALIZE    ---Files Opened Here & CivSvc File Indexed
+       CALL      REFORMAT_MEME
+       CALL      GET_COUNTS   
+       CALL      CLOSE_FILES                                                  
+       CALL SORT_OGBFILE USING OUT_NAME, OUT_NAME, OUT_SORT_KEY     
+       IF OVER
+           ERROR     HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT FAILED(a0602082.out)"
+           CHAIN     "MENU"
+       ENDIF
+
+
+
+. ...Normal End-Of-Job                                                          
+       CALL      NORMAL_EOJ                                                   
+                                                                                
+. ...Return Control Back to Chain - End of Program                              
+       TRAPREST  TRAP_DATA                                                    
+       MOVE      SCH_RTSUCC  TO  SCH@RTCODE                                   
+       RETURN                                                                 
+
+                                                                                
+.++++++++++++++++++<< END OF MAIN PROCESS >>++++++++++++++++++++++++++++++++++++
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+INITIALIZE
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+         CLOCK      TIMESTAMP  INTO  TIMESTAMP
+         CLOCK      TIMESTAMP  INTO  CURRDATE
+         CLOCK      TIMESTAMP    TO  TODAY
+
+. ...Display Counters
+         MOVE       "   DEFINITY ASO:" TO X_CNTDESC1
+         MOVE       "       FARA MCO:" TO X_CNTDESC2 
+         MOVE       "     HUMANA HMO:" TO X_CNTDESC3
+         MOVE       "        OGB PPO:" TO X_CNTDESC4
+         MOVE       "     UNITED EPO:" TO X_CNTDESC5 
+         MOVE       "    VANTAGE HMO:" TO X_CNTDESC6 
+         CALL       X_DISPLAY_COUNTS
+
+. ...Index the Civil Service File by SSN
+         MOVE CSIN_NME TO C_FILE
+         INDEX CSIN_NME, CSIN_IDX, CSIN_KEY
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="INDEX FAILED(/w/civsvc.txt)"
+             CHAIN "MENU"
+         ENDIF
+
+. ...Open Files
+         MOVE CSIN_IDX TO C_FILE
+         CALL OPEN_OGBFILE_IX USING CSIN_FILE,CSIN_IDX
+
+         MOVE OUT_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_FD,OUT_NAME
+
+  RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. Reformat MEME file for Enrollees (dependents have blank rate tables) in
+. R98(SV) groups or sections 95 and 99 currently enrolled in a health plan.
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+REFORMAT_MEME
+         MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+. ...Layout
+. ...001-008 MEME Id1
+. ...021-025 Client Level 1
+. ...026-030 Client Level 2
+. ...096-103 Effective Date
+. ...104-111 Term Date
+. ...112-116 Network
+. ...117-121 Product
+. ...130-131 Rate Table
+
+. ...........Get MEME w/Current Health
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf /w/a0602082_meme.curr":
+                      " -p112-116ne#"LIFE#"":
+***                   " -p112-116ne#"DEFIN#"":
+                      " -p96-103le#"",TODAY,"#"": 
+                      " -p104-111eq#"",BLANK8,"#"":
+                      " -p130-131ne#"  #"":
+                      " or":
+                      " -p112-116ne#"LIFE#"":
+***                   " -p112-116ne#"DEFIN#"":
+                      " -p96-103le#"",TODAY,"#"": 
+                      " -p104-111ge#"",TODAY,"#"":
+                      " -p130-131ne#"  #"":
+                      " 1-8 21-30 96-121 130-131 -t -j"
+
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(meme.dbf)"
+             CHAIN "MENU"
+         ENDIF
+ 
+. ...........Further narrow it to just R98, 99, and 95's
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/a0602082_meme.curr ", REF_NME:
+                      " -p9-11eq#"R98#"":
+                      " -t -j"
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(a0602082_meme.curr (R98))"
+             CHAIN "MENU"
+         ENDIF
+ 
+
+         PACK SCRATCH WITH "/w/a0602082_meme.curr ", REF_NME:
+                      " -p14-15eq#"95#"":
+                      " -t -j -a"
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(a0602082_meme.curr (95))"
+             CHAIN "MENU"
+         ENDIF
+
+         PACK SCRATCH WITH "/w/a0602082_meme.curr ", REF_NME:
+                      " -p14-15eq#"99#"":
+                      " -t -j -a"
+         REFORMAT SCRATCH
+         IF OVER
+             ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="REFORMAT FAILED(a0602082_meme.curr (99))"
+             CHAIN "MENU"
+         ENDIF
+
+. ...Unique Sort on MEME_ID1 -- Eliminate duplicate enrollment records for 95's
+. ...(Rate Table is the same no matter which 95's Enrollment Record selected)
+         CALL SORT_OGBFILE USING REF_NME, REF_NME, REF_SORT_KEY     
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(a0602082.ref)"
+               CHAIN     "MENU"
+         ENDIF
+
+
+         MESSAGE HORZ="22",VERT="20":
+                 BGCOL=C_DLGB,FGCOL=C_DLGF:
+                 LNCOL=C_DLGL,SHADE="y": 
+                 TEXT="******* REFORMAT COMPLETE *******";
+ 
+         RETURN   
+
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. Ouput a record for each LASERS covered Retiree with a Rate Table of R1 or
+. R2. We know that R98's are Retired State Employees.  We don't know which 
+. retirement system the 95's and 99's belong to so we need to look for them
+. on the State Civil Service file.
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+GET_COUNTS
+         debug
+         MOVE REF_NME TO C_FILE
+         CALL OPEN_OGBFILE USING REF_FILE,REF_NME
+
+         LOOP
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING REF_FILE,REF_NME,REF_LIST
+             MOVE RESULT TO REF_RESULT
+             IF (REF_RESULT <> 1)
+                 BREAK   
+             ENDIF
+
+             ADD 1 TO READ_CTR
+             UNPACK READ_CTR INTO DISP4, DISP3
+             IF (DISP3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF
+
+             IF ((REF_RT <> "R1") AND (REF_RT <> "R2"))
+                 CONTINUE
+             ENDIF 
+
+             UNPACK REF_CLI1 INTO DIM3
+             IF (DIM3 <> "R98")
+                 CLEAR LASERS
+                 CALL READ_CIVSVC           ---Returns "LASERS"
+                 IF (NOT LASERS)
+                     CONTINUE
+                 ENDIF
+             ENDIF
+             MOVE REF_ID1 TO OUT_ID1
+             MOVE REF_CLI1 TO OUT_CLI1
+             MOVE REF_CLI2 TO OUT_CLI2
+             MOVE REF_EFF TO OUT_EFF
+             MOVE REF_TRM TO OUT_TRM
+             MOVE REF_NET TO OUT_NET
+             MOVE REF_PROD TO OUT_PROD
+             SWITCH REF_RT
+                 CASE "R1"
+                     MOVE 1 TO OUT_COUNT
+                 CASE "R2"
+                     MOVE 2 TO OUT_COUNT
+                 DEFAULT
+                     MOVE 0 TO OUT_COUNT
+             ENDSWITCH
+
+             SWITCH REF_NET
+                  CASE "DEFIN"
+                     ADD OUT_COUNT TO X_CNT1
+                  CASE "FARA "
+                     ADD OUT_COUNT TO X_CNT2
+                  CASE "HUMAN" 
+                     ADD OUT_COUNT TO X_CNT3
+                  CASE "OGB  "
+                     ADD OUT_COUNT TO X_CNT4
+                  CASE "UNIT "
+                     ADD OUT_COUNT TO X_CNT5
+                  CASE "VANTA" 
+                     ADD OUT_COUNT TO X_CNT6
+             ENDSWITCH
+
+             MOVE OUT_NAME TO C_FILE
+             CALL WRITE_OGBREC USING OUT_FD, OUT_NAME, OUT_LIST
+
+         REPEAT
+ 
+         RETURN
+ 
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+.  Attempt to find each non-R98 retiree on Civil Service file.  We are only
+.  interested in LASERS Retirees in this program.
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+READ_CIVSVC
+         
+. ...SSN needed in order to search the civil service file.
+         PACK MEM_FK11 WITH REF_ID1
+         CALL FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+                                          MEM_FN:  ...FILE NAME LIST  
+                                          MEM_FC:  ...TYPE OF INDEX   
+.                                                   ...(I)NDEX OR (A)IMDEX
+                                          MEM_FV:  ...FILE KEY VARLISTS
+                                          MEM_FK:  ...FILE KEY SIZES  
+                                          MEM_LIST:...FIELD LIST
+                                          MEM_REC: ...FILE RECORD (PACKED)
+                                          MEM_OLD: ...FILE SAVED WHEN READ
+                                          MEM_QTY: ...NUMBER OF FILES 
+                                          1        ...FILE # FOR THIS READ 
+
+
+         MOVE RESULT TO MEM_RESULT
+         IF ((REF_ID1 <> MEM_ID1) OR (MEM_RESULT <> 1))
+              GOTO CIVSVC_RET
+         ENDIF
+      
+         PACK CSIN_SSN WITH MEM_ESSN
+         CALL READ_OGBFILE_IX USING CSIN_FILE:
+                                    CSIN_IDX:
+                                    CSIN_SSN:
+                                    CSIN_LIST
+         IF (RESULT = 1)
+             SET LASERS
+         ENDIF
+
+CIVSVC_RET
+         RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+CLOSE_FILES
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+       CALL CLOSE_OGBFILE_IX USING CSIN_FILE,CSIN_IDX 
+       CALL CLOSE_OGBFILE USING REF_FILE,REF_NME
+       CALL CLOSE_OGBFILE USING OUT_FD,OUT_NAME
+
+   RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+NORMAL_EOJ
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       IF (RUN_MODE = "N")              ---Manual Run; Not Scheduled          
+           CALL      X_BLANK_SCREEN                                                
+           PACK      X_FINISH_STATUS WITH "   ", "NEOJ","   "                 
+           MOVE      "A0602082 Completed      " TO X_PROG_FINISH               
+           CALL      X_END_OF_JOB                                               
+       ENDIF                                                                  
+                                                                                
+                                                                                
+. ...Return Control Back to Chain - End of Program                              
+       TRAPREST  TRAP_DATA                                                    
+       MOVE      SCH_RTSUCC TO SCH@RTCODE                                     
+
+  RETURN
+
+
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
+. Operator pressed F9
+.++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+QUIT
+  IF (C_RMODE = "I")
+     error     horz="23",vert="19":
+               bgcol=C_ERRB,fgcol=C_ERRF:
+               lncol=C_ERRL,shade="Y":
+               text=" Process Aborted by Operator ":
+               text="-----------------------------"
+    messageerase
+  ENDIF
+
+  CLEAR     C_NOHIST
+
+  TRAPREST  TRAP_DATA
+
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     C_NEXT
+
+.+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. Required Includes
+.+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+            INC       UTIL.SR
+            INC       VALID.IO
+            INC       X_STANDARD.SR
+            INC       FILE.IO
+            INC       X_OGBFILE.IO
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               
+.///////////////              End of A0602082.PS            \\\\\\\\\\\\\\\\\.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                                               

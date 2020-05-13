@@ -1,0 +1,360 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1507151.PS 
++    Description    :  CUS - FIXES MEMS FROM 07/10/2015    
++    Author         :  Stephen J. McDonald
++    APSJM A1507151 07/15/2015- INITIAL VERSION                                 
++    apazw 06/12/2017 - mod - increase file size                                
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment
+              INC       MEMO.RL          ...Member Other COV
+              INC       MEMS.RL          ...Member Salary        
+              INC       D_MEMMEM.CB      ...IMPACT UPDATE
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+ISIS_BADSLY_FD   FILE     VAR=24,TEXT
+ISIS_BADSLY_NAME INIT    "/w/badsly.txt"     
+ISIS_BADSLY_LIST LIST
+ISIS_BADSLY_ID1  DIM       08
+ISIS_BADSLY_EFF  DIM       08
+ISIS_BADSLY_TRM  DIM       08
+                 LISTEND
+.
+U_SLY_FD      FILE     VAR=X_INM_SIZE,TEXT
+U_SLY_NAME    INIT    "a1507151.txt"      
+.
+MEMS_0709_FD   IFILE     VAR=300,KEYL=12,TEXT
+MEMS_0709_NAME INIT      "/w/mems_0709.ix1"
+MEMS_0709_LIST LIST      
+MEMS_0709_REC  DIM      300
+               LISTEND
+MEMS_0709_KEY       DIM      12
+
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+DIM_83        DIM  83
+MEMS_0709_TRM DIM  8
+CNT_4         DIM  4
+CNT_3         DIM  3
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "FIX BAD ISIS SAL" TO  C_OPER
+         MOVE      "A0507151"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL OPEN_FILES
+    CALL PROCESS_BADSLY_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_BADSLY_FILE
+ LOOP      
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL READ_OGBFILE USING ISIS_BADSLY_FD,ISIS_BADSLY_NAME,ISIS_BADSLY_LIST
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+    CALL READ_PRD_MEMS
+ REPEAT
+ RETURN
+
+READ_PRD_MEMS
+         PACK      MEMS_FK11 WITH ISIS_BADSLY_ID1,BLANKS
+         CALL      FILE_READ USING MEMS_FD:    ...File declaration list
+                             MEMS_FN:          ...File name list
+                             MEMS_FC:          ...(I)ndex or (A)imdex
+                             MEMS_FV:          ...File key varlists
+                             MEMS_FK:          ...File key sizes
+                             MEMS_LIST:        ...File record (field list)
+                             MEMS_REC:         ...File record (packed)
+                             MEMS_OLD:         ...File saved when read
+                             MEMS_QTY:         ...Number of files
+                             1                 ...File number for this read
+            LOOP
+                CALL   FILE_NEXT USING MEMS_FD:    ...File declaration list
+                               MEMS_FN:          ...File name list
+                               MEMS_FC:          ...(I)ndex or (A)imdex
+                               MEMS_FV:          ...File key varlists
+                               MEMS_FK:          ...File key sizes
+                               MEMS_LIST:        ...File record (field list)
+                               MEMS_REC:         ...File record (packed)
+                               MEMS_OLD:         ...File saved when read
+                               MEMS_QTY:         ...Number of files
+                               1                 ...File number for this read
+                  IF (RESULT <> 1)
+                     BREAK
+                  ENDIF
+                  IF (MEMS_ID1 <> ISIS_BADSLY_ID1)
+                     BREAK
+                  ENDIF 
+                  IF (MEMS_NEWDT = "20150710")
+                     CALL GET_MEM
+                     IF (RESULT <> 1)
+                        BREAK
+                     ENDIF
+                     MOVE "DELETE" TO MEMS_NEWBY
+                     CALL WRITE_MEMMEM
+                  ELSE
+                    IF (MEMS_CHGDT = "20150710")
+                       PACKLEN MEMS_0709_KEY WITH MEMS_ID1,MEMS_ID2
+                       CALL READ_MEMS_0709
+                       IF (RESULT = 1)
+                         CALL GET_MEM
+                         IF (RESULT <> 1)
+                           BREAK
+                         ENDIF
+                         UNPACK MEMS_0709_REC INTO DIM_83,MEMS_0709_TRM
+                         IF (SQUEEZE MEMS_0709_TRM = "")
+                            IF (SQUEEZE MEMS_TRM <> "")
+                              FILL "~" IN MEMS_TRM
+                            ENDIF
+                         ELSE
+                          IF (SQUEEZE MEMS_TRM <> "")
+                             MOVE MEMS_0709_TRM TO MEMS_TRM
+                          ENDIF
+                         ENDIF
+                         CALL WRITE_MEMMEM
+                       ELSE
+                         BREAK
+                       ENDIF
+                    ENDIF
+                  ENDIF
+            REPEAT
+         RETURN
+
+READ_MEMS_0709
+      CALL READ_OGBFILE_IX USING MEMS_0709_FD,MEMS_0709_NAME:
+                                 MEMS_0709_KEY,MEMS_0709_LIST
+      RETURN                
+         
+ 
+WRITE_MEMMEM
+      CLEAR INM_REC
+      CLEAR MEME_REC
+      CLEAR MEMO_REC
+      PACKLEN MEMS_REC WITH MEMS_LIST 
+      PACKLEN INM_REC WITH MEM_REC,MEME_REC,MEMO_REC,MEMS_REC
+      UNPACK INM_REC INTO INM_LIST
+      CLEAR INM_NEWBY
+      CLEAR INM_CHGBY
+      CLEAR INMS_CHGBY
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING U_SLY_FD,U_SLY_NAME,INM_LIST
+      CLEAR INM_LIST
+      RETURN
+
+GET_MEM
+        PACK MEM_FK11 WITH ISIS_BADSLY_ID1,BLANKS
+        CALL  FILE_READ USING MEM_FD:  ...FILE DECLARATION LIST
+                           MEM_FN:  ...FILE NAME LIST  
+                           MEM_FC:  ...TYPE OF INDEX   
+.                                    ...(I)NDEX OR (A)IMDEX
+                           MEM_FV:  ...FILE KEY VARLISTS
+                           MEM_FK:  ...FILE KEY SIZES  
+                           MEM_LIST:...FILE RECORD (FIELD LIST)
+                           MEM_REC: ...FILE RECORD (PACKED)
+                           MEM_OLD: ...FILE SAVED WHEN READ
+                           MEM_QTY: ...NUMBER OF FILES 
+                           1         ...FILE NUMBER FOR THIS READ
+
+        RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING U_SLY_FD,U_SLY_NAME  
+         CALL      OPEN_OGBFILE USING ISIS_BADSLY_FD,ISIS_BADSLY_NAME         
+         CALL      OPEN_OGBFILE_IX USING MEMS_0709_FD,MEMS_0709_NAME          
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1507151.ps
+. +++++++++++++++++++++++++++++++++++++

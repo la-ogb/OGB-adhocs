@@ -1,0 +1,443 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1706161-Creates input file into feed_cli to update 
++                      the FSA Effective dates on the Client File.           
++    APSJM 06/16/2017 - INITIAL VERSION
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       PRT.RL               ...Printer Definition File
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       CLI.RL           ...Client Demographics 
+              INC       CLIP.RL          ...Client Products  
+              INC       CLIO.RL          ...CLIO 
+              INC       CLIX.RL          ...CLIO 
+              INC       CLIZ.RL          ...CLIO 
+              INC       D_CLICLI.RL      ...Combined CLI Table
+              INC       CMDPARAM.CB
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+.Input Files
+CLI_REF_FD         FILE       VAR=18,TEXT
+CLI_REF_NAME       INIT       "/w/a1706161_ref.txt"    
+CLI_REF_LIST       LIST
+CLI_REF_ID1        DIM        8
+CLI_REF_LEV1       DIM        5
+CLI_REF_LEV2       DIM        5
+                    LISTEND
+.
+.Non LAGOV Agencies that participate in FSA
+.
+CLI_NOLAG_FD       IFILE      VAR=4,KEYL=4,TEXT
+CLI_NOLAG_NAME     INIT      "/w/fsa_nonlagov.ix1"
+CLI_NOLAG_LIST     LIST
+CLI_NOLAG_AGY      DIM       4
+                   LISTEND
+.
+CLI_NOLAG_KEY      DIM       4
+.
+.Output Files
+CLI_O_FD     FILE     VAR=2000,TEXT
+CLI_O_NAME   INIT    "cli_in.csv"      
+.
+CLI_O_REC    DIM     2000
+.
+HDR_CSV_LIST_2    LIST
+HDR_CSV_CLID      INIT     "CLI_ID1"
+HDR_CSV_21        INIT     ","
+HDR_CSV_LEV1      INIT     "CLI_LEV1"
+HDR_CSV_22        INIT     ","
+HDR_CSV_LEV2      INIT     "CLI_LEV2"
+HDR_CSV_23        INIT     ","  
+HDR_CSV_US03      INIT     "CLI_US03"
+HDR_CSV_24        INIT     ","
+HDR_CSV_US06      INIT     "CLI_US06"
+                  LISTEND
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+KLI_REC        DIM       4600
+FSA_EFF        DIM       8
+FSA_TRM        INIT      "20170101"
+C              INIT      ","
+CLI_TRM_DT     DIM       8
+CURR_CCYY      FORM      4
+CURR_MM        FORM      2
+CURR_DD        FORM      2
+ACT_HSA_ACCT  DIM  1
+PR_LEV1       DIM   5
+PR_LEV2       DIM   5
+SCRATCH_400   DIM   400
+BLANK8        INIT  "        "
+CMP_TRM       DIM  9
+CNT_5         DIM  5
+CNT_4         DIM  4
+CNT_3         DIM  3
+CNT_2         DIM  2
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+W_TRM         DIM       8
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "54"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "Update Cli" TO  C_OPER
+         MOVE      "A1706161"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+    DEBUG
+    CALL INITIALIZE
+    CALL REFORMAT_CLI 
+    CALL OPEN_FILES
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL  WRITE_OGBREC USING CLI_O_FD,CLI_O_NAME,HDR_CSV_LIST_2
+    CALL PROCESS_FILE
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+PROCESS_FILE
+ LOOP
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    MOVE CLI_REF_NAME TO C_FILE
+    CALL READ_OGBFILE  USING CLI_REF_FD,CLI_REF_NAME,CLI_REF_LIST        
+      IF (RESULT <> 1)
+         BREAK 
+      ENDIF
+    ADD 1 TO X_CNT1
+    UNPACK X_CNT1 INTO CNT_4,CNT_3
+    IF (CNT_3 = "000")
+       CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    PACK  CLI_FK11 WITH CLI_REF_ID1,BLANKS
+    CALL  FILE_READ USING CLI_FD:    ...File declaration list
+                             CLI_FN:   ...File name list
+                             CLI_FC:   ...(I)ndex or (A)imdex
+                             CLI_FV:   ...File key varlists
+                             CLI_FK:   ...File key sizes
+                             CLI_LIST: ...File record (field list)
+                             CLI_REC:  ...File record (packed)
+                             CLI_OLD:  ...File saved when read
+                             CLI_QTY:  ...Number of files
+                             1         ...File number for this read
+
+      IF (RESULT <> 1)
+          CONTINUE
+      ENDIF
+      IF (CLI_US02 = "U")
+         IF (CLI_NOLAG_AGY = "8658")
+           MOVE "20170701" TO FSA_EFF
+         ELSE
+           MOVE "20170101" TO FSA_EFF
+         ENDIF
+         CMATCH "R",CLI_LEV1
+         CONTINUE IF EQUAL
+         CMATCH "9",CLI_LEV2
+         IF EQUAL
+           SWITCH CLI_LEV2
+             CASE "92   "
+             DEFAULT
+               CONTINUE 
+           ENDSWITCH
+         ENDIF
+         CALL UPDATE_CLI
+      ELSE
+         PACKLEN CLI_NOLAG_KEY WITH CLI_LEV1
+         CALL READ_OGBFILE_IX USING CLI_NOLAG_FD,CLI_NOLAG_NAME:
+                                    CLI_NOLAG_KEY,CLI_NOLAG_LIST
+         IF (RESULT <> 1)
+            CONTINUE
+         ELSE
+            CMATCH "R",CLI_LEV2
+            CONTINUE IF EQUAL
+            CMATCH "9",CLI_LEV2
+            IF EQUAL
+              SWITCH CLI_LEV2
+                CASE "92   "
+                DEFAULT
+                  CONTINUE 
+              ENDSWITCH
+            ENDIF
+            IF (CLI_NOLAG_AGY = "6352")
+               MOVE "20170201" TO FSA_EFF
+            ELSE
+               MOVE "20170101" TO FSA_EFF
+            ENDIF
+            CALL UPDATE_CLI
+         ENDIF
+      ENDIF
+ REPEAT
+ RETURN
+.
+UPDATE_CLI
+ PACKLEN CLI_O_REC WITH CLI_ID1,C,(CHOP CLI_LEV1),C,(CHOP CLI_LEV2),C:
+ FSA_EFF,C,(CHOP CLI_TRM),BLANKS 
+ WRITE CLI_O_FD,OGB_SEQ1;CLI_O_REC,*LL
+ CLEAR CLI_O_REC
+ RETURN
+.
+. Reformat CLI
+. ----------------------------
+
+REFORMAT_CLI
+
+         DEBUG
+
+...Display message to Operations to Please Wait.         
+         MESSAGE   HORZ="20",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="REFORMATTING CLI RECORDS...PLEASE WAIT";
+        
+...Get only Records without term dates
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "cli.dbf /w/a1706161_ref.txt":
+              " -p489-496eq#"",BLANK8,"#" 1-18 -t -j"
+         REFORMAT SCRATCH
+             
+         IF OVER
+           IF (NOT C_CMDPAR)
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - cli.dbf to a1706161_ref.txt"
+             CHAIN     "menu"
+           ELSE
+             IF (C_CMDPAR)
+               CALL CMD_ERROR USING "Reformat CLI.DBF Failed"
+               STOP  
+             ENDIF
+           ENDIF
+         ENDIF  
+         
+...Get only Records with term dates >= 20170101
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "cli.dbf /w/a1706161_ref.txt":
+              " -p489-496ge#"",FSA_TRM,"#" 1-18 -t -j -a"
+         REFORMAT SCRATCH
+             
+         IF OVER
+           IF (NOT C_CMDPAR)
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="APPEND FAILED - cli.dbf to a1706161_ref.txt"
+             CHAIN     "menu"
+           ELSE
+             IF (C_CMDPAR)
+               CALL CMD_ERROR USING "Reformat/Append Failed"
+               STOP  
+             ENDIF
+           ENDIF
+         ENDIF  
+         
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "/w/a1706161_ref.txt /w/a1706161_ref.txt 9-18 -u -t"
+         SORT SCRATCH
+         
+         IF OVER
+           IF (NOT C_CMDPAR)
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="SORT FAILED "
+             CHAIN     "menu"
+           ELSE
+             IF (C_CMDPAR)
+               CALL CMD_ERROR USING "Sort Failed"
+               STOP  
+             ENDIF
+           ENDIF
+         ENDIF
+         
+         DISPLAY        *P17:20,*BGCOLOR=*CYAN,*EL:
+                        *P17:21,*BGCOLOR=*CYAN,*EL:
+                        *P17:22,*BGCOLOR=*CYAN,*EL:
+                        *P17:23,*BGCOLOR=*CYAN,*EL                 
+
+         RETURN
+
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "Recs Read:     " TO X_CNTDESC1
+	 MOVE      "Recs Written:     " TO X_CNTDESC2
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE_IX USING CLI_NOLAG_FD,CLI_NOLAG_NAME
+         CALL      OPEN_OGBFILE USING CLI_REF_FD,CLI_REF_NAME
+         CALL      PREP_OGBFILE USING CLI_O_FD,CLI_O_NAME 
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       PRINT.SR
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       CMDPARAM.SR
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1706161.PS
+. +++++++++++++++++++++++++++++++++++++

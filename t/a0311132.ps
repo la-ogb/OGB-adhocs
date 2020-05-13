@@ -1,0 +1,662 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   : a0311132.PS
++    Description    : CLM - Extract of top 50 Providers by Total Amount Paid,
++                   : then devided by Fiscal Year and subdivided by Provider
++                   : type.
++                   :
++    Author         : Alina Sanchez
++    Date created   : 11/13/2003
++    Project Number : A0311132
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++++
++  apiii   mm/dd/ccyy   A??????? TYP - Remarks
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       CLM.RL               ...Claim Record Layout
+              INC       CLMS.RL              ...Claim Service Line Layout 
+              INC       PRO.RL               ...Provider Demographics File
+
+
+. ----------------------------
+. Output File Declarations
+. ----------------------------
+
+
+. ----------------------------
+. I-O File Declarations
+. ----------------------------
+
+
+
+PRV_FILE         IFILE   VAR=146,KEYL=51,TEXT
+PRV_FILE_TXT     FILE    VAR=146,TEXT
+PRV_NAME         INIT    "/w/a0311132.txt"
+PRV_IX1          INIT    "/w/a0311132.ix1"
+PRV_KEY          DIM      51
+PRV_RECS         LIST
+..<Begin>....................................................................
+PRV_FISYR_K      DIM      4
+PRV_PROTYP_K     DIM      12
+PRV_PRONAM_K     DIM      35
+PRV_AMTPAID      FORM     8.2
+PRV_FILLER1      DIM      1
+PRV_AMTBIL       FORM     8.2
+PRV_FILLER2      DIM      1
+PRV_AMTALW       FORM     8.2
+PRV_FILLER3      DIM      1
+PRV_AMTALW_COB   FORM     8.2
+PRV_FILLER4      DIM      1
+PRV_AMTPAID_COB  FORM     8.2
+PRV_FILLER5      DIM      1
+PRV_AMTDED       FORM     8.2
+PRV_FILLER6      DIM      1
+PRV_AMTCOPAY     FORM     8.2
+PRV_FILLER7      DIM      1
+PRV_AMTCOINS     FORM     8.2
+..<End>......................................................................
+                 LISTEND
+                 
+                 
+
+
+                 
+. -----------------------------------------------
+. Program Specific Variables & Working Storage
+. -----------------------------------------------
+
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TRAP_DATA        DIM       500
+TODAY            DIM       6
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+CLM_RET_CODE     FORM      1
+CLMS_RET_CODE    FORM      1
+PRO_RET_CODE     FORM      1
+PRV_RET_CODE     FORM      1
+FIRST_PAGE       DIM       1
+WRITE_SWT        DIM       1
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+FIRST_READ       INIT     "Y"
+JUNK2            DIM       2
+JUNK8            DIM       8
+
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+
+PARAM_LIST       LIST
+PARAM_XXX        DIM      10
+PARAM_YYY        DIM       5
+PARAM_DATE       DIM       8
+                 LISTEND
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+PROTYP           DIM       12
+FY               DIM       4
+CLM_CCYYMM       FORM      6
+CLM_DD           DIM       2
+
+
+CALC_FIELDS   LIST
+CAL_PDPRV        FORM      8.2
+CAL_TOTCHG       FORM      8.2
+CAL_AMTALW       FORM      8.2
+CAL_AMTALW_COB   FORM      8.2
+CAL_AMTPD_COB    FORM      8.2
+CAL_DEDAMT       FORM      8.2
+CAL_COPAY        FORM      8.2
+CAL_COINS        FORM      8.2
+                 LISTEND
+
+TOT_CLM_FLDS     LIST
+TOT_PDPRV        FORM      8.2
+TOT_TOTCHG       FORM      8.2
+TOT_AMTALW       FORM      8.2
+TOT_AMTALW_COB   FORM      8.2
+TOT_AMTPD_COB    FORM      8.2
+TOT_DEDAMT       FORM      8.2
+TOT_COPAY        FORM      8.2
+TOT_COINS        FORM      8.2
+                 LISTEND
+
+                         
+                          
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. -----------------------------------
+. Start here if selected from menu   
+. -----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. -----------------------------------------
+. Start here if called by the Scheduler    
+. -----------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                 TO  C_NEXT
+         MOVE      "Claims Dup Error    " TO  C_OPER  ...(20-bytes Max)
+         MOVE      "A0311132"             TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      BLANKS                 TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR             INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+. ...Initialize
+         CALL      INITIALIZE
+	 
+. ...Open Files	
+         CALL      OPEN_FILES 
+         
+. ...Extract Data
+         CALL      EXTRACT_DATA
+
+. ...Close Files
+         CALL      CLOSE_FILES
+         
+. ...Normal End-Of-Job
+         CALL      NORMAL_EOJ
+	 
+. ...Return Control Back to Chain - End of Program	 
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Claim Recs Read : " TO X_CNTDESC1
+       	 MOVE      "ClaimS Recs Read: " TO X_CNTDESC2
+       	 MOVE      "Pro Recs Read   : " TO X_CNTDESC3
+       	 MOVE      "Written Recs    : " TO X_CNTDESC4
+       	 MOVE      "                : " TO X_CNTDESC5
+         MOVE      "                : " TO X_CNTDESC6
+	 
+       	 CALL      X_DISPLAY_COUNTS
+
+         CALL      SETPOP_CLMS
+
+ 
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+...Input Files
+
+
+...I/O Files
+
+         CALL  PREP_OGBFILE_IX USING PRV_FILE,PRV_IX1
+
+
+
+...Output         
+         
+
+         RETURN
+
+.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+. ----------------------------
+. Extract Data
+. ----------------------------
+
+EXTRACT_DATA
+
+.     debug
+                 PACK CLM_FK11 WITH BLANKS
+                 CALL      FILE_READ USING CLM_FD:  ...File Declaration List
+                     CLM_FN:   ...File name list
+                     CLM_FC:   ...(I)ndex or (A)imdex
+                     CLM_FV:   ...File key varlists
+                     CLM_FK:   ...File key sizes
+                     CLM_LIST: ...File record (field list)
+                     CLM_REC:  ...File record (packed)
+                     CLM_OLD:  ...File saved when read
+                     CLM_QTY:  ...Number of files
+                     1         ...File number for this read
+
+         LOOP
+                 CALL      FILE_NEXT USING CLM_FD:    ...File declaration list   
+                     CLM_FN:   ...File name list
+                     CLM_FC:   ...(I)ndex or (A)imdex
+                     CLM_FV:   ...File key varlists
+                     CLM_FK:   ...File key sizes
+                     CLM_LIST: ...File record (field list)
+                     CLM_REC:  ...File record (packed)
+                     CLM_OLD:  ...File saved when read
+                     CLM_QTY:  ...Number of files
+                     1         ...File number for this read
+
+             
+             MOVE RESULT TO CLM_RET_CODE            ...Check for EOF
+             IF (CLM_RET_CODE <> 1)
+                 CALL X_DISPLAY_COUNTS
+                 BREAK
+             ENDIF
+             
+             ADD 1 TO X_CNT1                        ...Display Counters
+             UNPACK X_CNT1 INTO CNT1_4,CNT1_3
+             IF (CNT1_3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF    
+
+.     debug
+             CLEAR FY, CLM_CCYYMM
+             UNPACK CLM_DOUT INTO CLM_CCYYMM,CLM_DD
+
+             IF ((CLM_CCYYMM >= 199907) AND (CLM_CCYYMM <= 200006))      
+                 MOVE "2000" TO FY                                            
+                 CALL EXT_CLMS_PRO
+                 CONTINUE
+             ENDIF                                                       
+     debug
+             IF ((CLM_CCYYMM >= 200007) AND (CLM_CCYYMM <= 200106))      
+                 MOVE "2001" TO FY  
+                 CALL EXT_CLMS_PRO
+                 CONTINUE
+             ENDIF                                                       
+     debug
+             IF ((CLM_CCYYMM >= 200107) AND (CLM_CCYYMM <= 200206))      
+                 MOVE "2002" TO FY                                            
+                 CALL EXT_CLMS_PRO
+                 CONTINUE
+             ENDIF                                                       
+     debug
+             IF ((CLM_CCYYMM >= 200207) AND (CLM_CCYYMM <= 200306))      
+                 MOVE "2003" TO FY                                            
+                 CALL EXT_CLMS_PRO
+                 CONTINUE
+             ENDIF                                                       
+
+         REPEAT                                                         
+
+                                                                                
+     RETURN 
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+. ---------------------------------------
+. Extract Data from PRO and CLMS files
+. ---------------------------------------
+
+EXT_CLMS_PRO
+
+.     debug
+
+
+...Read CLMS for Line items
+         PACK CLMS_BASE WITH CLM_ID1,BLANKS   ...Set up for CLMS Read
+         PACK CLMS_KEY  WITH CLMS_BASE,"   "
+
+         CALL POP_READ
+             
+         LOOP                                 ...CLMS Read Loop
+             CALL POP_NEXT
+             ADD 1 TO X_CNT2                  ...Display Counters         
+.    debug
+             MOVE RESULT TO CLMS_RET_CODE
+             IF ((CLMS_RET_CODE <> 1) OR (CLMS_ID <> CLM_ID1))
+                 BREAK
+             ENDIF
+
+      debug
+
+...Move input fields to calculating storage form fields
+             CLEAR CALC_FIELDS, TOT_CLM_FLDS
+             MOVE CLMS_PAYP  TO CAL_PDPRV
+             MOVE CLMS_CHG   TO CAL_TOTCHG
+             MOVE CLMS_ALLOW TO CAL_AMTALW
+             MOVE CLMS_COBA  TO CAL_AMTALW_COB
+             MOVE CLMS_COBP  TO CAL_AMTPD_COB
+             MOVE CLMS_DEDU  TO CAL_DEDAMT
+             MOVE CLMS_COPA  TO CAL_COPAY
+             MOVE CLMS_COIN  TO CAL_COINS
+              
+
+
+...Adding the calculating fields to the final total fields
+             ADD CAL_PDPRV TO TOT_PDPRV 
+             ADD CAL_TOTCHG TO TOT_TOTCHG 
+             ADD CAL_AMTALW TO TOT_AMTALW 
+             ADD CAL_AMTALW_COB TO TOT_AMTALW_COB
+             ADD CAL_AMTPD_COB TO TOT_AMTPD_COB 
+             ADD CAL_DEDAMT TO TOT_DEDAMT 
+             ADD CAL_COPAY TO TOT_COPAY 
+             ADD CAL_COINS TO TOT_COINS 
+
+
+           REPEAT    
+
+
+
+...Read PRO for Provider type
+                         
+
+                                                       
+         PACK      PRO_FK11 WITH CLM_1,BLANKS 
+                                                           
+         CALL      FILE_READ USING PRO_FD:    ...File declaration list          
+                   PRO_FN:   ...File name list                                  
+                   PRO_FC:   ...(I)ndex or (A)imdex                             
+                   PRO_FV:   ...File key varlists                               
+                   PRO_FK:   ...File key sizes                                  
+                   PRO_LIST: ...File record (field list)                        
+                   PRO_REC:  ...File record (packed)                            
+                   PRO_OLD:  ...File saved when read                            
+                   PRO_QTY:  ...Number of files                                 
+                   1         ...File number for this read                       
+                                                                                
+
+         MOVE RESULT TO PRO_RET_CODE            ...Check for EOF
+         IF (PRO_RET_CODE <> 1)
+             CALL X_DISPLAY_COUNTS
+             RETURN
+         ENDIF
+                                                                                
+         ADD 1 TO X_CNT3                        ...Display Counters         
+         UNPACK X_CNT1 INTO CNT1_4,CNT1_3                                   
+         IF (CNT1_3 = "000")                                                
+             CALL X_DISPLAY_COUNTS                                          
+         ENDIF                                                              
+                                                                                
+
+     debug
+
+
+         IF ((SQUEEZE PRO_XTYP <> "DOC") AND (SQUEEZE PRO_XTYP <> "FAC")) 
+             RETURN
+         ENDIF
+
+         CLEAR PROTYP
+         IF ((SQUEEZE PRO_XTYP = "FAC") AND (CLM_INOUT = "I"))
+              MOVE "IP Facility" TO PROTYP
+         ENDIF
+
+
+         IF ((SQUEEZE PRO_XTYP = "FAC") AND (CLM_INOUT = "O"))
+              MOVE "OP Facility" TO PROTYP
+         ENDIF
+
+
+         IF ((SQUEEZE PRO_XTYP = "FAC") AND (SQUEEZE CLM_INOUT = ""))
+              MOVE "OP Facility" TO PROTYP
+         ENDIF
+
+
+         IF (SQUEEZE PRO_XTYP = "DOC") 
+             MOVE "Professional" TO PROTYP
+         ENDIF
+
+
+
+
+         PACK PRV_KEY WITH FY,PROTYP,PRO_OFFICE               
+         CALL READ_OGBFILE_IX USING PRV_FILE:   
+                                     PRV_IX1:
+                                     PRV_KEY:
+                                     PRV_RECS
+                      
+         MOVE RESULT TO PRV_RET_CODE          ...If this clms id is already
+         IF (PRV_RET_CODE = 1)                ...on the pro file
+             CALL UPDATE_PRO_IDX_FILE         ...update the pro index file 
+         ELSE                                 ...Otherwise, write the 
+             CALL WRITE_PRO_IDX_FILE          ...record to the pro index file
+         ENDIF                                                   
+                                                    
+                                                                                
+     RETURN 
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+
+. ------------------------------------
+. WRITE to the PROVIDER index file
+. ------------------------------------
+
+WRITE_PRO_IDX_FILE
+
+
+         MOVE FY TO PRV_FISYR_K  
+         MOVE PROTYP TO PRV_PROTYP_K    
+         MOVE PRO_OFFICE TO PRV_PRONAM_K     
+         MOVE TOT_PDPRV TO PRV_AMTPAID
+         MOVE TOT_TOTCHG TO PRV_AMTBIL
+         MOVE TOT_AMTALW TO PRV_AMTALW  
+         MOVE TOT_AMTALW_COB TO PRV_AMTALW_COB 
+         MOVE TOT_AMTPD_COB TO PRV_AMTPAID_COB  
+         MOVE TOT_DEDAMT TO PRV_AMTDED 
+         MOVE TOT_COPAY TO PRV_AMTCOPAY
+         MOVE TOT_COINS TO PRV_AMTCOINS 
+
+
+         MOVE OGB_SEQ1 TO OGB_SEQ                                            
+         CALL WRITE_OGBREC_IX USING PRV_FILE:
+                                     PRV_IX1:
+                                     PRV_KEY:
+                                     PRV_RECS
+
+         ADD 1 TO X_CNT4                       ...Add To Rec Written Count
+
+     RETURN         
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+         
+. ----------------------------
+. UPDATE to the PROVIDER file
+. ----------------------------
+
+UPDATE_PRO_IDX_FILE
+
+
+    debug
+         ADD TOT_PDPRV TO PRV_AMTPAID
+         ADD TOT_TOTCHG TO PRV_AMTBIL
+         ADD TOT_AMTALW TO PRV_AMTALW  
+         ADD TOT_AMTALW_COB TO PRV_AMTALW_COB 
+         ADD TOT_AMTPD_COB TO PRV_AMTPAID_COB  
+         ADD TOT_DEDAMT TO PRV_AMTDED 
+         ADD TOT_COPAY TO PRV_AMTCOPAY
+         ADD TOT_COINS TO PRV_AMTCOINS 
+
+         MOVE OGB_SEQ1 TO OGB_SEQ       
+                                     
+         CALL UPDATE_OGBREC_IX USING PRV_FILE:
+                                     PRV_RECS
+
+
+
+     RETURN
+
+.>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         UNLOAD    "schema"
+         
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+
+         CALL  CLOSE_OGBFILE_IX USING PRV_FILE,PRV_IX1
+         
+
+
+       RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+	 MOVE      "        NEOJ        " TO X_FINISH_STATUS
+	 MOVE      "    A0311132 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+         
+         RETURN
+
+. -------------------------------
+. Set up POP read for CLMS file
+. -------------------------------
+
+SETPOP_CLMS
+    MOVEADR CLMS_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR CLMS_SW   TO POP_SW
+    MOVEADR CLMS_DECL TO POP_DECL
+    MOVEADR CLMS_NAME TO POP_NAME
+    MOVEADR CLMS_KEY  TO POP_KEY
+    MOVEADR CLMS_OLD  TO POP_OLD
+    MOVEADR CLMS_BASE TO POP_ID
+    MOVEADR CLMS_LINE TO POP_LINE
+    RETURN
+
+
+
+
+
+
+. ---------------------------------
+. Subroutines and other includes
+. ---------------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       POP.IO
+
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                                 End of A0311132.PS
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

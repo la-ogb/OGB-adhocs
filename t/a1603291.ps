@@ -1,0 +1,467 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++	Program Name	:  A1603291.PS 
++ 
++	Description	:  Finds all MEM records with a non-blank MEM_COUNTY 
++			:  field. Then makes it blank and outputs that MEM 
++			:  record to an INM record in a1603291.txt which
++			:  d_memmem can use to update Impact.
++
++	Author		:  Jakob Hendrix 
++	Project #	:  a1603291
++
++	apjwh   03/29/2016  a1603291  -  DEV  -  Initial Version
++..................................Revisions....................................
++	apiii   mm/dd/ccyy  xxxxxxxx  -  CHG  - 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. -------------------------------------------------------------
+. Required Program Includes 
+. -------------------------------------------------------------	
+							
+	INC	COMMON.CB		...Common work area
+	INC	X_COMMON.CB		...OGB Common Work Area
+	INC	VALID.RL		...Valid codes
+	INC	X_OGBFILE.CB		...OGB Custom File Handler
+	INC	PRT.RL			...Printer Definition File
+              
+. -------------------------------------------------------------
+. Program Specific Includes
+. -------------------------------------------------------------
+
+	INC	MEM.RL			...Member Demographics
+	INC	D_MEMMEM.CB		...Member Import Layout
+	INC	CMDPARAM.CB		...Command Line variables
+
+. -------------------------------------------------------------
+. File Declarations
+. -------------------------------------------------------------
+
+...Work File(s)
+
+REF_MEM_FD		FILE	VAR=1500,  TEXT
+REF_MEM_NAME		INIT	"/w/a1603291_reformat.txt"  
+
+...Output File(s)
+
+UPDT_REC_FD		FILE	VAR=4800,  TEXT   ...input file for d_memmem.cb
+UPDT_REC_NAME		INIT	"a1603291.txt"
+
+. -------------------------------------------------------------
+. Program Specific Variables & Working Storage
+. -------------------------------------------------------------
+
+.....<Test Options>.....
+
+CREATE_RF		INIT	"Y"	...Make new reformat file?
+DELETE_FILES		INIT	"Y"	...Delete work file?
+
+...<End Test Options>...
+	
+...Character Variables
+
+YES			INIT	"Y"
+NO			INIT	"N"
+TILDE			INIT	"~"
+CHAR_25			DIM	25
+
+...Clock Variables
+
+TIMESTAMP		DIM	14
+CURRDATE		DIM	8
+TRAP_DATA		DIM	500
+CAL_CLOCK		DIM	21
+ORIG_RETURN		FORM	5
+CURR_RETURN		FORM	5
+TODAY			DIM	8
+
+...Printing Controls
+
+NORM_10			DIM	29
+BOLD_10			DIM	29
+NORM_12			DIM	26
+BOLD_12			DIM	26
+NORM_16			DIM	33
+BOLD_16			DIM	33
+
+ESC_CHAR		EQU	27
+XCAPE			INIT	ESC_CHAR
+
+PARAM_LIST		LIST
+....................................
+PARAM_XXX		DIM	10
+PARAM_YYY		DIM	5
+PARAM_DATE		DIM	8
+....................................
+			LISTEND
+
+
++ ------------------------------------------------------------------------------
++ Begin Program 
++ ------------------------------------------------------------------------------
+
+. ----------------------------------
+. Start here if selected from menu
+. 	   RUN_MODE = "N"
+. ----------------------------------
+
+	CALL	RUN_NOW
+
+	CHAIN	C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler
+. 	   RUN_MODE = "B"
+. ---------------------------------------
+
+	INC	SCHED_NP.SR	...Scheduler routines (w/o printer)
+
+RUN_NOW
+
+...Check return stack
+
+	RETCOUNT	ORIG_RETURN
+
+...Screen Display
+ 
+	DISPLAY	*ES
+
+	MOVE	"MENU"				INTO	C_NEXT
+	MOVE	"CLEAR MEM_COUNTY"		INTO	C_OPER
+	MOVE	"A1603291"			INTO	C_PROG
+	MOVE	BLANKS				INTO	C_LABEL
+	MOVE	BLANKS				INTO	C_FILE
+	MOVE	BLANKS				INTO	C_KEYS
+	CLOCK	CALENDAR			INTO	CAL_CLOCK
+         
+	CALL	X_BLANK_SCREEN
+
+...Set Applicable Traps 
+
+	TRAPSAVE	TRAP_DATA
+	TRAPCLR		ALL
+	TRAP		QUIT NORESET IF F9
+	
+...Get scheduler information
+
+	CALL	SCHED_PICK
+
+	IF ((RUN_MODE = "B") OR (RUN_MODE = "N"))
+		CALL	MAIN_PROCESS
+	ENDIF
+
+	RETURN
+
++ ------------------------------------------------------------------------------
++ Main Process
++ ------------------------------------------------------------------------------
+
+MAIN_PROCESS
+
+	debug
+...Collect data for comparison
+	CALL	INITIALIZE	
+	CALL	PREPARE_FILES
+	CALL	REPLACE_COUNTY	
+
+...Close Files
+
+	debug
+	CALL	CLEAN_UP	
+
+   RETURN
+                                                   
++ ------------------------------------------------------------------------------
++ Sub-Routines 
++ ------------------------------------------------------------------------------
+
+. ************************************************************** 
+. Draws screen header and returns the date the program was run
+. **************************************************************
+
+INITIALIZE
+
+        DISPLAY *P1:9,*ES
+
+...From X_STANDARD.SR. Returns date and draws screen header
+        CALL    X_BLANK_SCREEN
+
+        CLOCK   TIMESTAMP  INTO  TIMESTAMP
+        CLOCK   TIMESTAMP  INTO  CURRDATE
+        CLOCK   TIMESTAMP  INTO  TODAY
+
+...Display Counters
+        MOVE    "MEM Recs to Update:"		INTO	X_CNTDESC1
+        MOVE    "Not Used:"			INTO	X_CNTDESC2
+        MOVE    "Not Used:"			INTO	X_CNTDESC3
+        MOVE    "Not Used:"			INTO    X_CNTDESC4
+        MOVE    "Not Used:"			INTO    X_CNTDESC5
+        MOVE    "Not Used:"			INTO    X_CNTDESC6
+
+	CALL	X_ZERO_COUNTS
+        CALL    X_DISPLAY_COUNTS
+
+   RETURN
+
+. *********************************** 
+. Prepare/Open all necessary files.
+. ***********************************
+
+PREPARE_FILES
+
+. -----------------------------------
+. Local Variables
+. -----------------------------------
+ERR_REFORMAT		INIT	"MEM reformat failed..."
+. -----------------------------------
+. Code
+. -----------------------------------
+
+	CALL	SCREEN_CLEAN  USING  20, 22
+
+        MESSAGE HORZ="26",	VERT="20":
+                BGCOL=C_DLGB,   FGCOL=C_DLGF:
+                LNCOL=C_DLGL,   SHADE="y":
+                TEXT="Reformatting...Please Wait";
+
+...Open/Prepare files
+	IF  (CREATE_RF = YES)
+		CLEAR	SCRATCH
+
+...Gets all MEM records with non-blank MEM_COUNTY fields
+		FILL	SPACE  IN  CHAR_25
+
+		PACK	SCRATCH  WITH  "mem.dbf ", REF_MEM_NAME, " ":
+				       "-p180-204ne#"", CHAR_25, "#"":
+				       " -t"
+		REFORMAT  SCRATCH
+		IF  (OVER)
+			IF  (NOT  C_CMDPAR)
+				ERROR	HORZ="22",	VERT="20":
+					BGCOL=C_ERRB,   FGCOL=C_ERRF:
+					LNCOL=C_ERRL,   SHADE="Y":
+					TEXT="Reformat Failed (mem.dbf)"
+				
+				CHAIN     "MENU"
+			ELSE
+				CALL	CMD_ERROR  USING  ERR_REFORMAT
+				STOP
+			ENDIF 
+		ENDIF
+
+	ENDIF
+
+	CALL	OPEN_OGBFILE  USING  REF_MEM_FD:
+				     REF_MEM_NAME
+
+	CALL	PREP_OGBFILE  USING  UPDT_REC_FD:	   ...update file
+				     UPDT_REC_NAME
+
+   RETURN
+
+. ******************************************************************************
+. Reads the reformatted file of records with non-blank MEM_COUNTY fields; for
+. each record replaces the field with all "~" and writed to the output file. 
+. ******************************************************************************
+
+REPLACE_COUNTY
+
+. -----------------------------------
+. Local Variables
+. -----------------------------------
+. -----------------------------------
+. Code
+. -----------------------------------
+
+	CALL	SCREEN_CLEAN  USING  20, 22
+
+        MESSAGE HORZ="20",	VERT="20":
+                BGCOL=C_DLGB,   FGCOL=C_DLGF:
+                LNCOL=C_DLGL,   SHADE="y":
+                TEXT="Replacing MEM_COUNTY fields...Please Wait";
+
+	FILL	TILDE  IN  CHAR_25 
+	MOVE	OGB_SEQ1  INTO  OGB_SEQ
+
+   LOOP
+	CLEAR	MEM_LIST
+	CLEAR	INM_LIST
+	CLEAR	INM_REC
+	CLEAR	INM_CHGBY
+
+...Read MEM rec from reformatted file
+	CALL	READ_OGBFILE  USING  REF_MEM_FD:
+				     REF_MEM_NAME:
+				     MEM_LIST
+
+	BREAK  IF  (RESULT <> 1)
+
+...Replace MEM_COUNTY
+	MOVE	CHAR_25  INTO  MEM_COUNTY
+
+...Write INM rec to the output file to be used by D_MEMMEM to update IMPACT.
+	PACKLEN	INM_REC  WITH  MEM_LIST
+	UNPACK	INM_REC  INTO  INM_LIST
+
+	CALL	WRITE_OGBREC  USING  UPDT_REC_FD:
+				     UPDT_REC_NAME:
+				     INM_LIST
+	
+	CALL	COUNTER_ROUTINE  USING  X_CNT1,  1000
+   REPEAT
+	CALL	SCREEN_CLEAN  USING  20,  22
+   RETURN
+
+. ******************************************************************************
+. Counter Routine: Pass CNT_DIV the refresh interval and the choice of counter
+. ******************************************************************************
+
+COUNTER_ROUTINE		ROUTINE  CNT@VAR,  CNT@DIV
+
+. -----------------------------------
+. Local Variables
+. -----------------------------------
+CNT@VAR			FORM	@
+CNT@DIV			FORM	@
+CNT_FRACTION		FORM	4.3
+CNT_WHOLE		FORM	7
+CNT_ANS			FORM	7.3
+. -----------------------------------
+. Code
+. -----------------------------------
+
+        ADD  1  TO  CNT@VAR
+        DIVIDE  CNT@DIV  INTO  CNT@VAR  GIVING  CNT_ANS
+        MOVE    CNT_ANS  INTO  CNT_FRACTION
+        MOVE    CNT_ANS  INTO  CNT_WHOLE
+
+        IF  (CNT_WHOLE = CNT_FRACTION)
+                CALL    X_DISPLAY_COUNTS
+        ENDIF
+
+   RETURN		...With new tallies
+
+. **************************************************
+. Closes all opened files and runs the EOJ routine
+. **************************************************
+
+CLEAN_UP
+
+. -----------------------------------
+. Local Variables
+. -----------------------------------
+. -----------------------------------
+. Code
+. -----------------------------------
+
+...Work files
+	IF  (DELETE_FILES = YES)
+		CLOSE	REF_MEM_FD,	DELETE
+	ELSE
+		CALL	CLOSE_OGBFILE  USING  REF_MEM_FD,  REF_MEM_NAME
+	ENDIF
+
+...Output files
+	CALL	CLOSE_OGBFILE  USING  UPDT_REC_FD,  UPDT_REC_NAME
+
+	CALL	NORMAL_EOJ
+
+   RETURN
+
+. ************************************************************************
+. Erases lines on the screen from the line CLEAN.START to line CLEAN.END
+. ************************************************************************
+
+SCREEN_CLEAN		ROUTINE  CLEAN@START,  CLEAN@END
+
+. -----------------------------------
+. Local Variables
+. -----------------------------------
+CLEAN@START		FORM	@
+CLEAN@END		FORM	@
+V.POS			FORM	2
+. -----------------------------------
+. Code
+. -----------------------------------
+
+	FOR  V.POS  FROM  CLEAN@START  TO  CLEAN@END
+		DISPLAY  *V=V.POS, *EL
+	REPEAT
+
+	CALL	X_DISPLAY_COUNTS
+
+   RETURN
+
+. ********************************
+. Quits when operator presses F9
+. ********************************
+
+QUIT
+
+	IF  (C_RMODE = "I")
+		ERROR	HORZ="23",	VERT="19":
+			BGCOL=C_ERRB,	FGCOL=C_ERRF:
+			LNCOL=C_ERRL,	SHADE="Y":
+			TEXT=" Process Aborted by Operator ":
+			TEXT="-----------------------------"
+		MESSAGEERASE	
+	ENDIF
+
+	CLEAR	  C_NOHIST
+
+	TRAPREST  TRAP_DATA
+
+	IF (RUN_MODE = "B")
+		LOOP
+			RETCOUNT	CURR_RETURN
+			WHILE  (CURR_RETURN > ORIG_RETURN)
+			NORETURN
+		REPEAT
+
+		MOVE	SCH_RTABRT  INTO  SCH@RTCODE
+ 		RETURN
+	ENDIF
+
+   CHAIN	"MENU"
+
+. *************************** 
+. Normal End of Job Routine
+. *************************** 
+
+NORMAL_EOJ
+
+	CALL	SCREEN_CLEAN  USING  20,  22
+
+	MOVE	"NEOJ"		      INTO  X_FINISH_STATUS
+	MOVE	"A1603291 Completed"  INTO  X_PROG_FINISH
+
+	IF  (RUN_MODE = "N") 
+		CALL	X_END_OF_JOB
+	ENDIF
+
+...Return Control to Chain - End of Program
+
+        TRAPREST        TRAP_DATA
+	IF  (NOT C_CMDPAR)
+	        MOVE	SCH_RTSUCC  INTO  SCH@RTCODE
+	ELSE
+		CALL	CMD_END
+		STOP
+	ENDIF
+   RETURN
+
+. -------------------------------------------------------------
+. Subroutines Found in Includes 
+. -------------------------------------------------------------
+
+	INC	CMDPARAM.SR
+	INC	FILE.IO
+	INC	PRINT.SR
+	INC	UTIL.SR
+	INC	VALID.IO
+	INC	X_OGBFILE.IO
+	INC	X_STANDARD.SR
+	INC	DELIMIT.SR
+
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. End of <A1603291.PS> 
+. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

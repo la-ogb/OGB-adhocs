@@ -1,0 +1,556 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    File name      :  a1111181.ps    
++    Description    :  Attestation file for MEDCO for EGWP                
++  apsjm 11/18/2011 a1111181 ADH - Initial Version
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB
+              INC       X_COMMON.CB
+              INC       X_OGBFILE.CB
+              INC       VALID.RL
+              INC       CMDPARAM.CB
+
+.----------------------------------------------------------------------------
+.Program Specific Includes
+.----------------------------------------------------------------------------
+              INC       MEM.RL          .... Member Demographics
+              INC       MEME.RL         .... Member Enrollment
+
+.----------------------------------------------------------------------------
+.Input File Declaration   
+.----------------------------------------------------------------------------
+EGWP_FD         FILE      VAR=100,TEXT
+EGWP_NAME       INIT      "/w/egwp_attest.txt"
+.
+EGWP_LIST       LIST
+EGWP_ID         DIM       8
+EGWP_DOB        DIM       8
+EGWP_HIC        DIM       12
+EGWP_LNAME      DIM       25
+EGWP_FNAME      DIM       15
+EGWP_MI         DIM       1
+                LISTEND
+.----------------------------------------------------------------------------
+.Output File Declaration   
+.----------------------------------------------------------------------------
+ATTEST_FD       FILE      VAR=60,TEXT      
+ATTEST_NAME     INIT	  "/w/medco_attest.txt"
+.
+ATTEST_LIST       LIST
+ATTEST_ID         DIM       08
+ATTEST_HIC        DIM       12
+ATTEST_LNAME      DIM       25
+ATTEST_FNAME      DIM       15
+                  LISTEND
+.
+NO_ATTEST_FD    FILE      VAR=60,TEXT      
+NO_ATTEST_NAME  INIT	  "/w/medco_no_attest.txt"
+.
+NO_ATTEST_LIST       LIST
+NO_ATTEST_ID         DIM       08
+NO_ATTEST_HIC        DIM       12
+NO_ATTEST_LNAME      DIM       25
+NO_ATTEST_FNAME      DIM       15
+                     LISTEND
+.
+MEME_WRK_FD   FILE      VAR=16,TEXT
+MEME_WRK_NME  INIT      "/w/a1111181.meme.wrk"
+MEME_WRK_LIST LIST
+MEME_WRK_EFF  DIM       8
+MEME_WRK_TRM  DIM       8
+              LISTEND
+MEME_WRK_SRTKEY INIT "1-16 -U -T"
+
+.----------------------------------------------------------------------------
+.Program Specific Variables & Working Storage
+.----------------------------------------------------------------------------
+LOOP_CNT      FORM 1
+ACCU_ID1      DIM  8
+SVE_ACCU      DIM  8
+NUM_OF_DAYS    FORM    5
+SAVE_TRM       DIM     8
+CONT_COV_SW    DIM     1
+L_TRM          DIM     8
+E_EFF          DIM     8
+LDAY_DATE      DIM     8
+W_65BDAY       DIM     8
+W_ATTEST_B     DIM     8  
+WRK_F4         FORM      4
+FORM_CCYY      FORM      4
+W_CCYY         DIM       4
+DISP3           DIM       3
+DISP4           DIM       4
+TIMESTAMP       DIM       14
+CURRDATE        DIM       8
+SPACES          DIM       8
+TRAP_DATA       DIM       500
+CAL_CLOCK       DIM       21
+ORIG_RETURN     FORM      5
+CURR_RETURN     FORM      5
+TODAY           DIM       8
+VALID_DATE      DIM       1          
+. ...Report Fields
+
+. ...Printing Controls
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (W/O printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+.        MOVE      "MENU"              TO  C_NEXT
+         MOVE      "EGWP Attest" TO  C_OPER
+         MOVE      "A1111181"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         MOVE "N" TO RUN_MODE
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         debug
+         CALL      INITIALIZE
+         CALL      OPEN_FILES 
+       	 CALL      EXT_ATTEST_FILES 
+         CALL      CLOSE_FILES
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN                                   
+                         
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+INITIALIZE
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+       	 MOVE      "Records Read:    " TO X_CNTDESC1
+       	 MOVE      "Records Found:   " TO X_CNTDESC2
+	 
+       	 CALL      X_DISPLAY_COUNTS
+
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+OPEN_FILES
+       	 MOVE  EGWP_NAME TO C_FILE
+         CALL  OPEN_OGBFILE USING EGWP_FD,EGWP_NAME
+       	 MOVE  ATTEST_NAME TO C_FILE
+         CALL  PREP_OGBFILE USING ATTEST_FD,ATTEST_NAME
+       	 MOVE  NO_ATTEST_NAME TO C_FILE
+         CALL  PREP_OGBFILE USING NO_ATTEST_FD,NO_ATTEST_NAME
+         RETURN
+
+. ----------------------------
+. Extract Label Information
+. ----------------------------
+EXT_ATTEST_FILES
+         LOOP
+            MOVE OGB_SEQ1 TO OGB_SEQ
+            CALL READ_OGBFILE USING EGWP_FD,EGWP_NAME,EGWP_LIST           
+            IF (RESULT <> 1)
+                BREAK   
+            ENDIF
+
+            ADD 1 TO X_CNT1
+            UNPACK X_CNT1 INTO DISP4,DISP3
+            IF (DISP3 = "000")
+                CALL X_DISPLAY_COUNTS
+            ENDIF
+...Calculate the date they turn(ed) 65 yrs
+            CALL DATE_CALC USING EGWP_DOB,"ADD","YEARS",65,W_65BDAY      
+            IF (W_65BDAY > TODAY)
+                DEBUG
+                MOVE EGWP_ID TO ATTEST_ID
+                MOVE EGWP_HIC TO ATTEST_HIC
+                MOVE EGWP_LNAME TO ATTEST_LNAME
+                MOVE EGWP_FNAME TO ATTEST_FNAME
+                MOVE OGB_SEQ1 TO OGB_SEQ
+                CALL WRITE_OGBREC USING ATTEST_FD,ATTEST_NAME,ATTEST_LIST
+                CLEAR ATTEST_LIST
+                CONTINUE
+            ENDIF
+...Calculate the Last day of the monthof the date they turn(ed) 65
+            UNPACK W_65BDAY INTO W_CCYY,W_MM,W_DD
+            CALL LAST_DAY_M
+...Calculate 3 months after last day of month of the date they turn(ed) 65
+            CALL DATE_CALC USING LDAY_DATE,"ADD","MONTHS",3,W_ATTEST_B 
+            IF (W_65BDAY < "20060101")
+               DEBUG
+               MOVE "20060101" TO W_ATTEST_B
+            ENDIF
+            PACK MEM_FK11 WITH EGWP_ID,BLANKS
+            CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+            IF (RESULT <> 1)
+               CONTINUE
+            ENDIF
+            CALL GET_ATTEST_HIS
+            IF (CONT_COV_SW = "1")
+               IF ((E_EFF <= W_ATTEST_B) AND (L_TRM >= TODAY))
+                    MOVE EGWP_ID TO ATTEST_ID
+                    MOVE EGWP_HIC TO ATTEST_HIC
+                    MOVE EGWP_LNAME TO ATTEST_LNAME
+                    MOVE EGWP_FNAME TO ATTEST_FNAME
+                    MOVE OGB_SEQ1 TO OGB_SEQ
+                    CALL WRITE_OGBREC USING ATTEST_FD,ATTEST_NAME,ATTEST_LIST
+                    CLEAR ATTEST_LIST
+               ELSE
+                    MOVE EGWP_ID TO NO_ATTEST_ID
+                    MOVE EGWP_HIC TO NO_ATTEST_HIC
+                    MOVE EGWP_LNAME TO NO_ATTEST_LNAME
+                    MOVE EGWP_FNAME TO NO_ATTEST_FNAME
+                    MOVE OGB_SEQ1 TO OGB_SEQ 
+                    CALL WRITE_OGBREC USING NO_ATTEST_FD,NO_ATTEST_NAME,NO_ATTEST_LIST
+                    CLEAR NO_ATTEST_LIST
+               ENDIF 
+            ELSE
+                MOVE EGWP_ID TO NO_ATTEST_ID
+                MOVE EGWP_HIC TO NO_ATTEST_HIC
+                MOVE EGWP_LNAME TO NO_ATTEST_LNAME
+                MOVE EGWP_FNAME TO NO_ATTEST_FNAME
+                MOVE OGB_SEQ1 TO OGB_SEQ 
+                CALL WRITE_OGBREC USING NO_ATTEST_FD,NO_ATTEST_NAME,NO_ATTEST_LIST      
+                CLEAR NO_ATTEST_LIST
+            ENDIF         
+         REPEAT  
+         RETURN
+
+LAST_DAY_M
+      SWITCH W_MM
+         CASE "01"
+             MOVE "31" TO W_DD
+         CASE "02"
+             MOVE W_CCYY TO FORM_CCYY
+             MOD "4" INTO FORM_CCYY GIVING WRK_F4
+             IF (WRK_F4 = 0)
+                 MOVE "29" TO W_DD
+             ELSE
+                 MOVE "28" TO W_DD
+             ENDIF
+         CASE "03"
+             MOVE "31" TO W_DD
+         CASE "04"
+             MOVE "30" TO W_DD
+         CASE "05"
+             MOVE "31" TO W_DD
+         CASE "06"
+             MOVE "30" TO W_DD
+         CASE "07"
+             MOVE "31" TO W_DD
+         CASE "08"
+             MOVE "31" TO W_DD
+         CASE "09"
+             MOVE "30" TO W_DD
+         CASE "10"
+             MOVE "31" TO W_DD
+         CASE "11"
+             MOVE "30" TO W_DD
+         CASE "12"
+             MOVE "31" TO W_DD
+      ENDSWITCH
+      PACK LDAY_DATE WITH W_CCYY,W_MM,W_DD
+      RETURN
+
+GET_ATTEST_HIS   
+      DEBUG
+      CALL PREP_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME
+      CALL READ_MEME
+      IF (SQUEEZE MEM_ACCU = "")
+         CALL CALC_HIST
+         RETURN
+      ENDIF
+      MOVE MEM_ACCU TO ACCU_ID1
+      MOVE MEM_ID1 TO SVE_ACCU
+      CALL GET_LINKED_IDS
+      CALL CALC_HIST
+      RETURN
+
+CALC_HIST
+      CALL CLOSE_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME 
+      CALL SORT_OGBFILE USING MEME_WRK_NME,MEME_WRK_NME,MEME_WRK_SRTKEY
+        IF OVER
+         IF (NOT C_CMDPAR)
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT WORK FILE FAILED"
+            CHAIN "MENU"
+         ELSE  
+           CALL CMD_ERROR USING "Sort work file failed"
+           STOP
+         ENDIF
+        ENDIF
+
+      CALL OPEN_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME 
+      CLEAR E_EFF
+      CLEAR L_TRM
+      CLEAR SAVE_TRM
+      MOVE "1" TO CONT_COV_SW
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      LOOP
+         CALL READ_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME,MEME_WRK_LIST
+         IF  (RESULT <> 1)
+               BREAK       
+         ENDIF
+         IF (SQUEEZE SAVE_TRM <> "")
+                CLEAR NUM_OF_DAYS
+                CALL DELTA_DAYS USING MEME_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+                IF (NUM_OF_DAYS > 1)
+                   MOVE "0" TO CONT_COV_SW 
+                ENDIF
+                MOVE MEME_WRK_TRM TO SAVE_TRM
+                MOVE MEME_WRK_TRM TO L_TRM
+         ELSE
+                MOVE MEME_WRK_TRM TO SAVE_TRM
+                MOVE MEME_WRK_EFF TO E_EFF
+                MOVE MEME_WRK_TRM TO L_TRM
+         ENDIF
+      REPEAT 
+      RETURN
+     
+READ_MEME
+      PACK MEME_FK11 WITH EGWP_ID,BLANKS     
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          IF  ((EGWP_ID <> MEME_ID1) OR (RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE         
+          ENDIF
+          IF (SQUEEZE MEME_NET = "LIFE")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_NET = "LSUSH")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_NET = "DEFIN")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_PRD = "CDHP")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_NET = "EGWP")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_NET = "NOCOV")
+              CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                  CONTINUE
+              ENDIF
+          ENDIF
+          IF (SQUEEZE MEME_NET = "DHH")
+            CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_TRM = "")
+             FILL "9" IN MEME_TRM
+          ENDIF
+          IF (MEME_EFF > TODAY)
+             CONTINUE
+          ENDIF
+          IF (MEME_TRM < W_ATTEST_B)
+             CONTINUE
+          ENDIF
+          MOVE MEME_EFF TO MEME_WRK_EFF
+          MOVE MEME_TRM TO MEME_WRK_TRM
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING MEME_WRK_FD,MEME_WRK_NME,MEME_WRK_LIST
+          CLEAR MEME_WRK_LIST
+      REPEAT 
+      RETURN
+
+GET_LINKED_IDS
+ MOVE 1 TO LOOP_CNT
+ LOOP
+    IF (LOOP_CNT <> 1)
+      IF (ACCU_ID1 = SVE_ACCU)
+         BREAK
+      ENDIF
+    ENDIF
+    IF (SQUEEZE ACCU_ID1 = "")
+       BREAK
+    ENDIF  
+    IF (LOOP_CNT > 7)
+       BREAK
+    ENDIF
+    PACK MEM_FK11 WITH ACCU_ID1
+    CALL FILE_READ USING MEM_FD:             ...FILE DECLARATION LIST
+                         MEM_FN:             ...FILE NAME LIST
+                         MEM_FC:             ...TYPE OF INDEX
+.                                             ...(I)NDEX or (A)IMDEX
+                         MEM_FV:             ...FILE KEY VARLIST
+                         MEM_FK:             ...FILE KEY SIZES
+                         MEM_LIST:           ...FILE RECORD (FIELD LIST)
+                         MEM_REC:            ...FILE RECORD (PACKED)
+                         MEM_OLD:            ...FILE SAVED WHEN READ
+                         MEM_QTY:            ...NUMBER OF FILES
+                         1                    ...FILE NUMBER FOR THIS READ
+    IF (RESULT <> 1)
+       BREAK
+    ENDIF
+    ADD 1 TO LOOP_CNT
+    MOVE MEM_ACCU TO ACCU_ID1
+    MOVE MEM_ID1 TO EGWP_ID
+    CALL READ_MEME
+ REPEAT
+ RETURN
+   
+.............................................................................
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         MOVE  "MENU"      TO  C_NEXT
+         CHAIN     C_NEXT
+
+
+
+. ----------------------------
+. ----------------------------
+CLOSE_FILES
+
+    RETURN
+
+
+.----------------------------------------------------------------------------
+.Subroutines and other includes
+.----------------------------------------------------------------------------
+              INC       VALID.IO
+              INC       FILE.IO
+              INC       X_OGBFILE.IO
+              INC       X_STANDARD.SR
+              INC       UTIL.SR 
+              INC       CMDPARAM.SR
+
+.----------------------------------------------------------------------------
+.End of a1111181.ps    
+.----------------------------------------------------------------------------

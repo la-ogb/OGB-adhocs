@@ -1,0 +1,881 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  PRV7500.PS
++    Description    :  This Program checks the 1099 owner for all contracted         
++                   :  providers to see if a MALPRAC proi record has been     
++                   :  set up.  That will be the procedure from now on and this
++                   :  extract will aid in getting the system cleaned up.
++ 
++                   :  ++Note:  Print statements left in because a future
++                   :           phase of this project might include a more
++                   :           detailed count/print.     
++
++    Author         :  Amy Poole
++    Date created   :  10/28/2005
++    Project Number :  A0510113
+++++++++++++++++++++++++++++<< REVISIONS >>++++++++++++++++++++++++++++++++++++
++                                                                   
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       PRT.RL               ...Printer Definition File
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       PRO.RL               ...Provider Demographics           
+              INC       PROP.RL              ...Provider Pricing
+              INC       PROI.RL              ...Provider Insurance                 
+
+. -----------------------------
+. File Declarations                                 
+. -----------------------------                                 
+                                                                                
+. INPUT FILES                                                       
+
+
+. OUTPUT FILES
+                                                      
+. >>>Indexed File of all contracted tax_ids
+CONTRACT_FILE   IFILE        VAR=9,TEXT,KEYLEN=9,NODUP
+CONTRACT_TFILE  FILE         VAR=9,TEXT
+CONTRACT_NME    INIT         "/w/prv7500.ix1"
+CONTRACT_TXT    INIT         "/w/prv7500.txt"
+CONTRACT_REC    list
+..<Begin>...................................................
+CONTRACT_KEY    DIM        9         --tax id + last name + first name
+..<End>.....................................................
+              LISTEND
+
+                                                                                
+. >>>Report File
+OUT_FILE        FILE         VAR=101,TEXT
+OUT_NME         INIT         "/w/prv7500.out."
+
+OUT_REC         LIST
+..<Begin>...................................................
+OUT_TAX1        DIM       9  
+OUT_ID          DIM       8
+OUT_OFFICE      DIM       35
+OUT_PROIID      DIM       8
+OUT_PROILN      DIM       3
+OUT_PROITP      DIM       6
+OUT_PROIEF      DIM       8
+OUT_PROIEX      DIM       8
+OUT_PROICM      DIM       16
+..<End>......................................................
+                LISTEND
+
+
+. ----------------------------------------------
+. Report Line Definitions
+. ----------------------------------------------
+
+. >>>>Standard OGB Report Headings
+SRH_LEFT1     INIT      "Program Name: "
+SRH_LEFT2     INIT      "Date Printed: "
+SRH_TITLE1    INIT      "   STATE OF LOUISIANA   "
+SRH_TITLE2    INIT      "OFFICE OF GROUP BENEFITS"
+SRH_RIGHT1    INIT      "Page Number: "
+SRH_RIGHT2    INIT      "Report Time: "
+SRH_DASH      INIT      "-"
+                                                   
+
+. >>>Header Lines
+HDR1_REC        LIST    
+..<Begin>...................................................
+H1FL_1          DIM      47
+H1FL_2          INIT     "Contracted Providers                 "
+............................................................
+                LISTEND 
+
+HDR2_REC        LIST
+..<Begin>...................................................
+H2FL_1          DIM      44
+H2FL_2          INIT     "with Contracts in Effect as of "
+H2FL_3          DIM      10
+............................................................
+                LISTEND
+
+HDR3_REC        LIST
+..<Begin>...................................................
+H3FL_1          DIM      16
+H3FL_2          INIT     "Tax Id"
+H3FL_3          DIM      6
+H3FL_4          INIT     "Rec Id"
+H3FL_5          DIM      10
+H3FL_6          INIT     "Office Name/Address 1"
+H3FL_7          DIM      14
+H3FL_8          INIT     "Provider Name/City-State-Zip"           
+............................................................
+                LISTEND
+
+HDR4_REC        LIST
+..<Begin>...................................................
+H4FL_1          DIM      15
+H4FL_2          INIT     "______________________________":
+                         "______________________________":
+                         "________________________________"
+............................................................
+                LISTEND
+
+
+
+. >>>Detail Lines
+DET1_REC        LIST
+..<Begin>....................................................
+D1FL_1          DIM      15
+DET1_TAXID      DIM      9
+D1FL_2          DIM      3
+DET1_RECID      DIM      8
+D1FL_3          DIM      3
+DET1_OFFICE     DIM      35
+D1FL_4          DIM      3
+DET1_PRONAME    DIM      36
+.............................................................
+                LISTEND
+
+DET2_REC        LIST
+..<Begin>....................................................
+D2FL_1          DIM      41
+DET2_ADDR1      DIM      35
+D2FL_2          DIM      3
+DET2_CSZ        DIM      45
+.............................................................
+                LISTEND
+
+ 
+
+. ----------------------------------------------
+. Program Required Variables & Working Storage
+. ----------------------------------------------
+BOLD_10	      DIM       29
+BOLD_12	      DIM       26
+BOLD_16	      DIM       33
+CAL_CLOCK     DIM       21
+CHPCITY       DIM       30
+CHPFST        DIM       15 
+CHPLST        DIM       20
+CNT1_4        DIM       4
+CNT1_3        DIM       3
+CNT_5         DIM       5
+CNT_2         DIM       2
+CONTRACT_ENDDT DIM      8
+CURRDATE      DIM       8
+CURR_RETURN   FORM      5
+
+DATE_LIST     LIST
+DOUT_CCYY     DIM       4
+DOUT_MM       DIM       2
+DOUT_DD       DIM       2
+              LISTEND
+
+DIM_08        DIM       8
+DLG.WIN       CHAR      6000
+EFF_DATE_DISP DIM       10
+EFFDY         DIM       2
+EFFMO         FORM      2
+EFFYR         FORM      4
+ESC_CHAR      EQU       27
+FIRST_PAGE    DIM       1
+FIRST_READ    INIT	"Y" 
+FOUND         DIM       1
+LINE_MAX      FORM      "75"
+LINE_NO       FORM      3
+NO	      INIT      "N"
+NO_MALPRAC    FORM      1
+NORM_10	      DIM       29
+NORM_12	      DIM       26
+NORM_16	      DIM       33
+ORIG_RETURN   FORM      5
+OUT_SORTKEY   INIT      "009-017 -t"
+PAGE_NO       FORM      5      				     
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM       10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+POP_REC       LIST      @                                                       
+POP_KEY       DIM       @                                                       
+POP_OLD       DIM       @                                                       
+POP_SW        FORM      @                                                       
+POP_DECL      IFILE     @                                                       
+POP_NAME      DIM       @                                                       
+POP_ID        DIM       @                                                       
+POP_LINE      DIM       @                 
+
+PRO_RET_CODE  FORM      1
+PROP_RET_CODE FORM      1
+PTX_RET_CODE  FORM      1
+R_DATE	      DIM       10
+R_PAGE_NO     DIM       5
+R_TIME	      DIM      	8
+TIMESTAMP     DIM       14
+TODAY         DIM       8
+TRAP_DATA     DIM       500
+VAL_RESULT    FORM      1
+WRITE_COUNT   FORM      8
+WS_PROD       DIM       1
+XCAPE         INIT      ESC_CHAR
+YES           INIT      "Y"
+
+                                                    
++++++++++++++++++++++++++++<< PROGRAM SETUP >>++++++++++++++++++++++++++++
+
+. ----------------------------------
+. Start here if selected from menu   
+. ----------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ---------------------------------------
+. Start here if called by the Scheduler    
+. ---------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                 TO  C_NEXT
+         MOVE      "Contracted Providers" TO  C_OPER    >Max. 20 bytes
+         MOVE      "PRV7500"              TO  C_PROG
+         MOVE      BLANKS                 TO  C_LABEL
+         MOVE      BLANKS                 TO  C_FILE
+         MOVE      BLANKS                 TO  C_KEYS
+         CLOCK     CALENDAR               INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ---------------------------
+. Get printer information
+. ---------------------------
+                                                                               
+         CALL      PRINT_PICK                   
+         RETURN    IF (RESULT = 2)                             
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+
+
++++++++++++++++++++++++++++<< BEGIN MAIN PROCESS >>++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         debug
+         CALL      INITIALIZE
+
+. ...Get Extract Period
+         CALL      GET_INPUT
+         CALL      DATE_FORMAT USING CONTRACT_ENDDT,H2FL_3
+
+. ...Open a date-stamped output file based on Extract Date Keyed in
+         CALL      OPEN_FILES
+         CALL      SETPOP_PROI 
+
+*. ...Clean Up *.p## Files Left Over From Previous Runs
+*         CALL      RM_P_FILES
+*
+. ...Extract Contracted Providers
+         CALL      EXTRACT_PRO
+
+. ...Find the 1099 Owner for Each Tax Id and Output those who don't have 
+. ...an attached Malpractice PROI record
+         CALL      CHECK_MALPRAC
+         
+*. ...Sort the Output and Print the Report
+*         CALL      SORT_OUTPUT
+*         CALL      REPORT_PREP
+*         CALL      PRINT_HEADING
+*         CALL      PRINT_REPORT
+*         CALL      PRINT_DONE
+*         
+*. ...Copy off Report (prv1201.p01) File in Case Reprint Needed at Later Date
+*         CALL      BACKUP_REPORT
+ 
+. ...Program Finished
+         CALL      CLOSE_FILES
+         CALL      NORMAL_EOJ
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN                                   
+
+
++++++++++++++++++++++++++++<< END OF MAIN PROCESS >>+++++++++++++++++++++++++++
+
+
+. ----------------------------------------------------------------------------
+. Initialize
+. ----------------------------------------------------------------------------
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	        MOVE      "PRO Recs Read      " TO X_CNTDESC1
+       	 MOVE      "PRO Contracts Found" TO X_CNTDESC2
+         MOVE      "Missing MALPRAC    " TO X_CNTDESC3
+         MOVE      "                   " TO X_CNTDESC4
+	        MOVE      "                   " TO X_CNTDESC5
+	        MOVE      "                   " TO X_CNTDESC6
+	 
+	        CALL      X_DISPLAY_COUNTS
+
+     RETURN
+
+
+*. ----------------------------------------------------------------------------
+*. If any prv1201.p## files are out on /mcs/f from a previous run, this program
+*. deletes them before it runs.  This program needs to output a prv1201.p01 file 
+*. so that the prv1201.lpr script will print the correct report.
+*. ----------------------------------------------------------------------------
+*RM_P_FILES
+*   
+*. Now, delete the files found.
+*     PACK SCRATCH WITH "rm $MCSDIR/f/prv1201.p?? 2> /dev/null"
+*     ROLLOUT SCRATCH
+*.     IF OVER                                      ...Not going to abort here;    
+*.         IF (RUN_MODE = "N")                      ...if there is no *.p01 
+*.             ERROR     HORZ="15",VERT="19":       ...to remove, that's good.
+*.                       BGCOL=C,ERRB,FGCOL=C_ERRF: ...
+*.                       LNCOL=C_ERRL,SHADE="Y":    ...
+*.                       TEXT="REMOVAL FAILED"      ...
+*.             ENDIF                                ... 
+*.             CHAIN "MENU"                         ...
+*.         ENDIF                                    ...
+    	
+     RETURN
+
+
+. -----------------------------------------------------------------------------
+. Gets Extract Period from the operator if the program is not running from the 
+. scheduler.  If the program is being run from the scheduler, it
+. uses the current contract year for the Extract Period.   
+. -----------------------------------------------------------------------------
+GET_INPUT
+         UNPACK TODAY INTO CONTRACT_ENDDT, TIMESTAMP
+
+         WINSAVE DLG.WIN
+
+         IF (RUN_MODE = "N")                                      
+             message HORZ="21",VERT="17":
+                     BGCOL=C_DLGB,FGCOL=C_DLGF:
+                     LNCOL=C_DLGL,SHADE="Y":
+                     TEXT="Enter Contract Year End:            "
+             DISPLAY *BGCOLOR=C_DLGB,*COLOR=C_DLGF:
+                     *P49:18,EFF_DATE_DISP
+             MOVE    49 TO KEY_COL
+             MOVE    18 TO KEY_ROW
+             MOVE    10 TO KEY_SIZ
+             MOVE    0 TO KEY_DEC
+             MOVE    "D" TO KEY_TYP
+             MOVE    "L" TO KEY_JUS
+             MOVE    "O" TO KEY_REQ
+             DISPLAY *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+             CALL    KEY_IN USING CONTRACT_ENDDT
+         ENDIF
+
+ 	       WINRESTORE DLG.WIN														--Remove Message Box
+         CALL    X_DISPLAY_COUNTS
+ 
+         RETURN
+
+
+. -----------------------------------------------------------------------------
+. Open Files
+. -----------------------------------------------------------------------------
+OPEN_FILES
+                                                                                
+.I/O Files                                                                    
+         CALL PREP_OGBFILE_IX USING CONTRACT_FILE:
+                                    CONTRACT_NME
+.Output Files 
+         CALL PREP_OGBFILE USING OUT_FILE, OUT_NME
+         
+     RETURN
+
+
+. -----------------------------------------------------------------------------
+. Read through the PRO looking for all tax id's that have 
+. at least one PRO record with a PROP effective during the Extract period.
+. Create a file of unique tax id's.
+. -----------------------------------------------------------------------------
+EXTRACT_PRO     
+         debug
+         PACK      PRO_FK11 WITH BLANKS                                         
+         CALL      FILE_READ USING PRO_FD:    ...File declaration list          
+                   PRO_FN:   ...File name list                                  
+                   PRO_FC:   ...(I)ndex or (A)imdex                             
+                   PRO_FV:   ...File key varlists                               
+                   PRO_FK:   ...File key sizes                                  
+                   PRO_LIST: ...File record (field list)                        
+                   PRO_REC:  ...File record (packed)                            
+                   PRO_OLD:  ...File saved when read                            
+                   PRO_QTY:  ...Number of files                                 
+                   1         ...File number for this read                       
+                                                                                
+         LOOP                                                                   
+            CALL      FILE_NEXT USING PRO_FD:    ...File declaration list       
+                      PRO_FN:   ...File name list                               
+                      PRO_FC:   ...(I)ndex or (A)imdex                          
+                      PRO_FV:   ...File key varlists                            
+                      PRO_FK:   ...File key sizes                               
+                      PRO_LIST: ...File record (field list)
+                      PRO_REC:  ...File record (packed)                         
+                      PRO_OLD:  ...File saved when read                         
+                      PRO_QTY:  ...Number of files                              
+                      1         ...File number for this read                    
+                                                                                
+.          debug                                                                                
+             MOVE RESULT TO PRO_RET_CODE            ...Check for EOF            
+             IF (PRO_RET_CODE <> 1)                                             
+                 CALL X_DISPLAY_COUNTS
+                 CALL CLOSE_OGBFILE_IX USING CONTRACT_FILE, CONTRACT_NME
+                 BREAK                                                          
+             ENDIF                                                              
+                                                                                
+             ADD 1 TO X_CNT1                        ...Display Counters         
+             UNPACK X_CNT1 INTO CNT1_3,CNT1_4                                   
+             IF (CNT1_4 = "0000")                                                
+                 CALL X_DISPLAY_COUNTS                                          
+             ENDIF                                  
+
+.~~~Check to see if this tax-id has already been identified
+.~~~as being contracted...
+             PACK CONTRACT_KEY WITH PRO_TAX1
+             CALL READ_OGBFILE_IX USING CONTRACT_FILE:
+                                        CONTRACT_NME:
+                                        CONTRACT_KEY:
+                                        CONTRACT_REC
+             IF (RESULT = 1)       ---This tax id on file already.
+                CONTINUE
+             ENDIF
+
+             MOVE "N" TO FOUND
+             CALL READ_PROP          
+             IF (FOUND <> "N")
+                 CALL WRITE_OGBREC_IX USING CONTRACT_FILE:
+                                             CONTRACT_NME:
+                                             CONTRACT_KEY:
+                                             CONTRACT_REC
+                 ADD 1 TO X_CNT2
+             ENDIF                 
+
+         REPEAT
+  
+     RETURN
+
+
+. -----------------------------------------------------------------------------
+. This procedure looks for effective PROP records as of the Contract Year End
+. -----------------------------------------------------------------------------
+READ_PROP
+
+        debug
+. Read all PROP's for this PRO                                                  
+         PACK      PROP_FK11 WITH PRO_ID1,BLANKS                             
+         CALL      FILE_READ USING PROP_FD:    ...File declaration list      
+                             PROP_FN:          ...File name list             
+                             PROP_FC:          ...(I)ndex or (A)imdex        
+                             PROP_FV:          ...File key varlists          
+                             PROP_FK:          ...File key sizes             
+                             PROP_LIST:        ...File record (field list)   
+                             PROP_REC:         ...File record (packed)       
+                             PROP_OLD:         ...File saved when read       
+                             PROP_QTY:         ...Number of files            
+                             1                 ...File number for this read  
+                                                                                
+         LOOP                                                                
+           CALL      FILE_NEXT USING PROP_FD:    ...File declaration list   
+                               PROP_FN:          ...File name list          
+                               PROP_FC:          ...(I)ndex or (A)imdex     
+                               PROP_FV:          ...File key varlists       
+                               PROP_FK:          ...File key sizes          
+                               PROP_LIST:        ...File record (field list)
+                               PROP_REC:         ...File record (packed)    
+                               PROP_OLD:         ...File saved when read
+                               PROP_QTY:         ...Number of files         
+                               1                 ...File number for read    
+           
+           WHILE (PRO_ID1 = PROP_ID1)
+                                                                                
+           MOVE RESULT TO PROP_RET_CODE            ...Check for EOF            
+           IF (PROP_RET_CODE <> 1)                                             
+               CALL X_DISPLAY_COUNTS                                          
+               BREAK                                                          
+           ENDIF                                                              
+                                                                                  
+.       debug
+.~~~Set the FOUND switch to "Y" if a currently effective, PPO prop 
+.~~~record is found.
+           IF ((PROP_TRM >= CONTRACT_ENDDT) AND (PROP_EFF <= CONTRACT_ENDDT))                                               
+               MOVE "Y" TO FOUND
+               BREAK
+           ELSE
+               CONTINUE                                                       
+           ENDIF      
+
+         REPEAT 
+
+    RETURN
+
+
+. ----------------------------------------------------------------------------
+. For each tax id indentified above as contracted, find the 1099 owner. The
+. 1099 owner should have the PROI record attached that shows a provider group
+. has provided OGB with Proof of Malpractice Insurance.  (++Note: A PROI
+. record may be attached to each PRO under a paricular tax id depending on 
+. whether or not that group carries an umbrella policy covering all of its 
+. docs or whether it makes each doctor carry his/her own policy.  At a minimum
+. though, a PROI should have been set up under the 1099 pro record).
+. ----------------------------------------------------------------------------
+CHECK_MALPRAC
+        CALL      OPEN_OGBFILE USING CONTRACT_TFILE,CONTRACT_TXT
+        LOOP
+	          MOVE      OGB_SEQ1 TO OGB_SEQ
+	          CALL      READ_OGBFILE USING CONTRACT_TFILE,CONTRACT_TXT:
+                                        CONTRACT_REC
+	          IF	(RESULT <> 1) 
+              BREAK
+   	       ENDIF
+
+. ...Find the 1099 Owner
+           CLEAR     PRO_AIM
+           PACK      PRO_AIM1  WITH "01L",CONTRACT_KEY ...Tax ID
+           PACK      PRO_AIM10 WITH "10XY"             ...TTAG
+
+           CALL      FILE_READ USING PRO_FD:   ...File declaration list
+                                     PRO_FN:   ...File name list
+                                     PRO_FC:   ...(I)ndex or (A)imdex
+                                     PRO_FV:   ...File key varlists
+                                     PRO_AIM:  ...File key sizes
+                                     PRO_LIST: ...File record (field list)
+                                     PRO_REC:  ...File record (packed)
+                                     PRO_OLD:  ...File saved when read
+                                     PRO_QTY:  ...Number of files
+                                     2         ...File idx used (*custom*)
+           IF (RESULT <> 1)
+               MOVE CONTRACT_KEY TO OUT_TAX1    
+               PACK OUT_ID WITH BLANKS
+               PACK OUT_OFFICE WITH "NO 1099 OWNER FOUND", BLANKS
+               MOVE OGB_SEQ1 TO OGB_SEQ
+               CALL WRITE_OGBREC USING OUT_FILE:
+                                       OUT_NME:
+                                       OUT_REC
+               ADD 1 TO X_CNT3 
+               CONTINUE
+           ENDIF                               
+                           
+. ...Lookup PROI Information
+           SET NO_MALPRAC
+           UNPACK BLANKS INTO OUT_PROIID, OUT_PROILN, OUT_PROITP:
+                              OUT_PROIEF, OUT_PROIEX, OUT_PROICM
+           PACK PROI_BASE WITH PRO_ID1, BLANKS
+           PACK      PROI_KEY WITH PRO_ID1,BLANKS
+           CALL      POP_READ
+           LOOP
+               CALL POP_NEXT
+               IF ((RESULT <> 1) OR (PROI_ID <> PRO_ID1))
+                    BREAK
+               ENDIF
+
+               IF (PROI_TYPE = "MALPR ")
+                   IF ((PROI_EFFD <= CONTRACT_ENDDT) AND:
+                       (CONTRACT_ENDDT <= PROI_EXPD))
+                          CLEAR NO_MALPRAC
+                          BREAK
+                   ELSE
+                       MOVE PROI_ID TO OUT_PROIID
+                       MOVE PROI_LINE TO OUT_PROILN
+                       MOVE PROI_TYPE TO OUT_PROITP
+                       MOVE PROI_EFFD TO OUT_PROIEF
+                       MOVE PROI_EXPD TO OUT_PROIEX
+                       MOVE PROI_COMM TO OUT_PROICM
+                   ENDIF
+               ELSE
+                   CONTINUE
+               ENDIF
+
+           REPEAT     
+
+. ...Write Out 1099 Owners with no Proof of Malpractice Insurance 
+           IF (NO_MALPRAC)              
+               MOVE CONTRACT_KEY TO OUT_TAX1    
+               MOVE PRO_ID1 TO OUT_ID
+               MOVE PRO_OFFICE TO OUT_OFFICE
+               MOVE OGB_SEQ1 TO OGB_SEQ
+               CALL WRITE_OGBREC USING OUT_FILE:
+                                       OUT_NME:
+                                       OUT_REC
+               ADD 1 TO X_CNT3 
+           ENDIF
+
+        REPEAT
+
+        RETURN
+
+
+. ----------------------------------------------------------------------------
+. Prepare The Report
+. ----------------------------------------------------------------------------
+REPORT_PREP
+         CLOCK TIMESTAMP INTO TIMESTAMP
+     	   UNPACK TIMESTAMP INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+	        PACK	R_DATE WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+	        PACK	R_TIME WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+	        MOVE	0	TO WRITE_COUNT
+	        MOVE	YES TO FIRST_PAGE
+
+.Font Variables -- Print Portrait 
+         PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+         PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+         PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+         PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+         PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+         PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s3b0T"
+         CALL PRINT_PREP
+
+       	 RETURN
+
+
+. ----------------------------------------------------------------------------
+. Print	the report heading
+. ----------------------------------------------------------------------------
+PRINT_HEADING
+      	 ADD	1 TO  PAGE_NO
+	       MOVE	PAGE_NO TO  R_PAGE_NO
+
+      	 IF (FIRST_PAGE	= YES)
+    	       MOVE NO TO FIRST_PAGE
+	       ELSE
+	           PRINT     *F;
+	       ENDIF
+
+	       PRINT BOLD_16,*C
+
+        PRINT SRH_LEFT1,C_PROG:
+              *54,SRH_TITLE1:
+		            *110,SRH_RIGHT1,(SQUEEZE R_PAGE_NO)
+		      PRINT SRH_LEFT2,R_DATE:
+		            *54,SRH_TITLE2:
+		            *110,SRH_RIGHT2,R_TIME
+	       MOVE	   2		 TO LINE_NO
+
+      	 RETURN
+
+
+. -----------------------------------------------------------------------------
+. Print	Subheadings
+. -----------------------------------------------------------------------------
+PRINT_SUBHDGS
+     	  PRINT	   HDR1_REC
+        PRINT    HDR2_REC:           
+		               *N=4
+		      PRINT    HDR3_REC:
+		               *C,HDR4_REC
+	       ADD 7 TO LINE_NO
+
+      	 RETURN
+
+
+. ----------------------------
+. Print	Report
+. ----------------------------
+
+PRINT_REPORT
+     	  LOOP
+	       IF	(LINE_NO > LINE_MAX)
+	           CALL      PRINT_HEADING
+	           CALL      PRINT_SUBHDGS
+	       ENDIF
+	       MOVE      OGB_SEQ1 TO OGB_SEQ
+	       CALL      READ_OGBFILE USING OUT_FILE,OUT_NME,OUT_REC
+
+	       IF	(RESULT <> 1) 
+            IF (FIRST_READ = "Y"))
+                CALL      PRINT_SUBHDGS
+                PRINT     *N,*N,*34,"NO RECORDS TO PRINT",*N,*N
+    	       ENDIF
+            BREAK
+	       ENDIF
+
+	       IF	(FIRST_READ = "Y")
+            CALL PRINT_SUBHDGS
+            MOVE "N" TO FIRST_READ
+	       ENDIF
+	
+        MOVE      OUT_TAX1 TO DET1_TAXID
+	       MOVE      OUT_ID TO DET1_RECID      
+	       MOVE      OUT_OFFICE TO DET1_OFFICE   
+***	       MOVE      OUT_PRONAME TO DET1_PRONAME
+***	       MOVE      OUT_ADDR1 TO DET2_ADDR1
+***        MOVE      OUT_CITY_ST_ZIP TO DET2_CSZ             
+	       PRINT     DET1_REC
+        PRINT     DET2_REC,*N
+	       ADD       3 TO LINE_NO
+
+	       ADD       1 TO X_CNT5
+        UNPACK X_CNT5 INTO CNT1_3,CNT1_4                                   
+        IF (CNT1_4 = "0000")                                                
+            CALL X_DISPLAY_COUNTS                                          
+        ENDIF                                                              
+
+      	 REPEAT
+
+	       RETURN
+
+
+. -----------------------------------------------------------------------------
+. Because prv1201.p01 is getting deleted each night when this program runs, 
+. keep a week's worth of date-stamped backups out on /mcs/f in case 
+. the User Deparment needs a reprint.
+.
+. ++Note:  these prv1201.p01.{ccyymmdd} files are deleted after they've
+.          been on the system for 10 days by the print script, prv1201.lpr. 
+. -----------------------------------------------------------------------------
+BACKUP_REPORT
+         PACK SCRATCH WITH "cp $MCSDIR/f/prv1201.p01 ":
+                           "/w/prv1201.p01.":
+                           CONTRACT_ENDDT
+         ROLLOUT SCRATCH
+         IF OVER
+             IF (RUN_MODE = "N")
+                 ERROR     HORZ="15",VERT="19":
+                           BGCOL=C_ERRB,FGCOL=C_ERRF:
+                           LNCOL=C_ERRL,SHADE="Y":
+                           TEXT="DATESTAMP COPY FAILED"
+             ENDIF
+             CHAIN "MENU"
+         ENDIF
+
+        RETURN
+
+. -------------------------------
+. Set up POP read for PROI file
+. -------------------------------
+SETPOP_PROI
+    MOVEADR PROI_REC  TO POP_REC       ...Set up for POP.IO
+    MOVEADR PROI_SW   TO POP_SW
+    MOVEADR PROI_DECL TO POP_DECL
+    MOVEADR PROI_NAME TO POP_NAME
+    MOVEADR PROI_KEY  TO POP_KEY
+    MOVEADR PROI_OLD  TO POP_OLD
+    MOVEADR PROI_BASE TO POP_ID
+    MOVEADR PROI_LINE TO POP_LINE
+    RETURN
+
+. ---------------------------------------------------------------------------
+. Operator pressed F9
+. ---------------------------------------------------------------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+
+. ----------------------------------------------------------------------------
+. Close Files
+. ----------------------------------------------------------------------------
+CLOSE_FILES
+
+.I/O FILES                                                                     
+         CALL CLOSE_OGBFILE USING CONTRACT_TFILE, CONTRACT_TXT
+                                                                                
+.OUTPUT FILES 
+         CALL CLOSE_OGBFILE USING OUT_FILE, OUT_NME
+         
+     RETURN
+
+
+. -----------------------------------------------------------------------------
+. Normal End-Of-Job Routine
+. -----------------------------------------------------------------------------
+NORMAL_EOJ
+
+         IF (RUN_MODE = "N")                                      
+           	 MOVE      "        NEOJ            " TO X_FINISH_STATUS
+	            MOVE      "    PRV7500 Completed   " TO X_PROG_FINISH
+             CALL      X_END_OF_JOB
+         ENDIF
+         
+     RETURN
+
+
+. ----------------------------------------------------------------------------
+. Subroutines Found in Includes
+. ----------------------------------------------------------------------------
+
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       PRINT.SR
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       POP.IO
+              INC       X_OGBFILE.IO
+
+
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                               End of PRV7500.PS
+. +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

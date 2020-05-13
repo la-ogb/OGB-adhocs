@@ -1,0 +1,628 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0808282                                               +
++    Description    :  Creates NIC pdf                                        +
++    apsjm 08/28/2006 A0608282 dev - Initial Version 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++---------------------------------Revisions-----------------------------------+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       PRT.RL               ...Printer Definition File
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       VALID.RL             ... VALID CODE TABLE
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+. ----------------------------xx
+. Input File Name
+. ----------------------------
+NICC_FD_1          FILE    VAR=1000,TEXT
+NICC_NAME_1        INIT    "/w/nicc_ppo.txt"
+.
+NICC_FD_2          FILE    VAR=1000,TEXT
+NICC_NAME_2        INIT    "/w/nicc_epo.txt"
+.
+NICC_FD_3          FILE    VAR=1000,TEXT
+NICC_NAME_3        INIT    "/w/nicc_fara.txt"
+.
+NICC_FD_4          FILE    VAR=1000,TEXT
+NICC_NAME_4        INIT    "/w/nicc_human.txt"
+.
+NICC_FD_5          FILE    VAR=1000,TEXT
+NICC_NAME_5        INIT    "/w/nicc_vant.txt"
+.
+NICC_LIST          LIST
+NICC_HNET          DIM     20
+NICC_EE_AC         FORM    5
+NICC_EE_NM         FORM    5
+NICC_EE_1M         FORM    5
+NICC_EE_CB         FORM    5
+NICC_ES_AC         FORM    5
+NICC_ES_NM         FORM    5
+NICC_ES_1M         FORM    5
+NICC_ES_2M         FORM    5
+NICC_ES_CB         FORM    5
+NICC_EC_AC         FORM    5
+NICC_EC_NM         FORM    5
+NICC_EC_1M         FORM    5
+NICC_EC_2M         FORM    5
+NICC_EC_CB         FORM    5
+NICC_FM_AC         FORM    5
+NICC_FM_NM         FORM    5
+NICC_FM_1M         FORM    5
+NICC_FM_2M         FORM    5
+NICC_FM_CB         FORM    5
+NICC_TOT           FORM    7
+                   LISTEND
+
+. ----------------------------
+. Output file declarations
+. ----------------------------
+
+. ----------------------------   
+. Sub Heading Line Definitions
+. ----------------------------   
+
+SUB1_REC      LIST
+..<Begin>..............................................................................
+SUB1_FL1      DIM    74
+SUB1_FL2      INIT  "NIC DATA FOR: "
+SUB1_FL3      DIM    10
+..<End>................................................................................
+              LISTEND
+.
+. ----------------------------
+. Detail Lines Definition
+. ----------------------------
+
+DET1_REC      LIST
+D1FL_1        DIM     3
+D1FL_HPLAN    DIM     20
+              LISTEND
+.
+DET2_REC      LIST
+D2FL_1        DIM     6
+D2FL_DEPC     DIM     20             
+              LISTEND
+.
+DET3_REC      LIST
+D3FL_1        DIM     12 
+D3FL_RT       DIM     11                 
+D3FL_2        DIM     2
+D3FL_CT       DIM    6
+              LISTEND
+.
+END_DASH_REC  LIST
+END_DASH_F1   DIM    22  
+END_DASH_DASH INIT   "----------"
+              LISTEND
+.
+TTL_REC       LIST   
+TTL_F1        DIM    15 
+TTL_L1        INIT   "TOTAL: "
+TTL_HPLAN     DIM     9  
+              LISTEND
+.
+GTL_REC       LIST   
+GTL_F1        DIM    9  
+GTL_L1        INIT   "GRAND TOTAL: "
+GTL_HPLAN     DIM     9  
+              LISTEND
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+MASK5           INIT      "ZZ,ZZ9"
+MASK7           INIT      "Z,ZZZ,ZZ9"
+CCYY             DIM       4 
+MM               DIM       2
+DD               DIM       2
+SSN_2            DIM       2
+SSN_3            DIM       3
+SSN_4            DIM       4
+NICC_GTL         FORM      7  
+RUN_CNT          FORM      1
+FIRST_PAGE       DIM       1
+TIMESTAMP        DIM       14
+CURRDATE         DIM       8
+TODAY            DIM       8
+TODAY_CCYYMM     DIM       6
+JUNK1            DIM       1
+JUNK2            DIM       2
+JUNK3            DIM       3
+JUNK4            DIM       4
+CHK_CCYYMM       DIM       6
+WRITE_COUNT      FORM      8
+TRAP_DATA        DIM       500
+CAL_CLOCK        DIM       21
+ORIG_RETURN      FORM      5
+CURR_RETURN      FORM      5
+MEME_RET_CODE    FORM      1
+CNT1_4           DIM       4
+CNT1_3           DIM       3
+CNT3_4           DIM       4
+CNT3_3           DIM       3
+FIRST_READ       INIT     "Y"
+
+. ...Report Fields
+
+PAGE_NO       FORM      5
+LINE_NO       FORM      3
+LINE_MAX      FORM     "57"
+
+R_PAGE_NO     DIM       5
+R_DATE        DIM      10
+R_TIME        DIM       8
+YES           INIT     "Y"
+NO            INIT     "N"
+
+. ...Printing Controls
+
+NORM_10       DIM      29
+BOLD_10       DIM      29
+NORM_12       DIM      26
+BOLD_12       DIM      26
+NORM_16       DIM      33
+BOLD_16       DIM      33
+
+ESC_CHAR      EQU      27
+XCAPE         INIT     ESC_CHAR
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+              LISTEND
+
+. ----------------------------
+. Standard report headings
+. ----------------------------
+
+SRH_LEFT1     INIT      "Program name: "
+SRH_LEFT2     INIT      "Date Printed: "
+SRH_TITLE1    INIT      "   STATE OF LOUISIANA   "
+SRH_TITLE2    INIT      "OFFICE OF GROUP BENEFITS"
+SRH_RIGHT1    INIT      "Page Number: "
+SRH_RIGHT2    INIT      "Report Time: "
+SRH_DASH      INIT      "-"
+SRH_RNO       DIM       3
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler
+. ----------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "NIC PDF" TO  C_OPER
+         MOVE      "A0608282"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+. Get printer information
+. ---------------------------
+
+         MOVE      "00000004" TO C_PRTUSR
+         CALL      PRINT_PICK      .this routine gives the user a printer list
+         RETURN    IF (RESULT = 2)
+
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
++++++++++++++++++<BEGIN MAIN PROCESS>++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         DEBUG
+         CALL      INITIALIZE
+. ...Prepare Report
+         CALL      REPORT_PREP
+. ...Print Heading
+         CALL      PRINT_HEADING
+         CALL      PRINT_SUBHDGS
+         CALL      OPEN_FILES
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      READ_OGBFILE USING NICC_FD_1,NICC_NAME_1,NICC_LIST
+         CALL      PRINT_REPORT
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      READ_OGBFILE USING NICC_FD_2,NICC_NAME_2,NICC_LIST
+         CALL      PRINT_REPORT
+         CALL      PRINT_HEADING
+         CALL      PRINT_SUBHDGS
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      READ_OGBFILE USING NICC_FD_3,NICC_NAME_3,NICC_LIST
+         CALL      PRINT_REPORT
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      READ_OGBFILE USING NICC_FD_4,NICC_NAME_4,NICC_LIST
+         CALL      PRINT_REPORT
+         CALL      PRINT_HEADING
+         CALL      PRINT_SUBHDGS
+         MOVE      OGB_SEQ1 TO OGB_SEQ
+         CALL      READ_OGBFILE USING NICC_FD_5,NICC_NAME_5,NICC_LIST
+         CALL      PRINT_REPORT
+.
+         EDIT NICC_GTL INTO MASK7 GIVING GTL_HPLAN
+         PRINT GTL_REC
+         CALL      PRINT_DONE
+.
+         CALL CLOSE_FILES
+.
+. ...Normal End-Of-Job
+         CALL      X_DISPLAY_COUNTS
+         CALL      NORMAL_EOJ
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
++++++++++++++++++++<END OF MAIN PROCESS>+++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+         MOVE      TODAY         TO  TODAY_CCYYMM,JUNK2
+
+. ...Display Counters
+         MOVE      "Records Read:     " TO X_CNTDESC1
+         MOVE      "Not Used:         " TO X_CNTDESC2
+         MOVE      "Not Used:         " TO X_CNTDESC3
+         MOVE      "Not Used:         " TO X_CNTDESC4
+         MOVE      "Not Used:         " TO X_CNTDESC5
+         MOVE      "Not Used:         " TO X_CNTDESC6
+
+         CALL      X_DISPLAY_COUNTS
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING NICC_FD_1,NICC_NAME_1          
+         CALL      OPEN_OGBFILE USING NICC_FD_2,NICC_NAME_2          
+         CALL      OPEN_OGBFILE USING NICC_FD_3,NICC_NAME_3          
+         CALL      OPEN_OGBFILE USING NICC_FD_4,NICC_NAME_4          
+         CALL      OPEN_OGBFILE USING NICC_FD_5,NICC_NAME_5          
+         RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+         CALL      CLOSE_OGBFILE USING NICC_FD_1,NICC_NAME_1          
+         CALL      CLOSE_OGBFILE USING NICC_FD_2,NICC_NAME_2          
+         CALL      CLOSE_OGBFILE USING NICC_FD_3,NICC_NAME_3          
+         CALL      CLOSE_OGBFILE USING NICC_FD_4,NICC_NAME_4          
+         CALL      CLOSE_OGBFILE USING NICC_FD_5,NICC_NAME_5          
+         RETURN
+
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+. ----------------------------
+. Prepare The Report
+. ----------------------------
+
+REPORT_PREP
+
+. ----------------------------
+. Initialization
+. ----------------------------
+
+         UNPACK    TIMESTAMP   INTO  W_YEAR,W_MM,W_DD,W_HH,W_MN,W_SS
+         PACK      R_DATE      WITH  W_MM,"/",W_DD,"/",W_YEAR,BLANKS
+         PACK      R_TIME      WITH  W_HH,":",W_MN,":",W_SS,BLANKS
+         MOVE      0             TO  WRITE_COUNT
+         MOVE      YES           TO  FIRST_PAGE
+
+. ----------------------------
+. Set up font variables
+. ----------------------------
+
+. This set of code is for printing landscape
+.        PACK      NORM_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s0b4099T"
+.        PACK      BOLD_10 WITH  XCAPE,"&l2a1O",XCAPE,"(s p10.00h12.0v0s3b4099T"
+.        PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+.        PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+.        PACK      NORM_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+.        PACK      BOLD_16 WITH  XCAPE,"&l2a1o5.45C",XCAPE,"(s0p16.67h8.5v0s0b0T"
+         MOVE      "-01" TO SRH_RNO
+         PACK      C_PRTFILE WITH "/w/nic.pdf"
+         MOVE      "08/01/2006" TO SUB1_FL3
+.        MOVE      "L" TO C_ORIENT
+         SET       C_PCL
+.        CALL      PRINT_PREP
+.
+
+. This set of code is for printing portrait
+         PACK      NORM_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s0b4099T"
+         PACK      BOLD_10 WITH  XCAPE,"(10U",XCAPE,"(s0p10.00h12.0v0s3b4099T"
+         PACK      NORM_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s0b3T"
+         PACK      BOLD_12 WITH  XCAPE,"(10U",XCAPE,"(s0p12.00h12.0v0s3b3T"
+         PACK      NORM_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s0b0T"
+         PACK      BOLD_16 WITH  XCAPE,"(11U",XCAPE,"(s0p16.67h8.5v0s3b0T"
+         CALL      PRINT_PREP
+        RETURN
+
+. ----------------------------
+. Print the report heading
+. ----------------------------
+
+PRINT_HEADING
+
+         ADD       1           TO  PAGE_NO
+         MOVE      PAGE_NO     TO  R_PAGE_NO
+
+.         IF (FIRST_PAGE = YES)
+.            MOVE      NO          TO  FIRST_PAGE
+.            PRINT     XCAPE,"E",XCAPE,"&l0O"; 
+.         ELSE
+.            PRINT          *F;
+.         ENDIF
+
+.         PRINT BOLD_16
+
+        IF (FIRST_PAGE = YES)
+            PRINT *FONT="COURIER(07,BOLD)"
+            MOVE  NO  TO FIRST_PAGE
+          ELSE
+            PRINT *FONT="COURIER(07,BOLD)",*F
+        ENDIF
+
+    PRINT     *3,SRH_LEFT1,(SQUEEZE C_PROG),SRH_RNO:
+                   *73,SRH_TITLE1:
+                   *117,SRH_RIGHT1,(SQUEEZE R_PAGE_NO):
+                   *N:
+                   *3,SRH_LEFT2,R_DATE:
+                   *73,SRH_TITLE2:
+                   *117,SRH_RIGHT2,R_TIME,*FLUSH
+         MOVE      3             TO LINE_NO
+         RETURN
+
+. ----------------------------
+. Print Subheadings
+. ----------------------------
+
+PRINT_SUBHDGS
+         PRINT        *1,SUB1_REC,*N:
+                      *N,*N:
+                      *N,*FLUSH
+                      
+         ADD 7 TO LINE_NO
+         RETURN
+
+. ----------------------------
+. Print Report
+. ----------------------------
+
+PRINT_REPORT
+  MOVE NICC_HNET TO D1FL_HPLAN
+  MOVE "Enrollee" TO D2FL_DEPC
+  PRINT DET1_REC,*N,DET2_REC
+  MOVE "Active" TO D3FL_RT
+  EDIT NICC_EE_AC INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret No Med" TO D3FL_RT
+  EDIT NICC_EE_NM INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret One/Med" TO D3FL_RT
+  EDIT NICC_EE_1M INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Cobra" TO D3FL_RT
+  EDIT NICC_EE_CB INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+
+  MOVE "Enrollee + Spouse" TO D2FL_DEPC
+  PRINT *N,DET2_REC
+  MOVE "Active" TO D3FL_RT
+  EDIT NICC_ES_AC INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret No Med " TO D3FL_RT
+  EDIT NICC_ES_NM INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret One/Med" TO D3FL_RT
+  EDIT NICC_ES_1M INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret Two/Med" TO D3FL_RT
+  EDIT NICC_ES_2M INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Cobra" TO D3FL_RT
+  EDIT NICC_ES_CB INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+
+  CLEAR D2FL_DEPC
+  MOVE "Enrollee + Child" TO D2FL_DEPC
+  PRINT *N,DET2_REC
+  MOVE "Active" TO D3FL_RT
+  EDIT NICC_EC_AC INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret No Med " TO D3FL_RT
+  EDIT NICC_EC_NM INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret One/Med" TO D3FL_RT
+  EDIT NICC_EC_1M INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret Two/Med" TO D3FL_RT
+  EDIT NICC_EC_2M INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Cobra" TO D3FL_RT
+  EDIT NICC_EC_CB INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+
+  CLEAR D2FL_DEPC
+  MOVE "Family" TO D2FL_DEPC
+  PRINT *N,DET2_REC
+  MOVE "Active" TO D3FL_RT
+  EDIT NICC_FM_AC INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret No Med " TO D3FL_RT
+  EDIT NICC_FM_NM INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret One/Med" TO D3FL_RT
+  EDIT NICC_FM_1M INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Ret Two/Med" TO D3FL_RT
+  EDIT NICC_FM_2M INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  CLEAR D3FL_RT
+  MOVE "Cobra" TO D3FL_RT
+  EDIT NICC_FM_CB INTO MASK5 GIVING D3FL_CT
+  PRINT DET3_REC
+  
+  PRINT END_DASH_REC
+  EDIT NICC_TOT INTO MASK7 GIVING TTL_HPLAN
+  PRINT TTL_REC,*N,*N
+
+  ADD NICC_TOT TO NICC_GTL 
+  RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         IF (RUN_MODE = "N")
+             DISPLAY   *P16:18,*BGCOLOR=*CYAN,*EL         
+             MOVE      "        NEOJ        " TO X_FINISH_STATUS
+             MOVE      "    INV0405 Completed    " TO X_PROG_FINISH
+             CALL      X_END_OF_JOB
+         ENDIF
+         
+         CALL      X_DISPLAY_COUNTS
+
+         RETURN
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+              INC       UTIL.SR
+              INC       PRINT.SR
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       VALID.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0608282.PS
+. +++++++++++++++++++++++++++++++++++++

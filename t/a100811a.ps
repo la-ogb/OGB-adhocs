@@ -1,0 +1,690 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a100811a       
++    Description    :  add 07/2010 & 08/2010 invoice files together     
++  apsjm 08/11/2010 a100811a ADH - Ininital Version                
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+++++++++++++++++++++++++++++++++++<REVISIONS>++++++++++++++++++++++++++++++++
++----------------------------------------------------------------------------
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       PRT.RL               ...Printer definition file
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+   INC           INVOICE.RL
+.
+   INC           INV_SAV.RL
+.------------------
+. File Declarations
+.------------------
+.INPUT
+INVOICE_08_FD          FILE      VAR=333,TEXT
+INVOICE_08_NAME        INIT      "/w/invoice_all_noadj_201008.txt"
+INVOICE_08_KEY         DIM       13
+
+.
+INVOICE_07_FD          FILE      VAR=333,TEXT
+INVOICE_07_NAME        INIT      "/w/invoice_all_noadj_201007.txt"
+INVOICE_07_KEY         DIM       13
+.
+.OUTPUT
+INVOICE_0708_FD        FILE      VAR=333,TEXT
+INVOICE_0708_NAME      INIT      "/w/invoice_0708.txt"
+.
+INVOICE_07_RESULT FORM  1
+INVOICE_08_RESULT FORM  1
+SAV_INV_REC   DIM       333
+VAL_RESULT    FORM      001
+TIMESTAMP     DIM       014
+CURRDATE      DIM       008
+READ_COUNT    FORM      008
+KEEP_COUNT    FORM      008
+ERROR_COUNT   FORM      008
+INV_07_REC    DIM        333
+INV_08_REC    DIM        333
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM       010
+PARAM_YYY     DIM       005
+PARAM_DATE    DIM       008
+              LISTEND
+.---------------------------
+. Program Specific variables
+.---------------------------
+DECIML            DIM     1
+PERIOD            INIT    "."
+DIM2              DIM     2
+DIM2A             DIM     2
+DIM2B             DIM     2
+DIM3              DIM     3
+DIM4              DIM     4
+DIM4A             DIM     4
+DIM5              DIM     5
+DIM6              DIM     6
+DIM8              DIM     8
+DIM10             DIM     10
+DIM11             DIM     11
+DIM_X1            DIM     1
+DIM_X2            DIM     1
+DIM_X3            DIM     1
+DIM_X4            DIM     1
+DIM_X5            DIM     1
+DIM_X6            DIM     1
+WRK_INVLIST   LIST
+WS_ENR_LIFEAMT    FORM      8.2
+WS_ADMREVFEE      FORM      8.2
+WS_TOTHEALTH      FORM      8.2
+WS_DEP_LIFEAMT    FORM      8.2
+WS_ENR_TOTHEALTH  FORM      8.2
+WS_RET100AMT      FORM      8.2
+WS_PSYRIDERAMT    FORM      8.2
+WS_INV_HSAEE      FORM      8.2
+WS_INV_HSAEO      FORM      8.2
+              LISTEND
+.
+DIM_11                  DIM      11
+DIM_2                   DIM      2
+DIM_4                   DIM      4
+DIM_8                   DIM      8
+DISP_3                  DIM      003
+DISP_4                  DIM      004
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+FORM92                  FORM     8.2
+FORM922                FORM     8.2
+BLANK8        		INIT     "        "
+JUNK4         		DIM      004
+TRAP_DATA     		DIM      500
+TODAY         		DIM      008
+CAL_CLOCK     		DIM      021
+PLAN_FIELD    		DIM      004  
+
+.....> START HERE
+  debug
+  IF (C_RMODE = "B")
+      PACK RUN_MODE WITH "B"
+  ENDIF
+  
+  CALL      RUN_NOW
+  
+  IF (C_RMODE = "B")
+      SHUTDOWN
+  ENDIF
+ 
+  CHAIN     C_NEXT 			    chains to back to the menu
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+  INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+  RETCOUNT  ORIG_RETURN
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "menu"                    TO  C_NEXT
+  MOVE      "ADD INV FILES" TO  C_OPER
+  MOVE      "a100811a"                 TO C_PROG
+  MOVE      BLANKS                    TO  C_LABEL
+  MOVE      BLANKS                    TO  C_FILE
+  MOVE      BLANKS                    TO  C_KEYS
+  CLOCK     CALENDAR                  INTO  CAL_CLOCK
+  CALL X_BLANK_SCREEN
+
+
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+  TRAPSAVE TRAP_DATA
+  TRAPCLR ALL
+  TRAP QUIT NORESET IF F9
+
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+  CALL SCHED_PICK
+  IF (RUN_MODE = "B" OR RUN_MODE = "N")
+     CALL MAIN_PROCESS
+  ENDIF
+
+  RETURN
+
+
+
+.******************************************************************************
+MAIN_PROCESS
+.******************************************************************************
+  DEBUG
+  CALL INITIALIZE
+.
+  DEBUG 
+  CALL OPEN_FILES
+.
+  CALL READ_INV_07
+  CALL READ_INV_08
+  CALL CREATE_COMB_FILE
+.
+  CALL CLOSE_FILES
+.
+.
+  TRAPREST TRAP_DATA
+
+.  IF NOT (C_CMDPAR)           ...UN-comment this IF statement, when common.cb
+      MOVE SCH_RTSUCC  TO  SCH@RTCODE ...is rolled in to gb2.
+.  ENDIF
+
+  RETURN
+
+
+
+.******************************************************************************
+QUIT
+.******************************************************************************
+.--------------------
+. Operator pressed F9
+. -------------------
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR C_NOHIST
+  TRAPREST TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+
+      MOVE SCH_RTABRT  TO  SCH@RTCODE
+
+      RETURN
+  ENDIF
+  CHAIN "MENU"
+
+    
+
+.******************************************************************************
+INITIALIZE
+.******************************************************************************
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.------------------
+...Display Counters
+.------------------
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Records Found: " TO X_CNTDESC2
+  DISPLAY *ES
+  CALL X_DISPLAY_COUNTS
+
+  RETURN
+
+.******************************************************************************
+OPEN_FILES
+.******************************************************************************
+  CALL OPEN_OGBFILE USING INVOICE_08_FD,INVOICE_08_NAME 
+.
+  CALL OPEN_OGBFILE USING INVOICE_07_FD,INVOICE_07_NAME 
+.
+  CALL PREP_OGBFILE USING INVOICE_0708_FD,INVOICE_0708_NAME 
+  RETURN
+
+READ_INV_07
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  CALL READ_OGBFILE USING INVOICE_07_FD,INVOICE_07_NAME,INVOICE_LIST
+  MOVE RESULT TO INVOICE_07_RESULT
+  IF (RESULT = 1)
+   ADD 1 TO X_CNT1
+   UNPACK X_CNT1 INTO DISP_4,DISP_3
+   IF (DISP_3 = "000")
+       CALL X_DISPLAY_COUNTS
+   ENDIF
+   CLEAR INV_07_REC
+   CLEAR INVOICE_07_KEY
+   UNPACK AGENCYNO INTO DIM_4
+   PACKLEN INVOICE_07_KEY WITH DIM_4, ENR_SSN
+   PACKLEN INV_07_REC WITH INVOICE_LIST
+  ENDIF 
+  RETURN
+
+READ_INV_08
+  MOVE OGB_SEQ1 TO OGB_SEQ
+  CALL READ_OGBFILE USING INVOICE_08_FD,INVOICE_08_NAME,INVOICE_LIST
+  MOVE RESULT TO INVOICE_08_RESULT
+  IF (RESULT = 1)
+   ADD 1 TO X_CNT1
+   UNPACK X_CNT1 INTO DISP_4,DISP_3
+   IF (DISP_3 = "000")
+       CALL X_DISPLAY_COUNTS
+   ENDIF
+   CLEAR INV_08_REC
+   CLEAR INVOICE_08_KEY
+   UNPACK AGENCYNO INTO DIM_4
+   PACKLEN INVOICE_08_KEY WITH DIM_4, ENR_SSN
+   PACKLEN INV_08_REC WITH INVOICE_LIST
+  ENDIF 
+  RETURN
+.******************************************************************************
+CREATE_COMB_FILE
+.******************************************************************************
+.-------------------------------------
+. Create combined file
+.-------------------------------------
+  DEBUG
+         LOOP
+            IF ((INVOICE_08_RESULT <> 1) AND (INVOICE_07_RESULT <> 1))
+               BREAK
+            ELSE
+              IF (INVOICE_08_RESULT <> 1)
+                 CALL ON_INV_07
+                 CALL READ_INV_07
+              ELSE
+                IF (INVOICE_07_RESULT <> 1)
+                   CALL ON_INV_08          
+                   CALL READ_INV_08
+                ELSE
+                  IF (INVOICE_08_KEY < INVOICE_07_KEY)
+                     DEBUG
+                     CALL ON_INV_08          
+                     CALL READ_INV_08
+                  ELSE
+                     IF (INVOICE_07_KEY <INVOICE_08_KEY)
+                        CALL ON_INV_07        
+                        CALL READ_INV_07
+                     ELSE
+                        CALL ON_BOTH
+                        CALL READ_INV_08
+                        CALL READ_INV_07
+                     ENDIF
+                  ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+         REPEAT
+         RETURN
+
+
+ON_BOTH
+        UNPACK INV_07_REC INTO SAV_INV_LIST
+        UNPACK INV_08_REC INTO INVOICE_LIST  
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE ENR_LIFEAMT TO FORM92
+        MOVE SAV_ENR_LIFEAMT TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_ENR_LIFEAMT
+        MOVE WS_ENR_LIFEAMT TO DIM11
+        UNPACK DIM11 INTO DIM8,DIM1,DIM2
+        UNPACK DIM8 INTO DIM4,DIM4A    
+        PACK ENR_LIFEAMT WITH DIM4A,PERIOD,DIM2
+        REPLACE " 0" IN ENR_LIFEAMT
+        UNPACK ENR_LIFEAMT INTO DIM4A,DECIML,DIM2
+        UNPACK DIM4A INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4
+                       PACK ENR_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4
+                       PACK ENR_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3
+                       PACK ENR_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+ 
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE ADMREVFEE TO FORM92
+        MOVE ADMREVFEE TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_ADMREVFEE  
+        MOVE WS_ADMREVFEE TO DIM11
+        UNPACK DIM11 INTO DIM8,DIM1,DIM2
+        UNPACK DIM8 INTO DIM4,DIM4A    
+        PACK ADMREVFEE WITH DIM4A,PERIOD,DIM2
+        REPLACE " 0" IN ADMREVFEE
+        UNPACK ADMREVFEE INTO DIM4A,DECIML,DIM2
+        UNPACK DIM4A INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4
+                       PACK ADMREVFEE WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4
+                       PACK ADMREVFEE WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3
+                       PACK ADMREVFEE WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+  
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE TOTHEALTH TO FORM92
+        MOVE SAV_TOTHEALTH TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_TOTHEALTH  
+    MOVE WS_TOTHEALTH TO DIM11
+    UNPACK DIM11 INTO DIM8,DIM1,DIM2
+    UNPACK DIM8 INTO DIM3,DIM5    
+    PACK TOTHEALTH WITH DIM5,PERIOD,DIM2
+    REPLACE " 0" IN TOTHEALTH
+        UNPACK TOTHEALTH INTO DIM5,DECIML,DIM2
+        UNPACK DIM5 INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4,DIM_X5         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4,DIM_X5
+                       PACK TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4,DIM_X5
+                       PACK TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3,DIM_X5
+                       PACK TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X5
+               SCAN "-" IN DIM_X5
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X5,DIM_X1,DIM_X2,DIM_X3,DIM_X4
+                       PACK TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+
+
+ 
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE DEP_LIFEAMT TO FORM92
+        MOVE SAV_DEP_LIFEAMT TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_DEP_LIFEAMT
+
+    MOVE WS_DEP_LIFEAMT TO DIM11
+    UNPACK DIM11 INTO DIM8,DIM1,DIM2
+    UNPACK DIM8 INTO DIM4,DIM4A    
+    PACK DEP_LIFEAMT WITH DIM4A,PERIOD,DIM2
+    REPLACE " 0" IN DEP_LIFEAMT
+        UNPACK DEP_LIFEAMT INTO DIM4A,DECIML,DIM2
+        UNPACK DIM4A INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4
+                       PACK DEP_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4
+                       PACK DEP_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3
+                       PACK DEP_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+
+
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE ENR_TOTHEALTH TO FORM92
+        MOVE SAV_ENR_TOTHEALTH TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_ENR_TOTHEALTH
+
+    MOVE WS_ENR_TOTHEALTH TO DIM11
+    UNPACK DIM11 INTO DIM8,DIM1,DIM2
+    UNPACK DIM8 INTO DIM3,DIM5    
+    PACK ENR_TOTHEALTH WITH DIM5,PERIOD,DIM2
+    REPLACE " 0" IN ENR_TOTHEALTH
+        UNPACK ENR_TOTHEALTH INTO DIM5,DECIML,DIM2
+        UNPACK DIM5 INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4,DIM_X5         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4,DIM_X5
+                       PACK ENR_TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4,DIM_X5
+                       PACK ENR_TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3,DIM_X5
+                       PACK ENR_TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X5
+               SCAN "-" IN DIM_X5
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X5,DIM_X1,DIM_X2,DIM_X3,DIM_X4
+                       PACK ENR_TOTHEALTH WITH DIM5,PERIOD,DIM2
+                   ENDIF
+
+
+ 
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE RET100AMT   TO FORM92
+        MOVE SAV_RET100AMT   TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_RET100AMT  
+
+    MOVE WS_RET100AMT TO DIM11
+    UNPACK DIM11 INTO DIM8,DIM1,DIM2
+    UNPACK DIM8 INTO DIM4,DIM4A    
+    PACK RET100AMT WITH DIM4A,PERIOD,DIM2
+    REPLACE " 0" IN RET100AMT
+        UNPACK RET100AMT INTO DIM4A,DECIML,DIM2
+        UNPACK DIM4A INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4
+                       PACK RET100AMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4
+                       PACK RET100AMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3
+                       PACK RET100AMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+
+
+
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE PSYRIDERAMT TO FORM92
+        MOVE SAV_PSYRIDERAMT TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_PSYRIDERAMT
+        MOVE WS_PSYRIDERAMT TO DIM11
+        UNPACK DIM11 INTO DIM8,DIM1,DIM2
+        UNPACK DIM8 INTO DIM4,DIM4A    
+        PACK PSYRIDERAMT WITH DIM4A,PERIOD,DIM2
+        REPLACE " 0" IN PSYRIDERAMT
+        UNPACK ENR_LIFEAMT INTO DIM4A,DECIML,DIM2
+        UNPACK DIM4A INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4
+                       PACK ENR_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4
+                       PACK ENR_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM4A WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3
+                       PACK ENR_LIFEAMT WITH DIM4A,PERIOD,DIM2
+                   ENDIF
+ 
+        DEBUG
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE INV_HSAEE   TO FORM92
+        MOVE SAV_INV_HSAEE   TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_INV_HSAEE  
+        MOVE WS_INV_HSAEE   TO DIM11
+    UNPACK DIM11 INTO DIM8,DIM1,DIM2
+    UNPACK DIM8 INTO DIM3,DIM5    
+    PACK INV_HSAEE WITH DIM5,PERIOD,DIM2
+    REPLACE " 0" IN INV_HSAEE    
+        UNPACK INV_HSAEE INTO DIM5,DECIML,DIM2
+        UNPACK DIM5 INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4,DIM_X5         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4,DIM_X5
+                       PACK INV_HSAEE WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4,DIM_X5
+                       PACK INV_HSAEE WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3,DIM_X5
+                       PACK INV_HSAEE WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X5
+               SCAN "-" IN DIM_X5
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X5,DIM_X1,DIM_X2,DIM_X3,DIM_X4
+                       PACK INV_HSAEE WITH DIM5,PERIOD,DIM2
+                   ENDIF
+
+
+  
+        CLEAR FORM92
+        CLEAR FORM922
+        MOVE INV_HSAEO   TO FORM92
+        MOVE SAV_INV_HSAEO   TO FORM922
+        MOVE (FORM92 + FORM922) TO WS_INV_HSAEO  
+        MOVE WS_INV_HSAEO   TO DIM11
+    UNPACK DIM11 INTO DIM8,DIM1,DIM2
+    UNPACK DIM8 INTO DIM3,DIM5    
+    PACK INV_HSAEO WITH DIM5,PERIOD,DIM2
+    REPLACE " 0" IN INV_HSAEO    
+        UNPACK INV_HSAEO INTO DIM5,DECIML,DIM2
+        UNPACK DIM5 INTO DIM_X1,DIM_X2,DIM_X3,DIM_X4,DIM_X5         
+               RESET DIM_X2
+               SCAN "-" IN DIM_X2
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X2,DIM_X1,DIM_X3,DIM_X4,DIM_X5
+                       PACK INV_HSAEO WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X3
+               SCAN "-" IN DIM_X3
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X3,DIM_X1,DIM_X2,DIM_X4,DIM_X5
+                       PACK INV_HSAEO WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X4
+               SCAN "-" IN DIM_X4
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X4,DIM_X1,DIM_X2,DIM_X3,DIM_X5
+                       PACK INV_HSAEO WITH DIM5,PERIOD,DIM2
+                   ENDIF
+               RESET DIM_X5
+               SCAN "-" IN DIM_X5
+                   IF EQUAL
+                       PACK DIM5 WITH DIM_X5,DIM_X1,DIM_X2,DIM_X3,DIM_X4
+                       PACK INV_HSAEO WITH DIM5,PERIOD,DIM2
+                   ENDIF
+
+        IF (SQUEEZE ENR_SSN = "")
+           DEBUG
+        ENDIF
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL WRITE_OGBREC USING INVOICE_0708_FD,INVOICE_0708_NAME,INVOICE_LIST
+        CLEAR INVOICE_LIST
+      RETURN
+
+ON_INV_07
+      UNPACK INV_07_REC INTO INVOICE_LIST
+        IF (SQUEEZE ENR_SSN = "")
+           DEBUG
+        ENDIF
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING INVOICE_0708_FD,INVOICE_0708_NAME,INVOICE_LIST
+      CLEAR INVOICE_LIST
+      RETURN
+ 
+ON_INV_08
+      UNPACK INV_08_REC INTO INVOICE_LIST
+        IF (SQUEEZE ENR_SSN = "")
+           DEBUG
+        ENDIF
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING INVOICE_0708_FD,INVOICE_0708_NAME,INVOICE_LIST
+      CLEAR INVOICE_LIST
+      RETURN
+.******************************************************************************
+CLOSE_FILES 
+.******************************************************************************
+
+    RETURN
+. 
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+  INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

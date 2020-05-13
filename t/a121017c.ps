@@ -1,0 +1,1992 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a121017c.ps     
++    Description    :  Creates Blue Cross CHIP5/LEV0 elg file for run-out.
++  apsjm 10/18/2012 A1210171 MOD - Initial Version            
++++++++++++++++++++++++++++++++<REVISIONS>+++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       PRT.RL               ...Printer definition file
+    INC       CMDPARAM.CB          ...Command Line Routines
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       CLI.RL               ...Client Record
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL              ...Mem. Enr/Elig Record
+    INC       MEMO.RL              ...Member Other Coverage Record
+    INC       MEMA.RL              ...Member Accumulators              
+    INC       BLUELG_CR.RL
+    INC       BLUELG_PR.RL
+
+
+.------------------
+. File Declarations
+.------------------
+X_ACTBLUE_FILE            FILE      VAR=20,TEXT
+X_ACTBLUE_NAME            INIT      "/w/a121017c_meme.actblue"
+X_ACTBLUE_LIST            LIST
+X_ACTBLUE_KEY1            DIM       008
+X_ACTBLUE_KEY2            DIM       004
+X_ACTBLUE_EFF             DIM       008
+                          LISTEND
+.
+.
+W_BLUE_FD               FILE      VAR=31,TEXT
+W_BLUE_NME              INIT      "/w/a121017c.wrk"
+W_BLUE_LIST             LIST
+W_BLUE_KEY1             DIM       008
+W_BLUE_KEY2             DIM       004
+W_BLUE_REL              DIM       002
+W_BLUE_ESSN             DIM       009
+W_BLUE_EFF              DIM       008
+                          LISTEND 
+.
+W_BLUE_SRTKEY          INIT      "13-14A 24-31D -T"
+.
+SUB_EFF_FD               IFILE     VAR=17,KEYL=9,TEXT
+SUB_EFF_NME              INIT      "/w/a121017c_sub_eff.ix1"
+SUB_EFF_LIST             LIST
+SUB_EFF_ESSN             DIM       9
+SUB_EFF_EFF              DIM       8
+                         LISTEND      
+.
+X_CUR_FILE               IFILE     VAR=463,KEYL=8,NODUP,TEXT
+X_CUR_NAME               INIT      "/w/bluecr_chip5_lev0.ix1"
+X_CUR_TXT_NAME           INIT      "/w/bluecr_chip5_lev0.txt"
+
+X_PRI_FILE               FILE      VAR=463,TEXT        
+X_PRI_NAME               INIT      "/w/bluepr.txt"
+.
+MEME_WRK_FD   FILE      VAR=18,TEXT
+MEME_WRK_NME  INIT      "/w/a121017c.meme.wrk"
+MEME_WRK_LIST LIST
+MEME_WRK_EFF  DIM       8
+MEME_WRK_TRM  DIM       8
+MEME_WRK_RT   DIM       2
+              LISTEND 
+MEME_WRK_SRTKEY INIT "1-8 -T"
+.
+MEME_WRK2_FD  FILE      VAR=20,TEXT
+MEME_WRK2_NME  INIT      "/w/a121017c.meme.wrk2"
+MEME_WRK2_LIST LIST
+MEME_WRK2_EFF DIM       8
+MEME_WRK2_TRM DIM       8
+MEME_WRK2_A   DIM       4
+              LISTEND
+MEME_WRK3_FD  FILE      VAR=16,TEXT
+MEME_WRK3_NME INIT      "/w/a121017c.meme.wrk3"
+MEME_WRK3_LIST LIST
+MEME_WRK3_EFF DIM       8
+MEME_WRK3_TRM DIM       8
+              LISTEND
+MEME_WRK4_FD   FILE      VAR=20,TEXT
+MEME_WRK4_NME  INIT      "/w/a121017c.meme.wrk4"
+MEME_WRK4_LIST LIST
+MEME_WRK4_EFF  DIM       8
+MEME_WRK4_TRM  DIM       8
+MEME_WRK4_DEPC DIM       2
+              LISTEND
+END_DATE      INIT     "20111231"
+FIRST_READ    INIT     "N"
+CMP_TRM       DIM       8
+NEW_EFF       DIM       8
+SAV_EFF       DIM       8
+SAV_TRM       DIM       8
+DHH           INIT      "DHH  "
+CHIP5         INIT      "CHIP5"
+LEV0          INIT      "LEV0"
+ASOT_SRTKEY   INIT      "001-009 223-224 -T"
+VAL_RESULT    FORM      001
+MEMO_RESULT    FORM      001
+X_CPY_NAME    INIT      "bluepr"
+FOUR_THIRTY      INIT      "1630"
+ST_HHMM          DIM       4
+ST_SEC           DIM       2
+G_EFF            DIM      008
+SAVE_DOB      DIM       8
+SAVE_REL      DIM       2
+WS_AGE        DIM       3
+W_MEDA        DIM       4
+W_MEDB        DIM       4  
+BLANK_24      DIM       24
+FORM_72       FORM      7.2
+W_DIM1        DIM       1
+WS_ZIP5       DIM       005
+WS_ZIP1       DIM       001
+WS_ZIP4       DIM       004
+WS_ZIP3       DIM       003
+W_COV         DIM       001
+DATE1         DIM       008
+FIRST_PAGE    DIM       001
+SAV_HOLD      DIM       006
+FIRST_TIME    DIM       001
+LAST_CLM1     DIM       008
+WORK_COUNT    DIM       008
+FRONT         DIM       005
+BACK          DIM       003
+TIMESTAMP     DIM       014
+CURRDATE      DIM       008
+READ_COUNT    FORM      008
+KEEP_COUNT    FORM      008
+WRITE_COUNT   FORM      008
+ERROR_COUNT   FORM      008
+MONEY1        FORM      7.2
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+WORK_TEXT     INIT      "JUNK"
+ACTION        DIM       010          
+SWT_ACCU      DIM       1
+
+
+. ...Scheduler Fields for Autosys
+
+PARAM_LIST        LIST     WITH NAMES
+PARAM_FILE        DIM      12
+PARAM_FROM        DIM      8
+PARAM_THRU        DIM      8
+                  LISTEND
+
+
+PARAM_LST    LIST
+PARAM_XXX     DIM       010
+PARAM_YYY     DIM       005
+PARAM_DATE    DIM       008
+              LISTEND
+
+.---------------------------
+. Program Specific variables
+.---------------------------
+W_TERM_DATE   DIM      8
+W_TERM_TYPE   DIM      1
+S_DATE        DIM      8
+S_TYPE        DIM      1
+SAVE_NET      		DIM      005
+SAVE_TRM      		DIM      008
+MEME_WRK_KEY            DIM      002
+SAVE_MEME_WRK_KEY       DIM      002
+MEME_WRK_A_KEY          DIM      004
+SAVE_MEME_WRK_A_KEY     DIM      004
+EARLIEST_EFF_DATE       DIM      008
+WORK_DATE     		DIM      008
+NUM_OF_DAYS             FORM     005
+MEME_RESULT             FORM     001
+WS_SSN        		DIM      009
+SAVE_DEPC     		DIM      002
+.SAVE_EFF      		DIM      008
+BLANK8        		INIT     "        "
+JUNK4         		DIM      004
+TRAP_DATA     		DIM      500
+TODAY         		DIM      008
+CAL_CLOCK     		DIM      021
+PLAN_FIELD    		DIM      004  
+CHG_RET_CODE  		FORM     001
+
+PLAN_LIST    	       LIST
+PLAN_BYTE1    		DIM      001
+PLAN_REST     		DIM      003
+ORIG_RETURN   		FORM     005
+CURR_RETURN   		FORM     005
+DISP_3        		DIM      003
+DISP_4        		DIM      004
+FORM_08       		FORM     008
+DIM49                   DIM      049
+WRK_DIM1                DIM      001
+WRK_DIM4    	        DIM      004
+                       LISTEND
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 			    chains to back to the menu
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+      MOVE      "menu"                 TO  C_NEXT
+      MOVE      "CHIP5/LEV0 Run-Out Elg"     TO  C_OPER
+      MOVE      "a121017c"              TO  C_PROG
+      MOVE      BLANKS                 TO  C_LABEL
+      MOVE      BLANKS                 TO  C_FILE
+      MOVE      BLANKS                 TO  C_KEYS
+      CLOCK     CALENDAR               INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ---------------------------------
+... Adding CMD_START for autosys
+. ---------------------------------
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE TRAP_DATA
+      TRAPCLR ALL
+      TRAP QUIT NORESET IF F9
+
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+
+
+.******************************************************************************
+MAIN_PROCESS
+.******************************************************************************
+  DEBUG
+  CALL INITIALIZE
+.
+  DEBUG 
+  CALL REFORMAT_MEME
+.
+  CALL OPEN_FILES
+.
+  CALL CREATE_NEW_WORK
+.
+  CALL      CLOSE_OGBFILE USING W_BLUE_FD,W_BLUE_NME
+.
+  CALL      SORT_OGBFILE   USING  W_BLUE_NME,W_BLUE_NME:
+                                  W_BLUE_SRTKEY
+    IF OVER
+       IF (NOT C_CMDPAR)
+           ERROR  HORZ="15",VERT="19":
+                  BGCOL=C_ERRB,FGCOL=C_ERRF:
+                  LNCOL=C_ERRL,SHADE="Y":
+                  TEXT="SORT ELG0812.WRK FAILED"
+       ELSE
+          IF (C_CMDPAR)
+             CALL CMD_ERROR USING "Sort elg0812.wrk failed"
+             STOP
+          ENDIF
+       ENDIF
+    ENDIF
+.
+  CALL OPEN_OGBFILE USING W_BLUE_FD,W_BLUE_NME
+.
+  CALL CREATE_CURRENT_FILE
+.
+. CALL UPDATE_CURRENT_FILE
+.
+  CALL SORT_CURRENT_FILE
+.
+  CALL CLOSE_FILES
+.
+  CALL COPY_CUR_TO_PRI
+.
+. ROLLOUT "elg0812.ftp"   
+  IF OVER
+     IF (NOT C_CMDPAR)  
+       ERROR HORZ="15",VERT="19":
+             BGCOL=C_ERRB,FGCOL=C_ERRF:
+             LNCOL=C_ERRL,SHADE="Y":
+             TEXT="ELG0812.FTP FAILED" 
+      CHAIN "MENU"
+     ELSE
+       IF (C_CMDPAR)
+         CALL CMD_ERROR USING "elg0812.ftp failed"
+         STOP
+       ENDIF
+     ENDIF
+  ENDIF       
+
+
+  TRAPREST TRAP_DATA
+  IF (C_CMDPAR)
+      CALL CMD_END
+      STOP
+  ENDIF
+
+      MOVE SCH_RTSUCC  TO  SCH@RTCODE
+
+  RETURN
+
+
+
+.******************************************************************************
+QUIT
+.******************************************************************************
+.--------------------
+. Operator pressed F9
+. -------------------
+
+
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR C_NOHIST
+  TRAPREST TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+
+      MOVE SCH_RTABRT  TO  SCH@RTCODE
+
+      RETURN
+  ENDIF
+  CHAIN "MENU"
+
+    
+
+.******************************************************************************
+INITIALIZE
+.******************************************************************************
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+  UNPACK    TIMESTAMP   INTO  CURRDATE,ST_HHMM,ST_SEC
+
+.------------------
+...Display Counters
+.------------------
+  MOVE "Records Read: " TO X_CNTDESC1
+  MOVE "Records Found: " TO X_CNTDESC2
+  MOVE "Records Updated: " TO X_CNTDESC3
+
+  IF (NOT C_CMDPAR)
+    CALL X_DISPLAY_COUNTS
+  ENDIF
+
+.------------------------------------------------------------------------
+...Calculate a new compare date to be 12 months prior to the current date.
+...This date will be used when updating the current file.
+.------------------------------------------------------------------------
+  CALL DATE_CALC USING CURRDATE,"SUB","MONTHS",12,WORK_DATE
+
+  RETURN
+
+.******************************************************************************
+OPEN_FILES
+.******************************************************************************
+  MOVE X_ACTBLUE_NAME TO C_FILE
+  CALL OPEN_OGBFILE USING X_ACTBLUE_FILE,X_ACTBLUE_NAME
+
+  MOVE X_PRI_NAME TO C_FILE
+  CALL OPEN_OGBFILE USING X_PRI_FILE,X_PRI_NAME
+
+  MOVE X_CUR_NAME TO C_FILE
+  CALL PREP_OGBFILE_IX USING X_CUR_FILE,X_CUR_NAME
+
+  MOVE W_BLUE_NME TO C_FILE
+  CALL PREP_OGBFILE USING W_BLUE_FD,W_BLUE_NME
+
+  MOVE SUB_EFF_NME TO C_FILE
+  CALL PREP_OGBFILE_IX USING SUB_EFF_FD,SUB_EFF_NME
+
+  RETURN
+
+
+.******************************************************************************
+REFORMAT_MEME
+.******************************************************************************
+.--------------------------------------------
+...Display message to Operator to Please Wait
+.--------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+.----------------------------------
+...Get only BLUE CROSS records                
+.----------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /w/a121017c_meme.blue":  
+                      " -p112-116eq#"",DHH,"#"":
+                      " -p117-121eq#"",CHIP5,"#"":
+                      " -p126-129eq#"",LEV0,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(a121017c_meme.blue)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+            CALL CMD_ERROR USING "a121017c_meme.blue"
+            STOP
+        ENDIF
+      ENDIF
+    ENDIF
+
+.-------------------------------------------------------------------------
+...Get only BLUE Records From a121017c_meme.blue without term dates
+.-------------------------------------------------------------------------
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "/w/a121017c_meme.blue /w/a121017c_meme.actblue 1-12 96-103":
+                      " -p104-111eq#"",BLANK8,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+         ERROR HORZ="15",VERT="19":
+               BGCOL=C_ERRB,FGCOL=C_ERRF:
+               LNCOL=C_ERRL,SHADE="Y":
+               TEXT="REFORMAT FAILED(a121017c_meme.actblue)"
+         CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+           CALL CMD_ERROR USING "a121017c_meme.actblue"
+           STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+.-----------------------------------------------------------------------------
+...Get only B C Records From a121017c_meme.blue with future term dates 
+.-----------------------------------------------------------------------------
+ MOVE BLANKS TO SCRATCH
+ PACK SCRATCH WITH "/w/a121017c_meme.blue /w/a121017c_meme.actblue 1-12 96-103":
+                      " -p104-111gt#"",END_DATE,"#" -t -j -a"
+    REFORMAT SCRATCH
+    IF OVER
+      IF (NOT C_CMDPAR)
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(a121017c_meme.actblue append)"
+        CHAIN "MENU"
+      ELSE
+        IF (C_CMDPAR)
+           CALL CMD_ERROR USING "a121017c_meme.actblue append"
+           STOP
+        ENDIF
+      ENDIF
+    ENDIF
+ 
+.-------------------------------------------------------
+...Display message to operator that reformat is complete
+.-------------------------------------------------------
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y":
+            TEXT="     !!!!! REFORMAT COMPLETE !!!!!     ";
+    RETURN
+
+CREATE_NEW_WORK
+  LOOP      
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING X_ACTBLUE_FILE,X_ACTBLUE_NAME,X_ACTBLUE_LIST
+      IF (RESULT <> 1)
+          CALL X_DISPLAY_COUNTS
+          BREAK 
+      ENDIF
+
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO DISP_4,DISP_3
+      IF (DISP_3 = "000")
+          CALL X_DISPLAY_COUNTS
+      ENDIF
+      PACK MEM_FK11 WITH X_ACTBLUE_KEY1
+      CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                           MEM_FN:              ...FILE NAME LIST
+                           MEM_FC:              ...TYPE OF INDEX
+.                                               ...(I)NDEX or (A)IMDEX
+                           MEM_FV:              ...FILE KEY VARLISTS
+                           MEM_FK:              ...FILE KEY SIZES
+                           MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                           MEM_REC:             ...FILE RECORD (PACKED)
+		           MEM_OLD:             ...FILE SAVED WHEN READ
+                           MEM_QTY:             ...NUMBER OF FIlES
+                           1                    ...FILE NUMBER FOR THIS READ
+ 
+      IF (RESULT <> 1)
+          CONTINUE
+      ENDIF
+      MOVE X_ACTBLUE_KEY1 TO W_BLUE_KEY1
+      MOVE X_ACTBLUE_KEY2 TO W_BLUE_KEY2
+      MOVE X_ACTBLUE_EFF TO W_BLUE_EFF
+      MOVE MEM_ESSN TO W_BLUE_ESSN
+      MOVE MEM_REL TO W_BLUE_REL
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC USING W_BLUE_FD,W_BLUE_NME,W_BLUE_LIST
+  REPEAT    
+  RETURN
+
+.-------------------------------------------------------
+. Create current file 
+.-------------------------------------
+CREATE_CURRENT_FILE
+  LOOP      
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING W_BLUE_FD,W_BLUE_NME,W_BLUE_LIST
+      IF (RESULT <> 1)
+          CALL X_DISPLAY_COUNTS
+          BREAK 
+      ENDIF
+
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO DISP_4,DISP_3
+      IF (DISP_3 = "000")
+          CALL X_DISPLAY_COUNTS
+      ENDIF
+
+      MOVE TODAY TO CRASO_TRNDT           ...TRANSACTION DATE
+ 
+.-------------------------
+...Get info from MEME_FILE
+.-------------------------
+      PACK MEME_FK11 WITH W_BLUE_KEY1,W_BLUE_KEY2
+      CALL FILE_READ USING MEME_FD:       ...FILE DECLARATION LIST
+                           MEME_FN:       ...FILE NAME LIST
+                           MEME_FC:       ...TYPE OF INDEX
+.                                         ...(I)NDEX or (A)IMDEX
+                           MEME_FV:       ...FILE KEY VARLIST
+                           MEME_FK:       ...FILE KEY SIZES
+                           MEME_LIST:     ...FILE RECORD (FIELD LIST)
+                           MEME_REC:      ...FILE RECORD (PACKED)
+                           MEME_OLD:      ...FILE SAVED WHEN READ
+                           MEME_QTY:      ...NUMBER OF FILES
+                           1              ...FILE NUMBER FOR THIS READ
+   
+      IF (RESULT <> 1)
+          CALL X_DISPLAY_COUNTS
+          CONTINUE
+      ENDIF
+            
+      SWITCH MEME_PRD
+         CASE "CHIP5" 
+         DEFAULT
+           CONTINUE
+      ENDSWITCH
+      IF (SQUEEZE MEME_PLAN <> "LEV0")
+         CONTINUE
+      ENDIF
+      IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+          CONTINUE         
+      ENDIF
+
+      IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+          CONTINUE         
+      ENDIF
+
+      IF ((SQUEEZE MEME_TRM <> "") AND (MEME_EFF > MEME_TRM))
+          CONTINUE
+      ENDIF
+
+      MOVE X_CUR_NAME TO C_FILE
+      MOVE W_BLUE_KEY1 TO CRASO_RECID
+      CALL READ_OGBFILE_IX USING X_CUR_FILE,X_CUR_NAME:
+                                 CRASO_RECID,CRASO_LIST 
+      IF (RESULT = 1)
+          CONTINUE
+      ENDIF
+      CLEAR SAV_TRM
+      MOVE MEME_ID1 TO CRASO_RECID       ...RECORD ID
+      MOVE MEME_PREX TO CRASO_PORDT      ...PORTABILITY DATE
+      MOVE MEME_ORIG TO CRASO_PRX_B      ...PRE-EXIST START DATE
+      MOVE MEME_LEV1 TO CRASO_GROUP      ...GROUP    
+      MOVE MEME_LEV2 TO CRASO_LOCA       ...LOCATION
+      MOVE MEME_HIRE TO CRASO_HIRDT      ...DATE ENROLLEE HIRED    
+      MOVE MEME_RT   TO CRASO_RT         ...RATE TABLE
+      IF ((SQUEEZE CRASO_GROUP <> "5000") AND:  
+          (SQUEEZE CRASO_LOCA <> "90"))
+        IF (SQUEEZE MEME_TRM <> "")
+            MOVE MEME_TRM TO SAV_TRM   ... TERM DATE
+            MOVE MEME_TRM TO CRASO_TRMDT
+        ELSE
+            MOVE BLANKS TO CRASO_TRMDT
+        ENDIF
+      ELSE
+            MOVE MEME_TRM TO CRASO_TRMDT
+      ENDIF
+.------------------------         
+...Get info from MEM-FILE
+.------------------------
+      PACK MEM_FK11 WITH MEME_ID1     
+      CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                           MEM_FN:              ...FILE NAME LIST
+                           MEM_FC:              ...TYPE OF INDEX
+.                                               ...(I)NDEX or (A)IMDEX
+                           MEM_FV:              ...FILE KEY VARLISTS
+                           MEM_FK:              ...FILE KEY SIZES
+                           MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                           MEM_REC:             ...FILE RECORD (PACKED)
+		           MEM_OLD:             ...FILE SAVED WHEN READ
+                           MEM_QTY:             ...NUMBER OF FIlES
+                           1                    ...FILE NUMBER FOR THIS READ
+ 
+      IF (RESULT <> 1)
+          CONTINUE
+      ENDIF
+
+      MOVE MEM_ESSN TO CRASO_ESSN               ...ENROLLEE SSN
+      MOVE MEM_LNAME TO CRASO_MLNAM             ...MEMBER LAST NAME
+      MOVE MEM_FNAME TO CRASO_MFNAM             ...MEMBER FIRST NAME
+      MOVE MEM_MINIT TO CRASO_MINIT             ...MEMBER MIDDLE INITIAL
+      MOVE MEM_ADDR1 TO CRASO_ADR1              ...ADDRESS 1
+      MOVE MEM_ADDR2 TO CRASO_ADR2              ...ADDRESS 2
+      MOVE MEM_CITY TO CRASO_CITY               ...CITY
+      MOVE MEM_STATE TO CRASO_STAT              ...STATE
+      MOVE MEM_CCODE TO CRASO_COUNT             ...COUNTRY_CODE
+      CLEAR SAV_HOLD
+      IF (SQUEEZE MEM_HOLD = "PR30")
+        MOVE MEM_US02 TO CRASO_HLDCLM              .. HOLD CLAIMS AFTER DATE
+      ELSE
+         IF (SQUEEZE MEM_HOLD = "UNVDEP")
+             MOVE MEM_US02 TO CRASO_HLDCLM              .. HOLD CLAIMS AFTER DATE
+             MOVE MEM_HOLD TO SAV_HOLD
+         ELSE
+             CLEAR CRASO_HLDCLM
+         ENDIF
+      ENDIF
+
+      CLEAR S_DATE
+      CLEAR S_TYPE
+      IF ((SQUEEZE CRASO_TRMDT = "") AND (SQUEEZE CRASO_HLDCLM = ""))
+      ELSE
+          IF (SQUEEZE CRASO_TRMDT = "")
+             MOVE CRASO_HLDCLM TO S_DATE
+             MOVE "H" TO S_TYPE
+          ELSE
+             IF (SQUEEZE CRASO_HLDCLM = "")
+                MOVE CRASO_TRMDT TO S_DATE
+                MOVE "T" TO S_TYPE
+             ELSE
+                MOVE CRASO_TRMDT TO S_DATE
+                MOVE "T" TO S_TYPE
+                IF (CRASO_HLDCLM <> S_DATE)
+                   MOVE CRASO_HLDCLM TO S_DATE
+                   MOVE "H" TO S_TYPE
+                ENDIF 
+             ENDIF
+          ENDIF
+      ENDIF   
+
+      UNPACK MEM_ZIP WITH WS_ZIP5,WS_ZIP1,WS_ZIP4,WS_ZIP3
+      TYPE WS_ZIP1
+      IF NOT EQUAL
+          PACK CRASO_ZIP WITH WS_ZIP5,WS_ZIP4
+      ELSE
+          PACK CRASO_ZIP WITH MEM_ZIP                 ... ZIP CODE
+      ENDIF
+
+      MOVE MEM_DOB TO CRASO_DOB                 ...DATE OF BIRTH
+      MOVE BLANKS TO CRASO_STUDT              ...STUDENT DATE
+      MOVE MEM_WPHN TO CRASO_PHONE              ...TELEPHONE NUMBER
+      MOVE MEM_MARD TO CRASO_MARDT              ...MARIAGE DATE
+      MOVE MEM_PSSN TO CRASO_MSSN               ...MEMBER SSN
+      MOVE MEM_HIPA TO CRASO_SURV_TYP           ...SURVIVOR TYPE
+      IF (CRASO_MSSN = "000000000")
+         CLEAR CRASO_MSSN 
+      ENDIF
+      IF (MEM_REL = "01")
+         IF (SQUEEZE CRASO_MSSN = "")
+            MOVE MEM_ESSN TO CRASO_MSSN
+         ENDIF
+      ENDIF 
+      MOVE MEM_SEX TO CRASO_SEX                 ...MEMBER SEX
+      MOVE MEM_REL TO CRASO_RELA                ...MEMBERS RELATIONSHIP TO ENR.
+      CLEAR CRASO_HANDI
+      IF ((SQUEEZE MEM_LIFE = "HANDIC") OR (SQUEEZE MEM_LIFE = "HANDI") OR:
+          (SQUEEZE MEM_LIFE = "HAND") OR:       ...MEMBERS HANDICAP STATUS 
+          (SQUEEZE MEM_LIFE = "LSUHDC"))  
+          MOVE  "Y" TO CRASO_HANDI
+      ELSE
+          MOVE "N" TO CRASO_HANDI
+      ENDIF
+
+      SWITCH MEM_REL
+             CASE "01"
+                  CALL MATCH_COVERAGE
+             DEFAULT   
+                  MOVE MEM_ESSN TO WS_SSN
+                  PACKLEN MEM_SAV WITH MEM_LIST
+                  PACKLEN MEME_SAV WITH MEME_LIST
+                  CALL GET_DEPC 
+                  UNPACK MEM_SAV INTO MEM_LIST
+                  UNPACK MEME_SAV INTO MEME_LIST
+                  MOVE SAVE_DEPC TO MEME_DEPC
+             CALL MATCH_COVERAGE 
+      ENDSWITCH
+      MOVE MEME_PLAN TO CRASO_PRD
+      PACKLEN MEMA_KEY WITH W_BLUE_KEY1,BLANK_24,"LIFE","19010101",BLANKS
+      CALL MEMA_READ
+      IF (RESULT = 1) 
+         MOVE MEMA_AMT TO FORM_72     
+         IF (FORM_72 > 0)
+           MOVE MEMA_AMT TO CRASO_L_ACC
+         ENDIF
+      ENDIF 
+      PACKLEN MEMA_KEY WITH W_BLUE_KEY1,BLANK_24,"DRUG","19010101",BLANKS
+      CALL MEMA_READ
+      IF (RESULT = 1)
+         MOVE MEMA_AMT TO CRASO_P_ACC
+      ENDIF 
+      PACKLEN MEMA_KEY WITH W_BLUE_KEY1,BLANK_24,"NMA ","19010101",BLANKS
+      CALL MEMA_READ
+      IF (RESULT = 1)
+         MOVE MEMA_AMT TO CRASO_M_ACC
+      ENDIF 
+.
+.-------------------------
+...Get info from MEMO_FILE
+.-------------------------     
+      CLEAR CRASO_MEDA_P_E           ...MEDICARE A PRIM EFF DATE
+      CLEAR CRASO_MEDA_P_T           ...MEDICARE A PRIM TRM DATE
+      CLEAR CRASO_COBDT              ...COB DATE
+      CLEAR CRASO_HICNM              ...HIC NUMBER
+      CLEAR CRASO_MEDB_P_E           ...MEDICARE B PRIM EFF DATE
+      CLEAR CRASO_MEDB_P_T           ...MEDICARE B PRIM TRM DATE
+      CLEAR PRASO_MEDA_E           ...MEDICARE A EFF DATE
+      CLEAR PRASO_MEDA_T           ...MEDICARE A TRM DATE
+      CLEAR PRASO_MEDB_E           ...MEDICARE B EFF DATE
+      CLEAR PRASO_MEDB_T           ...MEDICARE B TRM DATE
+      CALL GET_MED                   ...MEDICARE PRIMARY DATES
+      IF ((SQUEEZE CRASO_MEDA_P_E <> "") OR (SQUEEZE CRASO_MEDB_P_E <> ""))
+          MOVE "y" TO CRASO_MEDPM             ...MEDICARE PRIMARY SWT (y/n)
+      ELSE
+          MOVE "n" TO CRASO_MEDPM             ...MEDICARE PRIMARY SWT (y/n)
+      ENDIF
+      CALL GET_EARLIEST_EFF
+      CALL GET_EARLIEST_EFF_2
+      CALL GET_EARLIEST_EFF_3
+      CALL GET_EARLIEST_EFF_R100
+      IF (EARLIEST_EFF_DATE <> "99999999")
+         MOVE EARLIEST_EFF_DATE TO CRASO_R100_EFF
+         IF (SQUEEZE SAVE_TRM = "")
+               MOVE BLANKS TO CRASO_R100_TRM
+         ELSE
+              MOVE SAVE_TRM TO CRASO_R100_TRM
+         ENDIF
+      ENDIF 
+      IF (SQUEEZE MEM_ACCU <> "")
+         PACKLEN MEME_SAV WITH MEME_LIST
+         CALL GET_XREF_HIS
+         IF (SWT_ACCU = "Y")
+           MOVE MEM_ACCU TO CRASO_XREF
+         ELSE
+           MOVE BLANKS TO CRASO_XREF
+         ENDIF
+         UNPACK MEME_SAV INTO MEME_LIST 
+      ELSE
+         MOVE BLANKS TO CRASO_XREF
+      ENDIF
+      IF (SQUEEZE SAV_TRM <> "")
+         IF (SQUEEZE SAV_EFF <> "")
+                 CLEAR NEW_EFF
+                 CALL DATE_CALC USING SAV_TRM,"ADD","DAYS",1,NEW_EFF
+                 IF (SAV_EFF = NEW_EFF)
+                       MOVE BLANKS TO CRASO_TRMDT
+                 ELSE
+                       MOVE SAV_TRM TO CRASO_TRMDT
+                 ENDIF
+         ENDIF
+      ENDIF
+      CALL GET_EARLIEST_EFF_4
+                   
+.--------------
+...Write record
+.--------------
+      IF (SQUEEZE SAV_HOLD = "UNVDEP")
+        MOVE "20080702" TO CRASO_HLDCLM
+      ENDIF
+      IF (CRASO_BCBS_EFF >= "20110701")
+         MOVE BLANKS TO CRASO_STUDT
+      ENDIF
+      MOVE X_CUR_NAME TO C_FILE
+      MOVE CRASO_RECID TO C_KEYS
+      CALL WRITE_OGBREC_IX USING X_CUR_FILE:
+                                 X_CUR_NAME:
+                                 CRASO_RECID:
+                                 CRASO_LIST
+      ADD 1 TO X_CNT2
+      CLEAR CRASO_LIST
+      REPEAT
+
+      RETURN
+
+. ----------------------------
+. Read for XREF in Blue Cross
+. ----------------------------
+
+GET_XREF_HIS 
+     CLEAR CMP_TRM
+     CLEAR SWT_ACCU
+     PACKLEN MEME_FK11 WITH MEM_ACCU,BLANKS
+     CALL FILE_READ USING MEME_FD:             ...FILE DECLARATION LIST
+                          MEME_FN:             ...FILE NAME LIST
+                          MEME_FC:             ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                          MEME_FV:             ...FILE KEY VARLIST
+                          MEME_FK:             ...FILE KEY SIZES
+                          MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                          MEME_REC:            ...FILE RECORD (PACKED)
+                          MEME_OLD:            ...FILE SAVED WHEN READ
+                          MEME_QTY:            ...NUMBER OF FILES
+                          1                    ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:             ...FILE DECLARATION LIST
+                               MEME_FN:             ...FILE NAME LIST
+                               MEME_FC:             ...TYPE OF INDEX
+.                                                   ...(I)NDEX or (A)IMDEX
+                               MEME_FV:             ...FILE KEY VARLIST
+                               MEME_FK:             ...FILE KEY SIZES
+                               MEME_LIST:           ...FILE RECORD (FIELD LIST)
+                               MEME_REC:            ...FILE RECORD (PACKED)
+                               MEME_OLD:            ...FILE SAVED WHEN READ
+                               MEME_QTY:            ...NUMBER OF FILES
+                               1                    ...FILE NUMBER FOR THIS READ
+              IF ((RESULT <> 1) OR (MEM_ACCU <> MEME_ID1))
+                 BREAK    
+              ENDIF
+              
+              IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                  CONTINUE
+              ENDIF
+              SWITCH MEME_PRD
+                CASE "CHIP5"
+                DEFAULT
+                 CONTINUE
+              ENDSWITCH
+              IF (SQUEEZE MEME_PLAN <> "LEV0")
+                CONTINUE
+              ENDIF
+              
+              IF (SQUEEZE MEME_TRM = "")
+                 FILL "9" IN CMP_TRM
+              ENDIF
+                   
+              IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+                  CONTINUE
+              ENDIF
+              IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+                  CONTINUE
+              ENDIF 
+              MOVE "Y" TO SWT_ACCU 
+              
+          REPEAT    
+
+          RETURN
+.
+..EARLIEST EFF WITHIN RATE TABLE
+GET_EARLIEST_EFF
+      DEBUG
+      CALL PREP_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME
+      PACK MEME_FK11 WITH W_BLUE_KEY1,BLANKS
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          MOVE RESULT TO MEME_RESULT
+          IF  ((W_BLUE_KEY1 <> MEME_ID1) OR (MEME_RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE         
+          ENDIF
+          IF (SQUEEZE MEME_NET = "LIFE")
+              CONTINUE
+          ENDIF
+          SWITCH MEME_PRD
+            CASE "CHIP5"
+            DEFAULT
+              CONTINUE
+          ENDSWITCH
+          IF (SQUEEZE MEME_PLAN <> "LEV0")
+             CONTINUE
+          ENDIF 
+          IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                  CONTINUE
+              ENDIF
+          ENDIF
+          MOVE MEME_EFF TO MEME_WRK_EFF
+          MOVE MEME_TRM TO MEME_WRK_TRM
+          IF (CRASO_RELA = "01")
+            MOVE MEME_RT TO MEME_WRK_RT
+          ENDIF
+          CALL WRITE_OGBREC USING MEME_WRK_FD,MEME_WRK_NME,MEME_WRK_LIST
+      REPEAT 
+      CALL CLOSE_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME 
+      CALL SORT_OGBFILE USING MEME_WRK_NME,MEME_WRK_NME,MEME_WRK_SRTKEY
+        IF OVER
+           IF (NOT C_CMDPAR)
+               ERROR HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT WORK FILE FAILED"
+           ELSE
+             IF (C_CMDPAR)
+                CALL CMD_ERROR USING "Sort Work File Failed"
+                STOP
+             ENDIF
+           ENDIF
+        ENDIF
+      CALL OPEN_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME 
+      MOVE "99999999" TO EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      CLEAR SAVE_MEME_WRK_KEY
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      LOOP
+         CALL READ_OGBFILE USING MEME_WRK_FD,MEME_WRK_NME,MEME_WRK_LIST
+         IF  (RESULT <> 1)
+               BREAK       
+          ENDIF
+          CLEAR NUM_OF_DAYS
+          IF (EARLIEST_EFF_DATE <> "99999999")
+            PACK MEME_WRK_KEY WITH MEME_WRK_RT
+            SWITCH CRASO_RELA
+             CASE "01"
+               IF (SAVE_MEME_WRK_KEY <> MEME_WRK_KEY)
+                  MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+               ELSE
+                  CALL DELTA_DAYS USING MEME_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+                  IF (NUM_OF_DAYS > 1)
+                     MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+                  ENDIF
+               ENDIF
+             DEFAULT
+               CALL DELTA_DAYS USING MEME_WRK_EFF,SAVE_TRM,NUM_OF_DAYS
+               IF (NUM_OF_DAYS > 1)
+                  MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+               ENDIF
+            ENDSWITCH              
+          ENDIF
+          MOVE MEME_WRK_TRM TO SAVE_TRM
+          IF (CRASO_RELA = "01")
+              PACK MEME_WRK_KEY WITH MEME_WRK_RT
+              MOVE MEME_WRK_KEY TO SAVE_MEME_WRK_KEY
+          ENDIF 
+          IF (EARLIEST_EFF_DATE = "99999999")
+              MOVE MEME_WRK_EFF TO EARLIEST_EFF_DATE
+          ENDIF
+      REPEAT 
+      IF (CRASO_RELA <> "01")
+        MOVE CRASO_ESSN TO SUB_EFF_ESSN
+        CALL READ_OGBFILE_IX USING SUB_EFF_FD,SUB_EFF_NME:
+                                   SUB_EFF_ESSN,SUB_EFF_LIST
+        IF (RESULT = 1)
+          IF (EARLIEST_EFF_DATE < SUB_EFF_EFF)
+            MOVE SUB_EFF_EFF TO CRASO_RATE_EFF     
+          ELSE
+            MOVE EARLIEST_EFF_DATE TO CRASO_RATE_EFF
+          ENDIF
+        ELSE
+            MOVE EARLIEST_EFF_DATE TO CRASO_RATE_EFF
+        ENDIF 
+      ELSE
+         MOVE EARLIEST_EFF_DATE TO CRASO_RATE_EFF     
+         MOVE CRASO_ESSN TO SUB_EFF_ESSN
+         CALL READ_OGBFILE_IX USING SUB_EFF_FD,SUB_EFF_NME:
+                                    SUB_EFF_ESSN,SUB_EFF_LIST
+         IF (RESULT <> 1)
+           MOVE EARLIEST_EFF_DATE TO SUB_EFF_EFF
+           MOVE CRASO_ESSN TO SUB_EFF_ESSN
+           CALL WRITE_OGBREC_IX USING SUB_EFF_FD,SUB_EFF_NME:
+                                      SUB_EFF_ESSN,SUB_EFF_LIST
+         ENDIF
+      ENDIF
+      RETURN
+     
+..EARLIEST EFF WITHIN AGENCY        
+GET_EARLIEST_EFF_2
+      DEBUG
+      CALL PREP_OGBFILE USING MEME_WRK2_FD,MEME_WRK2_NME
+      PACK MEME_FK11 WITH W_BLUE_KEY1,BLANKS
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          MOVE RESULT TO MEME_RESULT
+          IF  ((W_BLUE_KEY1 <> MEME_ID1) OR (MEME_RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE         
+          ENDIF
+          IF (SQUEEZE MEME_NET = "LIFE")
+              CONTINUE
+          ENDIF
+          SWITCH MEME_PRD
+            CASE "CHIP5"
+            DEFAULT
+              CONTINUE
+          ENDSWITCH
+          IF (SQUEEZE MEME_PLAN <> "LEV0")
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                  CONTINUE
+              ENDIF
+          ENDIF
+          MOVE MEME_EFF TO MEME_WRK2_EFF
+          MOVE MEME_TRM TO MEME_WRK2_TRM
+          UNPACK MEME_LEV1 INTO W_DIM1
+          IF (W_DIM1 = "R")
+              MOVE MEME_LEV2 TO MEME_WRK2_A
+          ELSE
+              MOVE MEME_LEV1 TO MEME_WRK2_A
+          ENDIF
+          CALL WRITE_OGBREC USING MEME_WRK2_FD,MEME_WRK2_NME,MEME_WRK2_LIST
+      REPEAT 
+      CALL CLOSE_OGBFILE USING MEME_WRK2_FD,MEME_WRK2_NME 
+      CALL SORT_OGBFILE USING MEME_WRK2_NME,MEME_WRK2_NME,MEME_WRK_SRTKEY
+        IF OVER
+           IF (NOT C_CMDPAR)
+              ERROR  HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT WORK-2 FILE FAILED"
+           ELSE
+             IF (C_CMDPAR)
+                CALL CMD_ERROR USING "Sort Work -2"
+                STOP
+             ENDIF
+           ENDIF
+        ENDIF
+      CALL OPEN_OGBFILE USING MEME_WRK2_FD,MEME_WRK2_NME 
+      MOVE "99999999" TO EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      CLEAR SAVE_MEME_WRK_A_KEY
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      LOOP
+         CALL READ_OGBFILE USING MEME_WRK2_FD,MEME_WRK2_NME,MEME_WRK2_LIST
+         IF  (RESULT <> 1)
+               BREAK       
+         ENDIF
+         CLEAR NUM_OF_DAYS
+         IF (EARLIEST_EFF_DATE <> "99999999")
+            PACK MEME_WRK_A_KEY WITH MEME_WRK2_A                      
+               IF (SAVE_MEME_WRK_A_KEY <> MEME_WRK_A_KEY)
+                  MOVE MEME_WRK2_EFF TO EARLIEST_EFF_DATE
+               ELSE
+                  CALL DELTA_DAYS USING MEME_WRK2_EFF,SAVE_TRM,NUM_OF_DAYS
+                  IF (NUM_OF_DAYS > 1)
+                     MOVE MEME_WRK2_EFF TO EARLIEST_EFF_DATE
+                  ENDIF
+               ENDIF
+         ENDIF
+         MOVE MEME_WRK2_TRM TO SAVE_TRM
+         PACK MEME_WRK_A_KEY WITH MEME_WRK2_A
+         MOVE MEME_WRK_A_KEY TO SAVE_MEME_WRK_A_KEY
+         IF (EARLIEST_EFF_DATE = "99999999")
+              MOVE MEME_WRK2_EFF TO EARLIEST_EFF_DATE
+         ENDIF
+      REPEAT 
+      MOVE EARLIEST_EFF_DATE TO CRASO_A_EFF 
+      RETURN
+     
+..EARLIEST EFF WITHIN BLUE_CROSS    
+GET_EARLIEST_EFF_3
+      DEBUG
+      CLEAR SAV_EFF
+      CALL PREP_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME
+      PACK MEME_FK11 WITH W_BLUE_KEY1,BLANKS
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL  FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          MOVE RESULT TO MEME_RESULT
+          IF  ((W_BLUE_KEY1 <> MEME_ID1) OR (MEME_RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE         
+          ENDIF
+          IF (SQUEEZE MEME_NET = "LIFE")
+              CONTINUE
+          ENDIF
+          SWITCH MEME_PRD
+            CASE "CHIP5"
+            DEFAULT
+              CONTINUE
+          ENDSWITCH
+          IF (SQUEEZE MEME_PLAN <> "LEV0")
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                  CONTINUE
+              ENDIF
+          ENDIF
+          IF (MEME_EFF > W_BLUE_EFF)
+                 IF (SQUEEZE SAV_EFF = "")
+                   MOVE MEME_EFF TO SAV_EFF
+                 ENDIF
+                 CONTINUE
+          ENDIF
+          MOVE MEME_EFF TO MEME_WRK3_EFF
+          MOVE MEME_TRM TO MEME_WRK3_TRM
+          CALL WRITE_OGBREC USING MEME_WRK3_FD,MEME_WRK3_NME,MEME_WRK3_LIST
+      REPEAT 
+      CALL CLOSE_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME 
+      CALL SORT_OGBFILE USING MEME_WRK3_NME,MEME_WRK3_NME,MEME_WRK_SRTKEY
+        IF OVER
+          IF (NOT C_CMDPAR)
+             ERROR   HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT WORK-3 FILE FAILED"
+          ELSE
+             IF (C_CMDPAR)
+                 CALL CMD_ERROR USING "Sort Work-3"
+                 STOP
+             ENDIF
+          ENDIF
+        ENDIF
+      CALL OPEN_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME 
+      MOVE "99999999" TO EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      CLEAR SAVE_MEME_WRK_KEY
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      LOOP
+         CALL READ_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME,MEME_WRK3_LIST
+         IF  (RESULT <> 1)
+               BREAK       
+         ENDIF
+         CLEAR NUM_OF_DAYS
+         IF (EARLIEST_EFF_DATE <> "99999999")
+                  CALL DELTA_DAYS USING MEME_WRK3_EFF,SAVE_TRM,NUM_OF_DAYS
+                  IF (NUM_OF_DAYS > 1)
+                     MOVE MEME_WRK3_EFF TO EARLIEST_EFF_DATE
+                  ENDIF
+         ENDIF
+         MOVE MEME_WRK3_TRM TO SAVE_TRM
+         IF (EARLIEST_EFF_DATE = "99999999")
+              MOVE MEME_WRK3_EFF TO EARLIEST_EFF_DATE
+         ENDIF
+      REPEAT 
+      MOVE EARLIEST_EFF_DATE TO CRASO_BCBS_EFF 
+      RETURN
+     
+.
+..EARLIEST EFF WITHIN COVERAGE LEVEL
+GET_EARLIEST_EFF_4
+      DEBUG
+      CLEAR W_COV
+      CALL PREP_OGBFILE USING MEME_WRK4_FD,MEME_WRK4_NME
+      PACK MEME_FK11 WITH W_BLUE_KEY1,BLANKS
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          MOVE RESULT TO MEME_RESULT
+          IF  ((W_BLUE_KEY1 <> MEME_ID1) OR (MEME_RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE         
+          ENDIF
+          IF (SQUEEZE MEME_NET = "LIFE")
+              CONTINUE
+          ENDIF
+          SWITCH MEME_PRD
+            CASE "CHIP5"
+            DEFAULT
+              CONTINUE
+          ENDSWITCH
+          IF (SQUEEZE MEME_PLAN <> "LEV0")
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                  CONTINUE
+              ENDIF
+          ENDIF
+          IF (CRASO_RELA = "01")
+            IF (MEME_DEPC = "FM")
+              MOVE "f" TO W_COV
+            ELSE
+              IF (MEME_DEPC = "EE")
+                MOVE "e" TO W_COV
+              ELSE
+                IF (MEME_DEPC = "ES")
+                   MOVE "s" TO W_COV
+                ELSE
+                   IF (MEME_DEPC = "EC")
+                      MOVE "c" TO W_COV
+                   ENDIF
+                ENDIF
+              ENDIF
+            ENDIF
+            IF (W_COV <> CRASO_COV)
+               CONTINUE
+            ENDIF
+          ENDIF
+          MOVE MEME_EFF TO MEME_WRK4_EFF
+          MOVE MEME_TRM TO MEME_WRK4_TRM
+          IF (CRASO_RELA = "01")
+            MOVE MEME_DEPC TO MEME_WRK4_DEPC
+          ENDIF
+          CALL WRITE_OGBREC USING MEME_WRK4_FD,MEME_WRK4_NME,MEME_WRK4_LIST
+      REPEAT 
+      CALL CLOSE_OGBFILE USING MEME_WRK4_FD,MEME_WRK4_NME 
+      CALL SORT_OGBFILE USING MEME_WRK4_NME,MEME_WRK4_NME,MEME_WRK_SRTKEY
+        IF OVER
+          IF (NOT C_CMDPAR)
+              ERROR  HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT WORK FILE FAILED"
+          ELSE
+            IF (C_CMDPAR)
+                CALL CMD_ERROR USING "Sort Work FILE"
+                STOP
+            ENDIF
+          ENDIF
+        ENDIF
+      CALL OPEN_OGBFILE USING MEME_WRK4_FD,MEME_WRK4_NME 
+      MOVE "99999999" TO EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      CLEAR SAVE_MEME_WRK_KEY
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      LOOP
+         CALL READ_OGBFILE USING MEME_WRK4_FD,MEME_WRK4_NME,MEME_WRK4_LIST
+         IF  (RESULT <> 1)
+               BREAK       
+          ENDIF
+          CLEAR NUM_OF_DAYS
+          IF (EARLIEST_EFF_DATE <> "99999999")
+            PACK MEME_WRK_KEY WITH MEME_WRK4_DEPC
+            SWITCH CRASO_RELA
+             CASE "01"
+               IF (SAVE_MEME_WRK_KEY <> MEME_WRK_KEY)
+                  MOVE MEME_WRK4_EFF TO EARLIEST_EFF_DATE
+               ELSE
+                  CALL DELTA_DAYS USING MEME_WRK4_EFF,SAVE_TRM,NUM_OF_DAYS
+                  IF (NUM_OF_DAYS > 1)
+                     MOVE MEME_WRK4_EFF TO EARLIEST_EFF_DATE
+                  ENDIF
+               ENDIF
+             DEFAULT
+               CALL DELTA_DAYS USING MEME_WRK4_EFF,SAVE_TRM,NUM_OF_DAYS
+               IF (NUM_OF_DAYS > 1)
+                  MOVE MEME_WRK4_EFF TO EARLIEST_EFF_DATE
+               ENDIF
+            ENDSWITCH              
+          ENDIF
+          MOVE MEME_WRK4_TRM TO SAVE_TRM
+          IF (CRASO_RELA = "01")
+              PACK MEME_WRK_KEY WITH MEME_WRK4_DEPC
+              MOVE MEME_WRK_KEY TO SAVE_MEME_WRK_KEY
+          ENDIF 
+          IF (EARLIEST_EFF_DATE = "99999999")
+              MOVE MEME_WRK4_EFF TO EARLIEST_EFF_DATE
+          ENDIF
+      REPEAT 
+      IF (CRASO_RELA <> "01")
+        MOVE CRASO_ESSN TO SUB_EFF_ESSN
+        CALL READ_OGBFILE_IX USING SUB_EFF_FD,SUB_EFF_NME:
+                                   SUB_EFF_ESSN,SUB_EFF_LIST
+        IF (RESULT = 1)
+          IF (EARLIEST_EFF_DATE < SUB_EFF_EFF)
+            MOVE SUB_EFF_EFF TO CRASO_DEPC_EFF     
+          ELSE
+            MOVE EARLIEST_EFF_DATE TO CRASO_DEPC_EFF
+          ENDIF
+        ELSE
+            MOVE EARLIEST_EFF_DATE TO CRASO_DEPC_EFF
+        ENDIF 
+      ELSE
+         MOVE EARLIEST_EFF_DATE TO CRASO_DEPC_EFF     
+         MOVE CRASO_ESSN TO SUB_EFF_ESSN
+         CALL READ_OGBFILE_IX USING SUB_EFF_FD,SUB_EFF_NME:
+                                    SUB_EFF_ESSN,SUB_EFF_LIST
+         IF (RESULT <> 1)
+           MOVE EARLIEST_EFF_DATE TO SUB_EFF_EFF
+           MOVE CRASO_ESSN TO SUB_EFF_ESSN
+           CALL WRITE_OGBREC_IX USING SUB_EFF_FD,SUB_EFF_NME:
+                                      SUB_EFF_ESSN,SUB_EFF_LIST
+         ENDIF
+      ENDIF
+      RETURN
+     
+GET_EARLIEST_EFF_R100
+      DEBUG
+      CLEAR EARLIEST_EFF_DATE
+      CALL PREP_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME
+      PACK MEME_FK11 WITH W_BLUE_KEY1,BLANKS
+      CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                            MEME_FN:  ...FILE NAME LIST  
+		            MEME_FC:  ...TYPE OF INDEX   
+.	  		              ...(I)NDEX OR (A)IMDEX
+		            MEME_FV:  ...FILE KEY VARLISTS
+		            MEME_FK:  ...FILE KEY SIZES  
+		            MEME_LIST:...FILE RECORD (FIELD LIST)
+		            MEME_REC: ...FILE RECORD (PACKED)
+		            MEME_OLD: ...FILE SAVED WHEN READ
+		            MEME_QTY: ...NUMBER OF FILES 
+			    1	      ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:  ...FILE DECLARATION LIST
+                                MEME_FN:  ...FILE NAME LIST  
+		                MEME_FC:  ...TYPE OF INDEX   
+.	  	                          ...(I)NDEX OR (A)IMDEX
+		                MEME_FV:  ...FILE KEY VARLISTS
+		                MEME_FK:  ...FILE KEY SIZES  
+		                MEME_LIST:...FILE RECORD (FIELD LIST)
+		                MEME_REC: ...FILE RECORD (PACKED)
+		                MEME_OLD: ...FILE SAVED WHEN READ
+		                MEME_QTY: ...NUMBER OF FILES 
+		                1	  ...FILE NUMBER FOR THIS READ
+          MOVE RESULT TO MEME_RESULT
+          IF  ((W_BLUE_KEY1 <> MEME_ID1) OR (MEME_RESULT <> 1))
+               BREAK       
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+              CONTINUE
+          ENDIF
+          IF ((SQUEEZE MEME_LEV2 = "90") AND (SQUEEZE MEME_MODE <> ""))
+             CONTINUE         
+          ENDIF
+          SWITCH MEME_PRD
+            CASE "CHIP5"
+            DEFAULT
+              CONTINUE
+          ENDSWITCH
+          IF (SQUEEZE MEME_PLAN <> "LEV0")
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_TRM <> "")
+              IF (MEME_TRM < MEME_EFF)
+                  CONTINUE
+              ENDIF
+          ENDIF
+          CLEAR DIM49
+          PACK DIM49 WITH MEME_RD01,MEME_RD02,MEME_RD03,MEME_RD04:
+                      MEME_RD05,MEME_RD06,MEME_RD07,MEME_RD08:
+                      MEME_RD09,MEME_RD10
+
+          SWITCH MEM_REL
+             CASE "01"
+                  RESET DIM49
+                  SCAN "RET1" IN DIM49
+                  IF EQUAL
+                      MOVE MEME_EFF TO MEME_WRK3_EFF
+                      MOVE MEME_TRM TO MEME_WRK3_TRM   
+                      CALL WRITE_OGBREC USING MEME_WRK3_FD,MEME_WRK3_NME,MEME_WRK3_LIST
+                  ENDIF
+                  RESET DIM49
+                  SCAN "RET2" IN DIM49
+                  IF EQUAL
+                      MOVE MEME_EFF TO MEME_WRK3_EFF   
+                      MOVE MEME_TRM TO MEME_WRK3_TRM   
+                      CALL WRITE_OGBREC USING MEME_WRK3_FD,MEME_WRK3_NME,MEME_WRK3_LIST
+                  ENDIF
+             CASE "02"
+                  RESET DIM49
+                  SCAN "RETS" IN DIM49
+                  IF EQUAL
+                      MOVE MEME_EFF TO MEME_WRK3_EFF  
+                      MOVE MEME_TRM TO MEME_WRK3_TRM   
+                      CALL WRITE_OGBREC USING MEME_WRK3_FD,MEME_WRK3_NME,MEME_WRK3_LIST
+                  ENDIF
+                  RESET DIM49
+                  SCAN "RET2" IN DIM49
+                  IF EQUAL
+                      MOVE MEME_EFF TO MEME_WRK3_EFF   
+                      MOVE MEME_TRM TO MEME_WRK3_TRM   
+                      CALL WRITE_OGBREC USING MEME_WRK3_FD,MEME_WRK3_NME,MEME_WRK3_LIST
+                  ENDIF
+          ENDSWITCH
+      REPEAT 
+      CALL CLOSE_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME 
+      CALL SORT_OGBFILE USING MEME_WRK3_NME,MEME_WRK3_NME,MEME_WRK_SRTKEY
+        IF OVER
+           IF (NOT C_CMDPAR)
+               ERROR HORZ="15",VERT="19":
+                     BGCOL=C_ERRB,FGCOL=C_ERRF:
+                     LNCOL=C_ERRL,SHADE="Y":
+                     TEXT="SORT WORK FILE FAILED"
+               CHAIN "MENU"
+           ELSE
+             IF (C_CMDPAR)
+                CALL CMD_ERROR USING "Sort Work File Failed"
+                STOP
+             ENDIF
+           ENDIF
+        ENDIF
+      CALL OPEN_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME 
+      MOVE "99999999" TO EARLIEST_EFF_DATE
+      CLEAR SAVE_TRM
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      LOOP
+         CALL READ_OGBFILE USING MEME_WRK3_FD,MEME_WRK3_NME,MEME_WRK3_LIST
+         IF  (RESULT <> 1)
+               BREAK       
+         ENDIF
+         CLEAR NUM_OF_DAYS
+         IF (EARLIEST_EFF_DATE <> "99999999")
+                  CALL DELTA_DAYS USING MEME_WRK3_EFF,SAVE_TRM,NUM_OF_DAYS
+                  IF (NUM_OF_DAYS > 1)
+                     MOVE MEME_WRK3_EFF TO EARLIEST_EFF_DATE
+                  ENDIF
+         ENDIF
+         MOVE MEME_WRK3_TRM TO SAVE_TRM
+         IF (EARLIEST_EFF_DATE = "99999999")
+              MOVE MEME_WRK3_EFF TO EARLIEST_EFF_DATE
+         ENDIF
+      REPEAT 
+      RETURN
+
+.******************************************************************************
+GET_MED
+.******************************************************************************
+  PACK MEMO_FK11 WITH W_BLUE_KEY1,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> W_BLUE_KEY1))
+          BREAK                  
+      ENDIF	
+      IF (MEMO_EFF > TODAY)
+          CONTINUE
+      ENDIF
+      IF ((SQUEEZE MEMO_TRM <> "") AND (MEMO_TRM <= MEMO_EFF))
+            CONTINUE
+      ENDIF
+
+      SWITCH MEMO_TYPE
+             CASE "MEDA"
+                  IF (SQUEEZE MEMO_EFF <> "")
+                    PACK CRASO_MEDA_P_E WITH MEMO_EFF,BLANKS 
+                    PACK CRASO_MEDA_P_T WITH MEMO_TRM,BLANKS 
+                    MOVE MEMO_POL TO CRASO_HICNM
+                  ENDIF
+                  IF (SQUEEZE MEMO_EFF1 <> "")
+                    PACK CRASO_MEDA_E WITH MEMO_EFF1,BLANKS
+                    PACK CRASO_MEDA_T WITH MEMO_TRM1,BLANKS
+                  ENDIF
+             CASE "MEDB"
+                  IF (SQUEEZE MEMO_EFF <> "")
+                     PACK CRASO_MEDB_P_E WITH MEMO_EFF,BLANKS
+                     PACK CRASO_MEDB_P_T WITH MEMO_TRM,BLANKS
+                     MOVE MEMO_POL TO CRASO_HICNM
+                  ENDIF
+                  IF (SQUEEZE MEMO_EFF1 <> "")
+                     PACK CRASO_MEDB_E WITH MEMO_EFF1,BLANKS
+                     PACK CRASO_MEDB_T WITH MEMO_TRM1,BLANKS
+                  ENDIF
+             CASE "COBP"
+                  PACK CRASO_COBDT WITH MEMO_EFF,BLANKS
+      ENDSWITCH
+  REPEAT
+
+  RETURN
+
+.******************************************************************************
+GET_MED_E
+.******************************************************************************
+  PACK MEMO_FK11 WITH W_BLUE_KEY1,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> W_BLUE_KEY1))
+          BREAK                  
+      ENDIF	
+      IF (MEMO_EFF1 > TODAY)
+          CONTINUE
+      ENDIF
+      IF ((SQUEEZE MEMO_TRM <> "") AND (MEMO_TRM <= MEMO_EFF))
+            CONTINUE
+      ENDIF
+
+      SWITCH MEMO_TYPE
+             CASE "MEDA"
+                  IF (SQUEEZE MEMO_EFF1 <> "")
+                    PACK CRASO_MEDA_E WITH MEMO_EFF1,BLANKS 
+                    PACK CRASO_MEDA_T WITH MEMO_TRM1,BLANKS 
+                  ENDIF
+             CASE "MEDB"
+                  IF (SQUEEZE MEMO_EFF1 <> "")
+                     PACK CRASO_MEDB_E WITH MEMO_EFF1,BLANKS
+                     PACK CRASO_MEDB_T WITH MEMO_TRM1,BLANKS
+                  ENDIF
+      ENDSWITCH
+  REPEAT
+
+  RETURN
+
+.******************************************************************************
+GET_DEPC
+.******************************************************************************
+  CLEAR SAVE_DEPC
+  LOOP
+      CLEAR MEM_AIM
+      PACK  MEM_AIM1 WITH "01X",WS_SSN,BLANKS
+      PACK  MEM_AIM3 WITH "03X","01",BLANKS   
+      CALL  FILE_READ USING MEM_FD:        ...FILE DECLARATION LIST
+                            MEM_FN:        ...FILE NAME LIST
+                            MEM_FC:        ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:        ...FILE KEY VARLISTS
+                            MEM_AIM:       ...FILE KEY SIZES
+                            MEM_LIST:      ...FILE RECORD (FIELD LIST)
+                            MEM_REC:       ...FILE RECORD (PACKED)
+                            MEM_OLD:       ...FILE SAVED WHEN READ
+                            MEM_QTY:       ...NUMBER OF FILES
+                            2              ...FILE NUMBER FOR THIS READ
+
+      IF (RESULT <> 1)
+          BREAK
+      ENDIF
+
+      PACK MEME_FK11 WITH MEM_ID1,BLANKS   
+      CALL FILE_READ USING MEME_FD:    ...FILE DECLARATION LIST
+                           MEME_FN:    ...FILE NAME LIST
+                           MEME_FC:    ...(I)NDEX OR (A)IMDEX
+                           MEME_FV:    ...FILE KEY VARLISTS
+                           MEME_FK:    ...FILE KEY SIZES
+                           MEME_LIST:  ...FILE RECORD (FIELD LIST)
+                           MEME_REC:   ...FILE RECORD (PACKED)
+                           MEME_OLD:   ...FILE SAVED WHEN READ
+                           MEME_QTY:   ...NUMBER OF FILES
+                           1           ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:     ...FILE DECLARATION LIST
+                               MEME_FN:     ...FILE NAME LIST
+                               MEME_FC:     ...(I)NDEX OR (A)IMDEX
+                               MEME_FV:     ...FILE KEY VARLISTS
+                               MEME_FK:     ...FILE KEY SIZES
+                               MEME_LIST:   ...FILE RECORD (FIELD LIST)
+                               MEME_REC:    ...FILE RECORD (PACKED)
+                               MEME_OLD:    ...FILE SAVED WHEN READ
+                               MEME_QTY:    ...NUMBER OF FILES
+                               1            ...FILE NUMBER FOR THIS READ
+
+          IF ((MEM_ID1 <> MEME_ID1) OR (RESULT <> 1))
+              GOTO GET_DEPC_RETURN
+          ENDIF
+          SWITCH MEME_PRD
+             CASE "CHIP5"
+             DEFAULT
+                 CONTINUE
+          ENDSWITCH
+          IF (SQUEEZE MEME_PLAN <> "LEV0")
+             CONTINUE
+          ENDIF
+          IF (SQUEEZE MEME_NET = "DHH")
+              IF ((MEME_TRM >= CURRDATE) OR (SQUEEZE MEME_TRM = ""))
+                  MOVE MEME_DEPC TO SAVE_DEPC
+.                 MOVE MEME_EFF  TO SAVE_EFF        ...>LLS 8/13/2004 
+                  GOTO GET_DEPC_RETURN          ...>
+              ENDIF
+          ENDIF
+      REPEAT
+  REPEAT
+
+GET_DEPC_RETURN
+  RETURN
+
+.******************************************************************************
+MATCH_COVERAGE
+.******************************************************************************
+  IF (MEME_DEPC = "FM")
+      MOVE "f" TO CRASO_COV
+  ELSE
+      IF (MEME_DEPC = "EE")
+          MOVE "e" TO CRASO_COV
+      ELSE
+          IF (MEME_DEPC = "ES")
+              MOVE "s" TO CRASO_COV
+          ELSE
+              IF (MEME_DEPC = "EC")
+                 MOVE "c" TO CRASO_COV
+              ENDIF  
+          ENDIF
+      ENDIF 
+  ENDIF
+
+  RETURN    
+                
+.******************************************************************************
+UPDATE_CURRENT_FILE
+.******************************************************************************
+  LOOP
+      DEBUG
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING X_PRI_FILE,X_PRI_NAME,PRASO_LIST
+      IF (RESULT <> 1)
+          CALL X_DISPLAY_COUNTS
+          BREAK
+      ENDIF
+
+      ADD 1 TO X_CNT3
+      UNPACK X_CNT3 INTO DISP_4,DISP_3
+      IF (DISP_3 = "000")
+          CALL X_DISPLAY_COUNTS
+      ENDIF
+
+      IF ((PRASO_TRMDT < WORK_DATE) AND (SQUEEZE PRASO_TRMDT <> ""))
+          CONTINUE
+      ENDIF
+
+      MOVE X_CUR_NAME TO C_FILE
+      CALL READ_OGBFILE_IX USING X_CUR_FILE,X_CUR_NAME,PRASO_RECID,CRASO_LIST
+      IF (RESULT = 1)
+          CONTINUE            
+      ENDIF
+      PACK MEM_FK11 WITH PRASO_RECID
+      CALL FILE_READ USING MEM_FD:            ...FILE DECLARATION LIST
+                           MEM_FN:            ...FILE NAME LIST
+                           MEM_FC:            ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                           MEM_FV:            ...FILE KEY VARLIST
+                           MEM_FK:            ...FILE KEY SIZES
+                           MEM_LIST:          ...FILE RECORD (FIELD LIST)
+                           MEM_REC:           ...FILE RECORD (PACKED)
+                           MEM_OLD:           ...FILE SAVED WHEN READ
+                           MEM_QTY:           ...NUMBER OF FILES
+                           1                   ...FILE NUMBER FOR THIS READ
+      IF (RESULT = 1)
+        IF (SQUEEZE MEM_LNAME = "DELETE")
+           CONTINUE
+        ENDIF
+      ENDIF 
+      CLEAR MEME_SAV
+      CLEAR G_EFF
+      PACK MEME_FK11 WITH PRASO_RECID
+      CALL FILE_READ USING MEME_FD:            ...FILE DECLARATION LIST
+                           MEME_FN:            ...FILE NAME LIST
+                           MEME_FC:            ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                           MEME_FV:            ...FILE KEY VARLIST
+                           MEME_FK:            ...FILE KEY SIZES
+                           MEME_LIST:          ...FILE RECORD (FIELD LIST)
+                           MEME_REC:           ...FILE RECORD (PACKED)
+                           MEME_OLD:           ...FILE SAVED WHEN READ
+                           MEME_QTY:           ...NUMBER OF FILES
+                           1                   ...FILE NUMBER FOR THIS READ
+      LOOP
+          CALL FILE_NEXT USING MEME_FD:            ...FILE DECLARATION LIST
+                               MEME_FN:            ...FILE NAME LIST
+                               MEME_FC:            ...TYPE OF INDEX
+.                                                  ...(I)NDEX or (A)IMDEX
+                               MEME_FV:            ...FILE KEY VARLIST
+                               MEME_FK:            ...FILE KEY SIZES
+                               MEME_LIST:          ...FILE RECORD (FIELD LIST)
+                               MEME_REC:           ...FILE RECORD (PACKED)
+                               MEME_OLD:           ...FILE SAVED WHEN READ
+                               MEME_QTY:           ...NUMBER OF FILES
+                               1                   ...FILE NUMBER FOR THIS READ
+          IF ((RESULT <> 1) OR (MEME_ID1 <> PRASO_RECID))
+              BREAK    
+          ENDIF
+
+          IF ((SQUEEZE MEME_NET = "DHH") AND:
+              (SQUEEZE MEME_TRM <> ""))
+            IF ((SQUEEZE MEME_PRD = "CHIP5") AND (SQUEEZE MEME_PLAN = "LEV0")):
+                IF  ((SQUEEZE G_EFF = "") OR (MEME_EFF >= G_EFF))
+                    MOVE MEME_EFF TO G_EFF
+                    PACK MEME_SAV WITH MEME_REC
+                ENDIF
+            ENDIF
+          ENDIF
+      REPEAT
+      IF (SQUEEZE MEME_SAV = "")
+         CONTINUE                                                        
+      ELSE 
+         UNPACK MEME_SAV INTO MEME_LIST
+         IF (MEME_TRM <= END_DATE)
+            CONTINUE
+         ENDIF
+         PACK CRASO_REC WITH PRASO_LIST
+         UNPACK CRASO_REC INTO CRASO_LIST
+         UNPACK MEME_SAV INTO MEME_LIST
+
+         IF (SQUEEZE MEME_TRM = "") 
+           IF (SQUEEZE PRASO_TRMDT = "")
+             CONTINUE
+           ELSE
+             PACK CRASO_TRMDT WITH PRASO_TRMDT
+           ENDIF
+         ELSE
+             PACK CRASO_TRMDT WITH MEME_TRM
+         ENDIF
+      ENDIF
+
+      PACK MEM_FK11 WITH PRASO_RECID
+      CALL FILE_READ USING MEM_FD:            ...FILE DECLARATION LIST
+                           MEM_FN:            ...FILE NAME LIST
+                           MEM_FC:            ...TYPE OF INDEX
+.                                              ...(I)NDEX or (A)IMDEX
+                           MEM_FV:            ...FILE KEY VARLIST
+                           MEM_FK:            ...FILE KEY SIZES
+                           MEM_LIST:          ...FILE RECORD (FIELD LIST)
+                           MEM_REC:           ...FILE RECORD (PACKED)
+                           MEM_OLD:           ...FILE SAVED WHEN READ
+                           MEM_QTY:           ...NUMBER OF FILES
+                           1                   ...FILE NUMBER FOR THIS READ
+
+      IF (RESULT = 1)
+        IF ((SQUEEZE MEM_HOLD = "PR30") OR (SQUEEZE MEM_HOLD = "ELGH"))
+           IF (SQUEEZE MEM_US02 <> "")
+             MOVE MEM_US02 TO CRASO_HLDCLM
+           ELSE
+             MOVE BLANKS TO CRASO_HLDCLM
+           ENDIF
+        ELSE
+             MOVE BLANKS TO CRASO_HLDCLM
+        ENDIF
+      ENDIF
+  
+      MOVE BLANKS TO W_TERM_DATE
+      MOVE BLANKS TO W_TERM_TYPE
+      IF (SQUEEZE CRASO_HLDCLM = "")
+         MOVE CRASO_TRMDT TO W_TERM_DATE
+         MOVE "T" TO W_TERM_TYPE
+      ELSE
+         IF (CRASO_HLDCLM < CRASO_TRMDT)
+            MOVE CRASO_HLDCLM TO W_TERM_DATE
+            MOVE "H" TO W_TERM_TYPE
+         ELSE
+            MOVE CRASO_TRMDT TO W_TERM_DATE
+            MOVE "T" TO W_TERM_TYPE
+         ENDIF
+      ENDIF
+.----------------
+...Rewrite record
+.----------------
+
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL WRITE_OGBREC_IX USING X_CUR_FILE,X_CUR_NAME:
+                                 CRASO_RECID,CRASO_LIST
+   
+  REPEAT
+
+  RETURN
+
+
+
+.******************************************************************************
+SORT_CURRENT_FILE  
+.******************************************************************************
+  DISPLAY *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+          *P30:21,"SORTING FILE...",*BOLDOFF
+  MOVE X_CUR_TXT_NAME TO C_FILE
+  CALL CLOSE_OGBFILE_IX USING X_CUR_FILE,X_CUR_TXT_NAME
+
+  CALL SORT_OGBFILE USING  X_CUR_TXT_NAME,X_CUR_TXT_NAME,ASOT_SRTKEY
+  IF OVER
+     IF (NOT C_CMDPAR)
+        ERROR   HORZ="15",VERT="19":
+                BGCOL=C_ERRB,FGCOL=C_ERRF:
+                LNCOL=C_ERRL,SHADE="Y":
+                TEXT="SORT FAILED"
+     ELSE
+       IF (C_CMDPAR)
+           CALL CMD_ERROR USING "Sort Failed"
+           STOP
+       ENDIF
+     ENDIF
+  ENDIF
+  DISPLAY    *P30:21,*BGCOLOR=*CYAN,*EL
+
+  RETURN
+
+
+
+.******************************************************************************
+COPY_CUR_TO_PRI
+.******************************************************************************
+.---------------------------------
+...Copy Current file to prior file
+.---------------------------------
+  CALL COPY_OGBFILE USING X_CUR_TXT_NAME,X_PRI_NAME
+  IF OVER
+    IF (NOT C_CMDPAR)
+      ERROR HORZ="15",VERT="19":
+            BGCOL=C_ERRB,FGCOL=C_ERRF: 
+            LNCOL=C_ERRL,SHADE="Y":
+            TEXT="COPY FAILED"
+      CHAIN "MENU"
+    ELSE
+      IF (C_CMDPAR)
+         CALL CMD_ERROR USING "copy failed"
+         STOP
+      ENDIF
+    ENDIF
+  ENDIF
+
+  RETURN
+
+
+
+.******************************************************************************
+CLOSE_FILES 
+.******************************************************************************
+  MOVE X_CUR_NAME TO C_FILE
+  CALL CLOSE_OGBFILE_IX USING X_CUR_FILE,X_CUR_NAME
+
+  MOVE X_PRI_NAME TO C_FILE
+  CALL CLOSE_OGBFILE USING X_PRI_FILE,X_PRI_NAME
+
+  RETURN
+
+
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         MEMA.IO 
+  INC         VALID.IO
+  INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+  INC         CMDPARAM.SR
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

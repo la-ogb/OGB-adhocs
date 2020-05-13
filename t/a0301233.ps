@@ -1,0 +1,364 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0301233.ps
++    Description    :  This is an adhoc program to correct the handicapped
++                   :  status in the prior ASO files (Amcare).
++    Author         :  Tommy Ratcliff
++    Date created   :  01/23/2003
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+    INC       PRT.RL               ...Printer definition file
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       CLI.RL               ...Client Record
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL              ...Mem. Enr/Elig Record
+    INC       MEMO.RL              ...Member Other Coverage Record
+    INC       X_ASOPRELG.RL
+    INC       X_ASOCRELG.RL
+
+.------------------
+. File Declarations
+.------------------
+X_IN_FILE               FILE     VAR=284,TEXT
+X_IN_NAME               INIT     "x_amcarepr.txt"  
+
+X_OUT_FILE              FILE     VAR=284,TEXT        
+X_OUT_NAME              INIT     "h_amcarepr.txt"     
+
+AMCAR         INIT      "AMCAR"
+ASO_SRTKEY    INIT      "269-276 -T"
+VAL_RESULT    FORM      001
+X_CPY_NAME    INIT      "x_amcarepr"
+DATE1         DIM       008
+FIRST_PAGE    DIM       001
+FIRST_TIME    DIM       001
+LAST_CLM1     DIM       008
+WORK_COUNT    DIM       008
+FRONT         DIM       005
+BACK          DIM       003
+TIMESTAMP     DIM       014
+CURRDATE      DIM       008
+READ_COUNT    FORM      008
+KEEP_COUNT    FORM      008
+WRITE_COUNT   FORM      008
+ERROR_COUNT   FORM      008
+MONEY1        FORM      7.2
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+WORK_TEXT     INIT      "JUNK"
+ACTION        DIM       010          
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM       010
+PARAM_YYY     DIM       005
+PARAM_DATE    DIM       008
+              LISTEND
+
+X_SWT_LIST    LIST
+X_SWT_DATE    DIM       008
+              LISTEND
+
+
+
+.---------------------------
+. Program Specific variables
+.---------------------------
+WORK_CRASO_DATA         DIM      248
+WORK_PRASO_DATA         DIM      248
+OGB_KEY                 DIM      008
+FARA_KEY                DIM      008
+SAVE_NET      		DIM      005
+SAVE_TRM      		DIM      008
+EARLIEST_EFF_DATE       DIM      008
+WORK_DATE     		DIM      008
+NUM_OF_DAYS             FORM     001
+MEME_RESULT             FORM     001
+WS_SSN        		DIM      009
+SAVE_DEPC     		DIM      002
+BLANK8        		INIT     "        "
+JUNK4         		DIM      004
+TRAP_DATA     		DIM      500
+TODAY         		DIM      008
+CAL_CLOCK     		DIM      021
+PLAN_FIELD    		DIM      004  
+CHG_RET_CODE  		FORM     001
+
+PLAN_LIST     LIST
+PLAN_BYTE1    DIM      001
+PLAN_REST     DIM      003
+ORIG_RETURN   FORM     005
+CURR_RETURN   FORM     005
+DISP_3        DIM      003
+DISP_4        DIM      004
+FORM_08       FORM     008
+DIM49         DIM      049
+WRK_DIM1      DIM      001
+WRK_DIM4      DIM      004
+              LISTEND
+
+.....> START HERE
+  CALL      RUN_NOW
+  CHAIN     C_NEXT 			    chains to back to the menu
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+  INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+  RETCOUNT  ORIG_RETURN
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+  MOVE      "menu"                 TO  C_NEXT
+  MOVE      "Amcare Prior    "     TO  C_OPER
+  MOVE      "a0301233"             TO  C_PROG
+  MOVE      BLANKS                 TO  C_LABEL
+  MOVE      BLANKS                 TO  C_FILE
+  MOVE      BLANKS                 TO  C_KEYS
+  CLOCK     CALENDAR               INTO  CAL_CLOCK
+  CALL X_BLANK_SCREEN
+
+
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+  TRAPSAVE TRAP_DATA
+  TRAPCLR ALL
+  TRAP QUIT NORESET IF F9
+
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+  CALL SCHED_PICK
+  IF (RUN_MODE = "B" OR RUN_MODE = "N")
+     CALL MAIN_PROCESS
+  ENDIF
+
+  RETURN
+
+
+
+.******************************************************************************
+MAIN_PROCESS
+.******************************************************************************
+  DEBUG
+  CALL INITIALIZE
+.
+  CALL OPEN_FILES
+.
+  CALL CORRECT_FILE
+.
+  DEBUG
+  CALL CLOSE_FILES
+.
+  TRAPREST TRAP_DATA
+  MOVE SCH_RTSUCC  TO  SCH@RTCODE
+
+  RETURN
+
+
+
+.******************************************************************************
+QUIT
+.******************************************************************************
+.--------------------
+. Operator pressed F9
+. -------------------
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR C_NOHIST
+  TRAPREST TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+          RETCOUNT  CURR_RETURN
+          WHILE     (CURR_RETURN > ORIG_RETURN)
+          NORETURN
+      REPEAT
+
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.******************************************************************************
+INITIALIZE
+.******************************************************************************
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.------------------
+...Display Counters
+.------------------
+  MOVE "In Recs Read: " TO X_CNTDESC1
+  MOVE "Recs Written: " TO X_CNTDESC2
+  MOVE "Recs Changed:" TO X_CNTDESC3
+  DISPLAY *ES
+  CALL X_DISPLAY_COUNTS
+
+  RETURN
+
+
+
+.******************************************************************************
+OPEN_FILES
+.******************************************************************************
+  MOVE X_IN_NAME TO C_FILE
+  CALL OPEN_OGBFILE USING X_IN_FILE,X_IN_NAME
+
+  MOVE X_OUT_NAME TO C_FILE
+  CALL PREP_OGBFILE USING X_OUT_FILE,X_OUT_NAME
+
+  RETURN
+
+
+.******************************************************************************
+CORRECT_FILE
+.******************************************************************************
+  LOOP
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      CALL READ_OGBFILE USING X_IN_FILE,X_IN_NAME,CRASO_LIST
+      IF (RESULT <> 1)
+          BREAK
+      ENDIF
+
+      ADD 1 TO X_CNT1   
+      UNPACK X_CNT1 INTO DISP_4,DISP_3
+      IF (DISP_3 = "000")
+          CALL X_DISPLAY_COUNTS
+      ENDIF
+
+      CLEAR PRASO_LIST
+      MOVE CRASO_ESSN  TO PRASO_ESSN
+      MOVE CRASO_MLNAM TO PRASO_MLNAM
+      MOVE CRASO_MFNAM TO PRASO_MFNAM
+      MOVE CRASO_MINIT TO PRASO_MINIT 
+      MOVE CRASO_ADR1  TO PRASO_ADR1
+      MOVE CRASO_ADR2  TO PRASO_ADR2
+      MOVE CRASO_CITY  TO PRASO_CITY
+      MOVE CRASO_STAT  TO PRASO_STAT
+      MOVE CRASO_ZIP   TO PRASO_ZIP
+      MOVE CRASO_DOB   TO PRASO_DOB
+      MOVE CRASO_EFFDT TO PRASO_EFFDT
+      MOVE CRASO_TRMDT TO PRASO_TRMDT
+      MOVE CRASO_GROUP TO PRASO_GROUP
+      MOVE CRASO_LOCA  TO PRASO_LOCA
+      MOVE CRASO_COV   TO PRASO_COV
+      MOVE CRASO_MEDA  TO PRASO_MEDA
+      MOVE CRASO_MEDB  TO PRASO_MEDB
+      MOVE CRASO_SEX   TO PRASO_SEX
+      MOVE CRASO_STUDT TO PRASO_STUDT
+      MOVE CRASO_RELA  TO PRASO_RELA
+      MOVE CRASO_TRNDT TO PRASO_TRNDT
+      MOVE CRASO_HIRDT TO PRASO_HIRDT
+      MOVE CRASO_PORDT TO PRASO_PORDT
+      MOVE CRASO_PHONE TO PRASO_PHONE
+      MOVE CRASO_ESTAT TO PRASO_ESTAT
+      MOVE CRASO_HANDI TO PRASO_HANDI
+      MOVE CRASO_MARDT TO PRASO_MARDT
+      MOVE CRASO_HICNM TO PRASO_HICNM
+      MOVE CRASO_COBDT TO PRASO_COBDT
+      MOVE CRASO_MEDPM TO PRASO_MEDPM
+      MOVE CRASO_MSSN  TO PRASO_MSSN
+      MOVE CRASO_RT100 TO PRASO_RT100
+      MOVE CRASO_CHGDT TO PRASO_CHGDT
+      MOVE CRASO_RECID TO PRASO_RECID
+      MOVE CRASO_RIMID TO PRASO_RIMID
+      MOVE CRASO_RIMDP TO PRASO_RIMDP
+
+      CALL GET_HANDICAP_STATUS
+
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      MOVE X_OUT_NAME TO C_FILE
+      CALL WRITE_OGBREC USING X_OUT_FILE:
+                              X_OUT_NAME:
+                              PRASO_LIST
+      ADD 1 TO X_CNT2
+  REPEAT
+
+  RETURN
+
+
+
+.******************************************************************************
+GET_HANDICAP_STATUS
+.******************************************************************************
+.------------------------         
+...Get info from MEM-FILE
+.------------------------
+  DEBUG
+  PACK MEM_FK11 WITH CRASO_RECID
+  CALL FILE_READ USING MEM_FD:              ...FILE DECLARATION LIST
+                       MEM_FN:              ...FILE NAME LIST
+                       MEM_FC:              ...TYPE OF INDEX
+.                                           ...(I)NDEX or (A)IMDEX
+                       MEM_FV:              ...FILE KEY VARLISTS
+                       MEM_FK:              ...FILE KEY SIZES
+                       MEM_LIST:            ...FILE RECORD (FIELD LIST)
+                       MEM_REC:             ...FILE RECORD (PACKED)
+                       MEM_OLD:             ...FILE SAVED WHEN READ
+                       MEM_QTY:             ...NUMBER OF FIlES
+                       1                    ...FILE NUMBER FOR THIS READ
+ 
+
+  IF ((MEM_LIFE = "HANDIC") OR (SQUEEZE MEM_LIFE = "HANDI") OR:
+      (SQUEEZE MEM_LIFE = "HAND") OR (SQUEEZE MEM_LIFE = "HAN"))
+      MOVE "Y" TO PRASO_HANDI
+  ELSE
+      MOVE "N" TO PRASO_HANDI
+  ENDIF
+
+  ADD 1 TO X_CNT3
+
+  RETURN
+
+.******************************************************************************
+CLOSE_FILES 
+.******************************************************************************
+  MOVE X_IN_NAME TO C_FILE
+  CALL CLOSE_OGBFILE USING X_IN_FILE,X_IN_NAME
+
+  MOVE X_OUT_NAME TO C_FILE
+  CALL CLOSE_OGBFILE USING X_OUT_FILE,X_OUT_NAME
+
+  RETURN
+
+
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+  INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO

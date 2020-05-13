@@ -1,0 +1,366 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1201121.ps
++    Description    :  EGWP MEME update for Lev2 = 92. Update term reason to X
++                      and term 1 day prior to effective.
++    Author         :  appnc
++    Date created   :  01/12/2012
++    Project Number :  A1201121 DEV - INITIAL VERSION 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++------------------------------------------------------------------------------
++   apiii  mm/dd/ccyy  A??????? - TYP - Comments.                          
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       MEM.RL               ...Member Demographic File
+              INC       MEME.RL              ...Member Enrollment File
+              INC       MEMB.RL              ...Member ACH Bank Acct Data File
+              INC       D_MEMMEM.CB          ...Member Import Layout
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+IN_FILE       FILE      VAR=600,TEXT
+IN_NAME       INIT      "/w/a1201121.txt"    ...from reformat
+...> uses meme.rl
+
+LOAD_FL       FILE      VAR=4100,TEXT
+LOAD_NM       INIT      "a1201121.out"
+...> uses d_memmem.cb
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+TIMESTAMP          DIM       014
+CURRDATE           DIM       008
+WRITE_COUNT        FORM      008
+ERROR_COUNT        FORM      008
+TRAP_DATA          DIM       500
+TODAY              DIM       008
+CAL_CLOCK          DIM       021
+ORIG_RETURN        FORM      005
+CURR_RETURN        FORM      005
+FIRST_READ         INIT      "Y"
+HOLD_FPTR          FORM      003
+NEXT_FPTR          FORM      003
+POS_CNT            FORM      003
+CNT1_5             DIM       005
+CNT1_2             DIM       002
+CNT3_5             DIM       005
+CNT3_2             DIM       002
+
+
+W_92               INIT      "92"
+W_EGWP             INIT      "EGWP"
+W_X                INIT      "X"
+
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "<EGWP MEME UPDTES>"  TO  C_OPER
+         MOVE      "A1201121"            TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         DEBUG
+         CALL      INITIALIZE
+         CALL      REFORMAT_INPUT
+         CALL      OPEN_FILES
+         CALL      PROCESS_INPUT
+         CALL      CLOSE_FILES
+
+. ...Normal End-Of-Job
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="25",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="  PROGRAM COMPLETED NORMALLY  ":
+                          TEXT="------------------------------":
+                          TEXT="  Press any key to continue   ":
+                          FIELD=WCHAR 
+         ENDIF
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+         MOVE "INP Recs Read    : " TO X_CNTDESC1
+         MOVE "LOAD Recs Written: " TO X_CNTDESC2
+         MOVE "                 : " TO X_CNTDESC3
+         MOVE "                 : " TO X_CNTDESC4
+         MOVE "                 : " TO X_CNTDESC5
+         MOVE "                   " TO X_CNTDESC6
+         
+         CALL X_DISPLAY_COUNTS
+         
+         RETURN
+         
+. ----------------------------
+. Reformat Input
+. ----------------------------
+
+REFORMAT_INPUT
+
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="22",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="GRABBING MEME RECORDS...please wait";
+                   
+...Get MEME Recs(Input)
+         MOVE BLANKS TO SCRATCH
+         PACK SCRATCH WITH "meme.dbf /w/a1201121.txt":
+                           " -p26-27eq#"",W_92,"#"":
+                           " -p404-404ne#"",W_X,"#"":
+                           " -p112-115eq#"",W_EGWP,"#" -t -j"
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - meme.dbf to a1201121.txt"
+             CHAIN     "menu"
+         ENDIF 
+         
+         DISPLAY        *P22:20,*BGCOLOR=*CYAN,*EL:
+                        *P22:21,*BGCOLOR=*CYAN,*EL:
+                        *P22:22,*BGCOLOR=*CYAN,*EL:
+                        *P22:23,*BGCOLOR=*CYAN,*EL         
+         
+         RETURN
+
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         MOVE IN_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING IN_FILE,IN_NAME
+         
+         MOVE LOAD_NM TO C_FILE
+         CALL PREP_OGBFILE USING LOAD_FL,LOAD_NM
+         
+         RETURN
+
+. ----------------------------
+. Process Input
+. ----------------------------
+
+PROCESS_INPUT
+
+  LOOP
+      CLEAR MEME_LIST
+      MOVE OGB_SEQ1 TO OGB_SEQ
+      MOVE IN_NAME TO C_FILE
+      CALL READ_OGBFILE USING IN_FILE,IN_NAME,MEME_LIST
+      IF (RESULT != 1)
+          CALL X_DISPLAY_COUNTS      
+          BREAK
+      ENDIF
+      
+      ADD 1 TO X_CNT1
+      UNPACK X_CNT1 INTO CNT3_5,CNT3_2
+      IF (CNT3_2 = "00")
+          CALL X_DISPLAY_COUNTS
+      ENDIF  
+      
+      debug
+      
+...Make sure its a 92 & egwp
+      IF (SQUEEZE MEME_LEV2 != "92")
+          CONTINUE
+      ENDIF
+      
+      IF (SQUEEZE MEME_NET != "EGWP")
+          CONTINUE
+      ENDIF
+
+...Read MEM
+
+      CLEAR MEM_SAV
+      CLEAR MEME_SAV
+      CLEAR INM_LIST
+
+      PACK MEM_FK11 WITH MEME_ID1,BLANKS
+      CALL FILE_READ USING MEM_FD:     ...FILE DECLARATION LIST
+                           MEM_FN:     ...FILE NAME LIST
+                           MEM_FC:     ...TYPE OF INDEX
+                           MEM_FV:     ...FILE KEY VARLISTS
+                           MEM_FK:     ...FILE KEY SIZES
+                           MEM_LIST:   ...FILE RECORD (FIELD LIST)
+                           MEM_REC:    ...FILE RECORD (PACKED)
+                           MEM_OLD:    ...FILE SAVED WHEN READ
+                           MEM_QTY:    ...NUMBER OF FIlES
+                           1           ...FILE NUMBER FOR THIS READ
+
+        IF (RESULT != 1)      
+            CONTINUE
+        ENDIF
+        
+...Populate MEM & MEME fields
+      PACK MEM_SAV  WITH MEM_LIST
+      PACK MEME_SAV WITH MEME_LIST      
+
+      PACK   INM_REC WITH MEM_SAV,MEME_SAV,BLANKS
+      UNPACK INM_REC INTO INM_LIST
+
+...Update Term Reason & Term Date
+      PACK INME_TLET WITH "X"      
+      CALL DATE_CALC USING MEME_EFF,"SUB","DAYS",1,INME_TRM
+      PACK INME_CHGBY WITH BLANKS
+      PACK INME_CHGDT WITH BLANKS
+
+...Write LOAD record         
+      ADD 1 TO X_CNT2
+      MOVE LOAD_NM TO C_FILE
+      CALL WRITE_OGBREC USING LOAD_FL,LOAD_NM,INM_LIST
+      
+  REPEAT
+
+  RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+         MOVE IN_NAME TO C_FILE
+         CALL CLOSE_OGBFILE USING IN_FILE,IN_NAME
+
+         MOVE LOAD_NM TO C_FILE
+         CALL CLOSE_OGBFILE USING LOAD_FL,LOAD_NM
+
+         RETURN
+
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1201121.PS
+. +++++++++++++++++++++++++++++++++++++

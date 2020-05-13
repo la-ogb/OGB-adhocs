@@ -1,0 +1,358 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0506171.PS
++    Description    :  Program to extract paid claims from 9-1-2001   
++                   :  to present; with positive amounts paid to deductible,
++                   :  provider or member. Use Claim ID for claims paid
++                   :  in IMPACT (7-1-2002-present) and Alt ID for previous
++
++    apeks 06/17/2005 a0506171 DEV - Initial Version. 
++..............................REVISIONS.......................................
++    apiii mm/dd/ccyy ayymmdd# MOD - Description        
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       CLM.RL               ...Claim File
+              INC       SCH.RL               ...Scheduler File  
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+. Reformat of CLM File
+TMP_FILE        FILE    VAR=114,TEXT
+TMP_NAME        INIT    "/w/a0506171.tmp"
+TMP_LIST        LIST
+TMP_CLM         DIM     8
+TMP_ALT         DIM     20
+TMP_DED         DIM     10
+TMP_PDPRV       DIM     10
+TMP_PDMEM       DIM     10
+TMP_PDDT        DIM     8
+                LISTEND
+
+. Output Files
+. Paid Claims for members without OGB coverage on DOS
+OUT_FILE        FILE    VAR=15,TEXT
+OUT_NAME        INIT    "/w/a0506171.txt"
+OUT_LIST        LIST
+OUT_CLM         DIM     10
+                LISTEND
+
+. ---------------------------------------------
+. Program Specific Variables & Working Storage
+. ---------------------------------------------
+CAL_CLOCK       DIM       21 
+CYCLE_DATE      DIM       8
+HOLD_CYCLE_DATE DIM       8
+HOLD_FILE_NME   DIM       31
+ORIG_RETURN     FORM      5       
+PARAM_LIST      LIST
+PARAM_XXX       DIM       10
+PARAM_YYY       DIM       5
+PARAM_DATE      DIM       8
+       	        LISTEND
+TRAP_DATA       DIM       500
+
+DIM2            DIM       2
+DIM8            DIM       8
+DIM10           DIM       10
+DIM24           DIM       24
+MCS@DIM1        DIM       @
+MCS@FORM1       FORM      @
+
+W_YR1           FORM      4
+W_YR2           FORM      4
+
+WS_CCYY         DIM       4
+WS_CC           DIM       2
+WS_YY           DIM       2
+WS_MM           DIM       2
+WS_DD           DIM       2
+
+CLM_RD_CNT      FORM      10 
+CLM_WT_CNT      FORM      10 
+
+W_CLMDATE       DIM       8
+W_CURRDT        DIM       8
+
+W_OGB           DIM       1
+
+AMT1            FORM      7.2
+AMT2            FORM      7.2
+AMT3            FORM      7.2
+AMT4            FORM      7.2
+AMT5            FORM      7.2
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ---------------------------------
+. Start here if selected from menu   
+. ---------------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. --------------------------------------
+. Start here if called by the Scheduler    
+. --------------------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"              TO  C_NEXT
+         MOVE      "CLAIM IDs PDFs" TO  C_OPER
+         MOVE      "A0506171"          TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR          INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...No Traps should be Set
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+ 
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+
+         CALL INIT_PROG
+         CALL FIND_CLAIMS
+         CALL SORT_FILE
+
+         RETURN
+
+. ----------------------------
+. Initialize Program       
+. ----------------------------
+
+INIT_PROG
+
+         CALL MAKE_INPUT_FILE
+         CALL SCR_DISPLAY
+         CALL OPEN_FILES
+
+         RETURN
+
+. ----------------------------
+. Reformat files for Input  
+. ----------------------------
+
+MAKE_INPUT_FILE
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="10":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" Reformatting CLM File":
+                      text=" Please wait...      "
+         ENDIF
+
+. Reformat claims 
+         CLEAR SCRATCH
+         PACK SCRATCH WITH "clm.dbf ",TMP_NAME," 1-8 26-45":  
+                           " 2244-2253 2449-2468 2496-2503":
+                           " -p2491neB":
+                           " -p2496-2503ne99999999":
+                           " -p2496-2503ge20010901 -t -j"
+        
+         REFORMAT SCRATCH
+
+         RETURN
+
+. ----------------------------
+. Screen display
+. ----------------------------
+
+SCR_DISPLAY
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="10":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text="       -Records Processed-        ":
+                      text=" Claims Read                      ":
+                      text=" Claims Written                   "
+         ENDIF
+
+         MOVE 0 TO CLM_RD_CNT
+         MOVE 0 TO CLM_WT_CNT
+
+         CALL DISPLAY_CNTS 
+
+         RETURN
+
+. ----------------------------
+. Open Program Files        
+. ----------------------------
+
+OPEN_FILES
+
+         CALL OPEN_OGBFILE USING TMP_FILE,TMP_NAME
+
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME
+
+         RETURN
+
+. ----------------------------
+.  Extract Qualified Claims 
+. ----------------------------
+
+FIND_CLAIMS
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+
+. Read re-formatted claim file
+         LOOP
+           CALL READ_OGBFILE USING TMP_FILE,TMP_NAME,TMP_LIST
+           IF (RESULT <> 1)
+              BREAK                
+           ENDIF
+
+         ADD 1 TO CLM_RD_CNT
+
+. Include only claims with a payment amount
+         debug
+         MOVE TMP_DED   TO AMT1
+         MOVE TMP_PDPRV TO AMT2
+         MOVE TMP_PDMEM TO AMT3
+
+         IF (AMT1 <= 0 AND AMT2 <= 0)
+            CONTINUE IF (AMT3 <= 0)
+         ENDIF 
+
+         IF (TMP_PDDT < "20020701")
+            debug
+            PACK OUT_CLM WITH TMP_ALT
+         ELSE
+            PACK OUT_CLM WITH TMP_CLM
+         ENDIF
+
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+         ADD 1 TO CLM_WT_CNT 
+         CALL DELAY_DSP USING CLM_WT_CNT
+
+         REPEAT
+
+         RETURN
+
+. ----------------------------
+.  Sort output file
+. ----------------------------
+
+SORT_FILE
+
+         CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+         PACK SCRATCH WITH OUT_NAME," ",OUT_NAME," 1-10 -j -u -t"
+         SORT SCRATCH 
+
+         RETURN
+
+. ----------------------------
+. Display Delay             
+. ----------------------------
+
+DELAY_DSP ROUTINE MCS@FORM1
+
+        MOVE MCS@FORM1 TO DIM10 
+        UNPACK DIM10 INTO DIM8,DIM2
+        IF (DIM2 = "00")
+           CALL DISPLAY_CNTS
+        ENDIF
+
+        RETURN
+
+. ----------------------------
+. Display Counters          
+. ----------------------------
+
+DISPLAY_CNTS 
+
+         IF (C_RMODE = "I")
+            DISPLAY   *P51:12,CLM_RD_CNT
+            DISPLAY   *P51:13,CLM_WT_CNT
+         ENDIF
+
+         RETURN
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+	      INC	FILE.IO
+	      INC	VALID.IO
+	      INC	X_STANDARD.SR
+	      INC	X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0506171.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,193 @@
+./* ====================================================================
+. *          Name : a1803211.ps
+. *   Description : Fix an issue with certain people where the LAG 834
+. *        did not fill all MEM variables correctly so some MEM fields
+. *        are offset my a space
+. * ...........................CHANGE LOG...............................
+. *  apjwh - 03/21/2018 - DEV - Initial Version
+. *  apjwh - 03/23/2018 - MOD - added MEM_DOL field to be cleared
+. *  apjwh - 03/26/2018 - MOD - added MEM_GRAD field to be cleared
+. * ================================================================= */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC UTIL_MEMMEM.CB  ... Util MEMMEM update variables
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+UPDT_FILE       FILE    FIX=X_INM_SIZE,TEXT
+UPDT_NAME       INIT    "a1803211.inm"
+
+PARAM_LIST      LIST WITH NAMES
+PARAM_DATE      CHAR    8
+                LISTEND
+
+./* =============
+. * Begin Program
+. * ============= */
+
+...Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+...Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW LROUTINE
+./* Set runtime variables
+. */
+
+... Save starting return stack
+    RETCOUNT ORIG_RETURN
+
+    MOVE "A1803211" TO C_PROG
+    MOVE "Fix 834 Offset MEM" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG // signal start to Autosys
+    ENDIF
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    CALL CUSTOM_EOJ
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+    CALL X_BLANK_SCREEN
+    CALL UTIL_MESSAGE USING "Fixing Bad MEMs",20
+
+    CALL PREP_OGBFILE USING UPDT_FILE,UPDT_NAME
+    CALL OPEN_OGBFILE USING UPDT_FILE,UPDT_NAME
+    MOVE OGB_SEQ1 TO OGB_SEQ
+
+    debug
+    CALL FIX_OFFSET USING "00103334"
+    CALL FIX_OFFSET USING "00041558"
+    CALL FIX_OFFSET USING "00762178"
+
+    CALL CLOSE_OGBFILE USING UPDT_FILE,UPDT_NAME
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+FIX_OFFSET LROUTINE ID1@
+./* Find the offset field and repack the MEM into an update record
+. */
+ID1@                    CHAR    @
+ZIP5                    CHAR    5
+WIPE_LIST               VARLIST MEM_WWW:
+                                MEM_US01:
+                                MEM_MAR:
+                                MEM_DOL:
+                                MEM_GRAD
+...
+    CALL INIT_INM
+    CALL UTIL_MEM_FIND USING ID1@
+    IF (NOT EQUAL)
+        CALL BOMB USING ("MEM Not Found on "+ID1@)
+    ENDIF
+
+    CALL REVIEW_MEM_FIELDS
+
+    FILL " " IN MEM_REC,ZIP5
+    CLEAR MEM_REC
+
+    MOVE MEM_ZIP TO ZIP5
+    PACK MEM_ZIP WITH ZIP5,BLANKS
+
+... Split MEM_WWW into the sex,date,mar code it was supposed to be
+    LOOP
+        debug
+        CMATCH " " TO MEM_WWW
+        IF (EQUAL)
+            BUMP MEM_WWW
+            BREAK IF (EOS)
+            CONTINUE
+        ENDIF
+        UNPACK MEM_WWW INTO MEM_SEX,MEM_DOB,MEM_MAR
+        BREAK
+    REPEAT
+
+...fix erroneous participation code and useless marriage status flag
+    FILL "~" IN WIPE_LIST
+
+    PACK MEM_CHGBY WITH "834FIX",BLANKS
+    FILL " " IN MEM_CHGDT
+    CALL REVIEW_MEM_FIELDS
+
+    debug
+    CALL PACK_INM
+    CALL WRITE_OGBREC USING UPDT_FILE,UPDT_NAME,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+REVIEW_MEM_FIELDS LROUTINE
+./* Look at each MEM field
+. */
+MEM_MAX                 EQU     100
+FIELD                   NUM     3
+MEM_FIELD               CHAR    @
+MEM_FIELD_NAME          CHAR    20
+LAST_MEM_FIELD_NAME     CHAR    20
+...
+    FOR FIELD FROM 1 TO MEM_MAX
+        LOADADR MEM_FIELD FROM FIELD OF MEM_LIST
+        GETNAME MEM_FIELD TO MEM_FIELD_NAME
+        BREAK IF (OVER | SQUEEZE MEM_FIELD_NAME = SQUEEZE LAST_MEM_FIELD_NAME)
+        debug
+        PACK LAST_MEM_FIELD_NAME WITH MEM_FIELD_NAME,BLANKS
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+BOMB LROUTINE ERR@
+./* Erase the update file and abort the program
+. */
+ERR@        CHAR    @
+...
+    debug
+    CALL CLOSE_OGBFILE USING UPDT_FILE,UPDT_NAME
+    ERASE UPDT_NAME
+    CALL UTIL_ERRORMSG USING ERR@,"BOMB"
+
+    RETURN
+    ENDROUTINE
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... OGB includes found in /mcsapl/i
+    INC UTIL_COMMON.SR  ... OGB Compilation of Standard UTIL routines
+    INC UTIL_MEMMEM.SR  ... INM util routines
+
+./* ==============
+. * End of program
+. * ============== */

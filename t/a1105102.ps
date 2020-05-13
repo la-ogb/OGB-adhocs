@@ -1,0 +1,495 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a1105102
++    Description    :  Members potentially affected by Flood 2011
++
++    apeks 05/10/2011 a1105102 DEV - Initial Version. 
++..............................REVISIONS.......................................
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common work area
+              INC       X_OGBFILE.CB
+              INC       PRT.RL               ...Printer Definition File
+              INC       MEM.RL               ...Member Demographics
+              INC       MEME.RL              ...Member Eligibility
+              INC       ANA.RL               ...Name and Address File
+              INC       VALID.RL             ...Valid codes
+              INC       ZIPCODE.RL           ...Zipcodes   
+
+. --------------------------------------------------------------------------
+.
+DATE1         DIM       8
+DATE2         DIM       8
+DATE3         DIM       8
+IDX_OPTS      DIM       200
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+TIMESTAMP     DIM       14
+FROM_DATE     DIM       8
+THRU_DATE     DIM       8
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+FORM1         FORM      1
+FORM2         FORM      2
+FORM3         FORM      3
+FORM4         FORM      4
+FORM5         FORM      5
+FORM6         FORM      6
+FORM7         FORM      7
+FORM8         FORM      8
+FORM9         FORM      9
+FORM10        FORM      10
+FORM12        FORM      12
+FORM_Z        FORM      12
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM4          DIM       4
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM8          DIM       8
+DIM9          DIM       9
+DIM10         DIM       10
+DIMTWO        DIM       2
+
+CURRDATE      DIM       8
+FLOODATE      INIT      "20110510"
+W_CLCTRM      DIM       8
+
+W_FEDTOT      FORM      12
+W_LANGTOT     FORM      12
+
+COUNT_MEM     FORM      8
+COUNT_INP     FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+HLD_CLI       DIM       4
+HLD_MEM       DIM       8
+HLD_DOD       DIM       8
+HLD_RET       DIM       8
+HLD_SSN       DIM       9
+HLD_REL       DIM       2
+
+INP_FILE      FILE      VAR=100,TEXT
+INP_NAME      INIT      "/w/a1105102.inp"
+INP_LIST      LIST
+INP_MEM       DIM       8
+INP_NET       DIM       5
+INP_PRD       DIM       5
+              LISTEND
+
+OUT_FILE      IFILE     VAR=100,TEXT,KEYL=5
+OUT_NAME      INIT      "/w/a1105102.ix1"
+OUT_LIST      LIST      
+OUT_ZIP       DIM       5
+OUT_CITY      DIM       22
+OUT_PARISH    DIM       20 
+OUT_FEDTOT    DIM       12 
+OUT_LANGTOT   DIM       12 
+              LISTEND
+
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST
+PARAM_FILE    DIM       12
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+.RUN_CLIPCALC    EXTERNAL
+
+. -----------------
+.   Begin Program
+. -----------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "Flood Zip Analysis"    TO  C_OPER
+         MOVE      "a1105102"            TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+         LOADMOD   "clipcalc"
+
+. --------------------------------------------------------------------------------
+.   1-Help  2-Srch  3-Prev  4-Next  5-New   6-Serv  7-Code  8-Note  9-Quit 10-More
+. --------------------------------------------------------------------------------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         IF (C_RMODE = "B")
+            SHUTDOWN
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+
+MAIN_PROCESS
+
+         CALL      INITIALIZE    
+         CALL      GET_MEMBERS    
+         CALL      NEOJ
+
+         TRAPREST  TRAP_DATA
+
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. -----------------------------------
+.  Prepare for extract
+. -----------------------------------
+
+INITIALIZE
+
+         CLOCK TIMESTAMP INTO CURRDATE 
+         MOVE      0           TO  FORM_Z     
+
+. Reformat MEME file
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" Reformatting MEME ":
+                      text=" Please wait...      "
+         ENDIF
+
+         PACK DIM8 WITH BLANKS
+         PACK SCRATCH WITH "meme.dbf ",INP_NAME:
+                           " 1-8 112-116 117-121":    
+                           " -p104-111eq#"",DIM8,"#"":
+                           " -p117-119neHSA":
+                           " -p112-116neNOCOV":
+                           " -p112-116neEGWP":
+                           " -p112-115neLIFE -j -t",BLANKS
+         REFORMAT SCRATCH
+
+         PACK SCRATCH WITH "meme.dbf ",INP_NAME:
+                           " 1-8 112-116 117-121":    
+                           " -p104-111ge",FLOODATE:   
+                           " -p117-119neHSA":
+                           " -p112-116neNOCOV":
+                           " -p112-116neEGWP":
+                           " -p112-115neLIFE -j -a -t",BLANKS
+         REFORMAT SCRATCH
+
+    
+         PACK SCRATCH WITH INP_NAME," ",INP_NAME," 1-18 -j -t",BLANKS
+         SORT SCRATCH 
+
+         CALL OPEN_OGBFILE USING INP_FILE,INP_NAME
+         CALL PREP_OGBFILE_IX USING OUT_FILE,OUT_NAME
+
+         CALL CLOSE_OGBFILE_IX USING OUT_FILE,OUT_NAME
+         CALL OPEN_OGBFILE_IX USING OUT_FILE,OUT_NAME
+
+. Set up screen display
+         CALL X_BLANK_SCREEN
+
+         MOVE      0           TO  COUNT_INP 
+         MOVE      0           TO  WRITE_COUNT
+
+         IF (C_RMODE = "I")
+            message   horz="26",vert="18":
+                      bgcol=C_DLGB,fgcol=C_DLGF:
+                      lncol=C_DLGL,shade="Y":
+                      text=" -Records Processed- ":
+                      text=" Input Read          ":
+                      text=" Written             ":
+                      text=" Errors              "
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+. Read through the Input file
+. -----------------------------------
+
+GET_MEMBERS    
+
+         LOOP
+            MOVE      OGB_SEQ1 TO OGB_SEQ
+            CALL      READ_OGBFILE USING INP_FILE,INP_NAME,INP_LIST  
+            IF        (RESULT <> 1) 
+                      BREAK
+            ENDIF
+
+            ADD       1 TO COUNT_INP
+            MOVE      COUNT_INP TO WORK_COUNT
+            UNPACK    WORK_COUNT INTO FRONT,BACK
+            IF (BACK = "000")
+               IF (C_RMODE = "I")
+                  DISPLAY   *P41:20,COUNT_INP
+                  DISPLAY   *P41:21,WRITE_COUNT
+               ENDIF
+            ENDIF
+
+            CALL READ_MEM 
+ 
+         REPEAT
+
+         RETURN
+
+. -----------------------------------
+. Read MEM file for Address
+. -----------------------------------
+
+READ_MEM
+
+         PACK MEM_FK11 WITH INP_MEM
+         CALL   FILE_READ USING MEM_FD:    ...File declaration list
+                MEM_FN:   ...File name list
+                MEM_FC:   ...(I)ndex or (A)imdex
+                MEM_FV:   ...File key varlists
+                MEM_FK:   ...File key sizes
+                MEM_LIST: ...File record (field list)
+                MEM_REC:  ...File record (packed)
+                MEM_OLD:  ...File saved when read
+                MEM_QTY:  ...Number of files
+                1         ...File number for this read
+         IF (RESULT <> 1)
+            RETURN
+         ENDIF
+
+         IF (MEM_STATE = "LA")
+            PACK DIM5 WITH MEM_ZIP,BLANKS
+            PACK ZIP_KEY1 WITH DIM5,BLANKS
+            CALL      ZIP_READ1
+            IF (RESULT = 1)
+               debug
+               REPLACE MAKEUPPER IN ZIP_COUNTY
+               SWITCH ZIP_COUNTY
+                    CASE "ASCENSION           "  
+                          CALL ADD_TOT USING "FED"
+                    CASE "ASSUMPTION          " OR "AVOYELLES           "  
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "CATAHOULA           " OR "CONCORDIA           "  
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "EAST BATON ROUGE    "  
+                          CALL ADD_TOT USING "FED"
+                    CASE "EAST CARROLL        " OR "IBERIA              "
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "IBERVILLE           "
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "LAFOURCHE           "  
+                          CALL ADD_TOT USING "LANG"
+                    CASE "LASALLE             " OR "MADISON             "
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "POINTE COUPEE       "  
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "ST. CHARLES         " OR "ST. JAMES           "
+                          CALL ADD_TOT USING "FED"
+                    CASE "ST. JOHN            "  
+                          CALL ADD_TOT USING "FED"
+                    CASE "ST. LANDRY          " OR "ST. MARTIN          "
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "ST. MARY            " 
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "TENSAS              " OR "TERREBONNE          " 
+                          CALL ADD_TOT USING "BOTH"
+                    CASE "WEST BATON ROUGE    "  
+                          CALL ADD_TOT USING "FED"
+                    CASE "WEST CARROLL        "  
+                          CALL ADD_TOT USING "LANG"
+                    CASE "WEST FELICIANA      "  
+                          CALL ADD_TOT USING "FED"
+               ENDSWITCH     
+            ENDIF
+         ENDIF
+
+         RETURN
+
+. -----------------------
+.  Add to totals
+. -----------------------
+
+ADD_TOT ROUTINE MCS@DIM1
+
+        MOVE 0 TO W_FEDTOT
+        MOVE 0 TO W_LANGTOT
+        MOVE 0 TO FORM12   
+
+         PACK OUT_ZIP WITH ZIP_CODE,BLANKS
+         CALL READ_OGBFILE_IX USING OUT_FILE,OUT_NAME,OUT_ZIP,OUT_LIST
+         IF (RESULT = 1)
+            MOVE OUT_FEDTOT TO W_FEDTOT
+            MOVE OUT_LANGTOT TO W_LANGTOT
+            IF (MCS@DIM1 = "BOTH")
+               ADD 1 TO W_FEDTOT
+               ADD 1 TO W_LANGTOT
+            ENDIF
+            IF (MCS@DIM1 = "FED")
+               ADD 1 TO W_FEDTOT
+            ENDIF
+            IF (MCS@DIM1 = "LANG")
+               ADD 1 TO W_LANGTOT
+            ENDIF
+            MOVE W_FEDTOT TO OUT_FEDTOT            
+            MOVE W_LANGTOT TO OUT_LANGTOT            
+            CALL UPDATE_OGBREC_IX USING OUT_FILE,OUT_LIST
+         ELSE
+            PACK OUT_PARISH WITH ZIP_COUNTY
+            PACK OUT_CITY WITH ZIP_CITY
+            REPLACE MAKEUPPER IN OUT_CITY
+            ADD 1 TO FORM12
+            IF (MCS@DIM1 = "BOTH" OR MCS@DIM1 = "FED")
+               MOVE FORM12 TO OUT_FEDTOT
+            ELSE
+               MOVE FORM_Z TO OUT_FEDTOT  
+            ENDIF
+            IF (MCS@DIM1 = "BOTH" OR MCS@DIM1 = "LANG")
+               MOVE FORM12 TO OUT_LANGTOT
+            ELSE
+               MOVE FORM_Z TO OUT_LANGTOT  
+            ENDIF
+            CALL WRITE_OGBREC_IX USING OUT_FILE,OUT_NAME,OUT_ZIP,OUT_LIST
+            ADD 1 TO WRITE_COUNT
+         ENDIF
+
+         RETURN
+
+
+. -----------------------
+.   Normal End of Job  
+. -----------------------
+
+NEOJ
+         IF (C_RMODE = "I")
+            DISPLAY   *P41:20,COUNT_INP 
+            DISPLAY   *P41:21,WRITE_COUNT
+            error     horz="23",vert="09":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" a1105102 - Flood Zip Analysis Done":
+                      text="------------------------------------"
+         ENDIF
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO
+         INC       ZIPCODE.IO
+         INC       X_OGBFILE.IO
+         INC       X_STANDARD.SR
+
+

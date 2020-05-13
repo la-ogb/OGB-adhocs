@@ -1,0 +1,618 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  a0608102.ps
++    Description    :  FARA Statistics     
++
++   apeks 08/10/2006 a0608102 DEV - Initial Version. (from ext1711.ps)
++..............................REVISIONS.......................................
++   apiii mm/dd/ccyy ayymmdd# MOD - Description               
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+              INC       COMMON.CB            ...Common work area
+              INC       PRT.RL
+              INC       VALID.RL             ...Valid codes
+              INC       MS_CLMX.RL           ...Medstat clm extract
+              INC       FARCLMH.RL           ...FARA Claim Header File
+              INC       FARCLMD.RL           ...FARA Claim Detail File
+              INC       FAREMP.RL            ...FARA Employee Master File
+              INC       FARDEP.RL            ...FARA Dependent File
+              INC       FARPRV.RL            ...FARA Provider Master File
+              INC       X_OGBFILE.CB         ...OGB Standard io
+              INC       MEM.RL               
+              INC       MEME.RL
+              INC       MEMX.RL
+              INC       ACCMLD.RL
+              INC       ACCMERR.RL 
+
+. --------------------------------------------------------------------------
+.
+
+OUT_SRTKEY         INIT      "9-16D -T"                                         
+
+BAD_CLMH           FORM      1
+BAD_CLMD           FORM      1
+
+LPTR               FORM      2
+
+QUOTE              INIT      "#""
+COMMA              INIT      ","
+
+MAKE_NUM  INIT "a b c d e f g h i j k l m n o p q r s t u v w x y z . / "
+
+TEXT1              DIM      80
+TEXT2              DIM      80
+
+CNT_DTWC           DIM      15
+CNT_HDWC           DIM      15
+CNT_HDFL           DIM      15
+CNT_DTFL           DIM      15
+                                                                                
+PAIDDTE_RET_CODE   FORM      1                                                  
+FCH_RET_CODE       FORM      1
+FCD_RET_CODE       FORM      1
+FEM_RET_CODE       FORM      1
+FDP_RET_CODE       FORM      1
+CHK_CLMD_KEY       DIM       14
+                                                                                
+HIGH_DATE          DIM       8                                                  
+                                                                                
+PDDT_DATE          DIM       6                                                  
+PDDT_CC            DIM       2                                                  
+PDDT_YY            DIM       2                                                  
+PDDT_MM            DIM       2                                                  
+                                                                                
+EXTDT_CCYY         DIM       4                                                  
+EXTDT_MM           DIM       2                                                  
+EXTDT_DD           DIM       2                                                  
+ZERO               DIM       1                                                  
+NUM                DIM       1                                                  
+
+
+CCYYMMDD           DIM       8
+CCYYMM             DIM       6
+PAY_CCYYMM         DIM       6
+DOS_CCYYMM         DIM       6
+VOID_CCYYMM        DIM       6
+ACCBEG_CCYYMM      INIT      "200307"
+CCYY               DIM       4
+MM                 DIM       2
+DD                 DIM       2    
+
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+
+TIMESTAMP     DIM       14
+
+FORM2         FORM      2
+FORM_2        FORM      2
+FORMTWO       FORM      2
+
+DIM2          DIM       2
+DIM3          DIM       3
+DIM5          DIM       5
+DIM6          DIM       6
+DIM7          DIM       7
+DIM10         DIM       10
+DIM16         DIM       16
+DIM24         DIM       24
+DIMONE        DIM       1
+DIMTHREE      DIM       3
+DIMFIVE       DIM       5
+
+DATE_RSLT     DIM       2
+
+W_MON         FORM      2
+W_DAY         FORM      2
+W_YR4         FORM      4
+
+W_REM         FORM     .2
+
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+KEEP_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+
+W_DED         FORM      7.2
+W_CHGS        FORM      7.2
+W_COPA        FORM      7.2
+W_ALLO        FORM      7.2
+W_COIN        FORM      7.2
+
+DATADATE      DIM       6
+
+W_DTE         DIM       8
+
+W_FROM        DIM       8
+FR_CCYY       DIM       4
+FR_CC         DIM       2
+FR_YY         DIM       2
+FR_MM         DIM       2
+FR_DD         DIM       2  
+
+W_THRU        DIM       8
+TO_CCYY       DIM       4
+TO_CC         DIM       2
+TO_YY         DIM       2
+TO_MM         DIM       2
+TO_DD         DIM       2  
+
+INB_CC        DIM       2
+INB_YY        DIM       2
+INB_MM        DIM       2
+INB_DD        DIM       2  
+
+DOB_CC        DIM       2
+DOB_YY        DIM       2
+DOB_MM        DIM       2
+DOB_DD        DIM       2  
+
+W_REL         DIM       2
+W_ENR         DIM       8
+W_MEM         DIM       8
+
+HLD_MEM       DIM       8
+
+W_DOSF        DIM       8
+W_DOST        DIM       8
+W_PAYD        DIM       8
+W_PRVN        DIM       30
+W_DIAG        DIM       5 
+W_TCHG        DIM       10
+W_TDED        DIM       10
+W_TCOP        DIM       10
+
+W_DOB         DIM       1
+W_FIRST       DIM       1
+W_LAST        DIM       1 
+W_SEX         DIM       1 
+I_SEX         DIM       1
+W_OKAY        DIM       1 
+
+SSN_OK        DIM       1
+MEM_OK        DIM       1
+
+W_SSN         DIM       9
+
+W_LINEOK      DIM       1
+W_DUP         DIM       1
+W_CLMN        DIM       14
+
+MONEY1        FORM      7.2
+MONEY2        FORM      7.2
+MONEY3        FORM      7.2
+
+W_TYPE        DIM       4
+W_DEDU        INIT      "DEDU"
+W_LIFE        INIT      "LIFE"
+
+W_MSG         DIM       30  
+
+OUT_FILE      FILE      VAR=150,TEXT
+OUT_NAME      INIT      "/w/a0608102.csv"
+OUT_LIST      LIST
+OUT_FYR       DIM       12
+OUT_CM1       DIM       1
+OUT_CCNT      DIM       20
+OUT_CM2       DIM       1
+OUT_LCNT      DIM       20
+OUT_CM3       DIM       1
+OUT_CHGS      DIM       20
+OUT_CM4       DIM       1
+OUT_PAID      DIM       20
+              LISTEND
+
+...Claim Header File
+FCLMH_FILE    FILE      VAR=299,TEXT
+FCLMH_NAME    INIT      "/w/farclmh.txt"
+
+...Claim Detail File
+FCLMD_FILE    FILE      VAR=632,TEXT
+FCLMD_NAME    INIT      "/w/farclmd.txt"
+
+FCLMD_IFILE   IFILE     VAR=632,KEYLEN=14,TEXT
+FCLMD_INAME   INIT      "/w/farclmd.ix1"
+
+FCLMD_KEY     DIM   14   ...Clm#,Wrksht#,Line#
+
+FDUP_FILE     IFILE     VAR=15,KEYL=14,TEXT
+FDUP_NAME     INIT      "/w/far_dedup.ix1"
+FDUP_LIST     LIST
+FDUP_CLMN     DIM       14
+              LISTEND
+...
+
+FRM_LIST      LIST
+FRM_CHGS      FORM      7.2
+FRM_PAID      FORM      7.2
+FRM_PDPV      FORM      7.2
+              LISTEND                     
+
+W_FY1         INIT      "2004-2005"
+W_FY2         INIT      "2005-2006"
+
+W_FY1_BEG     INIT      "20040701"
+W_FY1_END     INIT      "20050630"
+
+W_FY2_BEG     INIT      "20050701"
+W_FY2_END     INIT      "20060630"
+
+TOT_CCNT1     FORM      20
+TOT_LCNT1     FORM      20
+TOT_CHGS1     FORM      15.2
+TOT_PAID1     FORM      15.2
+TOT_PDPV1     FORM      15.2
+              
+TOT_LCNT2     FORM      20
+TOT_CCNT2     FORM      20
+TOT_CHGS2     FORM      15.2
+TOT_PAID2     FORM      15.2
+TOT_PDPV2     FORM      15.2
+              
+WRK_MONEY     LIST
+WRK_CHGS      FORM      7.2
+WRK_PAID      FORM      7.2
+WRK_PDPV      FORM      7.2
+WRK_PDCL      FORM      7.2
+              LISTEND        
+                                                          
+. -------------------------------------------------------------
+.   Scheduler Fields
+. -------------------------------------------------------------
+
+PARAM_LIST    LIST
+PARAM_IN      DIM       12
+PARAM_HCFA    DIM       12
+PARAM_UBHD    DIM       12
+PARAM_UBSV    DIM       12
+              LISTEND
+
+. -------------------------------------------------------------
+.   Control Variables
+. -------------------------------------------------------------
+
+PRINT@DETAIL  DIM       @
+
+MCS@DECL      FILE      @
+MCS@IDECL     IFILE     @
+MCS@FILE      DIM       @
+MCS@FILE2     DIM       @
+MCS@LIST      LIST      @
+MCS@OPTS      DIM       @
+
+MCS@DIM1      DIM       @
+MCS@DIM2      DIM       @
+
+MCS@FORM1     FORM      @
+MCS@FORM2     FORM      @
+
+. -----------------
+.   Begin Program
+. -----------------
+
+. ------------------------------------
+.   Start here if selected from menu
+. ------------------------------------
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. -----------------------------------------
+.   Start here if called by the Scheduler
+. -----------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------
+.   Fill top of screen
+. ----------------------
+
+         MOVE      "menu"                TO  C_NEXT
+         MOVE      "FARA Stats"          TO  C_OPER
+         MOVE      "a0608102"            TO  C_PROG
+
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+. ----------
+.   9-Quit
+. ----------
+
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+
+         TRAPSAVE  TRAP_DATA
+
+         TRAPCLR   ALL
+
+         TRAP      QUIT   NORESET  IF F9
+
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+         CALL      SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+         CALL INITIALIZE
+
+         CALL READ_CLMH   
+
+         CALL OUTPUT_DATA
+
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+
+         RETURN
+
+. -----------------------------------
+.  Preparation Steps
+. -----------------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+ 
+.Indexing the Input files........
+         CALL      INDEX_INPUT_FILES
+
+..Open Program files
+         MOVE OUT_NAME TO C_FILE         
+         CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME 
+         MOVE FDUP_NAME TO C_FILE                                             
+         CALL PREP_OGBFILE_IX USING FDUP_FILE,FDUP_NAME
+
+...Open Fara's files
+         MOVE      FCLMH_NAME TO C_FILE
+         CALL      OPEN_OGBFILE USING FCLMH_FILE,FCLMH_NAME
+         MOVE      FCLMD_NAME TO C_FILE
+         CALL      OPEN_OGBFILE_IX USING FCLMD_IFILE,FCLMD_INAME
+
+         MOVE      0 TO TOT_CCNT1
+         MOVE      0 TO TOT_LCNT1
+         MOVE      0 TO TOT_CHGS1
+         MOVE      0 TO TOT_PAID1
+        
+         MOVE      0 TO TOT_CCNT2
+         MOVE      0 TO TOT_LCNT2
+         MOVE      0 TO TOT_CHGS2
+         MOVE      0 TO TOT_PAID2
+        
+         RETURN
+
+. -----------------------------------
+.  Index Input File    
+. -----------------------------------
+INDEX_INPUT_FILES
+
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="17",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="INDEXING INCOMING FARA FILES...please wait";                                          
+         CLEAR SCRATCH
+         PACK SCRATCH WITH FCLMD_NAME," ",FCLMD_INAME," 1-14 -j -t"
+         INDEX SCRATCH
+         
+         DISPLAY        *P17:20,*BGCOLOR=*CYAN,*EL:
+                        *P17:21,*BGCOLOR=*CYAN,*EL:
+                        *P17:22,*BGCOLOR=*CYAN,*EL:
+                        *P17:23,*BGCOLOR=*CYAN,*EL
+
+         RETURN
+
+. -----------------------------------
+
+. -----------------------------------
+
+READ_CLMH    
+
+...Read FARA's files
+...Read clmhdr        
+         LOOP
+             MOVE FCLMH_NAME TO C_FILE
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING FCLMH_FILE,FCLMH_NAME,FCH_LIST
+             MOVE RESULT TO FCH_RET_CODE
+                WHILE (FCH_RET_CODE = 1)
+
+             debug
+             CONTINUE IF (FCH_PDDT < W_FY1_BEG)
+             CONTINUE IF (FCH_PDDT > W_FY2_END)
+
+             IF (FCH_PDDT <= W_FY1_END)
+                ADD 1 TO TOT_CCNT1
+             ELSE
+                ADD 1 TO TOT_CCNT2
+             ENDIF  
+
+...Read clmdet
+             CLEAR FCLMD_KEY
+
+             MOVE  FCLMD_INAME TO C_FILE
+             PACK  FCLMD_KEY WITH FCH_CLM,FCH_WKN,BLANKS
+             CALL  READ_OGBFILE_IX USING FCLMD_IFILE:
+                                         FCLMD_INAME:
+                                         FCLMD_KEY:
+                                         FCD_LIST
+
+             CLEAR FRM_LIST
+
+             LOOP
+                 CALL READKS_OGBFILE_IX USING FCLMD_IFILE:
+                                              FCLMD_INAME:
+                                              FCD_LIST
+                 PACK CHK_CLMD_KEY WITH FCD_CLMN,FCD_WKNO,BLANKS
+                 MOVE RESULT TO FCD_RET_CODE
+                  WHILE ((CHK_CLMD_KEY = FCLMD_KEY) AND (FCD_RET_CODE = 1))
+
+                 PACK W_CLMN WITH FCD_CLMN,FCD_WKNO,FCD_LNNO:
+                                    FCD_LNCT,FCD_DPCT,BLANKS
+
+                 debug
+                 CALL CHK_DUP
+                 CONTINUE IF (W_DUP = "Y")
+
+                 MOVE FCD_TCHG TO FRM_CHGS
+                 MOVE FCD_PDPV TO FRM_PDPV
+                 MOVE FCD_PDPV TO WRK_PDPV
+                 MOVE FCD_PDCL TO WRK_PDCL
+                 ADD WRK_PDPV  TO WRK_PDCL GIVING FRM_PAID
+
+                 IF (FCH_PDDT <= W_FY1_END)
+                    ADD 1        TO TOT_LCNT1
+                    ADD FRM_CHGS TO TOT_CHGS1
+                    ADD FRM_PAID TO TOT_PAID1
+                    ADD FRM_PDPV TO TOT_PDPV1
+                 ELSE
+                    ADD 1        TO TOT_LCNT2
+                    ADD FRM_CHGS TO TOT_CHGS2 
+                    ADD FRM_PAID TO TOT_PAID2
+                    ADD FRM_PDPV TO TOT_PDPV2
+                 ENDIF  
+
+             REPEAT  
+                 
+         REPEAT
+         
+         RETURN
+
+. ----------------------------
+.  Check for Duplicate lines
+. ----------------------------
+
+CHK_DUP
+
+         PACK W_DUP WITH "N"
+
+         CALL READ_OGBFILE_IX USING FDUP_FILE,FDUP_NAME,W_CLMN,FDUP_LIST
+         IF (RESULT = 1)
+            PACK W_DUP WITH "Y"
+         ELSE
+            PACK FDUP_CLMN WITH W_CLMN
+            CALL WRITE_OGBREC_IX USING FDUP_FILE,FDUP_NAME,FDUP_CLMN,FDUP_LIST
+         ENDIF 
+
+         RETURN
+
+. -----------------------
+.  Output records
+. -----------------------
+
+OUTPUT_DATA
+
+. Title
+         CLEAR OUT_LIST
+         PACK OUT_FYR WITH "FARA CLAIMS TOTALS",BLANKS
+
+         MOVE OGB_SEQ1 TO OGB_SEQ
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+
+         PACK OUT_CM1 WITH COMMA
+         PACK OUT_CM2 WITH COMMA
+         PACK OUT_CM3 WITH COMMA
+         PACK OUT_CM4 WITH COMMA
+
+. Headers
+         PACK OUT_FYR WITH "Fiscal Year",BLANKS
+         PACK OUT_CCNT WITH "Claim Count",BLANKS
+         PACK OUT_CHGS WITH "Total Charges",BLANKS
+         PACK OUT_PAID WITH "Total Paid",BLANKS
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+
+. Data
+         PACK OUT_FYR WITH W_FY1,BLANKS
+         MOVE TOT_CCNT1 TO OUT_CCNT
+         MOVE TOT_CHGS1 TO OUT_CHGS
+         MOVE TOT_PAID1 TO OUT_PAID
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+
+         PACK OUT_FYR WITH W_FY2,BLANKS
+         MOVE TOT_CCNT2 TO OUT_CCNT
+         MOVE TOT_CHGS2 TO OUT_CHGS
+         MOVE TOT_PAID2 TO OUT_PAID
+         CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME,OUT_LIST
+
+         RETURN
+
+. -----------------------
+.   Operator pressed F9
+. -----------------------
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+
+         INC       X_MEMSRCH.EX
+         INC       X_OGBFILE.IO
+         INC       UTIL.SR
+         INC       FILE.IO
+         INC       VALID.IO

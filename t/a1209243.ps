@@ -1,0 +1,374 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1209243.ps
++    Description    :  Output files of claims service lines from selected 
++                      claim header lines for Blue Cross.
++    Author         :  appnc
++    Date created   :  01/02/2013
++    Project Number :  A1206243
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++                                REVISIONS
++------------------------------------------------------------------------------
++   apiii  mm/dd/ccyy  A####### - TYP - Comments
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       CLM.RL
+              INC       CLMS.RL
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+
+IN_FILE       FILE      VAR=6000,TEXT
+IN_NAME       INIT      "/w/ref_clm_4q_2012.txt"               
+              
+OUT_H_FILE      FILE      VAR=6000,TEXT
+OUT_H_NAME      INIT      "/w/clm_4q_2012.txt"
+OUT_H_LIST     LIST
+OUT_H_REC      DIM       6000
+               LISTEND
+.
+OUT_D_FILE      FILE      VAR=1450,TEXT
+OUT_D_NAME      INIT      "/w/clms_4q_2012.txt"
+OUT_D_LIST     LIST
+OUT_D_REC      DIM       1450
+               LISTEND
+
+
+ELIM_FILE     IFILE      VAR=8,KEYL=8,TEXT
+ELIM_NAME     INIT       "/w/exclude.ix1"
+ELIM_LIST     LIST
+ELIM_ID       DIM        008
+              LISTEND
+              
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+TRAP_DATA     DIM       500
+TODAY         DIM       8
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+FIRST_READ    INIT      "Y"
+WK_EDI_PREFIX DIM       22
+JUNK4         DIM       4
+DISP4         DIM       4
+DISP3         DIM       3
+
+PARAM_LIST    LIST
+PARAM_FROM    DIM       8
+PARAM_THRU    DIM       8 
+              LISTEND
+              
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+
+RUN_NOW
+
+. ...Check return stack
+         RETCOUNT  ORIG_RETURN
+
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         MOVE      "MENU"                TO  C_NEXT
+         MOVE      "Get Claim serv lines" TO  C_OPER
+         MOVE      "a1209243"             TO  C_PROG
+         MOVE      BLANKS                TO  C_LABEL
+         MOVE      BLANKS                TO  C_FILE
+         MOVE      BLANKS                TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+         
+         CALL SETPOP_CLMS         
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+         DEBUG
+         CALL      INITIALIZE
+.        CALL      REFORMAT_INP
+         CALL      OPEN_FILES
+         CALL      DO_WORK
+         CALL      CLOSE_FILES
+         
+
+. ...Normal End-Of-Job
+         IF (RUN_MODE = "N")
+             DIALOG       HORZ="25",VERT="17":
+                          BGCOL=C_ERRB,FGCOL=C_ERRF:
+                          LNCOL=C_ERRL,SHADE="Y":
+                          TEXT="  PROGRAM COMPLETED NORMALLY  ":
+                          TEXT="------------------------------":
+                          TEXT="  Press any key to continue   ":
+                          FIELD=WCHAR 
+         ENDIF
+
+. ...Return Control Back to Chain - End of Program
+         TRAPREST  TRAP_DATA
+         MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         RETURN
+
+. ----------------------------
+. Initialize
+. ----------------------------
+
+INITIALIZE
+
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+
+. ...Display Counters
+         MOVE "Input Recs Read  : " TO X_CNTDESC1
+         MOVE "HDRs Written     : " TO X_CNTDESC2
+         MOVE "SERVs Written    : " TO X_CNTDESC3
+         MOVE "                 : " TO X_CNTDESC4
+         MOVE "                 : " TO X_CNTDESC5
+         MOVE "                 : " TO X_CNTDESC6
+         
+         CALL X_DISPLAY_COUNTS
+         CALL      SETPOP_CLMS 
+         RETURN
+         
+. ----------------------------
+. Reformat INPUT
+. ----------------------------
+
+REFORMAT_INP
+
+
+...Display message to Operations, as this routine takes a minute.         
+         MESSAGE   HORZ="22",VERT="20":
+                   BGCOL=C_DLGB,FGCOL=C_DLGF:
+                   LNCOL=C_DLGL,SHADE="Y":
+                   TEXT="GRABBING CLM RECORDS...please wait";
+                   
+                               
+         
+         CLEAR SCRATCH
+         MOVE BLANKS TO SCRATCH                                                 
+         PACK SCRATCH WITH "clm.dbf ",IN_NAME:                                 
+                           " 1-6000 -t -j":     
+                           " -p2496-2503ge20121001":
+                           " -p2496-2503le20121231"
+         REFORMAT SCRATCH
+         
+         IF OVER
+             ERROR     HORZ="15",VERT="19":
+                       BGCOL=C_ERRB,FGCOL=C_ERRF:
+                       LNCOL=C_ERRL,SHADE="Y":
+                       TEXT="REFORMAT FAILED - clm.dbf to /w/clm_4th_2012.txt"
+             CHAIN     "menu"
+         ENDIF 
+         
+         DISPLAY        *P22:20,*BGCOLOR=*CYAN,*EL:
+                        *P22:21,*BGCOLOR=*CYAN,*EL:
+                        *P22:22,*BGCOLOR=*CYAN,*EL:
+                        *P22:23,*BGCOLOR=*CYAN,*EL   
+                        
+         RETURN
+ 
+. ----------------------------
+. Open Files
+. ----------------------------
+
+OPEN_FILES
+
+         MOVE IN_NAME TO C_FILE
+         CALL OPEN_OGBFILE USING IN_FILE,IN_NAME
+         
+         MOVE OUT_H_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_H_FILE,OUT_H_NAME         
+
+         MOVE OUT_D_NAME TO C_FILE
+         CALL PREP_OGBFILE USING OUT_D_FILE,OUT_D_NAME
+         
+         MOVE ELIM_NAME TO C_FILE
+         CALL OPEN_OGBFILE_IX USING ELIM_FILE,ELIM_NAME
+
+         RETURN
+
+. ----------------------------
+. Do Work
+. ----------------------------
+
+DO_WORK
+
+         LOOP
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING IN_FILE,IN_NAME,CLM_LIST
+             IF (RESULT <> 1)
+                 BREAK
+             ENDIF
+             
+             ADD 1 TO X_CNT1
+             UNPACK X_CNT1 INTO DISP4,DISP3
+             IF (DISP3 = "000")
+                 CALL X_DISPLAY_COUNTS
+             ENDIF 
+             
+             MOVE CLM_ID1 TO ELIM_ID
+             CALL READ_OGBFILE_IX USING ELIM_FILE,ELIM_NAME,ELIM_ID,ELIM_LIST
+             IF (RESULT = 1)
+                 CONTINUE
+             ENDIF
+             
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING OUT_H_FILE,OUT_H_NAME,CLM_LIST            
+...Read CLMS & Write out Service Line
+            PACK CLMS_BASE WITH CLM_ID1,BLANKS   ...Set up for CLMS Read
+            PACK CLMS_KEY  WITH CLMS_BASE,"   "
+            CALL POP_READ
+             
+            LOOP                                 ...CLMS Read Loop
+                CALL POP_NEXT
+                 
+                DEBUG
+                IF ((RESULT <> 1) OR (CLMS_ID <> CLM_ID1))
+                    BREAK
+                ENDIF 
+                PACKLEN OUT_D_REC WITH CLMS_REC
+                UNPACK OUT_D_REC INTO OUT_D_LIST
+                MOVE OGB_SEQ1 TO OGB_SEQ
+                CALL WRITE_OGBREC USING OUT_D_FILE,OUT_D_NAME,OUT_D_LIST
+                ADD 1 TO X_CNT3 
+                
+            REPEAT           
+         
+         REPEAT
+
+         RETURN
+
+. ----------------------------
+. Close Files
+. ----------------------------
+
+CLOSE_FILES
+
+
+         RETURN
+
+SETPOP_CLMS
+
+         MOVEADR CLMS_REC    TO  POP_REC
+         MOVEADR CLMS_SW     TO  POP_SW
+         MOVEADR CLMS_DECL   TO  POP_DECL
+         MOVEADR CLMS_NAME   TO  POP_NAME
+         MOVEADR CLMS_KEY    TO  POP_KEY
+         MOVEADR CLMS_OLD    TO  POP_OLD
+         MOVEADR CLMS_BASE   TO  POP_ID
+         MOVEADR CLMS_LINE   TO  POP_LINE                                                     
+
+         RETURN
+ 
+. ----------------------------
+. Operator pressed F9
+. ----------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+              INC       UTIL.SR      
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+              INC       POP.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1209243.PS
+. +++++++++++++++++++++++++++++++++++++

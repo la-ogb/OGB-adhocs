@@ -1,0 +1,504 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A1805151.PS
++    Description    :  ADHOC Nicolls Salary Updates        
++ apsjm -------- 05/15/2018 adh- Initial Version                             
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+              INC       COMMON.CB            ...Common work area
+              INC       PRT.RL               ...Printer Definition File
+              INC       VALID.RL             ...Valid codes
+              INC       CLI.RL               ...Client Record
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              INC       MEM.RL               ...Member Demograhics
+              INC       MEMS.RL              ...Member Salaries
+              INC       CMDPARAM.CB          ...Command Line Variables
+.
+X_NIC_FD      FILE      VAR=45,TEXT
+X_NIC_NME     INIT      "X_NICSAL.TXT"   
+
+X_NIC_LIST    LIST
+...<Begin>........
+NIC_LNAME     DIM  16
+NIC_SSN       DIM  9
+NIC_AGENCY    DIM  6
+NIC_TRCODE    DIM  2
+NIC_SALARY    FORM 8
+NIC_CHGDATE   DIM  4
+...<End>..........
+          LISTEND
+.
+X_NICOUT_FD   FILE      VAR=53,TEXT
+X_NICOUT_NME  INIT      "NICHOLLS_SAL.CSV"
+
+X_NICOUT_HREC LIST
+..<Begin>.........
+NIC_HDR   INIT  "MEM_ESSN,MEM_REL,MEMS_NET,MEMS_PRD,MEMS_SALR,MEMS_EFF"
+..<END............
+          LISTEND
+
+X_NICOUT_DREC LIST
+..<Begin>.........  
+NIC_ESSN      DIM       9
+NIC_REL       INIT      ",01"
+NIC_NET       INIT      ",LIFE"
+NIC_PRD       INIT      ",LIFE,"
+NIC_SAL       DIM       9
+NIC_FILL      INIT      "," 
+NIC_EFF       DIM       6
+NIC_FILL2     INIT      "01"
+..<End>...........
+              LISTEND
+.
+NIC_ERR_FD    FILE      VAR=100,TEXT
+NIC_ERR_NAME  INIT      "/w/nic_slyerr.txt"
+SAL_ERR_LIST      LIST
+SAL_ERR_SSN       DIM  9
+SAL_ERR_LNAME     DIM  16
+SAL_ERR_AGENCY    DIM  6
+SAL_ERR_SALARY    FORM 8
+SAL_ERR_EFF       DIM  6
+SAL_ERR_ERR       DIM  30
+                  LISTEND
+.--------------------------------
+. Program Specific Variables and Working Storage
+.--------------------------------   
+.
+SAL_DIFF      FORM      7.2
+NIC_RET_CODE  FORM      1
+WRK_DIM6      DIM       6
+WRK_DIM2      DIM       2
+WRK_DIM9      DIM       9
+WRK_DIM8      DIM       8
+WRK_FORM62    FORM      6.2
+FORM_MM       FORM      2
+FORM_CCYY     FORM      4
+WS_DATE       DIM       6
+SAV_MEMS_EFF  DIM       8
+WS_SALR       DIM       9 
+SAV_MEMS_SALR FORM      7.2
+NIC_EFF_DATE  DIM       8
+WS_MM         DIM       2
+WS_YY         DIM       2
+WS_CCYY       DIM       4
+DISP3         DIM       3
+DISP4         DIM       4
+DATE1         DIM       8
+LAST_CLM1     DIM       8
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TRAP_DATA     DIM       500 
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+READ_COUNT    FORM      8
+KEEP_COUNT    FORM      8
+WRITE_COUNT   FORM      8
+ERROR_COUNT   FORM      8
+MONEY1        FORM      7.2
+READ_SEQ      FORM      "-1"
+WRITE_SEQ     FORM      "-3"
+WORK_TEXT     INIT      "JUNK"
+WS_EFF_DATE   FORM      6
+ACTION        DIM       10          
+TODAY         DIM       8
+
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       8
+
+              LISTEND
+
+......> START HERE
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT 			    chains to back to the menu
+
+. -----------------------------------------
+.   Start here if called by the Scheduler    
+. -----------------------------------------
+
+         INC       SCHED_WP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+
+         RETCOUNT  ORIG_RETURN
+. ----------------------
+.   Fill top of screen
+. ----------------------
+         MOVE      "MENU"            TO  C_NEXT
+         MOVE      "Nicholls Sal Upd" TO  C_OPER
+         MOVE      "a1805151"            TO  C_PROG
+         MOVE      BLANKS             TO  C_LABEL
+         MOVE      BLANKS             TO  C_FILE
+         MOVE      BLANKS             TO  C_KEYS
+         CLOCK     CALENDAR         INTO  CAL_CLOCK
+
+         CALL X_BLANK_SCREEN
+
+         IF (C_CMDPAR)
+            CALL CMD_START USING C_PROG
+         ENDIF
+
+. ----------
+.   display screen  - This draws the commonly formatted data on the screen
+. ----------
+         DISPLAY   *RESETSW,*BGCOLOR=C_MANB,*FGCOLOR=C_MANF,*ES:
+                   *BGCOLOR=C_DATB,*COLOR=C_DATF:
+                   *P1:2,*RPTCHAR *HLN:80,*+:
+                   *P3:2,"<",CAL_CLOCK,">":
+                   *P29:2,"<",C_OPER,">":
+                   *P54:2,"<",C_PROG,">":
+                   *P66:2,"<REPORT>":
+                   *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F,"        ":
+                   *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F,"        ":
+                   *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F,"        ":
+                   *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F,"        ":
+                   *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F,"        ":
+                   *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F,"        ":
+                   *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F,"        ":
+                   *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F,"        ":
+                   *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                   *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"        ":
+                   *BGCOLOR=C_DLGB,*COLOR=C_DLGF
+
+. ------------------------
+.   Set applicable traps
+. ------------------------
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. -----------------------------
+.   Get scheduler information
+. -----------------------------
+
+        CALL    SCHED_PICK 
+  
+        IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+        ENDIF
+         RETURN
+
+. -----------------------------------
+.   Main Process
+. -----------------------------------
+MAIN_PROCESS
+
+. ...INITIALIZE
+
+         ROLLOUT   "x_elg540.ftp 2>/dev/null"
+         IF OVER
+            IF (C_CMDPAR)
+               CALL CMD_ERROR USING "ROLLOUT FAILED"
+               STOP
+            ELSE
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="ROLLOUT FAILED"
+               CHAIN     "MENU"
+            ENDIF
+         ENDIF
+
+         CALL      INITIALIZE
+
+. ...Open Files
+         CALL      OPEN_FILES
+
+. ...Write Output File Header Record    
+         MOVE      X_NICOUT_NME TO C_FILE
+         MOVE      OGB_SEQ1     TO OGB_SEQ
+         CALL      WRITE_OGBREC USING X_NICOUT_FD:
+                                      X_NICOUT_NME,X_NICOUT_HREC
+
+. ...Read Input File and Reformat to Output File
+         CALL      READ_NICIN   
+
+. ...Close Files
+
+         CALL      CLOSE_FILES
+         CALL      X_DISPLAY_COUNTS
+
+. ...Return Control Back to Chain - End of Program
+         CALL NORMAL_EOJ
+         RETURN
+
+. -------------------------------------
+. End of Main Process
+. -------------------------------------      
+
+++++++++++++++++++< End Of Main Process>+++++++++++++++++
+
+.--------------------------------------
+. Initialize
+.--------------------------------------
+
+INITIALIZE
+
+         DEBUG
+         CLOCK      TIMESTAMP  INTO  TIMESTAMP
+         CLOCK      TIMESTAMP  INTO  CURRDATE
+         CLOCK      TIMESTAMP    TO  TODAY
+
+. ...Display Counters
+         MOVE       "RECORDS PROCESSED:"  TO X_CNTDESC1
+         MOVE       "NOT USED" TO X_CNTDESC2 
+         MOVE       "NOT USED" TO X_CNTDESC3
+         MOVE       "NOT USED" TO X_CNTDESC4
+         MOVE       "NOT USED" TO X_CNTDESC5
+         MOVE       "NOT USED" TO X_CNTDESC6
+
+         CALL       X_DISPLAY_COUNTS
+
+         RETURN
+
+.---------------------------------------
+. Open Files
+.---------------------------------------
+
+OPEN_FILES
+
+         MOVE       X_NIC_NME TO C_FILE
+         CALL       OPEN_OGBFILE USING X_NIC_FD,X_NIC_NME
+         MOVE       X_NICOUT_NME TO C_FILE
+         CALL       PREP_OGBFILE USING X_NICOUT_FD,X_NICOUT_NME
+         MOVE       NIC_ERR_NAME TO C_FILE
+         CALL       PREP_OGBFILE USING NIC_ERR_FD,NIC_ERR_NAME
+
+         RETURN
+
+.----------------------------------------
+. Read Input File
+.----------------------------------------
+  
+READ_NICIN    
+
+         LOOP
+             MOVE X_NIC_NME TO C_FILE
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL READ_OGBFILE USING X_NIC_FD,X_NIC_NME,X_NIC_LIST     
+             MOVE RESULT TO NIC_RET_CODE
+             IF (NIC_RET_CODE <> 1)
+                 BREAK
+             ENDIF
+.            RESET     NIC_SALARY TO 2
+             MOVE      NIC_SALARY TO WRK_DIM8
+             CALL      FORMAT_DIM
+             MOVE      WRK_FORM62 TO NIC_SAL      
+ 
+             CALL WRITE_NIC
+
+             ADD       1 TO X_CNT1
+             UNPACK    X_CNT1 INTO DISP4,DISP3
+             IF (DISP3 = "000")
+                 CALL  X_DISPLAY_COUNTS
+             ENDIF            
+
+         REPEAT
+         
+         RETURN
+
+.----------------------------------------
+.Format Salary Field
+.----------------------------------------
+
+FORMAT_DIM
+         UNPACK    WRK_DIM8 INTO WRK_DIM6,WRK_DIM2
+         PACK      WRK_DIM9 WITH WRK_DIM6,".",WRK_DIM2
+         MOVE      WRK_DIM9 TO WRK_FORM62
+         RETURN
+ 
+.----------------------------------------  
+.Write Ouput Records
+.---------------------------------------- 
+
+WRITE_NIC
+        CALL GET_MEMID
+        IF (RESULT = 1)
+          CALL GET_LATEST_EFF_DATE
+          MOVE (SAV_MEMS_SALR - WRK_FORM62) TO SAL_DIFF
+          IF (SAL_DIFF < .00)
+               MULTIPLY -1 BY SAL_DIFF
+          ENDIF
+          IF (SAL_DIFF <= 1.00)
+             GOTO WRITE_NIC_RET
+          ENDIF
+          UNPACK NIC_CHGDATE  INTO WS_MM,WS_YY
+          PACK NIC_EFF_DATE WITH "20",WS_YY,WS_MM,"01"
+          IF (NIC_EFF_DATE <= SAV_MEMS_EFF)
+             MOVE NIC_SSN TO SAL_ERR_SSN
+             MOVE NIC_LNAME TO SAL_ERR_LNAME
+             MOVE NIC_AGENCY TO SAL_ERR_AGENCY
+             MOVE NIC_SALARY TO SAL_ERR_SALARY
+             UNPACK NIC_CHGDATE  INTO WS_MM,WS_YY
+             PACK SAL_ERR_EFF WITH "20",WS_YY,WS_MM
+             MOVE "NIC EFF DATE MUST BE > IMPACT EFF" TO SAL_ERR_ERR
+             MOVE OGB_SEQ1 TO OGB_SEQ
+             CALL WRITE_OGBREC USING NIC_ERR_FD,NIC_ERR_NAME,SAL_ERR_LIST
+             CLEAR SAL_ERR_LIST
+             GOTO WRITE_NIC_RET
+          ELSE
+             MOVE   NIC_SSN      TO   NIC_ESSN 
+             MOVE NIC_EFF_DATE TO NIC_EFF
+             MOVE         X_NICOUT_NME TO C_FILE 
+             MOVE         OGB_SEQ1 TO OGB_SEQ
+             CALL         WRITE_OGBREC USING X_NICOUT_FD,X_NICOUT_NME:
+                                              X_NICOUT_DREC
+          ENDIF
+        ELSE
+          MOVE NIC_SSN TO SAL_ERR_SSN
+          MOVE NIC_LNAME TO SAL_ERR_LNAME
+          MOVE NIC_AGENCY TO SAL_ERR_AGENCY
+          MOVE NIC_SALARY TO SAL_ERR_SALARY
+          UNPACK NIC_CHGDATE  INTO WS_MM,WS_YY
+          PACK SAL_ERR_EFF WITH "20",WS_YY,WS_MM
+          MOVE "MEMBER NOT IN IMPACT" TO SAL_ERR_ERR
+          MOVE OGB_SEQ1 TO OGB_SEQ
+          CALL WRITE_OGBREC USING NIC_ERR_FD,NIC_ERR_NAME,SAL_ERR_LIST
+          CLEAR SAL_ERR_LIST
+        ENDIF
+
+WRITE_NIC_RET
+        RETURN
+
+.-----------------------------------------
+. Operator interrupted with F9
+.-----------------------------------------
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     C_NEXT
+
+GET_LATEST_EFF_DATE
+         CLEAR     SAV_MEMS_EFF
+         PACK      MEMS_FK11 WITH MEM_ID1,BLANKS
+         CALL      FILE_READ USING MEMS_FD:    ...File declaration list
+                             MEMS_FN:          ...File name list
+                             MEMS_FC:          ...(I)ndex or (A)imdex
+                             MEMS_FV:          ...File key varlists
+                             MEMS_FK:          ...File key sizes
+                             MEMS_LIST:        ...File record (field list)
+                             MEMS_REC:         ...File record (packed)
+                             MEMS_OLD:         ...File saved when read
+                             MEMS_QTY:         ...Number of files
+                             1                 ...File number for this read
+            LOOP
+                CALL   FILE_NEXT USING MEMS_FD:    ...File declaration list
+                               MEMS_FN:          ...File name list
+                               MEMS_FC:          ...(I)ndex or (A)imdex
+                               MEMS_FV:          ...File key varlists
+                               MEMS_FK:          ...File key sizes
+                               MEMS_LIST:        ...File record (field list)
+                               MEMS_REC:         ...File record (packed)
+                               MEMS_OLD:         ...File saved when read
+                               MEMS_QTY:         ...Number of files
+                               1                 ...File number for this read
+                  IF (RESULT <> 1)
+                     BREAK
+                  ENDIF
+                  IF (MEMS_ID1 <> MEM_ID1)
+                     BREAK
+                  ENDIF 
+                  IF ((MEMS_EFF > SAV_MEMS_EFF) OR (SQUEEZE SAV_MEMS_EFF = ""))
+                    MOVE MEMS_EFF TO SAV_MEMS_EFF
+                    MOVE MEMS_SALR TO SAV_MEMS_SALR
+                  ENDIF 
+            REPEAT
+         RETURN
+
+GET_MEMID
+        CLEAR     MEM_AIM
+        PACK      MEM_AIM1 WITH "01X",NIC_SSN,BLANKS
+        PACK      MEM_AIM3 WITH "03X","01",BLANKS
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_AIM:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            2                 ...FILE NUMBER FOR THIS READ
+        RETURN
+
+.----------------------------------
+. Close Files
+.----------------------------------
+
+CLOSE_FILES
+
+        MOVE X_NIC_NME  TO C_FILE
+        CALL   CLOSE_OGBFILE USING X_NIC_FD,X_NIC_NME
+        MOVE X_NICOUT_NME TO C_FILE
+        CALL   CLOSE_OGBFILE USING X_NICOUT_FD,X_NICOUT_NME
+        MOVE NIC_ERR_NAME TO C_FILE
+        CALL CLOSE_OGBFILE USING NIC_ERR_FD,NIC_ERR_NAME
+        RETURN
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         TRAPREST  TRAP_DATA
+
+         IF (C_CMDPAR)
+            CALL CMD_END
+            STOP
+         ELSE
+            MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+         ENDIF
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "    X_ELG540 Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+         RETURN
+
+. ----------------------------
+. Subroutines and other includes
+. ----------------------------
+
+              INC       UTIL.SR
+              INC       VALID.IO
+              INC       X_STANDARD.SR
+              INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       X_OGBFILE.IO
+              INC       CMDPARAM.SR 
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A1805151.PS
+. +++++++++++++++++++++++++++++++++++++
+

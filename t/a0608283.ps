@@ -1,0 +1,395 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0608283     
++    Description    :  CUS - Extracts NIC MED PRIM DATA FOR ACTUARIES           
++    Author         :  Stephen J. McDonald
++    apsjm 08/31//2006 a0608281 adh - initial version                       
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       COMMON.CB            ...Common work area
+              INC       X_COMMON.CB          ...OGB Common Work Area
+              INC       VALID.RL             ...Valid codes
+              INC       X_OGBFILE.CB         ...OGB Custom File Handler
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL           ...Member Demographics
+              INC       MEME.RL          ...Member Enrollment  
+              INC       MEMO.RL          ...Member Enrollment   
+. ----------------------------
+. File Declarations
+. ----------------------------
+.
+NIC_MP_FD       FILE VAR=16,TEXT
+NIC_MP_NAME     INIT "/w/nic_mp.txt"
+NIC_MP_LIST     LIST
+NIC_MP_AGE      DIM 02
+NIC_MP_SEX      DIM 01
+NIC_MP_REL      DIM 02
+NIC_MP_ZIP      DIM 03
+                LISTEND
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ------------------------
+DIM_1         DIM  1
+DIM_2         DIM  2
+MEDA_PRIM_SW  DIM  1
+MEDB_PRIM_SW  DIM  1
+W_HNET        DIM  20
+FIRST_READ    DIM  1
+DIM_3         DIM  3
+MEM_01        INIT "01"               
+FORM2         FORM 2
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+YN_ANS        DIM  1
+WS_AR_SW      DIM  1
+WS_AGENCY     DIM  4
+WS_AGY1       DIM  1
+WS_AGY4       DIM  1
+WS_DIM1       DIM  1
+WS_DIM4       DIM  4
+SSN2          DIM  2          
+SSN3          DIM  3
+SSN4          DIM  4
+DIM7          DIM  7
+DIM2          DIM  2
+DIM19         DIM  19
+DIMMM         DIM  2
+DIMDD         DIM  2
+DIMCCYY       DIM  4
+FPTR          FORM 2  
+BUMP_SW       FORM "0"
+SLASH_SW      FORM "0"
+CNT_4         DIM  4
+CNT_3         DIM  3
+POP_REC       LIST      @
+POP_KEY       DIM       @
+POP_OLD       DIM       @
+POP_SW        FORM      @
+POP_DECL      IFILE     @
+POP_NAME      DIM       @
+POP_ID        DIM       @
+POP_LINE      DIM       @
+.
+W_RT          DIM       2
+W_DEPC        DIM       2
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+WS_AGE        DIM  3
+W_PAID        FORM      7.2
+W_CHARGE      FORM      7.2
+TRAP_DATA     DIM       500
+CAL_CLOCK     DIM       21
+ORIG_RETURN   FORM      5
+CURR_RETURN   FORM      5
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (with printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "MENU"           TO  C_NEXT
+         MOVE      "NIC MED PRIM" TO  C_OPER
+         MOVE      "A0608283"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL OPEN_FILES
+   CALL INITIALIZE
+   CALL PROCESS_MEM
+....Close Files
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+PROCESS_MEM
+        PACK      MEM_FK11 WITH BLANKS   
+        CALL      FILE_READ USING MEM_FD:    ...File declaration list
+               MEM_FN:   ...File name list
+               MEM_FC:   ...(I)ndex or (A)imdex
+               MEM_FV:   ...File key varlists
+               MEM_FK:   ...File key sizes
+               MEM_LIST: ...File record (field list)
+               MEM_REC:  ...File record (packed)
+               MEM_OLD:  ...File saved when read
+               MEM_QTY:  ...Number of files
+               1         ...File number for this read
+            LOOP
+              CALL      FILE_NEXT USING MEM_FD:    ...File declaration list
+                     MEM_FN:   ...File name list
+                     MEM_FC:   ...(I)ndex or (A)imdex
+                     MEM_FV:   ...File key varlists
+                     MEM_FK:   ...File key sizes
+                     MEM_LIST: ...File record (field list)
+                     MEM_REC:  ...File record (packed)
+                     MEM_OLD:  ...File saved when read
+                     MEM_QTY:  ...Number of files
+                     1         ...File number for this read
+              BREAK IF (RESULT <> 1)
+              ADD 1 TO X_CNT1
+              UNPACK X_CNT1 INTO CNT_4,CNT_3
+              IF (CNT_3 = "000")
+                  CALL X_DISPLAY_COUNTS
+              ENDIF
+              IF ((SQUEEZE MEM_TRM <> "") AND (MEM_TRM < TODAY))
+                  CONTINUE
+              ENDIF
+              PACK MEME_FK11 WITH MEM_ID1,BLANKS
+              CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                     MEME_FN:   ...File name list
+                     MEME_FC:   ...(I)ndex or (A)imdex
+                     MEME_FV:   ...File key varlists
+                     MEME_FK:   ...File key sizes
+                     MEME_LIST: ...File record (field list)
+                     MEME_REC:  ...File record (packed)
+                     MEME_OLD:  ...File saved when read
+                     MEME_QTY:  ...Number of files
+                     1         ...File number for this read
+              LOOP
+                CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                       MEME_FN:   ...File name list
+                       MEME_FC:   ...(I)ndex or (A)imdex
+                       MEME_FV:   ...File key varlists
+                       MEME_FK:   ...File key sizes
+                       MEME_LIST: ...File record (field list)
+                       MEME_REC:  ...File record (packed)
+                       MEME_OLD:  ...File saved when read
+                       MEME_QTY:  ...Number of files
+                       1         ...File number for this read
+                BREAK IF (RESULT <> 1)
+                BREAK IF (MEM_ID1 <> MEME_ID1)
+                IF (SQUEEZE MEME_NET = "DEFIN")
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_NET = "LIFE")
+                   CONTINUE
+                ENDIF
+                IF (SQUEEZE MEME_TRM = "")
+                   MOVE "99999999" TO MEME_TRM
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < MEME_EFF))
+                   CONTINUE
+                ENDIF 
+                IF ((SQUEEZE MEME_LEV2 = "95") AND (SQUEEZE MEME_MODE = ""))
+                  CONTINUE
+                ENDIF
+                IF (MEME_EFF > TODAY)
+                   CONTINUE
+                ENDIF
+                IF ((SQUEEZE MEME_TRM <> "") AND (MEME_TRM < TODAY))
+                   CONTINUE
+                ENDIF
+                CALL GET_MED
+                IF ((MEDA_PRIM_SW = "Y") AND (MEDB_PRIM_SW = "Y"))
+                ELSE
+                  BREAK    
+                ENDIF
+                CALL CALC_AGE USING MEM_DOB,WS_AGE,CURRDATE  
+                IF (WS_AGE > " 89")
+                   MOVE " 90" TO WS_AGE
+                ENDIF
+                UNPACK WS_AGE INTO DIM_1,DIM_2
+                MOVE DIM_2 TO NIC_MP_AGE
+                MOVE MEM_SEX TO NIC_MP_SEX
+                MOVE MEM_REL TO NIC_MP_REL
+                UNPACK MEM_ZIP INTO DIM_3
+                MOVE DIM_3 TO NIC_MP_ZIP
+                MOVE OGB_SEQ1 TO OGB_SEQ
+                CALL WRITE_OGBREC USING NIC_MP_FD,NIC_MP_NAME:
+                                      NIC_MP_LIST
+                CLEAR NIC_MP_LIST
+                BREAK
+              REPEAT
+            REPEAT
+            RETURN
+
+
+.******************************************************************************
+GET_MED
+.******************************************************************************
+  MOVE "N" TO MEDA_PRIM_SW               
+  MOVE "N" TO MEDB_PRIM_SW               
+  PACK MEMO_FK11 WITH MEM_ID1,BLANKS
+  CALL FILE_READ USING MEMO_FD:            ...FILE DECLARATION LIST
+                       MEMO_FN:            ...FILE NAME LIST
+                       MEMO_FC:            ...TYPE OF INDEX
+.                                          ...(I)NDEX or (A)IMDEX
+                       MEMO_FV:            ...FILE KEY VARLISTS
+                       MEMO_FK:            ...FILE KEY SIZES
+                       MEMO_LIST:          ...FILE RECORD (FIELD LIST)
+                       MEMO_REC:           ...FILE RECORD (PACKED)
+                       MEMO_OLD:           ...FILE SAVED WHEN READ
+                       MEMO_QTY:           ...NUMBER OF FILES
+                       1                   ...FILE NUMBER FOR THIS READ
+  LOOP
+      CALL FILE_NEXT USING MEMO_FD:      ...FILE DECLARATION LIST
+                           MEMO_FN:      ...FILE NAME LIST
+                           MEMO_FC:      ...TYPE OF INDEX
+.                                        ...(I)NDEX or (A)IMDEX
+                           MEMO_FV:      ...FILE KEY VARLISTS
+                           MEMO_FK:      ...FILE KEY SIZES
+                           MEMO_LIST:    ...FILE RECORD (FIELD LIST)
+                           MEMO_REC:     ...FILE RECORD (PACKED)
+                           MEMO_OLD:     ...FILE SAVED WHEN READ
+                           MEMO_QTY:     ...NUMBER OF FILES
+                           1             ...FILE NUMBER FOR THIS READ
+      IF ((RESULT <> 1) OR (MEMO_ID1 <> MEM_ID1))
+          BREAK                  
+      ENDIF
+      IF (SQUEEZE MEMO_EFF = "")
+          CONTINUE
+      ENDIF
+      IF (MEMO_EFF > TODAY)
+          CONTINUE
+      ENDIF
+      IF ((SQUEEZE MEMO_TRM >"") AND (MEMO_TRM <= TODAY))
+          CONTINUE
+      ENDIF
+       
+      SWITCH MEMO_TYPE
+             CASE "MEDA"
+                  MOVE "Y" TO MEDA_PRIM_SW               
+             CASE "MEDB"
+                  MOVE "Y" TO MEDB_PRIM_SW               
+      ENDSWITCH
+  REPEAT
+
+  RETURN
+
+QUIT
+         IF (C_RMODE = "I")
+            error     horz="23",vert="19":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text=" Process Aborted by Operator ":
+                      text="-----------------------------"
+            messageerase
+         ENDIF
+
+         CLEAR     C_NOHIST
+
+         TRAPREST  TRAP_DATA
+
+         IF (RUN_MODE = "B")
+            LOOP
+               RETCOUNT  CURR_RETURN
+               WHILE     (CURR_RETURN > ORIG_RETURN)
+               NORETURN
+            REPEAT
+            MOVE      SCH_RTABRT  TO  SCH@RTCODE
+            RETURN
+         ENDIF
+         CHAIN     "MENU"
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "MEM  Recs Read:     " TO X_CNTDESC1
+	 MOVE      "MEME  Recs Read:     " TO X_CNTDESC2
+	 MOVE      "Recs Written  :    " TO X_CNTDESC3
+
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      PREP_OGBFILE USING NIC_MP_FD,NIC_MP_NAME
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       UTIL.SR      
+    INC       VALID.IO
+    INC       X_STANDARD.SR
+    INC       FILE.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+              INC       X_OGBFILE.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A0608283.PS
+. +++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,928 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A0409023.PS
++    Description    :  Extract member records that have optional life or
++                   :  personal accident and term it for 12/31/2004.
++    Author         :  Lisa Spurlock
++    Date created   :  09/20/2004
++    Project #      :  a0409023
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.                          REVISIONS
+.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.--------------------------
+. Required Program Includes
+.--------------------------
+    INC       COMMON.CB            ...Common work area
+    INC       X_COMMON.CB          ...OGB Common work area
+    INC       VALID.RL             ...Valid codes
+    INC       X_OGBFILE.CB         ...OGB Custom File Handler
+
+
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+    INC       MEM.RL               ...Member demographic Record
+    INC       MEME.RL           
+    INC       MEMO.RL           
+    INC       D_MEMMEM.CB          ...Member Import Layout
+
+.------------------
+. File Declarations
+.------------------
+
+.~~~~~~~~~~INPUT FILES
+ACTMEM_FILE       FILE      VAR=12,TEXT
+ACTMEM_NAME       INIT      "/ogb/work/meme.actmems"  
+
+ACTMEM_LIST       LIST
+ACTMEM_KEY1       DIM       08
+ACTMEM_ID2        DIM       04
+                  LISTEND
+
+.~~~~~~~~~~OUTPUT FILES
+OUTPUT_FILE       FILE      VAR=2300,TEXT
+OUTPUT_NAME       INIT      "a0409023.out"
+
+OUT_FILE          FILE      VAR=61,TEXT
+OUT_NAME          INIT      "/ogb/work/a0409023.txt"
+
+OUT_LIST     LIST
+OUT_MEME_ID1      DIM       08
+OUT_MEME_ID2      DIM       04
+OUT_OPT_LIFE      DIM       49
+             LISTEND
+
+ERR_FILE          FILE      VAR=52,TEXT
+ERR_NAME          INIT      "/ogb/work/a0409023.err"
+
+ERR_LIST     LIST
+ERR_ID1           DIM       08
+ERR_ID2           DIM       04
+ERR_REASON        DIM       40
+             LISTEND
+
+LABELS_FILE     FILE      VAR=151,TEXT
+LABELS_NAME     INIT      "optlflab.txt"
+
+LABEL_LIST      LIST
+LABEL_LNAME     DIM       20        .>enrollee last name
+LABEL_FNAME     DIM       15        .>enrollee first name
+LABEL_MINIT     DIM       1         .>enrollee middle initial 
+LABEL_ADDRESS1  DIM       35        .>address line 1           
+LABEL_ADDRESS2  DIM       35        .>address line 2           
+LABEL_CITY      DIM       30        .>city                     
+LABEL_STATE     DIM       2         .>state        
+LABEL_ZIP       DIM       13        .>zip code     
+                LISTEND
+
+.--------------------------------------------
+.Program Specific Variables & Working Storage
+.--------------------------------------------
+TIMESTAMP		DIM	14
+CURRDATE      		DIM     08
+PARAM_LIST    		LIST
+PARAM_XXX     		DIM     10
+PARAM_YYY     		DIM     05
+PARAM_DATE    		DIM     08
+              		LISTEND
+
+VAL_RESULT              FORM     1
+TRAP_DATA       	DIM      500
+TODAY           	DIM      8
+TODAY_CCYY           	DIM      4
+TODAY_MM           	DIM      2
+TODAY_DD           	DIM      2
+INME_CCYY           	DIM      4
+INME_MM           	FORM     2
+INME_DD           	DIM      2
+CAL_CLOCK       	DIM      21
+LABEL_SRTKEY            INIT     "139-143 1-20 21-35 36-36 -T -U"
+DISP4                   DIM      04
+DISP3                   DIM      03
+LIFE                    INIT     "LIFE"
+BLANK8                  INIT     "        "
+HLD_REC                 DIM      1300
+HLD_MEM_ID1             DIM      08  
+FIRST_MEME_READ         DIM       1 
+INP_RESULT              FORM      1 
+MEM_RESULT              FORM      1 
+MEME_RESULT             FORM      1 
+ORIG_RETURN     	FORM     5
+CURR_RETURN     	FORM     5
+TERM_DATE               DIM      8
+SAVE_MEME_ID1           DIM      08
+
+ERROR_1                 INIT    "MEMBER RECORD ID NOT FOUND.             "
+
+TICKEY                  INIT     "~~~~"
+
+DIM49                   DIM      049
+WS_RD01                 DIM       2                                  
+WS_RD01_2               DIM       2                                  
+WS_RD02                 DIM       2                                  
+WS_RD02_2               DIM       2                                  
+WS_RD03                 DIM       2                                  
+WS_RD03_2               DIM       2                                  
+WS_RD04                 DIM       2                                  
+WS_RD04_2               DIM       2                                  
+WS_RD05                 DIM       2                                  
+WS_RD05_2               DIM       2                                  
+WS_RD06                 DIM       2                                  
+WS_RD06_2               DIM       2                                  
+WS_RD07                 DIM       2                                  
+WS_RD07_2               DIM       2                                  
+WS_RD08                 DIM       2                                  
+WS_RD08_2               DIM       2                                  
+WS_RD09                 DIM       2                                  
+WS_RD09_2               DIM       2                                  
+WS_RD10                 DIM       2                                  
+WS_RD10_2               DIM       2                                  
+
+.....> START HERE
+         CALL      RUN_NOW
+         CHAIN     C_NEXT 		    chains to the print program
+
+
+
+.----------------------------------------
+.   Start here if called by the Scheduler    
+.----------------------------------------
+         INC       SCHED_NP.SR              Scheduler routines (no printer)
+RUN_NOW
+         RETCOUNT  ORIG_RETURN
+
+
+
+.---------------------
+.   Fill top of screen
+.---------------------
+.     MOVE      "ELG0401"                  TO    C_NEXT
+      MOVE      "MENU"                     TO    C_NEXT
+      MOVE      "Optional Life Extract"    TO    C_OPER
+      MOVE      "A0409023"                 TO    C_PROG
+      MOVE      BLANKS                     TO    C_LABEL
+      MOVE      BLANKS                     TO    C_FILE
+      MOVE      BLANKS                     TO    C_KEYS
+      CLOCK     CALENDAR                   INTO  CAL_CLOCK
+      CALL X_BLANK_SCREEN
+
+. ----------------------
+.   Set applicable traps
+. ----------------------
+      TRAPSAVE  TRAP_DATA
+      TRAPCLR   ALL
+      TRAP      QUIT   NORESET  IF F9
+
+. ---------------------------
+.   Get scheduler information
+. ---------------------------
+      CALL     SCHED_PICK
+      IF (RUN_MODE = "B" OR RUN_MODE = "N")
+         CALL MAIN_PROCESS
+      ENDIF
+      RETURN
+
+.##############################################################################
+MAIN_PROCESS
+.##############################################################################
+
+  CALL      INITIALIZE
+
+. ...Reformat MEME file
+  CALL      REFORMAT_MEME
+
+  DEBUG
+  CALL      OPEN_FILES
+  DEBUG
+  CALL      EXTRACT_OUTPUT_FILE    
+
+. ...Sort Label file by Zip Code          
+        MOVE      LABELS_NAME TO C_FILE
+        CALL      CLOSE_OGBFILE USING LABELS_FILE,LABELS_NAME  
+        PACK      OGB_NAME WITH OGB_PATH,LABELS_NAME
+        MOVE      LABELS_NAME TO C_FILE
+        CALL      OPEN_OGBFILE USING LABELS_FILE,OGB_NAME  
+        DISPLAY   *BOLDON,*BGCOLOR=*BLACK,*FGCOLOR=*WHITE:
+                  *P30:21,"SORTING FILE...",*BOLDOFF
+        PACK      OGB_NAME WITH OGB_PATH,LABELS_NAME
+        MOVE      OGB_NAME TO C_FILE
+        MOVE      LABEL_SRTKEY TO C_KEYS
+        CALL      SORT_OGBFILE USING OGB_NAME,OGB_NAME,LABEL_SRTKEY
+        IF OVER
+            ERROR   HORZ="15",VERT="19":
+                    BGCOL=C_ERRB,FGCOL=C_ERRF:
+                    LNCOL=C_ERRL,SHADE="Y":
+                    TEXT="SORT FAILED(optlflab.txt)"
+            CHAIN   "MENU"
+        ENDIF
+ 
+  CALL      CLOSE_FILES
+  CALL      NORMAL_EOJ
+  TRAPREST  TRAP_DATA
+  MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+  RETURN
+
+
+
+.--------------------
+. Operator pressed F9
+. -------------------
+QUIT
+  IF (C_RMODE = "I")
+      error horz="23",vert="19":
+            bgcol=C_ERRB,fgcol=C_ERRF:
+            lncol=C_ERRL,shade="Y":
+            text=" Process Aborted by Operator ":
+            text="-----------------------------"
+      messageerase
+  ENDIF
+  CLEAR     C_NOHIST
+  TRAPREST  TRAP_DATA
+  IF (RUN_MODE = "B")
+      LOOP
+        RETCOUNT  CURR_RETURN
+      WHILE     (CURR_RETURN > ORIG_RETURN)
+      NORETURN
+      REPEAT
+      MOVE      SCH_RTABRT  TO  SCH@RTCODE
+      RETURN
+  ENDIF
+  CHAIN     "MENU"
+
+    
+
+.##############################################################################
+INITIALIZE
+.##############################################################################
+  CLOCK TIMESTAMP INTO TIMESTAMP
+  CLOCK TIMESTAMP INTO CURRDATE
+  CLOCK TIMESTAMP TO TODAY	
+
+.---------------------
+.   Fill top of screen
+.---------------------
+. MOVE      "ELG0401"                  TO    C_NEXT
+  MOVE      "MENU"                     TO    C_NEXT
+  MOVE      "Optional Life Extract"    TO    C_OPER
+  MOVE      "A0409023"                 TO    C_PROG
+  MOVE      BLANKS                     TO    C_LABEL
+  MOVE      BLANKS                     TO    C_FILE
+  MOVE      BLANKS                     TO    C_KEYS
+  CLOCK     CALENDAR                   INTO  CAL_CLOCK
+. CALL X_BLANK_SCREEN
+
+  MOVE "Records Read:        " TO X_CNTDESC1
+  MOVE "Records Written:     " TO X_CNTDESC2
+  MOVE "Records Processed    " TO X_CNTDESC3
+  MOVE "Error Records Found: " TO X_CNTDESC4
+  MOVE "Label Records Written" TO X_CNTDESC5
+  MOVE "                     " TO X_CNTDESC6
+  DISPLAY *ES
+
+.------------------
+...Display Counters
+.------------------
+  CALL X_DISPLAY_COUNTS
+
+  UNPACK TODAY INTO TODAY_CCYY,TODAY_MM,TODAY_DD
+
+ RETURN
+
+.............................................................................
+
+.-------------------------------
+. Reformat MEME file
+.-------------------------------
+REFORMAT_MEME
+...Display message to Operator to Please Wait
+    MESSAGE HORZ="22",VERT="20":
+            BGCOL=C_DLGB,FGCOL=C_DLGF:
+            LNCOL=C_DLGL,SHADE="y": 
+            TEXT="REFORMATTING FILE ... PLEASE WAIT";
+    
+.------------------------------
+...Get only records with Life  
+.------------------------------
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "meme.dbf /ogb/work/meme.life": 
+                      " -p112-116eq#"",LIFE,"#" -t -j"
+    REFORMAT SCRATCH
+    IF OVER
+        ERROR HORZ="15",VERT="19":
+              BGCOL=C_ERRB,FGCOL=C_ERRF:
+              LNCOL=C_ERRL,SHADE="Y":
+              TEXT="REFORMAT FAILED(meme.dbf)"
+        CHAIN "MENU"
+    ENDIF
+
+...Get only Records without term dates
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/ogb/work/meme.life /ogb/work/meme.actmems": 
+              " -p104-111eq#"",BLANK8,"#" 1-12 -t -j"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.life)"
+               CHAIN     "MENU"
+         ENDIF
+
+...Get only Records with term dates > today
+    MOVE BLANKS TO SCRATCH
+    PACK SCRATCH WITH "/ogb/work/meme.life /ogb/work/meme.actmems":     
+              " -p104-111gt#"",TODAY,"#" 1-12 -t -j -a"
+    REFORMAT SCRATCH
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="REFORMAT FAILED(meme.actmems append)"
+               CHAIN     "MENU"
+         ENDIF
+
+    SORT "/ogb/work/meme.actmems /ogb/work/meme.actmems 1-12 -u -t"
+         IF OVER
+               ERROR     HORZ="15",VERT="19":
+                         BGCOL=C_ERRB,FGCOL=C_ERRF:
+                         LNCOL=C_ERRL,SHADE="Y":
+                         TEXT="SORT FAILED(meme.actmems)"
+               CHAIN     "MENU"
+         ENDIF
+ 
+    RETURN
+
+
+.##############################################################################
+OPEN_FILES
+.##############################################################################
+    CALL OPEN_OGBFILE USING ACTMEM_FILE,ACTMEM_NAME
+ 
+    CALL PREP_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+    CALL PREP_OGBFILE USING ERR_FILE,ERR_NAME
+
+    CALL PREP_OGBFILE USING OUT_FILE,OUT_NAME   
+
+    PACK   OGB_NAME WITH OGB_PATH,LABELS_NAME
+    MOVE   LABELS_NAME TO C_FILE
+    CALL   PREP_OGBFILE USING LABELS_FILE,OGB_NAME  
+
+  RETURN
+
+.
+.##############################################################################
+EXTRACT_OUTPUT_FILE     
+.##############################################################################
+... Read the Input file (meme.actmems)
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING ACTMEM_FILE,ACTMEM_NAME,ACTMEM_LIST
+        MOVE RESULT TO INP_RESULT
+        IF (INP_RESULT <> 1)
+            BREAK   
+        ENDIF
+
+        ADD 1 TO X_CNT1
+        UNPACK X_CNT1 INTO DISP4,DISP3
+        IF (DISP3 = "000")
+            CALL X_DISPLAY_COUNTS
+        ENDIF
+
+... Read the MEM file for the Member 
+
+        CLEAR     INM_REC
+        CLEAR     ERR_REASON
+        CLEAR     MEM_SAV
+        PACK      MEM_FK11 WITH ACTMEM_KEY1
+        CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
+                            MEM_FN:          ...FILE NAME LIST
+                            MEM_FC:          ...(I)NDEX OR (A)IMDEX
+                            MEM_FV:          ...FILE KEY VARLISTS
+                            MEM_FK:          ...FILE KEY SIZES
+                            MEM_LIST:        ...FILE RECORD (FIELD LIST)
+                            MEM_REC:         ...FILE RECORD (PACKED)
+                            MEM_OLD:         ...FILE SAVED WHEN READ
+                            MEM_QTY:         ...NUMBER OF FILES
+                            1                 ...FILE NUMBER FOR THIS READ
+
+
+... If the Member is not found, the program writes to an error file
+... and then continues to the next record to be read.
+
+        MOVE RESULT TO MEM_RESULT
+        IF (MEM_RESULT <> 1)
+            MOVE ERROR_1 TO ERR_REASON
+            CALL WRITE_ERROR_RECS 
+            CONTINUE         
+        ENDIF
+
+        PACK MEM_SAV WITH MEM_REC
+
+... Clearing the FIRST_MEME_READ Switch and Read the MEME record with the
+... Member's Record ID
+
+        MOVE " " TO FIRST_MEME_READ
+        MOVE "        " TO TERM_DATE
+        CLEAR MEME_SAV
+        PACK MEME_FK11 WITH ACTMEM_KEY1,ACTMEM_ID2
+        CALL  FILE_READ USING MEME_FD:  ...FILE DECLARATION LIST
+                              MEME_FN:  ...FILE NAME LIST  
+                              MEME_FC:  ...TYPE OF INDEX   
+.                                       ...(I)NDEX OR (A)IMDEX
+                              MEME_FV:  ...FILE KEY VARLISTS
+                              MEME_FK:  ...FILE KEY SIZES  
+                              MEME_LIST:...FILE RECORD (FIELD LIST)
+                              MEME_REC: ...FILE RECORD (PACKED)
+                              MEME_OLD: ...FILE SAVED WHEN READ
+                              MEME_QTY: ...NUMBER OF FILES 
+                              1         ...FILE NUMBER FOR THIS READ
+         MOVE RESULT TO MEME_RESULT
+         IF  (MEME_RESULT <> 1)
+             CONTINUE
+         ENDIF
+
+
+... If not equal and the FIRST_MEME_READ switch is blank then reads next record
+
+         IF (MEM_ID1 <> MEME_ID1)
+             CONTINUE
+         ENDIF
+
+... Includes LIFE Plans              
+         IF (SQUEEZE MEME_NET <> "LIFE")
+             CONTINUE
+         ENDIF
+
+... Excludes Blank Fields              
+         IF (SQUEEZE MEME_NET = "") 
+             CONTINUE
+         ENDIF
+
+         PACK MEME_SAV WITH MEME_REC
+
+         IF ((MEME_TRM > "20041231") OR (SQUEEZE MEME_TRM = ""))            
+             PACK TERM_DATE WITH MEME_TRM
+             PACK DIM49 WITH MEME_RD01,MEME_RD02,MEME_RD03,MEME_RD04:
+                             MEME_RD05,MEME_RD06,MEME_RD07,MEME_RD08:
+                             MEME_RD09,MEME_RD10
+
+             UNPACK MEME_RD01 INTO WS_RD01,WS_RD01_2
+             UNPACK MEME_RD02 INTO WS_RD02,WS_RD02_2
+             UNPACK MEME_RD03 INTO WS_RD03,WS_RD03_2
+             UNPACK MEME_RD04 INTO WS_RD04,WS_RD04_2
+             UNPACK MEME_RD05 INTO WS_RD05,WS_RD05_2
+             UNPACK MEME_RD06 INTO WS_RD06,WS_RD06_2
+             UNPACK MEME_RD07 INTO WS_RD07,WS_RD07_2
+             UNPACK MEME_RD08 INTO WS_RD08,WS_RD08_2
+             UNPACK MEME_RD09 INTO WS_RD09,WS_RD08_2
+             UNPACK MEME_RD10 INTO WS_RD10,WS_RD10_2
+ 
+             SWITCH MEME_NET
+                 CASE "LIFE "
+                     RESET DIM49
+                     SCAN "OLC1" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLC2" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLC3" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLE1" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLE2" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLE3" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLS1" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLS2" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "OLS3" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE01" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE02" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE03" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE04" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE05" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE06" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE07" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE08" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE09" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE10" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE11" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE12" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE13" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE14" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PE15" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF01" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF02" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF03" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF04" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF05" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF06" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF07" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF08" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF09" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF10" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF11" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF12" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF13" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF14" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+                     RESET DIM49
+                     SCAN "PF15" IN DIM49
+                     IF EQUAL
+                         CALL WRITE_OUTPUT_RECS       
+                         CONTINUE
+                     ENDIF
+             ENDSWITCH
+         ENDIF
+
+     REPEAT
+
+  RETURN
+
+.##############################################################################
+WRITE_OUTPUT_RECS
+.##############################################################################
+.---------------
+...Write records
+.---------------
+
+    PACK HLD_REC WITH MEM_SAV,MEME_SAV
+    UNPACK HLD_REC INTO INM_LIST
+    PACK INME_TRM WITH "20041231"
+    PACK INME_ID2 WITH "    "
+    PACK INME_CHGBY WITH "      "    
+    CALL WRITE_OGBREC USING OUTPUT_FILE:
+                            OUTPUT_NAME:
+                            INM_LIST
+
+    CALL WRITE_OUT_RECS       
+
+    CALL WRITE_LABEL_RECS       
+
+    PACK HLD_REC WITH MEM_SAV,MEME_SAV
+    UNPACK HLD_REC INTO INM_LIST
+    IF (MEME_EFF = "20050101")
+        UNPACK INME_EFF INTO INME_CCYY,INME_MM,INME_DD
+        ADD "01" TO INME_MM
+        PACK INME_EFF WITH INME_CCYY,INME_MM,INME_DD
+        REPLACE " 0" IN INME_EFF
+    ELSE
+        PACK INME_EFF         WITH "20050101"
+    ENDIF
+    PACK INME_TRM         WITH TERM_DATE
+    PACK INME_ID2         WITH "    "
+    PACK INME_NEWDT WITH "        "    
+    PACK INME_NEWBY WITH "      "    
+    PACK INME_CHGDT WITH "        "    
+    PACK INME_CHGBY WITH "      "    
+    IF ((WS_RD01 = "OL") OR (WS_RD01 = "PE") OR (WS_RD01 = "PF"))
+        MOVE TICKEY TO INME_RD01
+    ELSE  
+        PACK INME_RD01 WITH MEME_RD01
+    ENDIF
+    IF ((WS_RD02 = "OL") OR (WS_RD02 = "PE") OR (WS_RD02 = "PF"))
+        MOVE TICKEY TO INME_RD02
+    ELSE  
+        PACK INME_RD02 WITH MEME_RD02
+    ENDIF
+    IF ((WS_RD03 = "OL") OR (WS_RD03 = "PE") OR (WS_RD03 = "PF"))
+        MOVE TICKEY TO INME_RD03
+    ELSE  
+        PACK INME_RD03 WITH MEME_RD03
+    ENDIF
+    IF ((WS_RD04 = "OL") OR (WS_RD04 = "PE") OR (WS_RD04 = "PF"))
+        MOVE TICKEY TO INME_RD04
+    ELSE  
+        PACK INME_RD04 WITH MEME_RD04
+    ENDIF
+    IF ((WS_RD05 = "OL") OR (WS_RD05 = "PE") OR (WS_RD05 = "PF"))
+        MOVE TICKEY TO INME_RD05
+    ELSE  
+        PACK INME_RD05 WITH MEME_RD05
+    ENDIF
+    IF ((WS_RD06 = "OL") OR (WS_RD06 = "PE") OR (WS_RD06 = "PF"))
+        MOVE TICKEY TO INME_RD06
+    ELSE  
+        PACK INME_RD06 WITH MEME_RD06
+    ENDIF
+    IF ((WS_RD07 = "OL") OR (WS_RD07 = "PE") OR (WS_RD07 = "PF"))
+        MOVE TICKEY TO INME_RD07
+    ELSE  
+        PACK INME_RD07 WITH MEME_RD07
+    ENDIF
+    IF ((WS_RD08 = "OL") OR (WS_RD08 = "PE") OR (WS_RD08 = "PF"))
+        MOVE TICKEY TO INME_RD08
+    ELSE  
+        PACK INME_RD08 WITH MEME_RD08
+    ENDIF
+    IF ((WS_RD09 = "OL") OR (WS_RD09 = "PE") OR (WS_RD09 = "PF"))
+        MOVE TICKEY TO INME_RD09
+    ELSE  
+        PACK INME_RD09 WITH MEME_RD09
+    ENDIF
+    IF ((WS_RD10 = "OL") OR (WS_RD10 = "PE") OR (WS_RD10 = "PF"))
+        MOVE TICKEY TO INME_RD10
+    ELSE  
+        PACK INME_RD10 WITH MEME_RD10
+    ENDIF
+
+    CALL WRITE_OGBREC USING OUTPUT_FILE:
+                            OUTPUT_NAME:
+                            INM_LIST
+
+
+
+
+    ADD 1 TO X_CNT2
+
+WRITE_OUTPUT_RECS_RET
+  RETURN
+
+.##############################################################################
+.
+.******************************************************************************
+WRITE_ERROR_RECS      
+.******************************************************************************
+ 
+    MOVE ACTMEM_KEY1 TO ERR_ID1
+    MOVE ACTMEM_ID2 TO ERR_ID2
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING ERR_FILE:
+                            ERR_NAME:
+                            ERR_LIST
+
+    ADD 1 TO X_CNT4
+
+  RETURN
+ 
+.
+.******************************************************************************
+WRITE_LABEL_RECS      
+.******************************************************************************
+
+    MOVE MEM_LNAME TO LABEL_LNAME
+    SETLPTR LABEL_LNAME TO 20
+    MOVE MEM_FNAME TO LABEL_FNAME
+    SETLPTR LABEL_FNAME TO 15
+    MOVE MEM_MINIT TO LABEL_MINIT
+    MOVE MEM_ADDR1 TO LABEL_ADDRESS1
+    SETLPTR LABEL_ADDRESS1 TO 35
+    MOVE MEM_ADDR2 TO LABEL_ADDRESS2
+    SETLPTR LABEL_ADDRESS2 TO 35
+    MOVE MEM_CITY TO LABEL_CITY
+    SETLPTR LABEL_CITY TO 30
+    MOVE MEM_STATE TO LABEL_STATE
+    MOVE MEM_ZIP TO LABEL_ZIP
+    SETLPTR LABEL_ZIP TO 13
+    MOVE      OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LABELS_FILE,LABELS_NAME,LABEL_LIST 
+
+    ADD 1 TO X_CNT5
+
+  RETURN
+ 
+.
+.******************************************************************************
+WRITE_OUT_RECS      
+.******************************************************************************
+ 
+    MOVE MEME_ID1 TO OUT_MEME_ID1
+    MOVE MEME_ID2 TO OUT_MEME_ID2
+    MOVE DIM49    TO OUT_OPT_LIFE
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OUT_FILE,OUT_NAME:
+                            OUT_LIST  
+
+    ADD 1 TO X_CNT3
+
+  RETURN
+ 
+.
+.******************************************************************************
+ 
+.##############################################################################
+CLOSE_FILES
+.############################################################################## 
+
+  CALL CLOSE_OGBFILE USING OUTPUT_FILE,OUTPUT_NAME
+
+  CALL CLOSE_OGBFILE USING ERR_FILE,ERR_NAME
+
+  CALL CLOSE_OGBFILE USING OUT_FILE,OUT_NAME
+
+  CALL CLOSE_OGBFILE USING LABELS_FILE,LABELS_NAME  
+
+  RETURN
+. -----------------------------------------------------
+
+. ----------------------------
+. Normal End-Of-Job Routine
+. ----------------------------
+
+NORMAL_EOJ
+
+         MOVE      "        NEOJ        " TO X_FINISH_STATUS
+         MOVE      "   A0409023  Completed   " TO X_PROG_FINISH
+         CALL      X_END_OF_JOB
+
+     RETURN
+
+.------------------
+. Required Includes
+.------------------
+  INC         UTIL.SR
+  INC         VALID.IO
+. INC         PRINT.SR
+  INC         X_STANDARD.SR
+  INC         FILE.IO
+
+.--------------------------
+. Program Specific Includes
+.--------------------------
+  INC        X_OGBFILE.IO
