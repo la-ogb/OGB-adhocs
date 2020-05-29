@@ -1,7 +1,7 @@
 ./* ====================================================================
 + NAME: a2005181.ps
 +
-+ DESCRIPTION:
++ DESCRIPTION: Updates or deletes current email of file records
 +
 + CREATED BY: apdrh 2020-02-20
 . * ================================================================= */
@@ -48,7 +48,7 @@ LOG_HEADER      VARLIST "Member ID",DELIMITER:
 MEMB_CHANGE_LIST    LIST
 MEMBER_ID       CHAR    8
 EMAIL_ADDR      CHAR    60
-PROPOSED_ACT    CHAR    60
+EMAIL_UPDATE    CHAR    60
 FSA             CHAR    15
 F_NAME          CHAR    15
 L_NAME          CHAR    20
@@ -147,7 +147,7 @@ READ_MEM LROUTINE
 
         CALL DELIMIT_STRING USING CSV_REC,00,MEMBER_ID,COMMA
         CALL DELIMIT_STRING USING CSV_REC,01,EMAIL_ADDR,COMMA
-        CALL DELIMIT_STRING USING CSV_REC,02,PROPOSED_ACT,COMMA
+        CALL DELIMIT_STRING USING CSV_REC,02,EMAIL_UPDATE,COMMA
         CALL DELIMIT_STRING USING CSV_REC,03,FSA,COMMA
         CALL DELIMIT_STRING USING CSV_REC,04,F_NAME,COMMA
         CALL DELIMIT_STRING USING CSV_REC,05,L_NAME,COMMA
@@ -170,14 +170,14 @@ READ_MEM LROUTINE
 
 .#######################################################################
 UPDATE_REC LROUTINE
-+ Remove the cobra flag from this record
+
     FILL " " IN INM_LIST, INM_REC
 
     PACKLEN INM_REC WITH MEM_LIST
     UNPACK INM_REC INTO INM_LIST
     debug
-    MOVE PROPOSED_ACT TO INM_EMAIL
-    IF (PROPOSED_ACT = "delete")
+    MOVE EMAIL_UPDATE TO INM_EMAIL
+    IF (EMAIL_UPDATE = "delete")
         debug
         FILL "~" IN INM_EMAIL
     ENDIF
@@ -209,7 +209,7 @@ LOG_NUMBER      CHAR    10
     MOVE MEM_ID1 TO LOG_ID
     MOVE MEM_FNAME TO LOG_FNAME
     MOVE MEM_LNAME TO LOG_LNAME
-    MOVE PROPOSED_ACT TO LOG_EMAIL_NEW
+    MOVE EMAIL_UPDATE TO LOG_EMAIL_NEW
     MOVE PHONE_NUMB TO LOG_NUMBER
 
     PACK LOG_INFO WITH  (CHOP LOG_ID),COMMA:
