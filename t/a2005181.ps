@@ -1,9 +1,15 @@
 ./* ====================================================================
-+ NAME: a2005181.ps
++ NAME:
++   a2005181.ps
 +
-+ DESCRIPTION: Updates or deletes current email of file records
++ DESCRIPTION:
++   Updates or deletes current email of file records
 +
-+ CREATED BY: apdrh 2020-02-20
++ CREATED BY:
++   apdrh - 2020-05-18
++
++ LAST MODIFIED BY:
++   apdrh - 2020-06-4
 . * ================================================================= */
 
 ./* =================
@@ -16,48 +22,57 @@
 ./* ===================================
 . * Scheduler Params
 . * =================================== */
-PARAM_LIST              LIST WITH NAMES
-PARAM_MODE              CHAR    4
-                        LISTEND
+PARAM_LIST          LIST WITH NAMES
+PARAM_MODE          CHAR    4
+                    LISTEND
 
 ./* ===================================
 . * File & Global Variable Declarations
 . * =================================== */
 
 ...Input File
-INPUT_FILE      FILE    VAR=200,TEXT
-INPUT_NAME      INIT    "/w/bademailaddress.csv"
-CSV_LIST        LIST
-CSV_REC         CHAR        200
-                LISTEND
+INPUT_FILE          FILE    VAR=200,TEXT
+INPUT_NAME          INIT    "/w/bademailaddress.csv"
+CSV_LIST            LIST
+CSV_REC             CHAR        200
+                    LISTEND
 
-FIX_EMAIL_FILE  FILE    VAR=X_INM_SIZE,TEXT
-FIX_EMAIL_NAME  INIT    "fixemail.inm"
+FIX_EMAIL_FILE      FILE    VAR=X_INM_SIZE,TEXT
+FIX_EMAIL_NAME      INIT    "fixemail.inm"
 
-LOG_FILE        FILE    VAR=200,TEXT
-LOG_NAME        INIT    "/w/email_update.log"
+LOG_FILE            FILE    VAR=200,TEXT
+LOG_NAME            INIT    "/w/email_update.log"
 
-DELIMITER       INIT    ","
+DELIMITER           INIT    ","
 
-LOG_HEADER      VARLIST "Member ID",DELIMITER:
-                        "First Name",DELIMITER:
-                        "Last Name",DELIMITER:
-                        "Email Change",DELIMITER:
-                        "Phone Number"
+LOG_HEADER          VARLIST "Member ID",DELIMITER:
+                            "First Name",DELIMITER:
+                            "Last Name",DELIMITER:
+                            "Email Change",DELIMITER:
+                            "Phone Number"
 
 MEMB_CHANGE_LIST    LIST
-MEMBER_ID       CHAR    8
-EMAIL_ADDR      CHAR    60
-EMAIL_UPDATE    CHAR    60
-FSA             CHAR    15
-F_NAME          CHAR    15
-L_NAME          CHAR    20
-PHONE_NUMB      CHAR    10
-                LISTEND
+MEMBER_ID           CHAR    8
+EMAIL_ADDR          CHAR    60
+EMAIL_UPDATE        CHAR    60
+FSA                 CHAR    15
+F_NAME              CHAR    15
+L_NAME              CHAR    20
+PHONE_NUMB          CHAR    10
+                    LISTEND
 
-EMAIL_GROUP      INIT     "donald.hutchinson@la.gov"
-LOG_INFO         CHAR     125
-RUNDATE          CHAR     8
+LOG_WRITE_LIST          LIST
+LOG_WRITE_ID            CHAR    8
+LOG_WRITE_FNAME         CHAR    15
+LOG_WRITE_LNAME         CHAR    20
+LOG_WRITE_EMAIL_NEW     CHAR    60
+LOG_WRITE_NUMBER        CHAR    10
+                        LISTEND
+
+EMAIL_GROUP         INIT     "donald.hutchinson@la.gov"
+.EMAIL_GROUP         INIT     "${ITAPPS}"
+LOG_INFO            CHAR     125
+RUNDATE             CHAR     8
 
 ./* =============
 . * Begin Program
@@ -76,7 +91,7 @@ RUN_NOW LROUTINE
 . */
     MOVE "a2005181" TO C_PROG
     MOVE BLANKS TO C_OPER
-    MOVE BLANKS TO C_NEXT
+    MOVE "menu" TO C_NEXT
     MOVE BLANKS TO C_LABEL
     MOVE BLANKS TO C_FILE
     MOVE BLANKS TO C_KEYS
@@ -139,7 +154,6 @@ INITIALIZE LROUTINE
 .#######################################################################
 READ_MEM LROUTINE
 
-
     LOOP
         MOVE OGB_SEQ1 TO OGB_SEQ
         CALL READ_OGBFILE USING INPUT_FILE,INPUT_NAME,CSV_LIST
@@ -171,6 +185,7 @@ READ_MEM LROUTINE
 .#######################################################################
 UPDATE_REC LROUTINE
 
++ Updates email for current record
     FILL " " IN INM_LIST, INM_REC
 
     PACKLEN INM_REC WITH MEM_LIST
@@ -183,7 +198,7 @@ UPDATE_REC LROUTINE
     ENDIF
 
     FILL " " IN INM_CHGDT
-    PACK INM_CHGBY WITH "a2005181",BLANKS
+    PACK INM_CHGBY WITH "A00002",BLANKS
 
     CALL WRITE_OGBREC USING FIX_EMAIL_FILE,FIX_EMAIL_NAME,INM_LIST
     CALL UTIL_XCOUNTER USING X_CNT2,10
@@ -218,8 +233,8 @@ LOG_NUMBER      CHAR    10
                         (CHOP LOG_EMAIL_NEW),COMMA:
                         (CHOP LOG_NUMBER)
 
-    UNPACK LOG_INFO INTO LOG_LIST
-    CALL WRITE_OGBREC USING LOG_FILE,LOG_NAME,LOG_LIST
+    UNPACK LOG_INFO INTO LOG_WRITE_LIST
+    CALL WRITE_OGBREC USING LOG_FILE,LOG_NAME,LOG_WRITE_LIST
 
     RETURN
     ENDROUTINE
@@ -229,6 +244,7 @@ CLEAN_UP LROUTINE
 + Cleanup after this process
 NEW_LOG         CHAR    150
 UPDATE_DIR      CHAR    150
+INPUT_DIR       CHAR    150
 
     debug
     CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME
@@ -238,6 +254,9 @@ UPDATE_DIR      CHAR    150
 .Archives update file
     CALL UTIL_GET_FILES_DIR USING UPDATE_DIR
     CALL UTIL_PENDING_BACKUP USING UPDATE_DIR,FIX_EMAIL_NAME,""
+
+.Archives input file
+    CALL UTIL_PENDING_BACKUP USING "/w/",INPUT_NAME,"_",RUNDATE
 
 .Cleanups log file
     CALL EMAIL_LOG USING NEW_LOG
