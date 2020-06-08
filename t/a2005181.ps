@@ -69,8 +69,8 @@ LOG_WRITE_EMAIL_NEW     CHAR    60
 LOG_WRITE_NUMBER        CHAR    10
                         LISTEND
 
-EMAIL_GROUP             INIT     "donald.hutchinson@la.gov"
-.EMAIL_GROUP             INIT     "${ITAPPS}"
+.EMAIL_GROUP             INIT     "donald.hutchinson@la.gov"
+EMAIL_GROUP             INIT     "${ITAPPS}"
 LOG_INFO                CHAR     125
 RUNDATE                 CHAR     8
 
@@ -121,8 +121,7 @@ RUN_NOW LROUTINE
 MAIN_PROCESS LROUTINE
     debug
     CALL INITIALIZE
-    CALL READ_MEM
-    CALL UPDATE_REC
+    CALL READ_CSV
     CALL CLEAN_UP
 
     RETURN
@@ -154,7 +153,7 @@ INITIALIZE LROUTINE
 
 
 .#######################################################################
-READ_MEM LROUTINE
+READ_CSV LROUTINE
 
     LOOP
         MOVE OGB_SEQ1 TO OGB_SEQ
@@ -176,7 +175,7 @@ READ_MEM LROUTINE
             CONTINUE
         ENDIF
 
-        CALL UPDATE_REC
+        CALL UPDATE_EMAIL_INM
         CALL LOG_REC
 
     REPEAT
@@ -186,7 +185,7 @@ READ_MEM LROUTINE
 
 
 .#######################################################################
-UPDATE_REC LROUTINE
+UPDATE_EMAIL_INM LROUTINE
 
 + Updates email for current record
     FILL " " IN INM_LIST, INM_REC
