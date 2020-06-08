@@ -22,44 +22,44 @@
 ./* ===================================
 . * Scheduler Params
 . * =================================== */
-PARAM_LIST          LIST WITH NAMES
-PARAM_MODE          CHAR    4
-                    LISTEND
+PARAM_LIST              LIST WITH NAMES
+PARAM_MODE              CHAR    4
+                        LISTEND
 
 ./* ===================================
 . * File & Global Variable Declarations
 . * =================================== */
 
 ...Input File
-INPUT_FILE          FILE    VAR=200,TEXT
-INPUT_NAME          INIT    "/w/bademailaddress.csv"
-CSV_LIST            LIST
-CSV_REC             CHAR        200
-                    LISTEND
+INPUT_FILE              FILE    VAR=200,TEXT
+INPUT_NAME              INIT    "/w/bademailaddress.csv"
+CSV_LIST                LIST
+CSV_REC                 CHAR    200
+                        LISTEND
 
-FIX_EMAIL_FILE      FILE    VAR=X_INM_SIZE,TEXT
-FIX_EMAIL_NAME      INIT    "fixemail.inm"
+FIX_EMAIL_FILE          FILE    VAR=X_INM_SIZE,TEXT
+FIX_EMAIL_NAME          INIT    "fixemail.inm"
 
-LOG_FILE            FILE    VAR=200,TEXT
-LOG_NAME            INIT    "/w/email_update.log"
+LOG_FILE                FILE    VAR=200,TEXT
+LOG_NAME                INIT    "/w/email_update.log"
 
-DELIMITER           INIT    ","
+DELIMITER               INIT    ","
 
-LOG_HEADER          VARLIST "Member ID",DELIMITER:
-                            "First Name",DELIMITER:
-                            "Last Name",DELIMITER:
-                            "Email Change",DELIMITER:
-                            "Phone Number"
+LOG_HEADER              VARLIST "Member ID",DELIMITER:
+                                "First Name",DELIMITER:
+                                "Last Name",DELIMITER:
+                                "Email Change",DELIMITER:
+                                "Phone Number"
 
-MEMB_CHANGE_LIST    LIST
-MEMBER_ID           CHAR    8
-EMAIL_ADDR          CHAR    60
-EMAIL_UPDATE        CHAR    60
-FSA                 CHAR    15
-F_NAME              CHAR    15
-L_NAME              CHAR    20
-PHONE_NUMB          CHAR    10
-                    LISTEND
+MEMB_CHANGE_LIST        LIST
+MEMBER_ID               CHAR    8
+EMAIL_ADDR              CHAR    60
+EMAIL_UPDATE            CHAR    60
+FSA                     CHAR    15
+F_NAME                  CHAR    15
+L_NAME                  CHAR    20
+PHONE_NUMB              CHAR    10
+                        LISTEND
 
 LOG_WRITE_LIST          LIST
 LOG_WRITE_ID            CHAR    8
@@ -69,10 +69,10 @@ LOG_WRITE_EMAIL_NEW     CHAR    60
 LOG_WRITE_NUMBER        CHAR    10
                         LISTEND
 
-EMAIL_GROUP         INIT     "donald.hutchinson@la.gov"
-.EMAIL_GROUP         INIT     "${ITAPPS}"
-LOG_INFO            CHAR     125
-RUNDATE             CHAR     8
+EMAIL_GROUP             INIT     "donald.hutchinson@la.gov"
+.EMAIL_GROUP             INIT     "${ITAPPS}"
+LOG_INFO                CHAR     125
+RUNDATE                 CHAR     8
 
 ./* =============
 . * Begin Program
@@ -90,7 +90,7 @@ RUN_NOW LROUTINE
 ./* Set runtime variables
 . */
     MOVE "a2005181" TO C_PROG
-    MOVE BLANKS TO C_OPER
+    MOVE "CLEAN EMAILS" TO C_OPER
     MOVE "menu" TO C_NEXT
     MOVE BLANKS TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -116,6 +116,7 @@ RUN_NOW LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 MAIN_PROCESS LROUTINE
     debug
@@ -127,6 +128,7 @@ MAIN_PROCESS LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 INITIALIZE LROUTINE
 
@@ -135,7 +137,6 @@ INITIALIZE LROUTINE
 .Setup counters
     PACK X_CNTDESC1 WITH "Members to be Updated     ",BLANKS
     PACK X_CNTDESC2 WITH "Email Records Updated     ",BLANKS
-
 
     CALL X_ZERO_COUNTS
     IF NOT (C_CMDPAR)
@@ -150,6 +151,7 @@ INITIALIZE LROUTINE
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 READ_MEM LROUTINE
@@ -182,6 +184,7 @@ READ_MEM LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 UPDATE_REC LROUTINE
 
@@ -206,6 +209,7 @@ UPDATE_REC LROUTINE
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 LOG_REC LROUTINE
@@ -238,6 +242,7 @@ LOG_NUMBER      CHAR    10
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 CLEAN_UP LROUTINE
@@ -295,6 +300,7 @@ RECIPIENTS  CHAR    100
 
     RETURN
     ENDROUTINE
+
 
 ./* ==============================
 . * Subroutines and Other Includes
