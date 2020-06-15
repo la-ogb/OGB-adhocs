@@ -9,7 +9,7 @@
 +   apdrh - 2020-05-18
 +
 + LAST MODIFIED BY:
-+   apdrh - 2020-06-04
++   apdrh - 2020-06-15
 . * ================================================================= */
 
 ./* =================
@@ -193,12 +193,13 @@ UPDATE_EMAIL_INM LROUTINE
     PACKLEN INM_REC WITH MEM_LIST
     UNPACK INM_REC INTO INM_LIST
     debug
-    MOVE EMAIL_UPDATE TO INM_EMAIL
-    IF (EMAIL_UPDATE = "delete")
-        debug
-        FILL "~" IN INM_EMAIL
+    IF (CHOP EMAIL_UPDATE != CHOP INM_EMAIL)
+        MOVE EMAIL_UPDATE TO INM_EMAIL
+        IF (EMAIL_UPDATE = "delete")
+            debug
+            FILL "~" IN INM_EMAIL
+        ENDIF
     ENDIF
-
     FILL " " IN INM_CHGDT
     PACK INM_CHGBY WITH "A00002",BLANKS
 
