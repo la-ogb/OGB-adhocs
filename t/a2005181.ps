@@ -245,9 +245,9 @@ LOG_NUMBER      CHAR    10
 
 
 .#######################################################################
-CLEAN_UP LROUTINE
+CLEAN_UP LROUTINE NEW_LOG@
 + Cleanup after this process
-NEW_LOG         CHAR    150
+NEW_LOG@        CHAR    @
 UPDATE_DIR      CHAR    150
 INPUT_DIR       CHAR    150
 
@@ -264,12 +264,12 @@ INPUT_DIR       CHAR    150
     CALL UTIL_PENDING_BACKUP USING "/w/",INPUT_NAME,"_",RUNDATE
 
 .Cleanups log file
-    CALL EMAIL_LOG USING NEW_LOG
     CALL UTIL_TRIM_TRAILING_SPACE USING LOG_NAME,LOG_NAME
-    PACK NEW_LOG WITH "/w/email_update.log",RUNDATE,".csv"
-    CALL UTIL_RENAME_FILE USING "/w/",LOG_NAME,NEW_LOG
-    CALL UTIL_PENDING_BACKUP USING "/w/",NEW_LOG,""
-    CALL UTIL_DELETE_FILE USING NEW_LOG
+    CALL UTIL_RENAME_FILE USING "/w/",LOG_NAME,NEW_LOG@
+    PACK NEW_LOG@ WITH "/w/email_update.log",RUNDATE,".csv"
+    CALL EMAIL_LOG USING NEW_LOG@
+    CALL UTIL_PENDING_BACKUP USING "/w/",NEW_LOG@,""
+    CALL UTIL_DELETE_FILE USING NEW_LOG@
 
 .Removes work file
     CALL UTIL_DELETE_FILE USING INPUT_NAME
@@ -279,7 +279,8 @@ INPUT_DIR       CHAR    150
 
 
 .######################################################################
-EMAIL_LOG LROUTINE
+EMAIL_LOG LROUTINE NEW_LOG@
+.Emails log file
 
 SUBJECT     CHAR    100
 BODY        CHAR    5000
@@ -297,7 +298,7 @@ RECIPIENTS  CHAR    100
                                          SUBJECT:
                                          BODY:
                                          LOG_NAME
-
+                                         NEW_LOG@
     RETURN
     ENDROUTINE
 
