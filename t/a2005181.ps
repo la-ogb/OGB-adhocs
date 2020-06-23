@@ -38,7 +38,7 @@ CSV_REC                 CHAR    200
                         LISTEND
 
 FIX_EMAIL_FILE          FILE    VAR=X_INM_SIZE,TEXT
-FIX_EMAIL_NAME          INIT    "fixemail.inm"
+FIX_EMAIL_NAME          INIT    "a2005181.inm"
 
 LOG_FILE                FILE    VAR=200,TEXT
 LOG_NAME                INIT    "/w/email_update.log"
@@ -48,8 +48,8 @@ DELIMITER               INIT    ","
 LOG_HEADER              VARLIST "Member ID",DELIMITER:
                                 "First Name",DELIMITER:
                                 "Last Name",DELIMITER:
-                                "Email Change",DELIMITER:
-                                "Phone Number"
+                                "Old Email",DELIMITER:
+                                "Email Change"
 
 MEMB_CHANGE_LIST        LIST
 MEMBER_ID               CHAR    8
@@ -65,14 +65,15 @@ LOG_WRITE_LIST          LIST
 LOG_WRITE_ID            CHAR    8
 LOG_WRITE_FNAME         CHAR    15
 LOG_WRITE_LNAME         CHAR    20
+LOG_WRITE_EMAIL_OLD     CHAR    60
 LOG_WRITE_EMAIL_NEW     CHAR    60
-LOG_WRITE_NUMBER        CHAR    10
                         LISTEND
 
 .EMAIL_GROUP             INIT     "donald.hutchinson@la.gov"
 EMAIL_GROUP             INIT     "${ITAPPS}"
 LOG_INFO                CHAR     125
 RUNDATE                 CHAR     8
+NEW_LOG                 CHAR    150
 
 ./* =============
 . * Begin Program
@@ -220,7 +221,6 @@ LOG_FNAME       CHAR    15
 LOG_LNAME       CHAR    20
 LOG_EMAIL_OLD   CHAR    60
 LOG_EMAIL_NEW   CHAR    60
-LOG_NUMBER      CHAR    10
                 LISTEND
 
     CLEAR LOG_INFO
@@ -228,14 +228,14 @@ LOG_NUMBER      CHAR    10
     MOVE MEM_ID1 TO LOG_ID
     MOVE MEM_FNAME TO LOG_FNAME
     MOVE MEM_LNAME TO LOG_LNAME
+    MOVE EMAIL_ADDR TO LOG_EMAIL_OLD
     MOVE EMAIL_UPDATE TO LOG_EMAIL_NEW
-    MOVE PHONE_NUMB TO LOG_NUMBER
 
     PACK LOG_INFO WITH  (CHOP LOG_ID),COMMA:
                         (CHOP LOG_FNAME),COMMA:
                         (CHOP LOG_LNAME),COMMA:
-                        (CHOP LOG_EMAIL_NEW),COMMA:
-                        (CHOP LOG_NUMBER)
+                        (CHOP LOG_EMAIL_OLD),COMMA:
+                        (CHOP LOG_EMAIL_NEW)
 
     UNPACK LOG_INFO INTO LOG_WRITE_LIST
     CALL WRITE_OGBREC USING LOG_FILE,LOG_NAME,LOG_WRITE_LIST
@@ -245,13 +245,11 @@ LOG_NUMBER      CHAR    10
 
 
 .#######################################################################
-CLEAN_UP LROUTINE NEW_LOG@
+CLEAN_UP LROUTINE
 + Cleanup after this process
-NEW_LOG@        CHAR    @
-UPDATE_DIR      CHAR    150
-INPUT_DIR       CHAR    150
 
-    debug
+UPDATE_DIR      CHAR    150
+
     CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME
     CALL CLOSE_OGBFILE USING FIX_EMAIL_FILE,FIX_EMAIL_NAME
     CALL CLOSE_OGBFILE USING LOG_FILE,LOG_NAME
@@ -263,23 +261,26 @@ INPUT_DIR       CHAR    150
 .Archives input file
     CALL UTIL_PENDING_BACKUP USING "/w/",INPUT_NAME,"_",RUNDATE
 
+    debug
 .Cleanups log file
     CALL UTIL_TRIM_TRAILING_SPACE USING LOG_NAME,LOG_NAME
-    CALL UTIL_RENAME_FILE USING "/w/",LOG_NAME,NEW_LOG@
-    PACK NEW_LOG@ WITH "/w/email_update.log",RUNDATE,".csv"
-    CALL EMAIL_LOG USING NEW_LOG@
-    CALL UTIL_PENDING_BACKUP USING "/w/",NEW_LOG@,""
-    CALL UTIL_DELETE_FILE USING NEW_LOG@
+    PACK NEW_LOG WITH "/w/email_update.log",RUNDATE,".csv"
+    CALL UTIL_RENAME_FILE USING "/w/",LOG_NAME,NEW_LOG
+
+    CALL EMAIL_LOG USING NEW_LOG
+    CALL UTIL_PENDING_BACKUP USING "/w/",NEW_LOG,""
+    CALL UTIL_DELETE_FILE USING NEW_LOG
 
 .Removes work file
     CALL UTIL_DELETE_FILE USING INPUT_NAME
+
 
     RETURN
     ENDROUTINE
 
 
 .######################################################################
-EMAIL_LOG LROUTINE NEW_LOG@
+EMAIL_LOG LROUTINE
 .Emails log file
 
 SUBJECT     CHAR    100
@@ -297,8 +298,8 @@ RECIPIENTS  CHAR    100
     CALL UTIL_SEND_EMAIL_WITH_FILE USING RECIPIENTS:
                                          SUBJECT:
                                          BODY:
-                                         LOG_NAME
-                                         NEW_LOG@
+                                         NEW_LOG
+
     RETURN
     ENDROUTINE
 
