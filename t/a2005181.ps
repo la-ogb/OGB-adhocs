@@ -73,7 +73,6 @@ LOG_WRITE_EMAIL_NEW     CHAR    60
 EMAIL_GROUP             INIT     "${ITAPPS}"
 LOG_INFO                CHAR     125
 RUNDATE                 CHAR     8
-NEW_LOG                 CHAR    150
 
 ./* =============
 . * Begin Program
@@ -247,9 +246,9 @@ LOG_EMAIL_NEW   CHAR    60
 .#######################################################################
 CLEAN_UP LROUTINE
 + Cleanup after this process
-
 UPDATE_DIR      CHAR    150
-
+NEW_LOG         CHAR    150
+...
     CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME
     CALL CLOSE_OGBFILE USING FIX_EMAIL_FILE,FIX_EMAIL_NAME
     CALL CLOSE_OGBFILE USING LOG_FILE,LOG_NAME
@@ -264,7 +263,7 @@ UPDATE_DIR      CHAR    150
     debug
 .Cleanups log file
     CALL UTIL_TRIM_TRAILING_SPACE USING LOG_NAME,LOG_NAME
-    PACK NEW_LOG WITH "/w/email_update.log",RUNDATE,".csv"
+    PACK NEW_LOG WITH "/w/email_update_log_",RUNDATE,".csv"
     CALL UTIL_RENAME_FILE USING "/w/",LOG_NAME,NEW_LOG
 
     CALL EMAIL_LOG USING NEW_LOG
@@ -274,19 +273,18 @@ UPDATE_DIR      CHAR    150
 .Removes work file
     CALL UTIL_DELETE_FILE USING INPUT_NAME
 
-
     RETURN
     ENDROUTINE
 
 
 .######################################################################
-EMAIL_LOG LROUTINE
+EMAIL_LOG LROUTINE LOG@
 .Emails log file
-
+LOG@        CHAR    @
 SUBJECT     CHAR    100
 BODY        CHAR    5000
 RECIPIENTS  CHAR    100
-
+...
     debug
     PACK RECIPIENTS WITH EMAIL_GROUP
     PACK SUBJECT WITH "A2005181 Complete - Members Email Updated"
@@ -294,12 +292,12 @@ RECIPIENTS  CHAR    100
                    "\t$(date)\n":
                    "COUNTS:\n":
                    "\t",(CHOP X_CNTDESC1),": ",(TRIM (CHAR X_CNT1)),"\n":
-                   "\t",(CHOP X_CNTDESC2),": ",(TRIM (CHAR X_CNT2)),"\n"
+                   "\t",(CHOP X_CNTDESC2),": ",(TRIM (CHAR X_CNT2))
+
     CALL UTIL_SEND_EMAIL_WITH_FILE USING RECIPIENTS:
                                          SUBJECT:
                                          BODY:
-                                         NEW_LOG
-
+                                         LOG@
     RETURN
     ENDROUTINE
 
