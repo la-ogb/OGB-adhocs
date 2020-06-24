@@ -1,0 +1,320 @@
+./* ====================================================================
++ NAME:
++   a2005181.ps
++
++ DESCRIPTION:
++   Updates or deletes current email of file records
++
++ CREATED BY:
++   apdrh - 2020-05-18
++
++ LAST MODIFIED BY:
++   apdrh - 2020-06-15
+. * ================================================================= */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC UTIL_MEMMEM.CB
+    INC VALID.RL
+
+./* ===================================
+. * Scheduler Params
+. * =================================== */
+PARAM_LIST              LIST WITH NAMES
+PARAM_MODE              CHAR    4
+                        LISTEND
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+...Input File
+INPUT_FILE              FILE    VAR=200,TEXT
+INPUT_NAME              INIT    "/w/bademailaddress.csv"
+CSV_LIST                LIST
+CSV_REC                 CHAR    200
+                        LISTEND
+
+FIX_EMAIL_FILE          FILE    VAR=X_INM_SIZE,TEXT
+FIX_EMAIL_NAME          INIT    "a2005181.inm"
+
+LOG_FILE                FILE    VAR=200,TEXT
+LOG_NAME                INIT    "/w/email_update.log"
+
+DELIMITER               INIT    ","
+
+LOG_HEADER              VARLIST "Member ID",DELIMITER:
+                                "First Name",DELIMITER:
+                                "Last Name",DELIMITER:
+                                "Old Email",DELIMITER:
+                                "Email Change"
+
+MEMB_CHANGE_LIST        LIST
+MEMBER_ID               CHAR    8
+EMAIL_ADDR              CHAR    60
+EMAIL_UPDATE            CHAR    60
+FSA                     CHAR    15
+F_NAME                  CHAR    15
+L_NAME                  CHAR    20
+PHONE_NUMB              CHAR    10
+                        LISTEND
+
+LOG_WRITE_LIST          LIST
+LOG_WRITE_ID            CHAR    8
+LOG_WRITE_FNAME         CHAR    15
+LOG_WRITE_LNAME         CHAR    20
+LOG_WRITE_EMAIL_OLD     CHAR    60
+LOG_WRITE_EMAIL_NEW     CHAR    60
+                        LISTEND
+
+.EMAIL_GROUP             INIT     "donald.hutchinson@la.gov"
+EMAIL_GROUP             INIT     "${ITAPPS}"
+LOG_INFO                CHAR     125
+RUNDATE                 CHAR     8
+
+./* =============
+. * Begin Program
+. * ============= */
+
+...Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+...Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW LROUTINE
+./* Set runtime variables
+. */
+    MOVE "a2005181" TO C_PROG
+    MOVE "CLEAN EMAILS" TO C_OPER
+    MOVE "menu" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.signal start for command line call
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ENDIF
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+    debug
+    CALL INITIALIZE
+    CALL READ_CSV
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
+
+    CLOCK TIMESTAMP TO RUNDATE
+
+.Setup counters
+    PACK X_CNTDESC1 WITH "Members to be Updated     ",BLANKS
+    PACK X_CNTDESC2 WITH "Email Records Updated     ",BLANKS
+
+    CALL X_ZERO_COUNTS
+    IF NOT (C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL OPEN_OGBFILE USING INPUT_FILE,INPUT_NAME
+    CALL PREP_OGBFILE USING FIX_EMAIL_FILE,FIX_EMAIL_NAME
+    CALL PREP_OGBFILE USING LOG_FILE,LOG_NAME
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING LOG_FILE,LOG_NAME,LOG_HEADER
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+READ_CSV LROUTINE
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING INPUT_FILE,INPUT_NAME,CSV_LIST
+        WHILE (RESULT = 1)
+
+        CALL DELIMIT_STRING USING CSV_REC,00,MEMBER_ID,COMMA
+        CALL DELIMIT_STRING USING CSV_REC,01,EMAIL_ADDR,COMMA
+        CALL DELIMIT_STRING USING CSV_REC,02,EMAIL_UPDATE,COMMA
+        CALL DELIMIT_STRING USING CSV_REC,03,FSA,COMMA
+        CALL DELIMIT_STRING USING CSV_REC,04,F_NAME,COMMA
+        CALL DELIMIT_STRING USING CSV_REC,05,L_NAME,COMMA
+        CALL DELIMIT_STRING USING CSV_REC,06,PHONE_NUMB,COMMA
+
+        CALL UTIL_XCOUNTER USING X_CNT1,10
+
+        CALL UTIL_MEM_FIND USING MEMBER_ID
+        IF NOT (EQUAL)
+            CONTINUE
+        ENDIF
+
+        CALL UPDATE_EMAIL_INM
+        CALL LOG_REC
+
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_EMAIL_INM LROUTINE
+
++ Updates email for current record
+    FILL " " IN INM_LIST, INM_REC
+
+    PACKLEN INM_REC WITH MEM_LIST
+    UNPACK INM_REC INTO INM_LIST
+    debug
+    IF (CHOP EMAIL_UPDATE != CHOP INM_EMAIL)
+        MOVE EMAIL_UPDATE TO INM_EMAIL
+        IF (EMAIL_UPDATE = "delete")
+            debug
+            FILL "~" IN INM_EMAIL
+        ENDIF
+    ENDIF
+    FILL " " IN INM_CHGDT
+    PACK INM_CHGBY WITH "A00002",BLANKS
+
+    CALL WRITE_OGBREC USING FIX_EMAIL_FILE,FIX_EMAIL_NAME,INM_LIST
+    CALL UTIL_XCOUNTER USING X_CNT2,10
+    CLEAR INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_REC LROUTINE
+
+LOG_LIST        LIST
+LOG_ID          CHAR    8
+LOG_FNAME       CHAR    15
+LOG_LNAME       CHAR    20
+LOG_EMAIL_OLD   CHAR    60
+LOG_EMAIL_NEW   CHAR    60
+                LISTEND
+
+    CLEAR LOG_INFO
+
+    MOVE MEM_ID1 TO LOG_ID
+    MOVE MEM_FNAME TO LOG_FNAME
+    MOVE MEM_LNAME TO LOG_LNAME
+    MOVE EMAIL_ADDR TO LOG_EMAIL_OLD
+    MOVE EMAIL_UPDATE TO LOG_EMAIL_NEW
+
+    PACK LOG_INFO WITH  (CHOP LOG_ID),COMMA:
+                        (CHOP LOG_FNAME),COMMA:
+                        (CHOP LOG_LNAME),COMMA:
+                        (CHOP LOG_EMAIL_OLD),COMMA:
+                        (CHOP LOG_EMAIL_NEW)
+
+    UNPACK LOG_INFO INTO LOG_WRITE_LIST
+    CALL WRITE_OGBREC USING LOG_FILE,LOG_NAME,LOG_WRITE_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup after this process
+UPDATE_DIR      CHAR    150
+NEW_LOG         CHAR    150
+...
+    CALL CLOSE_OGBFILE USING INPUT_FILE,INPUT_NAME
+    CALL CLOSE_OGBFILE USING FIX_EMAIL_FILE,FIX_EMAIL_NAME
+    CALL CLOSE_OGBFILE USING LOG_FILE,LOG_NAME
+
+.Archives update file
+    CALL UTIL_GET_FILES_DIR USING UPDATE_DIR
+    CALL UTIL_PENDING_BACKUP USING UPDATE_DIR,FIX_EMAIL_NAME,""
+
+.Archives input file
+    CALL UTIL_PENDING_BACKUP USING "/w/",INPUT_NAME,"_",RUNDATE
+
+    debug
+.Cleanups log file
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_NAME,LOG_NAME
+    PACK NEW_LOG WITH "/w/email_update_log_",RUNDATE,".csv"
+    CALL UTIL_RENAME_FILE USING "/w/",LOG_NAME,NEW_LOG
+
+    CALL EMAIL_LOG USING NEW_LOG
+    CALL UTIL_PENDING_BACKUP USING "/w/",NEW_LOG,""
+    CALL UTIL_DELETE_FILE USING NEW_LOG
+
+.Removes work file
+    CALL UTIL_DELETE_FILE USING INPUT_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.######################################################################
+EMAIL_LOG LROUTINE LOG@
+.Emails log file
+LOG@        CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    debug
+    PACK RECIPIENTS WITH EMAIL_GROUP
+    PACK SUBJECT WITH "A2005181 Complete - Members Email Updated"
+    PACK BODY WITH "COMPLETED:\n":
+                   "\t$(date)\n":
+                   "COUNTS:\n":
+                   "\t",(CHOP X_CNTDESC1),": ",(TRIM (CHAR X_CNT1)),"\n":
+                   "\t",(CHOP X_CNTDESC2),": ",(TRIM (CHAR X_CNT2))
+
+    CALL UTIL_SEND_EMAIL_WITH_FILE USING RECIPIENTS:
+                                         SUBJECT:
+                                         BODY:
+                                         LOG@
+    RETURN
+    ENDROUTINE
+
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... B includes found in /mcsapl/i
+    INC DELIMIT.SR
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_MEMMEM.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_VALID.SR
+
+./* ==============
+. * End of program
+. * ============== */
