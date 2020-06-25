@@ -17,6 +17,7 @@
 . * ================= */
     INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
     INC UTIL_MEMMEM.CB
+    INC MSPA.RL
     INC VALID.RL
 
 ./* ===================================
@@ -33,7 +34,7 @@ PARAM_MODE              CHAR    4
 ...Input File
 OLD_DATA_FILE           FILE    VAR=500,TEXT
 OLD_DATA_NAME           INIT    "/w/20150415.txt"
-OLD_DATA_LIST           LIST
+MSPX_LIST               LIST
 OLD_DATA_REC            CHAR    500
                         LISTEND
 
@@ -45,6 +46,7 @@ FIX_TERM_REC            CHAR    500
                         LISTEND
 
 DELIMITER               INIT    ","
+
 
 MEMBER_LIST             LIST
 MBR_HICN                CHAR    12
@@ -207,7 +209,7 @@ FIRST_MEME   NUM   1
 
     LOOP
         MOVE OGB_SEQ1 TO OGB_SEQ
-        CALL READ_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME,MEMBER_LIST
+        CALL READ_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME,MSPX_LIST
         WHILE (RESULT = 1)
 
         CALL UTIL_XCOUNTER USING X_CNT1,100
@@ -243,7 +245,19 @@ FIRST_MEME   NUM   1
                CALL RECORD_WRITE
                BREAK
             ENDIF
-            IF (SQUEEZE MEME_LEV1 = "R98" & MEME_EFF <= "20150401")
+            IF (SQUEEZE MEME_LEV1 = "R98") ...& MEME_EFF <= "20150401"
+               PACK MEME_SAV WITH MEME_LIST
+               CALL DELETE_REC
+               CALL RECORD_WRITE
+               BREAK
+            ENDIF
+            IF (SQUEEZE MEME_LEV1 = "R96") ...& MEME_EFF <= "20150401"
+               PACK MEME_SAV WITH MEME_LIST
+               CALL DELETE_REC
+               CALL RECORD_WRITE
+               BREAK
+            ENDIF
+            IF (SQUEEZE MEME_LEV1 = "R97") ...& MEME_EFF <= "20150401"
                PACK MEME_SAV WITH MEME_LIST
                CALL DELETE_REC
                CALL RECORD_WRITE
@@ -266,7 +280,7 @@ FIRST_MEME   NUM   1
 TERM_DATE LROUTINE
 ... Sets Term date to 1 day before effective date
 
-    MOVE MEMBER_LIST TO TERM_FIX_LIST
+    MOVE MSPX_LIST TO TERM_FIX_LIST
     CALL DATE_CALC USING MEME_EFF, "SUB", "DAYS", 1, DAY_BEFORE_EFF
     MOVE DAY_BEFORE_EFF TO TERM_FIX_TERM_DT
     CALL UTIL_XCOUNTER USING X_CNT2,100
@@ -278,7 +292,7 @@ TERM_DATE LROUTINE
 DELETE_REC LROUTINE
 ...delete retired recs
 
-    MOVE MEMBER_LIST TO TERM_FIX_LIST
+    MOVE MSPX_LIST TO TERM_FIX_LIST
     MOVE "1" TO TERM_FIX_TRAN
     CALL UTIL_XCOUNTER USING X_CNT3,100
 
