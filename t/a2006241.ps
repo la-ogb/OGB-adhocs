@@ -34,7 +34,7 @@ PARAM_MODE              CHAR    4
 ...Input File
 OLD_DATA_FILE           FILE    VAR=500,TEXT
 OLD_DATA_NAME           INIT    "/w/20150415.txt"
-MSPX_LIST               LIST
+OLD_DATA_LIST               LIST
 OLD_DATA_REC            CHAR    500
                         LISTEND
 
@@ -48,79 +48,7 @@ FIX_TERM_REC            CHAR    500
 DELIMITER               INIT    ","
 
 
-MEMBER_LIST             LIST
-MBR_HICN                CHAR    12
-MBR_BEN_SURN            CHAR    6
-MBR_BEN_FI              CHAR    1
-MBR_BEN_DOB             CHAR    8
-MBR_BEN_SC              CHAR    1
-MBR_DCN                 CHAR    15
-MBR_TRAN                CHAR    1
-MBR_COVG                CHAR    1
-MBR_BEN_SS              CHAR    9
-MBR_EFF_DT              CHAR    8
-MBR_TERM_DT             CHAR    8
-MBR_REL                 CHAR    2
-MBR_POL_F_NM            CHAR    9
-MBR_POL_L_NM            CHAR    16
-MBR_POL_SS              CHAR    9
-MBR_EMPL_SIZE           CHAR    1
-MBR_POL_NUM             CHAR    20
-MBR_INDV_P_NUM          CHAR    17
-MBR_EMP_COV             CHAR    1
-MBR_EMP_STATUS          CHAR    1
-MBR_EMP_TIN             CHAR    9
-MBR_INS_TIN             CHAR    9
-FILLER1                 CHAR    10
-MBR_RX_ID               CHAR    20
-MBR_RX_GROUP            CHAR    15
-MBR_RX_PCN              CHAR    10
-MBR_BIN_NUM             CHAR    6
-MBR_RX_TOLL             CHAR    18
-MBR_PERSON_CD           CHAR    3
-RESERVED_1              CHAR    10
-RESERVED_2              CHAR    5
-EMP_EXCP_HICN           CHAR    12
-MBR_OVERIDE_CD          CHAR    2
-FILLER2                 CHAR    150
-                        LISTEND
 
-TERM_FIX_LIST           LIST
-TERM_FIX_HICN           CHAR    12
-TERM_FIX_BEN_SURN       CHAR    6
-TERM_FIX_BEN_FI         CHAR    1
-TERM_FIX_BEN_DOB        CHAR    8
-TERM_FIX_BEN_SC         CHAR    1
-TERM_FIX_DCN            CHAR    15
-TERM_FIX_TRAN           CHAR    1
-TERM_FIX_COVG           CHAR    1
-TERM_FIX_BEN_SS         CHAR    9
-TERM_FIX_EFF_DT         CHAR    8
-TERM_FIX_TERM_DT        CHAR    8
-TERM_FIX_REL            CHAR    2
-TERM_FIX_POL_F_NM       CHAR    9
-TERM_FIX_POL_L_NM       CHAR    16
-TERM_FIX_POL_SS         CHAR    9
-TERM_FIX_EMPL_SIZE      CHAR    1
-TERM_FIX_POL_NUM        CHAR    20
-TERM_FIX_INDV_P_NUM     CHAR    17
-TERM_FIX_EMP_COV        CHAR    1
-TERM_FIX_EMP_STATUS     CHAR    1
-TERM_FIX_EMP_TIN        CHAR    9
-TERM_FIX_INS_TIN        CHAR    9
-TERM_FIX_FILLER1        CHAR    10
-TERM_FIX_RX_ID          CHAR    20
-TERM_FIX_RX_GROUP       CHAR    15
-TERM_FIX_RX_PCN         CHAR    10
-TERM_FIX_BIN_NUM        CHAR    6
-TERM_FIX_RX_TOLL        CHAR    18
-TERM_FIX_PERSON_CD      CHAR    3
-TERM_FIX_RESERVED_1     CHAR    10
-TERM_FIX_RESERVED_2     CHAR    5
-TERM_FIX_EMP_EXCP_HICN  CHAR    12
-TERM_FIX_OVERIDE_CD     CHAR    2
-TERM_FIX_FILLER2        CHAR    150
-                        LISTEND
 
 RUNDATE         CHAR    8
 DAY_BEFORE_EFF  CHAR    8
@@ -214,7 +142,7 @@ FIRST_MEME   NUM   1
 
         CALL UTIL_XCOUNTER USING X_CNT1,100
         debug
-        CALL UTIL_MEM_FIND USING MBR_RX_ID
+        CALL UTIL_MEM_FIND USING MSPX_MEM
         IF (NOT EQUAL)
           CONTINUE
         ENDIF
@@ -280,9 +208,9 @@ FIRST_MEME   NUM   1
 TERM_DATE LROUTINE
 ... Sets Term date to 1 day before effective date
 
-    MOVE MSPX_LIST TO TERM_FIX_LIST
+...MOVE MEMBER_LIST TO TERM_FIX_LIST
     CALL DATE_CALC USING MEME_EFF, "SUB", "DAYS", 1, DAY_BEFORE_EFF
-    MOVE DAY_BEFORE_EFF TO TERM_FIX_TERM_DT
+    MOVE DAY_BEFORE_EFF TO MSPX_TRM
     CALL UTIL_XCOUNTER USING X_CNT2,100
 
     RETURN
@@ -292,8 +220,8 @@ TERM_DATE LROUTINE
 DELETE_REC LROUTINE
 ...delete retired recs
 
-    MOVE MSPX_LIST TO TERM_FIX_LIST
-    MOVE "1" TO TERM_FIX_TRAN
+...MOVE  MEMBER_LIST TO TERM_FIX_LIST
+    MOVE "1" TO MSPX_TRXT
     CALL UTIL_XCOUNTER USING X_CNT3,100
 
 
@@ -303,7 +231,7 @@ DELETE_REC LROUTINE
 .#######################################################################
 RECORD_WRITE LROUTINE
 
-    CALL WRITE_OGBREC USING FIX_TERM_FILE,FIX_TERM_NAME,TERM_FIX_LIST
+    CALL WRITE_OGBREC USING FIX_TERM_FILE,FIX_TERM_NAME,MSPX_LIST
     CALL UTIL_XCOUNTER USING X_CNT4,100
 
 
