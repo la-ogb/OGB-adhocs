@@ -38,7 +38,7 @@ OLD_DATA_REC            CHAR    500
                         LISTEND
 
 ...Output File
-FIX_TERM_FILE           FILE    VAR=500
+FIX_TERM_FILE           FILE    VAR=500,TEXT
 FIX_TERM_NAME           INIT    "/w/20200415sct111.txt"
 FIX_TERM_LIST           LIST
 FIX_TERM_REC            CHAR    500
@@ -172,7 +172,7 @@ MAIN_PROCESS LROUTINE
     CALL TERM_DATE
     CALL DELETE_REC
     CALL RECORD_WRITE
-    CALL GLOSE FILES
+    CALL CLOSE_FILES
 
     RETURN
     ENDROUTINE
@@ -182,8 +182,10 @@ INITIALIZE LROUTINE
     CLOCK TIMESTAMP TO RUNDATE
 
 .Setup counters
-    PACK X_CNTDESC1 WITH "",BLANKS
-    PACK X_CNTDESC2 WITH "",BLANKS
+    PACK X_CNTDESC1 WITH "Records Read            ",BLANKS
+    PACK X_CNTDESC2 WITH "Term Date Changed       ",BLANKS
+    PACK X_CNTDESC3 WITH "Record to Delete        ",BLANKS
+    PACK X_CNTDESC4 WITH "Total Records Changed   ",BLANKS
 
     CALL X_ZERO_COUNTS
     IF NOT (C_CMDPAR)
@@ -191,7 +193,7 @@ INITIALIZE LROUTINE
     ENDIF
 
     CALL OPEN_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
-...CALL PREP_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
+    CALL PREP_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
 
 
     RETURN
@@ -239,16 +241,19 @@ FIRST_MEME   NUM   1
                PACK MEME_SAV WITH MEME_LIST
                CALL TERM_DATE
                CALL RECORD_WRITE
+               BREAK
             ENDIF
-            IF (SQUEEZE MEME_LEV1 = "R98" & MEME_EFF > "20150401")
+            IF (SQUEEZE MEME_LEV1 = "R98") ...& MEME_EFF <= "20150401"
                PACK MEME_SAV WITH MEME_LIST
                CALL DELETE_REC
                CALL RECORD_WRITE
+               BREAK
             ENDIF
             IF (SQUEEZE MEME_NET = "NOCOV")
                PACK MEME_SAV WITH MEME_LIST
                CALL TERM_DATE
                CALL RECORD_WRITE
+               BREAK
             ENDIF
           ENDIF
         REPEAT
@@ -258,34 +263,34 @@ FIRST_MEME   NUM   1
     ENDROUTINE
 
 .#######################################################################
-TERM_DATE
+TERM_DATE LROUTINE
 ... Sets Term date to 1 day before effective date
 
-    UNPACK MEME_SAV INTO TERM_FIX_LIST
+    MOVE MEMBER_LIST TO TERM_FIX_LIST
     CALL DATE_CALC USING MEME_EFF, "SUB", "DAYS", 1, DAY_BEFORE_EFF
-    CONTINUE IF (MEME_TRM != DAY_BEFORE_EFF)  ...Definition of Void Record is Effective minus 1
     MOVE DAY_BEFORE_EFF TO TERM_FIX_TERM_DT
-
+    CALL UTIL_XCOUNTER USING X_CNT2,100
 
     RETURN
     ENDROUTINE
 
 .#######################################################################
-DELETE_REC
+DELETE_REC LROUTINE
 ...delete retired recs
 
-    UNPACK MEME_SAV INTO TERM_FIX_LIST
+    MOVE MEMBER_LIST TO TERM_FIX_LIST
     MOVE "1" TO TERM_FIX_TRAN
-
+    CALL UTIL_XCOUNTER USING X_CNT3,100
 
 
     RETURN
     ENDROUTINE
 
 .#######################################################################
-RECORD_WRITE
+RECORD_WRITE LROUTINE
 
-
+    CALL WRITE_OGBREC USING FIX_TERM_FILE,FIX_TERM_NAME,TERM_FIX_LIST
+    CALL UTIL_XCOUNTER USING X_CNT4,100
 
 
 
