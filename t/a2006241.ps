@@ -1,0 +1,316 @@
+./* ====================================================================
++ NAME:
++   a2006241.ps
++
++ DESCRIPTION:
++   Fixes erronous data sent threw section111 file
++
++ CREATED BY:
++   apdrh - 2020-06-24
++
++ LAST MODIFIED BY:
++   apdrh - 2020-06-15
+. * ================================================================= */
+
+./* =================
+. * Variable Includes
+. * ================= */
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC UTIL_MEMMEM.CB
+    INC VALID.RL
+
+./* ===================================
+. * Scheduler Params
+. * =================================== */
+PARAM_LIST              LIST WITH NAMES
+PARAM_MODE              CHAR    4
+                        LISTEND
+
+./* ===================================
+. * File & Global Variable Declarations
+. * =================================== */
+
+...Input File
+OLD_DATA_FILE           FILE    VAR=500,TEXT
+OLD_DATA_NAME           INIT    "/w/20150415.txt"
+OLD_DATA_LIST           LIST
+OLD_DATA_REC            CHAR    500
+                        LISTEND
+
+...Output File
+FIX_TERM_FILE           FILE    VAR=500
+FIX_TERM_NAME           INIT    "/w/20200415sct111.txt"
+FIX_TERM_LIST           LIST
+FIX_TERM_REC            CHAR    500
+                        LISTEND
+
+DELIMITER               INIT    ","
+
+MEMBER_LIST             LIST
+MBR_HICN                CHAR    12
+MBR_BEN_SURN            CHAR    6
+MBR_BEN_FI              CHAR    1
+MBR_BEN_DOB             CHAR    8
+MBR_BEN_SC              CHAR    1
+MBR_DCN                 CHAR    15
+MBR_TRAN                CHAR    1
+MBR_COVG                CHAR    1
+MBR_BEN_SS              CHAR    9
+MBR_EFF_DT              CHAR    8
+MBR_TERM_DT             CHAR    8
+MBR_REL                 CHAR    2
+MBR_POL_F_NM            CHAR    9
+MBR_POL_L_NM            CHAR    16
+MBR_POL_SS              CHAR    9
+MBR_EMPL_SIZE           CHAR    1
+MBR_POL_NUM             CHAR    20
+MBR_INDV_P_NUM          CHAR    17
+MBR_EMP_COV             CHAR    1
+MBR_EMP_STATUS          CHAR    1
+MBR_EMP_TIN             CHAR    9
+MBR_INS_TIN             CHAR    9
+FILLER1                 CHAR    10
+MBR_RX_ID               CHAR    20
+MBR_RX_GROUP            CHAR    15
+MBR_RX_PCN              CHAR    10
+MBR_BIN_NUM             CHAR    6
+MBR_RX_TOLL             CHAR    18
+MBR_PERSON_CD           CHAR    3
+RESERVED_1              CHAR    10
+RESERVED_2              CHAR    5
+EMP_EXCP_HICN           CHAR    12
+MBR_OVERIDE_CD          CHAR    2
+FILLER2                 CHAR    150
+                        LISTEND
+
+TERM_FIX_LIST           LIST
+TERM_FIX_HICN           CHAR    12
+TERM_FIX_BEN_SURN       CHAR    6
+TERM_FIX_BEN_FI         CHAR    1
+TERM_FIX_BEN_DOB        CHAR    8
+TERM_FIX_BEN_SC         CHAR    1
+TERM_FIX_DCN            CHAR    15
+TERM_FIX_TRAN           CHAR    1
+TERM_FIX_COVG           CHAR    1
+TERM_FIX_BEN_SS         CHAR    9
+TERM_FIX_EFF_DT         CHAR    8
+TERM_FIX_TERM_DT        CHAR    8
+TERM_FIX_REL            CHAR    2
+TERM_FIX_POL_F_NM       CHAR    9
+TERM_FIX_POL_L_NM       CHAR    16
+TERM_FIX_POL_SS         CHAR    9
+TERM_FIX_EMPL_SIZE      CHAR    1
+TERM_FIX_POL_NUM        CHAR    20
+TERM_FIX_INDV_P_NUM     CHAR    17
+TERM_FIX_EMP_COV        CHAR    1
+TERM_FIX_EMP_STATUS     CHAR    1
+TERM_FIX_EMP_TIN        CHAR    9
+TERM_FIX_INS_TIN        CHAR    9
+TERM_FIX_FILLER1        CHAR    10
+TERM_FIX_RX_ID          CHAR    20
+TERM_FIX_RX_GROUP       CHAR    15
+TERM_FIX_RX_PCN         CHAR    10
+TERM_FIX_BIN_NUM        CHAR    6
+TERM_FIX_RX_TOLL        CHAR    18
+TERM_FIX_PERSON_CD      CHAR    3
+TERM_FIX_RESERVED_1     CHAR    10
+TERM_FIX_RESERVED_2     CHAR    5
+TERM_FIX_EMP_EXCP_HICN  CHAR    12
+TERM_FIX_OVERIDE_CD     CHAR    2
+TERM_FIX_FILLER2        CHAR    150
+                        LISTEND
+
+RUNDATE         CHAR    8
+DAY_BEFORE_EFF  CHAR    8
+
+./* =============
+. * Begin Program
+. * ============= */
+
+...Non-Impact scheduler run - Start here
+    CALL RUN_NOW
+    CHAIN C_NEXT
+
+...Scheduler begins here
+    INC SCHED_NP.SR // for use without the printer
+
+.#######################################################################
+RUN_NOW LROUTINE
+./* Set runtime variables
+. */
+    MOVE "a2006211" TO C_PROG
+    MOVE "Error Fix" TO C_OPER  ...Change
+    MOVE "menu" TO C_NEXT
+    MOVE BLANKS TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG // signal start to Autosys
+    ENDIF
+
+...Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+...Get scheduler information
+    CALL SCHED_PICK
+
+    IF (RUN_MODE = "B" | RUN_MODE = "N")
+        CALL MAIN_PROCESS
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+    debug
+    CALL INITIALIZE
+    CALL READ_MEM
+    CALL TERM_DATE
+    CALL DELETE_REC
+    CALL RECORD_WRITE
+    CALL GLOSE FILES
+
+    RETURN
+    ENDROUTINE
+.#######################################################################
+INITIALIZE LROUTINE
+
+    CLOCK TIMESTAMP TO RUNDATE
+
+.Setup counters
+    PACK X_CNTDESC1 WITH "",BLANKS
+    PACK X_CNTDESC2 WITH "",BLANKS
+
+    CALL X_ZERO_COUNTS
+    IF NOT (C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    CALL OPEN_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
+...CALL PREP_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
+
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+READ_MEM LROUTINE
+FIRST_MEME   NUM   1
+...
+
+    LOOP
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CALL READ_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME,MEMBER_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,100
+        debug
+        CALL UTIL_MEM_FIND USING MBR_RX_ID
+        IF (NOT EQUAL)
+          CONTINUE
+        ENDIF
+
+        SET FIRST_MEME
+        LOOP
+          IF (FIRST_MEME)
+             CLEAR FIRST_MEME
+             CALL UTIL_MEME_FIND USING MEM_ID1
+          ELSE
+             CALL UTIL_MEME_NEXT
+          ENDIF
+          WHILE EQUAL
+
+          CLEAR MEME_SAV
+          CONTINUE IF (SQUEEZE MEME_NET = "LIFE")
+          CONTINUE IF (SQUEEZE MEME_PLAN = "HRA1")
+          CONTINUE IF (SQUEEZE MEME_LEV2 = "95" & SQUEEZE MEME_MODE = "")
+          CONTINUE IF (SQUEEZE MEME_LEV2 = "90" & SQUEEZE MEME_MODE != "")
+          CONTINUE IF (SQUEEZE MEME_TRM != "" & MEME_EFF > MEME_TRM)
+          CONTINUE IF (SQUEEZE MEME_PRD = "HSA")
+          CONTINUE IF (SQUEEZE MEME_NET = "OGB")
+          IF (SQUEEZE MEME_NET <> "BLUE")
+            IF (SQUEEZE MEME_NET = "PPLSH")
+            debug
+               PACK MEME_SAV WITH MEME_LIST
+               CALL TERM_DATE
+               CALL RECORD_WRITE
+            ENDIF
+            IF (SQUEEZE MEME_LEV1 = "R98" & MEME_EFF > "20150401")
+               PACK MEME_SAV WITH MEME_LIST
+               CALL DELETE_REC
+               CALL RECORD_WRITE
+            ENDIF
+            IF (SQUEEZE MEME_NET = "NOCOV")
+               PACK MEME_SAV WITH MEME_LIST
+               CALL TERM_DATE
+               CALL RECORD_WRITE
+            ENDIF
+          ENDIF
+        REPEAT
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+TERM_DATE
+... Sets Term date to 1 day before effective date
+
+    UNPACK MEME_SAV INTO TERM_FIX_LIST
+    CALL DATE_CALC USING MEME_EFF, "SUB", "DAYS", 1, DAY_BEFORE_EFF
+    CONTINUE IF (MEME_TRM != DAY_BEFORE_EFF)  ...Definition of Void Record is Effective minus 1
+    MOVE DAY_BEFORE_EFF TO TERM_FIX_TERM_DT
+
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+DELETE_REC
+...delete retired recs
+
+    UNPACK MEME_SAV INTO TERM_FIX_LIST
+    MOVE "1" TO TERM_FIX_TRAN
+
+
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+RECORD_WRITE
+
+
+
+
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+CLOSE_FILES
+
+    CALL CLOSE_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
+    CALL CLOSE_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
+
+
+
+    RETURN
+    ENDROUTINE
+
+./* ==============================
+. * Subroutines and Other Includes
+. * ============================== */
+... MCSI includes found in /nfsgb2/mcsprd/i
+... B includes found in /mcsapl/i
+    INC UTIL_COMMON.SR
+    INC UTIL_MEM.SR
+    INC UTIL_MEME.SR
+./* ==============
+. * End of program
+. * ============== */
