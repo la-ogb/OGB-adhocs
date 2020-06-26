@@ -33,20 +33,32 @@ PARAM_MODE              CHAR    4
 
 ...Input File
 OLD_DATA_FILE           FILE    VAR=500,TEXT
-OLD_DATA_NAME           INIT    "/w/20150415.txt"
+OLD_DATA_NAME           INIT    "/w/badmsp_20150415.txt"
 OLD_DATA_LIST               LIST
 OLD_DATA_REC            CHAR    500
                         LISTEND
 
 ...Output File
 FIX_TERM_FILE           FILE    VAR=500,TEXT
-FIX_TERM_NAME           INIT    "/w/20200415sct111.txt"
+FIX_TERM_NAME           INIT    "/w/badmsp_fix_output.txt"
 FIX_TERM_LIST           LIST
 FIX_TERM_REC            CHAR    500
                         LISTEND
 
 RUNDATE                 CHAR    8
-DAY_BEFORE_EFF          CHAR    8
+
+HEALTH_MAX              EQU     100
+HEALTH_RECS             CHAR    X_MEME_SIZE[HEALTH_MAX]
+HEALTH_COUNT            NUM     3
+
+ACTIVE_MAX              EQU     100
+ACTIVE_SPANS            CHAR    16[ACTIVE_MAX]
+ACTIVE_SPAN_COUNT       NUM     3
+
+ACTIVE_SPAN_LIST        LIST
+SPAN_EFF                CHAR    8
+SPAN_TRM                CHAR    8
+                        LISTEND
 
 ./* =============
 . * Begin Program
@@ -134,7 +146,7 @@ PROCESS_MSP LROUTINE
 + It will not handle cases such as rehired retirees & members returning
 + to BCBS afeter dropping it for the span that was reported on this old
 + file
-FIRST_MEME   NUM   1
+REC         NUM     7
 ...
 
     MOVE OGB_SEQ1 TO OGB_SEQ
@@ -147,59 +159,107 @@ FIRST_MEME   NUM   1
         CALL UTIL_MEM_FIND USING MSPX_MEM
         WHILE EQUAL
 
-        SET FIRST_MEME
-        LOOP
-            IF (FIRST_MEME)
-                CLEAR FIRST_MEME
-                CALL UTIL_MEME_FIND USING MEM_ID1
-            ELSE
-                CALL UTIL_MEME_NEXT
-            ENDIF
-            WHILE EQUAL
+        CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
+        CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
 
-            CLEAR MEME_SAV
+.Our data model
+.                          eff       trm
+.        ACTIVE_SPAN[1] - 2015010120170331
+.            HEALTH_RECS[1] - BLUEMAGNOPLUSEE2015010120160131    .on MSP
+.            HEALTH_RECS[2] - BLUEMAGNOPLUSES2016020120170331    .on MSP - upgrade of cov level
+.            HEALTH_RECS[3] - PPLSH        ES2017040120171231    .not on MSP - break in active span
+.        ACTIVE_SPAN[2] - 2018010199999999
+.            HEALTH_RECS[4] - BLUE         ES2018010199999999    .
+
+        FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
+            UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
+
+.TODO: logic to determie which term to send
+
+
+        REPEAT
+    REPEAT
+
+.Below this should be used to implement the health array build and active span build
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_ALL_HEALTH_PLANS LROUTINE
++ Get all health plans and sort into ascending date order
+FIRST_MEME      NUM   1
+...
+    SET FIRST_MEME
+    LOOP
+        debug
+        IF (FIRST_MEME)
+            CLEAR FIRST_MEME
+            CALL UTIL_MEME_FIND USING MEM_ID1
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        WHILE EQUAL
+
+.Examples
+.   BLUE - 1/1/15 - 4/30/15.
+.   BLUE - 6/1/15 - current
+        CONTINUE IF (CHOP MEME_TRM < MSPX_EFF)
+        CONTINUE IF (MEME_EFF > MEME_TRM)
+        CONTINUE IF (SQUEEZE MEME_LEV2 = "95" & SQUEEZE MEME_MODE = "")
+        CONTINUE IF (SQUEEZE MEME_LEV2 = "90" & SQUEEZE MEME_MODE != "")
+        CONTINUE IF (CHOP MEME_LEV1 = "5000")
 
 .Skip extra billing records and other records we don't care about
-            CONTINUE IF (SQUEEZE MEME_NET = "LIFE")
-            CONTINUE IF (SQUEEZE MEME_PLAN = "HRA1")
-            CONTINUE IF (SQUEEZE MEME_LEV2 = "95" & SQUEEZE MEME_MODE = "")
-            CONTINUE IF (SQUEEZE MEME_LEV2 = "90" & SQUEEZE MEME_MODE != "")
-            CONTINUE IF (SQUEEZE MEME_TRM != "" & MEME_EFF > MEME_TRM)
-            CONTINUE IF (SQUEEZE MEME_PRD = "HSA")
-            CONTINUE IF (SQUEEZE MEME_NET = "OGB")
+        CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
+        CONTINUE OVER
 
+.TODO: Pack into array
+
+    REPEAT
+
+    IF (HEALTH_COUNT > 1)
+
+.Sort by eff ascedning, then sort by term descending
+
+    ENDIF
+
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_ACTIVE_SPANS LROUTINE
++ Build continuous health records as an Active Covered Individual into
++ spans of coverage
+REC         NUM     1
+...
+
+.TODO: build the ACTIVE_SPANS array
+    FOR REC FROM 1 TO HEALTH_COUNT
+        UNPACK HEALTH_RECS[REC] INTO MEME_LIST
+
+        IF (CHOP MEME_LEV2 != "92") .rehired retiree - considered active
+            debug
+        ENDIF
+
+.   > Coverge under a retirement group isn't reported as MSP
+        CMATCH "R" IN MEME_LEV1
+        IF (EQUAL)
+            debug
+        ENDIF
 
 .We only consider the BCBS plans to be the GHP for the purposes of reporting
 .an Active Covered Individual on the MSP, excluding the HSA
-            CONTINUE IF (SQUEEZE MEME_PRD = "HSA")
-            CONTINUE IF (SQUEEZE MEME_TRM != "" & MEME_EFF > MEME_TRM)
-            CONTINUE IF (CHOP MEME_NET = "BLUE")
+        IF (MEME_NET = "BLUE")
+            debug
+        ELSE
+.Is this person in an active agency group?
+.   > Skip all 9?'s agencies except for 92s
+            debug
+        ENDIF
 
-            IF (SQUEEZE MEME_NET = "PPLSH")
-                debug
-                PACK MEME_SAV WITH MEME_LIST
-                CALL TERM_DATE
-                CALL RECORD_WRITE
-                BREAK
-            ENDIF
-
-.Coverge under a retirement group isn't reported as MSP
-            CMATCH "R" IN MEME_LEV1
-            IF (EQUAL)
-                PACK MEME_SAV WITH MEME_LIST
-                CALL DELETE_REC
-                CALL RECORD_WRITE
-                BREAK
-            ENDIF
-
-.This is not a health record. It will never actually hit this
-            IF (SQUEEZE MEME_NET = "NOCOV")
-                PACK MEME_SAV WITH MEME_LIST
-                CALL TERM_DATE
-                CALL RECORD_WRITE
-                BREAK
-            ENDIF
-        REPEAT
     REPEAT
 
     RETURN
@@ -207,11 +267,11 @@ FIRST_MEME   NUM   1
 
 
 .#######################################################################
-TERM_DATE LROUTINE
+VOID_DATE LROUTINE
 + Sets Term date to 1 day before effective date
 
-    CALL DATE_CALC USING MEME_EFF, "SUB", "DAYS", 1, DAY_BEFORE_EFF
-    MOVE DAY_BEFORE_EFF TO MSPX_TRM
+    MOVE "1" TO MSPX_TRXT
+    CALL DATE_CALC USING MSPX_EFF, "SUB", "DAYS", 1, MSPX_TRM
     CALL UTIL_XCOUNTER USING X_CNT2,100
 
     RETURN
@@ -219,18 +279,13 @@ TERM_DATE LROUTINE
 
 
 .#######################################################################
-DELETE_REC LROUTINE
-+ Delete retired recs
-
-    MOVE "1" TO MSPX_TRXT
-    CALL UTIL_XCOUNTER USING X_CNT3,100
-
-    RETURN
-    ENDROUTINE
-
-
-.#######################################################################
 RECORD_WRITE LROUTINE
+
+    IF (MSPX_TRM < MSPX_EFF)
+        PACK MSPX_TRXT WITH "1" .delete
+    ELSE
+        PACK MSPX_TRXT WITH "2" .update
+    ENDIF
 
     CALL WRITE_OGBREC USING FIX_TERM_FILE,FIX_TERM_NAME,MSPX_LIST
     CALL UTIL_XCOUNTER USING X_CNT4,100
@@ -245,6 +300,8 @@ CLEAN_UP
     CALL CLOSE_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
     CALL CLOSE_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
 
+.Anyting else?
+
     RETURN
     ENDROUTINE
 
@@ -257,6 +314,10 @@ CLEAN_UP
     INC UTIL_COMMON.SR
     INC UTIL_MEM.SR
     INC UTIL_MEME.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC FILTER_NON_HEALTH.SR
 
 ./* ==============
 . * End of program
