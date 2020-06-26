@@ -45,13 +45,8 @@ FIX_TERM_LIST           LIST
 FIX_TERM_REC            CHAR    500
                         LISTEND
 
-DELIMITER               INIT    ","
-
-
-
-
-RUNDATE         CHAR    8
-DAY_BEFORE_EFF  CHAR    8
+RUNDATE                 CHAR    8
+DAY_BEFORE_EFF          CHAR    8
 
 ./* =============
 . * Begin Program
@@ -94,6 +89,7 @@ RUN_NOW LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 MAIN_PROCESS LROUTINE
     debug
@@ -106,6 +102,8 @@ MAIN_PROCESS LROUTINE
 
     RETURN
     ENDROUTINE
+
+
 .#######################################################################
 INITIALIZE LROUTINE
 
@@ -124,7 +122,6 @@ INITIALIZE LROUTINE
 
     CALL OPEN_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
     CALL PREP_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
-
 
     RETURN
     ENDROUTINE
@@ -204,11 +201,11 @@ FIRST_MEME   NUM   1
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 TERM_DATE LROUTINE
 ... Sets Term date to 1 day before effective date
 
-...MOVE MEMBER_LIST TO TERM_FIX_LIST
     CALL DATE_CALC USING MEME_EFF, "SUB", "DAYS", 1, DAY_BEFORE_EFF
     MOVE DAY_BEFORE_EFF TO MSPX_TRM
     CALL UTIL_XCOUNTER USING X_CNT2,100
@@ -216,17 +213,17 @@ TERM_DATE LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 DELETE_REC LROUTINE
 ...delete retired recs
 
-...MOVE  MEMBER_LIST TO TERM_FIX_LIST
     MOVE "1" TO MSPX_TRXT
     CALL UTIL_XCOUNTER USING X_CNT3,100
 
-
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 RECORD_WRITE LROUTINE
@@ -234,10 +231,9 @@ RECORD_WRITE LROUTINE
     CALL WRITE_OGBREC USING FIX_TERM_FILE,FIX_TERM_NAME,MSPX_LIST
     CALL UTIL_XCOUNTER USING X_CNT4,100
 
-
-
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 CLOSE_FILES
@@ -245,10 +241,9 @@ CLOSE_FILES
     CALL CLOSE_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
     CALL CLOSE_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
 
-
-
     RETURN
     ENDROUTINE
+
 
 ./* ==============================
 . * Subroutines and Other Includes
