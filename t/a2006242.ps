@@ -1,0 +1,443 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2006242.ps
++
++ DESCRIPTION:
++   Fills out spans of MSP reporting for members erroneously changed
++   due to the upload of a 2015 MSP file instead of the 2020 file
++
++ CREATED BY:
++   apjwh - 2020-06-26
++
++ LAST MODIFIED BY:
++   apjwh - 2020-06-26
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC UTIL_COMMON.CB  ... OGB Common variables for UTIL routine
+    INC UTIL_MEMMEM.CB
+    INC MSPA.RL
+    INC VALID.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST              LIST WITH NAMES
+PARAM_TEST              CHAR    4
+                        LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG                  EQU     1   ...0 or 1
+V_DATE                  EQU     8   ...YYYYMMDD
+MSG_HEIGHT              EQU     24
+REFRESH_RATE            EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+.TODO: add configuration settings here
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST             NUM     V_FLAG
+TEST_CONFIG             LIST
+.TODO: add test settings
+                        LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+MSP_REC_SIZE            EQU     500 .TODO: place this in the MSP file layout
+
+BADMSP_FD               FILE    VAR=MSP_REC_SIZE,TEXT
+BADMSP_FILE             INIT    "/w/a2006242_input.txt"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+OUTPUT_FD               FILE    VAR=MSP_REC_SIZE,TEXT
+OUTPUT_FILE             INIT    "/w/a2006242_output.txt"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE                CHAR    V_DATE
+START_DATETIME          CHAR    24
+END_DATETIME            CHAR    24
+
+RUNDATE                 CHAR    V_DATE
+
+HEALTH_MAX              EQU     100
+HEALTH_RECS             CHAR    X_MEME_SIZE[HEALTH_MAX]
+HEALTH_COUNT            NUM     3
+
+ACTIVE_MAX              EQU     100
+ACTIVE_SPANS            CHAR    16[ACTIVE_MAX]
+ACTIVE_SPAN_COUNT       NUM     3
+
+ACTIVE_SPAN_LIST        LIST
+SPAN_EFF                CHAR    V_DATE
+SPAN_TRM                CHAR    V_DATE
+                        LISTEND
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2006242" TO C_PROG        ...Program name
+    MOVE "Fix MSP History" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL BUILD_MSP_HISTORY
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "Members Processed     " TO X_CNTDESC1
+    MOVE "                      " TO X_CNTDESC2
+    MOVE "                      " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    PACK RUNDATE WITH CURRDATE
+
+    LOADMOD "UTIL_ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_MSP_HISTORY LROUTINE
++ Build MSP records for affected members from the 2015 data through
++ current
+REC         NUM     7
+...
+
+    CALL OPEN_OGBFILE USING BADMSP_FD,BADMSP_FILE
+    CALL PREP_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        CALL READ_OGBFILE_SEQ USING BADMSP_FD,BADMSP_FILE,MSPX_LIST
+        WHILE (RESULT = 1)
+
+        CONTINUE IF (CHOP MSPX_MEM = "") header or trailer
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEM_FIND USING MSPX_MEM
+        CONTINUE IF NOT EQUAL
+
+        CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
+        CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
+
+.Determine per span what sort of changes are necessary
+        FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
+            UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
+
+            debug
+.TODO: logic to determie which term to send
+
+
+        REPEAT
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING BADMSP_FD,BADMSP_FILE
+    CALL CLOSE_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_ALL_HEALTH_PLANS LROUTINE
++ Get all health plans and sort into ascending date order
+
+.We report on the plasn that OGB coveres claims for:
+.   PPO:
+.       OGB-PPO: 1/1/70 - 12/31/2012
+.   EPO:
+.       OGB: 1/1/70 - 6/30/05
+.       United -> <done>
+.   HMO:
+.       Humana -> BCBS
+.   all BCBS plans
+.       HSA
+.       HRA
+.       Local/Plus
+
+.TODO: loop through all MEM records. They may have changed relationships
+.as well.
+
+    CLEAR MEME_LIST
+    LOOP
+        debug
+        IF (CHOP MEME_ID2 = "")
+            CALL UTIL_MEME_FIND USING MEM_ID1
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE
+        ENDIF
+
+.This line is problematic. For the purposes of this process, we will assume
+.the effective date sent on the original file should stand. However, the MSP
+.spec indicate that the effective date should start at the beginning as an
+.active person
+        CONTINUE IF (CHOP MEME_TRM < MSPX_EFF)
+
+.Skip the usual suspects of not-really-health lines
+        CONTINUE IF (MEME_EFF > MEME_TRM)
+        CONTINUE IF (SQUEEZE MEME_LEV2 = "95" & SQUEEZE MEME_MODE = "")
+        CONTINUE IF (SQUEEZE MEME_LEV2 = "90" & SQUEEZE MEME_MODE != "")
+
+.Skip COBRA
+        CONTINUE IF (CHOP MEME_LEV1 = "5000")
+
+.Skip extra billing records and other records we don't care about
+        CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
+        CONTINUE OVER
+
+        IF (CHOP MEME_NET = "DHH")
+            debug .shouldn't hit this
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_LIST,HEALTH_RECS,HEALTH_COUNT,HEALTH_MAX
+    REPEAT
+
+.Sort our health records into date order
+    IF (HEALTH_COUNT > 1)
+        ASORT ATYPE="REC":
+              ARRAY=HEALTH_RECS:
+              AMAX=HEALTH_COUNT:
+              SRTFLD1="96-103",SRTORD1="A":
+              SRTFLD2="104-111",SRTORD1="D"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_ACTIVE_SPANS LROUTINE
++ Build continuous health records as an Active Covered Individual into
++ spans of coverage. The effective date of the first span should be the
++ start of coverage under the GHP.
++
++ In this case it is floored to what was sent previously
+REC         NUM     1
+...
+
+    CLEAR ACTIVE_SPAN_LIST
+
+    FOR REC FROM 1 TO HEALTH_COUNT
+        UNPACK HEALTH_RECS[REC] INTO MEME_LIST
+
+        CALL IS_ACTIVE_GHP
+        CONTINUE IF NOT EQUAL
+
+        IF (CHOP SPAN_EFF = "")
+            PACK SPAN_EFF WITH MEME_EFF
+            PACK SPAN_TRM WITH MEME_TRM
+            CONTINUE
+        ENDIF
+
+.TODO: do we split on dates only, or changes in other fields such as Rx Bin,
+.Coverage level, etc?
+.
+.If it's more fields, we will generate the MSP data (no dates) for each
+.period and consider changes to be new spans
+
+        CALL DATE_CALC USING SPAN_TRM,"ADD","DAYS",1,DATE_CCYYMMDD
+        IF (MEME_EFF > DATE_CCYYMMDD)
+            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+            PACK SPAN_EFF WITH MEME_EFF
+            PACK SPAN_TRM WITH SPAN_TRM
+        ELSE
+            IF (MEME_TRM > SPAN_TRM)
+                PACK SPAN_TRM WITH MEME_TRM
+            ENDIF
+        ENDIF
+    REPEAT
+
+    IF (CHOP SPAN_EFF > "")
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+        CLEAR ACTIVE_SPAN_LIST
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+IS_ACTIVE_GHP LROUTINE
++ Determine if this MEME records would qualify the member as an Active
++ Covered Individual
+
+    CMATCH "9" IN MEME_LEV2
+    IF (EQUAL & MEME_LEV2 != "92")
+        SETFLAG NOT EQUAL
+        RETURN
+    ENDIF
+
+    CMATCH "R" IN MEME_LEV1
+    IF EQUAL
+        SETFLAG NOT EQUAL
+        RETURN
+    ENDIF
+
+.TODO: This is how the current MSP process handles all of our plans. Is this
+.correct?
+    IF (CHOP MEME_NET != "BLUE")
+        SETFLAG NOT EQUAL
+        RETURN
+    ENDIF
+
+    SETFLAG EQUAL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+TEMP LROUTINE
+
+        IF (CHOP MEME_LEV2 != "92") .rehired retiree - considered active
+            debug
+        ENDIF
+
+.   > Coverge under a retirement group isn't reported as MSP
+        CMATCH "R" IN MEME_LEV1
+        IF (EQUAL)
+            debug
+        ENDIF
+
+.We only consider the BCBS plans to be the GHP for the purposes of reporting
+.an Active Covered Individual on the MSP, excluding the HSA
+        IF (MEME_NET = "BLUE")
+            debug
+        ELSE
+.Is this person in an active agency group?
+.   > Skip all 9?'s agencies except for 92s
+            debug
+        ENDIF
+
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+.TODO: final clean up
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_MEM.SR
+    INC UTIL_MEME.SR
+    INC UTIL_DATA.SR
+    INC FILTER_NON_HEALTH.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
