@@ -222,7 +222,7 @@ FIRST_MEME      NUM   1
     IF (HEALTH_COUNT > 1)
 
 .Sort by eff ascedning, then sort by term descending
-    CALL SORT_ENROLLMENTS USING HEALTH_RECS,HEALTH_COUNT
+        CALL SORT_ENROLLMENTS USING HEALTH_RECS,HEALTH_COUNT
     ENDIF
 
 
@@ -239,11 +239,11 @@ REC         NUM     1
 
 .TODO: build the ACTIVE_SPANS array
     FOR REC FROM 1 TO HEALTH_COUNT
-        UNPACK HEALTH_RECS[REC] INTO MEME_LIST
+        UNPACK HEALTH_RECS[REC] INTO MSPX_LIST
 
         IF (CHOP MEME_LEV2 != "92") .rehired retiree - considered active
             debug
-            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_SPAN_MAX
+            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
         ENDIF
 
 .   > Coverge under a retirement group isn't reported as MSP
@@ -257,10 +257,11 @@ REC         NUM     1
 .an Active Covered Individual on the MSP, excluding the HSA
         IF (MEME_NET = "BLUE")
             debug
+            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
         ELSE
 .Is this person in an active agency group?
 .   > Skip all 9?'s agencies except for 92s
-            debug
+            CONTINUE IF (CHOP MEME_LEV2 = "92")
         ENDIF
 
     REPEAT
@@ -309,8 +310,8 @@ ARRAY_COUNT@        NUM     @
         ASORT ATYPE="REC":
                ARRAY=ARRAY@:
                AMAX=ARRAY_COUNT@:
-               SRTFLD1="96-103",SRTORD1="A":
-               SRTFLD2="104-111",SRTORD1="A"
+               SRTFLD1="55-62",SRTORD1="A":
+               SRTFLD2="63-70",SRTORD1="A"
         UNLOAD "UTIL_ASORT"
     ENDIF
 
