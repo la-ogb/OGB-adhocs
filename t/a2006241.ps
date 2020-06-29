@@ -32,10 +32,10 @@ PARAM_MODE              CHAR    4
 . * =================================== */
 
 ...Input File
-OLD_DATA_FILE           FILE    VAR=500,TEXT
-OLD_DATA_NAME           INIT    "/w/badmsp_20150415.txt"
-OLD_DATA_LIST               LIST
-OLD_DATA_REC            CHAR    500
+OLD_MSP_FILE            FILE    VAR=500,TEXT
+OLD_MSP_NAME            INIT    "/w/badmsp_20150415.txt"
+OLD_MSP_LIST            LIST
+OLD_MSP_REC             CHAR    500
                         LISTEND
 
 ...Output File
@@ -45,7 +45,8 @@ FIX_TERM_LIST           LIST
 FIX_TERM_REC            CHAR    500
                         LISTEND
 
-RUNDATE                 CHAR    8
+MSP_LOG_FILE            FILE    VAR=200,TEXT
+MSP_LOG_NAME            INIT    "/w/msp_update.log"
 
 HEALTH_MAX              EQU     100
 HEALTH_RECS             CHAR    X_MEME_SIZE[HEALTH_MAX]
@@ -59,6 +60,11 @@ ACTIVE_SPAN_LIST        LIST
 SPAN_EFF                CHAR    8
 SPAN_TRM                CHAR    8
                         LISTEND
+
+EMAIL_GROUP             INIT     "donald.hutchinson@la.gov"
+.EMAIL_GROUP             INIT     "${ITAPPS}"
+LOG_INFO                CHAR     125
+RUNDATE                 CHAR    8
 
 ./* =============
 . * Begin Program
@@ -121,7 +127,7 @@ INITIALIZE LROUTINE
 .Setup counters
     PACK X_CNTDESC1 WITH "Records Read            ",BLANKS
     PACK X_CNTDESC2 WITH "Term Date Changed       ",BLANKS
-    PACK X_CNTDESC3 WITH "Record to Delete        ",BLANKS
+    PACK X_CNTDESC3 WITH "Record to Void          ",BLANKS
     PACK X_CNTDESC4 WITH "Total Records Changed   ",BLANKS
 
     CALL X_ZERO_COUNTS
@@ -129,8 +135,9 @@ INITIALIZE LROUTINE
         CALL X_DISPLAY_COUNTS
     ENDIF
 
-    CALL OPEN_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
+    CALL OPEN_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
     CALL PREP_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
+    CALL PREP_OGBFILE USING MSP_LOG_FILE,MSP_LOG_NAME
 
     RETURN
     ENDROUTINE
@@ -151,7 +158,7 @@ REC         NUM     7
 
     MOVE OGB_SEQ1 TO OGB_SEQ
     LOOP
-        CALL READ_OGBFILE_SEQ USING OLD_DATA_FILE,OLD_DATA_NAME,MSPX_LIST
+        CALL READ_OGBFILE_SEQ USING OLD_MSP_FILE,OLD_MSP_NAME,MSPX_LIST
         WHILE (RESULT = 1)
 
         CALL UTIL_XCOUNTER USING X_CNT1,100
@@ -321,11 +328,61 @@ ARRAY_COUNT@        NUM     @
 
 .#######################################################################
 CLEAN_UP
++ Cleanup after this process
 
-    CALL CLOSE_OGBFILE USING OLD_DATA_FILE,OLD_DATA_NAME
+MSP_UPDATE      CHAR    150
+MSP_LOG         CHAR    150
+
+    CALL CLOSE_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
     CALL CLOSE_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
-
+    CALL CLOSE_OGBFILE USING MSP_LOG_FILE,MSP_LOG_NAME
 .Anyting else?
+
+.Archives update file
+    CALL UTIL_GET_FILES_DIR USING MSP_UPDATE
+    CALL UTIL_PENDING_BACKUP USING MSP_UPDATE,FIX_TERM_NAME,""
+
+.Archives input file
+    CALL UTIL_PENDING_BACKUP USING "/w/",OLD_MSP_NAME,"_",RUNDATE
+
+    debug
+.Cleanups log file
+    CALL UTIL_TRIM_TRAILING_SPACE USING MSP_LOG_NAME,MSP_LOG_NAME
+    PACK MSP_LOG WITH "/w/msp_update_log_",RUNDATE,".csv"
+    CALL UTIL_RENAME_FILE USING "/w/",MSP_LOG_NAME,MSP_LOG
+
+    CALL EMAIL_LOG USING MSP_LOG
+    CALL UTIL_PENDING_BACKUP USING "/w/",MSP_LOG,""
+    CALL UTIL_DELETE_FILE USING MSP_LOG
+
+.Removes work file
+    CALL UTIL_DELETE_FILE USING OLD_MSP_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.######################################################################
+EMAIL_LOG LROUTINE
++ Emails log file
+
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    debug
+    PACK RECIPIENTS WITH EMAIL_GROUP
+    PACK SUBJECT WITH "A2006241 Complete - MSP File Update"
+    PACK BODY WITH "COMPLETED:\n":
+                   "\t$(date)\n":
+                   "COUNTS:\n":
+                   "\t",(CHOP X_CNTDESC1),": ",(TRIM (CHAR X_CNT1)),"\n":
+                   "\t",(CHOP X_CNTDESC2),": ",(TRIM (CHAR X_CNT2)),"\n":
+                   "\t",(CHOP X_CNTDESC3),": ",(TRIM (CHAR X_CNT3)),"\n":
+                   "\t",(CHOP X_CNTDESC4),": ",(TRIM (CHAR X_CNT4))
+    CALL UTIL_SEND_EMAIL_WITH_FILE USING RECIPIENTS:
+                                         SUBJECT:
+                                         BODY:
 
     RETURN
     ENDROUTINE
