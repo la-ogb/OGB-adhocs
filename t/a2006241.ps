@@ -330,7 +330,7 @@ ARRAY_COUNT@        NUM     @
 CLEAN_UP
 + Cleanup after this process
 
-MSP_UPDATE      CHAR    150
+UPDATE_DIR      CHAR    150
 MSP_LOG         CHAR    150
 
     CALL CLOSE_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
@@ -339,8 +339,8 @@ MSP_LOG         CHAR    150
 .Anyting else?
 
 .Archives update file
-    CALL UTIL_GET_FILES_DIR USING MSP_UPDATE
-    CALL UTIL_PENDING_BACKUP USING MSP_UPDATE,FIX_TERM_NAME,""
+    CALL UTIL_GET_FILES_DIR USIN UPDATE_DIR
+    CALL UTIL_PENDING_BACKUP USING UPDATE_DIR,FIX_TERM_NAME,""
 
 .Archives input file
     CALL UTIL_PENDING_BACKUP USING "/w/",OLD_MSP_NAME,"_",RUNDATE
@@ -363,14 +363,14 @@ MSP_LOG         CHAR    150
 
 
 .######################################################################
-EMAIL_LOG LROUTINE
+EMAIL_LOG LROUTINE LOG@
 + Emails log file
 
+LOG@         CHAR    @
 SUBJECT     CHAR    100
 BODY        CHAR    5000
 RECIPIENTS  CHAR    100
-...
-    debug
+
     PACK RECIPIENTS WITH EMAIL_GROUP
     PACK SUBJECT WITH "A2006241 Complete - MSP File Update"
     PACK BODY WITH "COMPLETED:\n":
@@ -383,7 +383,7 @@ RECIPIENTS  CHAR    100
     CALL UTIL_SEND_EMAIL_WITH_FILE USING RECIPIENTS:
                                          SUBJECT:
                                          BODY:
-
+                                         LOG@
     RETURN
     ENDROUTINE
 
@@ -394,11 +394,12 @@ RECIPIENTS  CHAR    100
 ... MCSI includes found in /nfsgb2/mcsprd/i
 ... B includes found in /mcsapl/i
     INC UTIL_COMMON.SR
-    INC UTIL_MEM.SR
-    INC UTIL_MEME.SR
+    INC VALID.IO
+    INC UTIL_MEMMEM.SR
     INC UTIL_SYSTEM.SR
     INC UTIL_DATA.SR
     INC UTIL_EMAIL.SR
+    INC UTIL_VALID.SR
     INC FILTER_NON_HEALTH.SR
 
 ./* ==============
