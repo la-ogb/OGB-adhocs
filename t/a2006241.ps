@@ -261,7 +261,7 @@ REC         NUM     1
         ELSE
 .Is this person in an active agency group?
 .   > Skip all 9?'s agencies except for 92s
-            CONTINUE IF (CHOP MEME_LEV2 = "92")
+            CONTINUE IF (CHOP MEME_LEV2 != "92")
         ENDIF
 
     REPEAT
