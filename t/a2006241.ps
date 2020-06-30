@@ -49,7 +49,7 @@ MSP_LOG_FILE            FILE    VAR=200,TEXT
 MSP_LOG_NAME            INIT    "/w/msp_update.log"
 
 HEALTH_MAX              EQU     100
-HEALTH_RECS             CHAR    X_MEME_SIZE[HEALTH_MAX]
+MY_ARRAY             CHAR    X_MEME_SIZE[HEALTH_MAX]   ...HEALTH_RECS
 HEALTH_COUNT            NUM     3
 
 ACTIVE_MAX              EQU     100
@@ -172,11 +172,11 @@ REC         NUM     7
 .Our data model
 .                          eff       trm
 .        ACTIVE_SPAN[1] - 2015010120170331
-.            HEALTH_RECS[1] - BLUEMAGNOPLUSEE2015010120160131    .on MSP
-.            HEALTH_RECS[2] - BLUEMAGNOPLUSES2016020120170331    .on MSP - upgrade of cov level
-.            HEALTH_RECS[3] - PPLSH        ES2017040120171231    .not on MSP - break in active span
+.            MY_ARRAY[1] - BLUEMAGNOPLUSEE2015010120160131    .on MSP
+.            MY_ARRAY[2] - BLUEMAGNOPLUSES2016020120170331    .on MSP - upgrade of cov level
+.            MY_ARRAY[3] - PPLSH        ES2017040120171231    .not on MSP - break in active span
 .        ACTIVE_SPAN[2] - 2018010199999999
-.            HEALTH_RECS[4] - BLUE         ES2018010199999999    .
+.            MY_ARRAY[4] - BLUE         ES2018010199999999    .
 
         FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
             UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
@@ -197,6 +197,7 @@ GET_ALL_HEALTH_PLANS LROUTINE
 FIRST_MEME      NUM   1
 ...
     SET FIRST_MEME
+
     LOOP
         debug
         IF (FIRST_MEME)
@@ -219,15 +220,14 @@ FIRST_MEME      NUM   1
 .Skip extra billing records and other records we don't care about
         CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
         CONTINUE IF (OVER)
-
         debug
-        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MSPX_LIST,HEALTH_RECS,HEALTH_COUNT,HEALTH_MAX
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_LIST,MY_ARRAY,HEALTH_COUNT,HEALTH_MAX
     REPEAT
 
     IF (HEALTH_COUNT > 1)
 
 .Sort by eff ascedning, then sort by term descending
-        CALL SORT_ENROLLMENTS USING HEALTH_RECS,HEALTH_COUNT
+        CALL SORT_ENROLLMENTS USING MY_ARRAY,HEALTH_COUNT
     ENDIF
 
     RETURN
@@ -240,9 +240,10 @@ BUILD_ACTIVE_SPANS LROUTINE
 + spans of coverage
 REC         NUM     1
 ...
-
+    CLEAR ACTIVE_SPAN_LIST
     FOR REC FROM 1 TO HEALTH_COUNT
-        UNPACK HEALTH_RECS[REC] INTO MSPX_LIST
+        debug
+        UNPACK MY_ARRAY[REC] INTO MEME_LIST
 
 .The only MEME_LEV2 > 90 that are active are 92s - rehired retirees
         CMATCH "9" IN MEME_LEV2
@@ -261,7 +262,21 @@ REC         NUM     1
 .TODO: add logic to see if this health record is continuous with the previous
 .health record. __Only__ add a record to the ACTIVE_SPANS once you have a break
 .in active coverage
-.
+        IF (CHOP SPAN_EFF = "")
+            PACK SPAN_EFF WITH MEME_EFF
+            PACK SPAN_TRM WITH MEME_TRM
+        ELSE
+            CONTINUE IF (MEME_TRM <= SPAN_TRM)
+            CALL DATE_CALC USING SPAN_TRM,"ADD","DAYS",1,SPAN_EFF
+            IF (SPAN_EFF = MEME_EFF)
+                PACK SPAN_TRM WITH MEME_TRM
+            ELSE
+                CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+                PACK SPAN_EFF WITH MEME_EFF
+                PACK SPAN_TRM WITH MEME_TRM
+            ENDIF
+        ENDIF
+        BREAK IF (SPAN_TRM = LAST_DATE)
 .ie, either:
 .   a break in coverage
 .       2 spans
@@ -281,9 +296,10 @@ REC         NUM     1
 .       eff 4/1/2016 - 12/31/2019 (0300-00 = active but diff agency) - still part of span 1
 .       eff 1//1/2020 - 4/30/2020 (0300-00 = active) - still a part of span 1
 .       [end of coverage]
-
-        CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
     REPEAT
+    IF (CHOP SPAN_EFF > "")
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+    ENDIF
 
     RETURN
     ENDROUTINE
@@ -329,8 +345,8 @@ ARRAY_COUNT@        NUM     @
         ASORT ATYPE="REC":
                ARRAY=ARRAY@:
                AMAX=ARRAY_COUNT@:
-               SRTFLD1="55-62",SRTORD1="A":
-               SRTFLD2="63-70",SRTORD1="A"
+               SRTFLD1="96-103",SRTORD1="A":
+               SRTFLD2="104-111",SRTORD1="A"
         UNLOAD "UTIL_ASORT"
     ENDIF
 
