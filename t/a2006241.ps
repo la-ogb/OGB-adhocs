@@ -9,7 +9,7 @@
 +   apdrh - 2020-06-24
 +
 + LAST MODIFIED BY:
-+   apjwh - 2020-06-26
++   apjwh - 2020-06-30
 . * ================================================================= */
 
 ./* =================
@@ -24,8 +24,23 @@
 . * Scheduler Params
 . * =================================== */
 PARAM_LIST              LIST WITH NAMES
-PARAM_MODE              CHAR    4
+PARAM_TEST              CHAR    4
                         LISTEND
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST             NUM     1
+TEST_CONFIG             LIST
+TEST_EMAIL              INIT    "donald.hutchinson@la.gov"
+                        LISTEND
+
+.# =================================================================== #
+.# Run Configuration
+.# =================================================================== #
+
+EMAIL_GROUP             INIT     "${ITAPPS}"
 
 ./* ===================================
 . * File & Global Variable Declarations
@@ -49,7 +64,7 @@ MSP_LOG_FILE            FILE    VAR=200,TEXT
 MSP_LOG_NAME            INIT    "/w/msp_update.log"
 
 HEALTH_MAX              EQU     100
-MY_ARRAY             CHAR    X_MEME_SIZE[HEALTH_MAX]   ...HEALTH_RECS
+MY_ARRAY                CHAR    X_MEME_SIZE[HEALTH_MAX]   ...HEALTH_RECS
 HEALTH_COUNT            NUM     3
 
 ACTIVE_MAX              EQU     100
@@ -61,10 +76,10 @@ SPAN_EFF                CHAR    8
 SPAN_TRM                CHAR    8
                         LISTEND
 
-EMAIL_GROUP             INIT     "donald.hutchinson@la.gov"
-.EMAIL_GROUP             INIT     "${ITAPPS}"
-LOG_INFO                CHAR     125
+LOG_INFO                CHAR    125
 RUNDATE                 CHAR    8
+START_DATETIME          CHAR    24
+END_DATETIME            CHAR    24
 
 ./* =============
 . * Begin Program
@@ -82,15 +97,23 @@ RUN_NOW LROUTINE
 ./* Set runtime variables
 . */
     MOVE "a2006211" TO C_PROG
-    MOVE "Error Fix" TO C_OPER  ...Change
+    MOVE "MSP Error Fix" TO C_OPER  ...Change
     MOVE "menu" TO C_NEXT
     MOVE BLANKS TO C_LABEL
     MOVE BLANKS TO C_FILE
     MOVE BLANKS TO C_KEYS
 
+.Check if the program was called from the command line
     IF (C_CMDPAR)
-        CALL CMD_START USING C_PROG // signal start to Autosys
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
     ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
 
 ...Set applicable traps
     TRAPSAVE TRAP_DATA
@@ -121,7 +144,7 @@ MAIN_PROCESS LROUTINE
 
 .#######################################################################
 INITIALIZE LROUTINE
-
+    CLOCK CALENDAR TO START_DATETIME
     CLOCK TIMESTAMP TO RUNDATE
 
 .Setup counters
@@ -357,9 +380,10 @@ ARRAY_COUNT@        NUM     @
 .#######################################################################
 CLEAN_UP
 + Cleanup after this process
-
 UPDATE_DIR      CHAR    150
 MSP_LOG         CHAR    150
+...
+    CLOCK CALENDAR TO END_DATETIME
 
     CALL CLOSE_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
     CALL CLOSE_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
@@ -393,25 +417,22 @@ MSP_LOG         CHAR    150
 .######################################################################
 EMAIL_LOG LROUTINE LOG@
 + Emails log file
-
 LOG@         CHAR    @
 SUBJECT     CHAR    100
 BODY        CHAR    5000
 RECIPIENTS  CHAR    100
-
-    PACK RECIPIENTS WITH EMAIL_GROUP
-    PACK SUBJECT WITH "A2006241 Complete - MSP File Update"
-    PACK BODY WITH "COMPLETED:\n":
-                   "\t$(date)\n":
-                   "COUNTS:\n":
-                   "\t",(CHOP X_CNTDESC1),": ",(TRIM (CHAR X_CNT1)),"\n":
-                   "\t",(CHOP X_CNTDESC2),": ",(TRIM (CHAR X_CNT2)),"\n":
-                   "\t",(CHOP X_CNTDESC3),": ",(TRIM (CHAR X_CNT3)),"\n":
-                   "\t",(CHOP X_CNTDESC4),": ",(TRIM (CHAR X_CNT4))
-    CALL UTIL_SEND_EMAIL_WITH_FILE USING RECIPIENTS:
-                                         SUBJECT:
-                                         BODY:
-                                         LOG@
+...
+    debug
+    CALL UTIL_SET_SUBJECT USING "A2006241 Complete - MSP File Update",ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,"Process to term the erroneously sent 2015 MSP file records."
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
     RETURN
     ENDROUTINE
 
@@ -425,6 +446,7 @@ RECIPIENTS  CHAR    100
     INC VALID.IO
     INC UTIL_MEMMEM.SR
     INC UTIL_SYSTEM.SR
+    INC UTIL_TEST.SR
     INC UTIL_DATA.SR
     INC UTIL_EMAIL.SR
     INC UTIL_VALID.SR
