@@ -64,7 +64,7 @@ MSP_LOG_FILE            FILE    VAR=200,TEXT
 MSP_LOG_NAME            INIT    "/w/msp_update.log"
 
 HEALTH_MAX              EQU     100
-MY_ARRAY                CHAR    X_MEME_SIZE[HEALTH_MAX]   ...HEALTH_RECS
+HEALTH_RECS                CHAR    X_MEME_SIZE[HEALTH_MAX]   ...HEALTH_RECS
 HEALTH_COUNT            NUM     3
 
 ACTIVE_MAX              EQU     100
@@ -161,6 +161,9 @@ INITIALIZE LROUTINE
     CALL OPEN_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
     CALL PREP_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
     CALL PREP_OGBFILE USING MSP_LOG_FILE,MSP_LOG_NAME
+.    CALL WRITE_OGBREC_SEQ USING MSP_LOG_FILE,MSP_LOG_NAME,LOG_HEADER
+
+    LOADMOD "UTIL_ASORT"
 
     RETURN
     ENDROUTINE
@@ -179,6 +182,15 @@ PROCESS_MSP LROUTINE
 REC         NUM     7
 ...
 
+.Our data model
+.                          eff       trm
+.        ACTIVE_SPAN[1] - 2015010120170331
+.            MY_ARRAY[1] - BLUEMAGNOPLUSEE2015010120160131    .on MSP
+.            MY_ARRAY[2] - BLUEMAGNOPLUSES2016020120170331    .on MSP - upgrade of cov level
+.            MY_ARRAY[3] - PPLSH        ES2017040120171231    .not on MSP - break in active span
+.        ACTIVE_SPAN[2] - 2018010199999999
+.            MY_ARRAY[4] - BLUE         ES2018010199999999    .
+
     MOVE OGB_SEQ1 TO OGB_SEQ
     LOOP
         CALL READ_OGBFILE_SEQ USING OLD_MSP_FILE,OLD_MSP_NAME,MSPX_LIST
@@ -191,23 +203,25 @@ REC         NUM     7
 
         CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
         CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
+        CALL TERM_MSP_REC
+    REPEAT
 
-.Our data model
-.                          eff       trm
-.        ACTIVE_SPAN[1] - 2015010120170331
-.            MY_ARRAY[1] - BLUEMAGNOPLUSEE2015010120160131    .on MSP
-.            MY_ARRAY[2] - BLUEMAGNOPLUSES2016020120170331    .on MSP - upgrade of cov level
-.            MY_ARRAY[3] - PPLSH        ES2017040120171231    .not on MSP - break in active span
-.        ACTIVE_SPAN[2] - 2018010199999999
-.            MY_ARRAY[4] - BLUE         ES2018010199999999    .
+    RETURN
+    ENDROUTINE
 
-        FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
-            UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
+
+.#######################################################################
+TERM_MSP_REC LROUTINE
++ Send a fix for the current MSP rec based on the periods of active
++ coverage
+REC         NUM     7
+...
+    FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
+        UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
 
 .TODO: logic to determie which term to send
 
 
-        REPEAT
     REPEAT
 
     RETURN
@@ -225,32 +239,36 @@ FIRST_MEME      NUM   1
         debug
         IF (FIRST_MEME)
             CLEAR FIRST_MEME
-            CALL UTIL_MEME_FIND USING MEM_ID1
+            CALL UTIL_MEME_FIND USING MEM_ID1,""
         ELSE
             CALL UTIL_MEME_NEXT
         ENDIF
         WHILE EQUAL
+
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE ."99999999"
+        ENDIF
 
 .Examples
 .   BLUE - 1/1/15 - 4/30/15.
 .   BLUE - 6/1/15 - current
         CONTINUE IF (CHOP MEME_TRM < MSPX_EFF)
         CONTINUE IF (MEME_EFF > MEME_TRM)
-        CONTINUE IF (SQUEEZE MEME_LEV2 = "95" & SQUEEZE MEME_MODE = "")
-        CONTINUE IF (SQUEEZE MEME_LEV2 = "90" & SQUEEZE MEME_MODE != "")
+        CONTINUE IF (SQUEEZE MEME_LEV2 = "95" & SQUEEZE MEME_MODE > "")
+        CONTINUE IF (SQUEEZE MEME_LEV2 = "90" & SQUEEZE MEME_MODE > "")
         CONTINUE IF (CHOP MEME_LEV1 = "5000")
 
 .Skip extra billing records and other records we don't care about
         CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
         CONTINUE IF (OVER)
         debug
-        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_LIST,MY_ARRAY,HEALTH_COUNT,HEALTH_MAX
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_LIST,HEALTH_RECS,HEALTH_COUNT,HEALTH_MAX
     REPEAT
 
     IF (HEALTH_COUNT > 1)
 
 .Sort by eff ascedning, then sort by term descending
-        CALL SORT_ENROLLMENTS USING MY_ARRAY,HEALTH_COUNT
+        CALL SORT_ENROLLMENTS USING HEALTH_RECS,HEALTH_COUNT
     ENDIF
 
     RETURN
@@ -264,9 +282,10 @@ BUILD_ACTIVE_SPANS LROUTINE
 REC         NUM     1
 ...
     CLEAR ACTIVE_SPAN_LIST
+
     FOR REC FROM 1 TO HEALTH_COUNT
-        debug
-        UNPACK MY_ARRAY[REC] INTO MEME_LIST
+        BREAK IF (SPAN_TRM = LAST_DATE)
+        UNPACK HEALTH_RECS[REC] INTO MEME_LIST
 
 .The only MEME_LEV2 > 90 that are active are 92s - rehired retirees
         CMATCH "9" IN MEME_LEV2
@@ -280,48 +299,58 @@ REC         NUM     1
 
 .We are only reporting on BCBS plans for the moment
         CONTINUE IF (CHOP MEME_NET != "BLUE")
+
         debug
 
-.TODO: add logic to see if this health record is continuous with the previous
-.health record. __Only__ add a record to the ACTIVE_SPANS once you have a break
-.in active coverage
         IF (CHOP SPAN_EFF = "")
             PACK SPAN_EFF WITH MEME_EFF
             PACK SPAN_TRM WITH MEME_TRM
-        ELSE
-            CONTINUE IF (MEME_TRM <= SPAN_TRM)
-            CALL DATE_CALC USING SPAN_TRM,"ADD","DAYS",1,SPAN_EFF
-            IF (SPAN_EFF = MEME_EFF)
-                PACK SPAN_TRM WITH MEME_TRM
-            ELSE
-                CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
-                PACK SPAN_EFF WITH MEME_EFF
-                PACK SPAN_TRM WITH MEME_TRM
-            ENDIF
+            CONTINUE
         ENDIF
-        BREAK IF (SPAN_TRM = LAST_DATE)
-.ie, either:
-.   a break in coverage
-.       2 spans
-.           eff 1/1/2015 - 3/31/2016 (span 1)
-.           [a break in coverage]
-.           eff 1/1/2019 - current (span 2)
-.
-.   or a break in ACTIVE coverage (the code above filters non active enrollment lines)
-.       2 spans
-.           eff 1/1/2015 - 3/31/2016 (8815-00 = active) (span 1)
-.           eff 4/1/2016 - 12/31/2018 (R98-8815 = retired = not active = break in ACTIVE coverage)
-.           eff 1/1/2019 - current (8815-92  rehired retiree = active) (span 2)
-.
-.If there is a new record, but it is contuous and still active, it's considered a single span
-.   a single span
-.       eff 1/1/2015 - 3/31/2016 (8815-00 = active) - start of span 1
-.       eff 4/1/2016 - 12/31/2019 (0300-00 = active but diff agency) - still part of span 1
-.       eff 1//1/2020 - 4/30/2020 (0300-00 = active) - still a part of span 1
-.       [end of coverage]
+
+        CONTINUE IF (MEME_TRM <= SPAN_TRM)
+
+.TODO: we'll talk about this bit
+.        CALL DATE_CALC USING SPAN_TRM,"ADD","DAYS",1,SPAN_EFF
+.        IF (SPAN_EFF = MEME_EFF)
+.            PACK SPAN_TRM WITH MEME_TRM
+.        ELSE
+.            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+.            PACK SPAN_EFF WITH MEME_EFF
+.            PACK SPAN_TRM WITH MEME_TRM
+.        ENDIF
+
+        CALL IS_CONTINUOUS USING SPAN_TRM,MEME_EFF
+        IF EQUAL
+            PACK SPAN_TRM WITH MEME_TRM
+        ELSE
+            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+            PACK SPAN_EFF WITH MEME_EFF
+            PACK SPAN_TRM WITH MEME_TRM
+        ENDIF
     REPEAT
+
     IF (CHOP SPAN_EFF > "")
         CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+IS_CONTINUOUS LROUTINE DATE1@,DATE2@
++ Set EQUAL if date2 is date1 + 1
+DATE1@      CHAR    @
+DATE2@      CHAR    @
+TEST_DATE   CHAR    8
+...
+    CLEAR TEST_DATE
+    CALL DATE_CALC USING DATE1@,"ADD","DAYS",1,TEST_DATE
+    IF (TEST_DATE = DATE2@)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
     ENDIF
 
     RETURN
@@ -359,18 +388,15 @@ RECORD_WRITE LROUTINE
 .#######################################################################
 SORT_ENROLLMENTS LROUTINE ARRAY@,ARRAY_COUNT@
 .Sort a MEME array by its effective dates
-
 ARRAY@              CHAR    @[]
 ARRAY_COUNT@        NUM     @
-
+...
     IF (ARRAY_COUNT@ > 1)
-        LOADMOD "UTIL_ASORT"
         ASORT ATYPE="REC":
                ARRAY=ARRAY@:
                AMAX=ARRAY_COUNT@:
                SRTFLD1="96-103",SRTORD1="A":
-               SRTFLD2="104-111",SRTORD1="A"
-        UNLOAD "UTIL_ASORT"
+               SRTFLD2="104-111",SRTORD2="A"
     ENDIF
 
     RETURN
