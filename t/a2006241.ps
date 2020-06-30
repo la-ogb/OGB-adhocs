@@ -230,8 +230,50 @@ REC         NUM     7
 
 .#######################################################################
 GET_ALL_HEALTH_PLANS LROUTINE
++ Get all health plans for a person and sort into ascending date order
+MEM_MAX             EQU     100
+MEM_COUNT           NUM     7
+PROCESSED_MEM_IDS   CHAR    1000
+CURRENT_MEM         CHAR    X_MEM_SIZE
+SEARCH_ID           CHAR    8
+...
+    CLEAR PROCESSED_MEM_IDS
+    PACK CURRENT_MEM WITH MEM_LIST
+
+    PACK SEARCH_ID WITH MEM_ID1
+
+    FOR MEM_COUNT FROM 1 TO MEM_MAX
+        CALL ADD_HEALTH_PLANS USING SEARCH_ID
+        BREAK IF (CHOP MEM_ACCU = "")
+
+        PACK PROCESSED_MEM_IDS WITH PROCESSED_MEM_IDS,"|",SEARCH_ID
+        PACK SEARCH_ID WITH MEM_ACCU
+
+        SCAN SEARCH_ID IN PROCESSED_MEM_IDS
+        BREAK IF EQUAL
+
+        debug .this person has a linked MEM - any health recs to add?
+
+        CALL UTIL_MEM_FIND USING SEARCH_ID
+        WHILE EQUAL
+    REPEAT
+
+.Sort our health records into date order
+    IF (HEALTH_COUNT > 1)
+        CALL SORT_ENROLLMENTS USING HEALTH_RECS,HEALTH_COUNT
+    ENDIF
+
+    UNPACK CURRENT_MEM INTO MEM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_HEALTH_PLANS LROUTINE ID@
 + Get all health plans and sort into ascending date order
-FIRST_MEME      NUM   1
+ID@             CHAR    @
+FIRST_MEME      NUM     1
 ...
     SET FIRST_MEME
 
@@ -239,14 +281,14 @@ FIRST_MEME      NUM   1
         debug
         IF (FIRST_MEME)
             CLEAR FIRST_MEME
-            CALL UTIL_MEME_FIND USING MEM_ID1,""
+            CALL UTIL_MEME_FIND USING ID@,""
         ELSE
             CALL UTIL_MEME_NEXT
         ENDIF
         WHILE EQUAL
 
         IF (CHOP MEME_TRM = "")
-            PACK MEME_TRM WITH LAST_DATE ."99999999"
+            PACK MEME_TRM WITH LAST_DATE    ..."99999999"
         ENDIF
 
 .Examples
@@ -261,15 +303,10 @@ FIRST_MEME      NUM   1
 .Skip extra billing records and other records we don't care about
         CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
         CONTINUE IF (OVER)
+
         debug
         CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_LIST,HEALTH_RECS,HEALTH_COUNT,HEALTH_MAX
     REPEAT
-
-    IF (HEALTH_COUNT > 1)
-
-.Sort by eff ascedning, then sort by term descending
-        CALL SORT_ENROLLMENTS USING HEALTH_RECS,HEALTH_COUNT
-    ENDIF
 
     RETURN
     ENDROUTINE
@@ -301,7 +338,6 @@ REC         NUM     1
         CONTINUE IF (CHOP MEME_NET != "BLUE")
 
         debug
-
         IF (CHOP SPAN_EFF = "")
             PACK SPAN_EFF WITH MEME_EFF
             PACK SPAN_TRM WITH MEME_TRM
@@ -323,11 +359,12 @@ REC         NUM     1
         CALL IS_CONTINUOUS USING SPAN_TRM,MEME_EFF
         IF EQUAL
             PACK SPAN_TRM WITH MEME_TRM
-        ELSE
-            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
-            PACK SPAN_EFF WITH MEME_EFF
-            PACK SPAN_TRM WITH MEME_TRM
+            CONTINUE
         ENDIF
+
+.If there is a break, save our completed span and start a new one
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
+        CLEAR ACTIVE_SPAN_LIST
     REPEAT
 
     IF (CHOP SPAN_EFF > "")
