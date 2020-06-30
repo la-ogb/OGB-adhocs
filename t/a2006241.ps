@@ -187,7 +187,6 @@ REC         NUM     7
         REPEAT
     REPEAT
 
-.Below this should be used to implement the health array build and active span build
     RETURN
     ENDROUTINE
 
@@ -221,9 +220,8 @@ FIRST_MEME      NUM   1
         CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
         CONTINUE IF (OVER)
 
-.TODO: Pack into array
-    debug
-    CALL UTIL_SAFE_PACK_ARRAY_LIST USING MSPX_LIST,HEALTH_RECS,HEALTH_COUNT,HEALTH_MAX
+        debug
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MSPX_LIST,HEALTH_RECS,HEALTH_COUNT,HEALTH_MAX
     REPEAT
 
     IF (HEALTH_COUNT > 1)
@@ -231,7 +229,6 @@ FIRST_MEME      NUM   1
 .Sort by eff ascedning, then sort by term descending
         CALL SORT_ENROLLMENTS USING HEALTH_RECS,HEALTH_COUNT
     ENDIF
-
 
     RETURN
     ENDROUTINE
@@ -244,33 +241,48 @@ BUILD_ACTIVE_SPANS LROUTINE
 REC         NUM     1
 ...
 
-.TODO: build the ACTIVE_SPANS array
     FOR REC FROM 1 TO HEALTH_COUNT
         UNPACK HEALTH_RECS[REC] INTO MSPX_LIST
 
-        IF (CHOP MEME_LEV2 != "92") .rehired retiree - considered active
-            debug
-            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
-        ENDIF
-
-.   > Coverge under a retirement group isn't reported as MSP
-        CMATCH "R" IN MEME_LEV1
-        IF (EQUAL)
-            CALL VOID_DATE
-            CALL RECORD_WRITE
-        ENDIF
-
-.We only consider the BCBS plans to be the GHP for the purposes of reporting
-.an Active Covered Individual on the MSP, excluding the HSA
-        IF (MEME_NET = "BLUE")
-            debug
-            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
-        ELSE
-.Is this person in an active agency group?
-.   > Skip all 9?'s agencies except for 92s
+.The only MEME_LEV2 > 90 that are active are 92s - rehired retirees
+        CMATCH "9" IN MEME_LEV2
+        IF EQUAL
             CONTINUE IF (CHOP MEME_LEV2 != "92")
         ENDIF
 
+.Skip retirement plans
+        CMATCH "R" IN MEME_LEV1
+        CONTINUE IF (EQUAL)
+
+.We are only reporting on BCBS plans for the moment
+        CONTINUE IF (CHOP MEME_NET != "BLUE")
+        debug
+
+.TODO: add logic to see if this health record is continuous with the previous
+.health record. __Only__ add a record to the ACTIVE_SPANS once you have a break
+.in active coverage
+.
+.ie, either:
+.   a break in coverage
+.       2 spans
+.           eff 1/1/2015 - 3/31/2016 (span 1)
+.           [a break in coverage]
+.           eff 1/1/2019 - current (span 2)
+.
+.   or a break in ACTIVE coverage (the code above filters non active enrollment lines)
+.       2 spans
+.           eff 1/1/2015 - 3/31/2016 (8815-00 = active) (span 1)
+.           eff 4/1/2016 - 12/31/2018 (R98-8815 = retired = not active = break in ACTIVE coverage)
+.           eff 1/1/2019 - current (8815-92  rehired retiree = active) (span 2)
+.
+.If there is a new record, but it is contuous and still active, it's considered a single span
+.   a single span
+.       eff 1/1/2015 - 3/31/2016 (8815-00 = active) - start of span 1
+.       eff 4/1/2016 - 12/31/2019 (0300-00 = active but diff agency) - still part of span 1
+.       eff 1//1/2020 - 4/30/2020 (0300-00 = active) - still a part of span 1
+.       [end of coverage]
+
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
     REPEAT
 
     RETURN
