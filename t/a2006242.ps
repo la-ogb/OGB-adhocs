@@ -51,7 +51,10 @@ REFRESH_RATE            EQU     1000
 
 ENABLE_TEST             NUM     V_FLAG
 TEST_CONFIG             LIST
-TEST_THESE_IDS          INIT    "|00264462|"
+TEST_THESE_IDS          INIT    "|00264462|":
+                                "|00701163|":
+                                "|00705347|": .needs a new ADD - 3/1/15 - onward
+                                "|00030808|" .this one will be a delete, and needs a new ADD for 1/1/16 - 5/31/16
                         LISTEND
 
 .# =================================================================== #
@@ -182,7 +185,7 @@ INITIALIZE LROUTINE
     CLOCK CALENDAR TO START_DATETIME
 
     MOVE "Input MSP Recs Proc'd " TO X_CNTDESC1
-    MOVE "                      " TO X_CNTDESC2
+    MOVE "People Proc'd         " TO X_CNTDESC2
     MOVE "                      " TO X_CNTDESC3
     MOVE "                      " TO X_CNTDESC4
     MOVE "                      " TO X_CNTDESC5
@@ -260,6 +263,8 @@ CURR_ID         CHAR    8
             PACK PENDING_MSP WITH MSPX_LIST .Save this record and process the current array
             BREAK
         REPEAT
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
         CALL BUILD_NEW_MSP_RECS
         CALL WRITE_OUTPUT_RECS
