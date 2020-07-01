@@ -220,6 +220,24 @@ FIX_MSP_REC LROUTINE
 + coverage
 REC         NUM     7
 ...
+
+
+    IF (ACTIVE_SPAN_COUNT > 1)
+        debug ...see if this selects the correct span
+        CALL IS_CONTINUOUS USING SPAN_TRM,SPAN_EFF
+            IF (EQUAL)
+                CONTINUE
+            ENDIF
+    ENDIF
+
+    FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
+        UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
+...CASES
+    IF (SPAN_EFF = MSPX_EFF & SPAN_TRM = MSPX_TRM)
+        CALL WRITE_MSP USING "UPDATE"
+        RETURN
+    ENDIF
+
     IF (ACTIVE_SPAN_COUNT = 0)
         debug
         CALL DATE_CALC USING MSPX_EFF,"SUB","DAYS",1,MSPX_TRM
@@ -227,15 +245,21 @@ REC         NUM     7
         RETURN
     ENDIF
 
-    IF (ACTIVE_SPAN_COUNT > 1)
-        debug ...see if this selects the correct span
+    IF (SPAN_EFF = MSPX_EFF & SPAN_TRM != MSPX_TRM)
+        MOVE SPAN_TRM TO MSPX_TRM
+        CALL WRITE_MSP USING "UPDATE"
+        RETURN
     ENDIF
 
-    FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
-        UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
-...CASES
-+ SKIP IF EFF DATE AND TERM DATE MATCH LOG CASE
-+ ACTIVE SPAN COUNT EQUAL 0 DELETE
+    IF (SPAN_EFF < MSPX_EFF & SPAN_TRM = "")
+        CALL WRITE_MSP USING "UPDATE"
+        RETURN
+    ENDIF
+
+    IF (SPAN_EFF > MSPX_EFF & SPAN_TRM = "")
+        CALL WRITE_MSP USING "UPDATE"
+        RETURN
+    ENDIF
 + EFF DATE MATCHES WHAT SENT ONT HE FILE BUT TRM DATE DIFFERS UPDATE THE TERM DATE
 +
 .TODO: logic to determie which term to send
@@ -432,16 +456,6 @@ REC         NUM     1
 
         CONTINUE IF (MEME_TRM <= SPAN_TRM)
 
-.TODO: we'll talk about this bit
-.        CALL DATE_CALC USING SPAN_TRM,"ADD","DAYS",1,SPAN_EFF
-.        IF (SPAN_EFF = MEME_EFF)
-.            PACK SPAN_TRM WITH MEME_TRM
-.        ELSE
-.            CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
-.            PACK SPAN_EFF WITH MEME_EFF
-.            PACK SPAN_TRM WITH MEME_TRM
-.        ENDIF
-
         CALL IS_CONTINUOUS USING SPAN_TRM,MEME_EFF
         IF EQUAL
             PACK SPAN_TRM WITH MEME_TRM
@@ -476,34 +490,6 @@ TEST_DATE   CHAR    8
     ELSE
         SETFLAG NOT EQUAL
     ENDIF
-
-    RETURN
-    ENDROUTINE
-
-
-.#######################################################################
-VOID_DATE LROUTINE
-+ Sets Term date to 1 day before effective date
-
-    MOVE "1" TO MSPX_TRXT
-    CALL DATE_CALC USING MSPX_EFF, "SUB", "DAYS", 1, MSPX_TRM
-    CALL UTIL_XCOUNTER USING X_CNT2,100
-
-    RETURN
-    ENDROUTINE
-
-
-.#######################################################################
-RECORD_WRITE LROUTINE
-
-    IF (MSPX_TRM < MSPX_EFF)
-        PACK MSPX_TRXT WITH "1" .delete
-    ELSE
-        PACK MSPX_TRXT WITH "2" .update
-    ENDIF
-
-    CALL WRITE_OGBREC USING FIX_TERM_FILE,FIX_TERM_NAME,MSPX_LIST
-    CALL UTIL_XCOUNTER USING X_CNT4,100
 
     RETURN
     ENDROUTINE
