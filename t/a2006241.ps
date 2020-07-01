@@ -33,8 +33,9 @@ PARAM_TEST              CHAR    4
 
 ENABLE_TEST             NUM     1
 TEST_CONFIG             LIST
-TEST_MAX_RECS           NUM     "1000"
+TEST_MAX_RECS           NUM     "0"
 TEST_EMAIL              INIT    "donald.hutchinson@la.gov"
+TEST_SKIP_IN_DEL        NUM     "1"
                         LISTEND
 
 .# =================================================================== #
@@ -80,17 +81,20 @@ SPAN_TRM                CHAR    8
 LOG_HEADER              VARLIST "TYPE",COMMA:
                                 "MESSAGE",COMMA:
                                 "MEMBER ID",COMMA:
-                                "OLD EFFECTIVE",COMMA:
-                                "OLD TERM",COMMA:
-                                "NEW EFFECTIVE",COMMA:
+                                "MEMBER PSSN",COMMA:
+                                "SENT MEDICARE ID",COMMA:
+                                "SENT SSN",COMMA:
+                                "SENT LNAME (LAST 6)",COMMA:
+                                "SENT FIRST INITIAL",COMMA:
+                                "SENT EFF",COMMA:
+                                "SENT TERM",COMMA:
+                                "NEW EFF",COMMA:
                                 "NEW TERM"
 
 RUNDATE                 CHAR    8
 START_DATETIME          CHAR    24
 END_DATETIME            CHAR    24
-ORIGINAL_EFF            CHAR    8
-ORIGINAL_TRM            CHAR    8
-
+BASE_MSP                CHAR    MSPX_REC_SIZE
 
 ./* =============
 . * Begin Program
@@ -208,22 +212,24 @@ PROCESS_MSP LROUTINE
         CALL READ_OGBFILE_SEQ USING OLD_MSP_FILE,OLD_MSP_NAME,MSPX_LIST
         WHILE (RESULT = 1)
 
+        PACK BASE_MSP WITH MSPX_LIST
+
+        CONTINUE IF (CHOP MSPX_MEM = "")
+
         CALL UTIL_XCOUNTER USING X_CNT1,100
         IF (TEST_MAX_RECS > 0)
             BREAK IF (X_CNT1 > TEST_MAX_RECS)
         ENDIF
         CALL UTIL_MEM_FIND USING MSPX_MEM
         IF (NOT EQUAL)
-            CALL WRITE_LOG USING "ERROR", "MEMBER NOT FOUND"
+            debug
+            CALL WRITE_LOG USING "ERROR", "Member Not Found"
             CONTINUE
         ENDIF
 
         IF (MSPX_TRM = "00000000")
             PACK MSPX_TRM WITH LAST_DATE
         ENDIF
-
-        PACK ORIGINAL_EFF WITH MSPX_EFF
-        PACK ORIGINAL_TRM WITH MSPX_TRM
 
         CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
         CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
@@ -248,7 +254,7 @@ REC         NUM     7
 
     IF (ACTIVE_SPAN_COUNT = 0)
         CALL WRITE_MSP USING "DELETE"
-        CALL WRITE_LOG USING "DELETE", "NO PERIODS OF REPORTABLE ACTIVE COVERAGE"
+        CALL WRITE_LOG USING "DELETE", "No Periods Of Reportable Active Coverage"
         RETURN
     ENDIF
 
@@ -261,10 +267,14 @@ REC         NUM     7
         ENDIF
 
         IF (SPAN_EFF = MSPX_EFF)
-            BREAK IF (SPAN_TRM = MSPX_TRM)
+            IF (SPAN_TRM = MSPX_TRM)
+                CALL WRITE_LOG USING "NO CHANGES","No differences between the sent MSP and the matched span of active coverage found."
+                BREAK
+            ENDIF
+
             MOVE SPAN_TRM TO MSPX_TRM
             CALL WRITE_MSP USING "UPDATE"
-            CALL WRITE_LOG USING "UPDATE", "UPDATED TERM DATE"
+            CALL WRITE_LOG USING "UPDATE", "Updated the term date"
             BREAK
         ELSE IF (SPAN_EFF < MSPX_EFF)
 .            debug
@@ -274,10 +284,8 @@ REC         NUM     7
 .            debug
             CALL WRITE_MSP USING "DELETE"
             CALL WRITE_LOG USING "DELETE", "Earliest Effective Active Span later than Date previously reported"
-
             BREAK
         ENDIF
-
     REPEAT
 
     RETURN
@@ -530,10 +538,11 @@ UPDATE_DIR      CHAR    150
 MSP_LOG         CHAR    150
 ...
     CLOCK CALENDAR TO END_DATETIME
-    debug
     CALL CLOSE_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
     CALL CLOSE_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
     CALL CLOSE_OGBFILE USING MSP_LOG_FILE,MSP_LOG_NAME
+
+    debug
 
 .Archives update file
     CALL UTIL_PENDING_BACKUP USING "/w/",FIX_TERM_NAME,""
@@ -549,9 +558,11 @@ MSP_LOG         CHAR    150
     CALL EMAIL_LOG USING MSP_LOG
     CALL UTIL_PENDING_BACKUP USING "/w/",MSP_LOG,""
     CALL UTIL_DELETE_FILE USING MSP_LOG
-    debug
+
 .Removes work file
-    CALL UTIL_DELETE_FILE USING OLD_MSP_NAME
+    IF NOT (TEST_SKIP_IN_DEL)
+        CALL UTIL_DELETE_FILE USING OLD_MSP_NAME
+    ENDIF
 
     RETURN
     ENDROUTINE
@@ -564,17 +575,34 @@ MSG@        CHAR    @
 LOG_LIST    LIST
 LOG_REC     CHAR    200
             LISTEND
-
+SAVE_MSP    CHAR    MSPX_REC_SIZE
+NEW_EFF     CHAR    8
+NEW_TRM     CHAR    8
 ...
+    PACK SAVE_MSP WITH MSPX_LIST
+
+    PACK NEW_EFF WITH MSPX_EFF
+    PACK NEW_TRM WITH MSPX_TRM
+
+    UNPACK BASE_MSP INTO MSPX_LIST
+    REPLACE ",;" IN MSPX_LNAM
+
     PACK LOG_REC WITH TYPE@,COMMA:
                       MSG@,COMMA:
                       MEM_ID1,COMMA:
-                      ORIGINAL_EFF,COMMA:
-                      ORIGINAL_TRM,COMMA:
+                      MEM_PSSN,COMMA:
+                      MSPX_HICN,COMMA:
+                      MSPX_SSN,COMMA:
+                      MSPX_LNAM,COMMA:
+                      MSPX_FINI,COMMA:
                       MSPX_EFF,COMMA:
-                      MSPX_TRM
+                      MSPX_TRM,COMMA:
+                      NEW_EFF,COMMA:
+                      NEW_TRM
 
     CALL  WRITE_OGBREC_SEQ USING MSP_LOG_FILE,MSP_LOG_NAME,LOG_LIST
+
+    UNPACK SAVE_MSP INTO MSPX_LIST
     RETURN
     ENDROUTINE
 
