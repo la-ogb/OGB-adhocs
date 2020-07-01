@@ -76,6 +76,14 @@ SPAN_EFF                CHAR    8
 SPAN_TRM                CHAR    8
                         LISTEND
 
+LOG_HEADER              VARLIST "TYPE",COMMA:
+                                "MESSAGE",COMMA:
+                                "MEMBER ID",COMMA:
+                                "OLD EFFECTIVE",COMMA:
+                                "OLD TERM",COMMA:
+                                "NEW EFFECTIVE",COMMA:
+                                "NEW TERM"
+
 LOG_INFO                CHAR    125
 RUNDATE                 CHAR    8
 START_DATETIME          CHAR    24
@@ -149,9 +157,10 @@ INITIALIZE LROUTINE
 
 .Setup counters
     PACK X_CNTDESC1 WITH "Records Read            ",BLANKS
-    PACK X_CNTDESC2 WITH "Term Date Changed       ",BLANKS
-    PACK X_CNTDESC3 WITH "Record to Void          ",BLANKS
-    PACK X_CNTDESC4 WITH "Total Records Changed   ",BLANKS
+    PACK X_CNTDESC2 WITH "People Processed        ",BLANKS
+    PACK X_CNTDESC3 WITH "Records Added           ",BLANKS
+    PACK X_CNTDESC4 WITH "Records Deleted         ",BLANKS
+    PACK X_CNTDESC5 WITH "Records Updated         ",BLANKS
 
     CALL X_ZERO_COUNTS
     IF NOT (C_CMDPAR)
@@ -161,7 +170,7 @@ INITIALIZE LROUTINE
     CALL OPEN_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
     CALL PREP_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
     CALL PREP_OGBFILE USING MSP_LOG_FILE,MSP_LOG_NAME
-.    CALL WRITE_OGBREC_SEQ USING MSP_LOG_FILE,MSP_LOG_NAME,LOG_HEADER
+    CALL WRITE_OGBREC_SEQ USING MSP_LOG_FILE,MSP_LOG_NAME,LOG_HEADER
 
     LOADMOD "UTIL_ASORT"
 
@@ -179,7 +188,6 @@ PROCESS_MSP LROUTINE
 + It will not handle cases such as rehired retirees & members returning
 + to BCBS afeter dropping it for the span that was reported on this old
 + file
-REC         NUM     7
 ...
 
 .Our data model
@@ -193,11 +201,11 @@ REC         NUM     7
 
     MOVE OGB_SEQ1 TO OGB_SEQ
     LOOP
+        CLEAR HEALTH_RECS,HEALTH_COUNT,ACTIVE_SPANS,ACTIVE_SPAN_COUNT
         CALL READ_OGBFILE_SEQ USING OLD_MSP_FILE,OLD_MSP_NAME,MSPX_LIST
         WHILE (RESULT = 1)
 
         CALL UTIL_XCOUNTER USING X_CNT1,100
-        debug
         CALL UTIL_MEM_FIND USING MSPX_MEM
         WHILE EQUAL
 
@@ -221,49 +229,38 @@ FIX_MSP_REC LROUTINE
 REC         NUM     7
 ...
 
-
+    CALL UTIL_XCOUNTER USING X_CNT2,100
     IF (ACTIVE_SPAN_COUNT > 1)
         debug ...see if this selects the correct span
-        CALL IS_CONTINUOUS USING SPAN_TRM,SPAN_EFF
-            IF (EQUAL)
-                CONTINUE
-            ENDIF
-    ENDIF
-
-    FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
-        UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
-...CASES
-    IF (SPAN_EFF = MSPX_EFF & SPAN_TRM = MSPX_TRM)
-        CALL WRITE_MSP USING "UPDATE"
-        RETURN
     ENDIF
 
     IF (ACTIVE_SPAN_COUNT = 0)
-        debug
-        CALL DATE_CALC USING MSPX_EFF,"SUB","DAYS",1,MSPX_TRM
         CALL WRITE_MSP USING "DELETE"
         RETURN
     ENDIF
 
-    IF (SPAN_EFF = MSPX_EFF & SPAN_TRM != MSPX_TRM)
-        MOVE SPAN_TRM TO MSPX_TRM
-        CALL WRITE_MSP USING "UPDATE"
-        RETURN
-    ENDIF
+    FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
+        UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
 
-    IF (SPAN_EFF < MSPX_EFF & SPAN_TRM = "")
-        CALL WRITE_MSP USING "UPDATE"
-        RETURN
-    ENDIF
+        IF (SPAN_EFF > MSPX_TRM)
+            debug
+            BREAK
+        ENDIF
 
-    IF (SPAN_EFF > MSPX_EFF & SPAN_TRM = "")
-        CALL WRITE_MSP USING "UPDATE"
-        RETURN
-    ENDIF
-+ EFF DATE MATCHES WHAT SENT ONT HE FILE BUT TRM DATE DIFFERS UPDATE THE TERM DATE
-+
-.TODO: logic to determie which term to send
-
+        IF (SPAN_EFF = MSPX_EFF)
+            BREAK IF (SPAN_TRM = MSPX_TRM)
+            MOVE SPAN_TRM TO MSPX_TRM
+            CALL WRITE_MSP USING "UPDATE"
+            BREAK
+        ELSE IF (SPAN_EFF < MSPX_EFF)
+            debug
+            CALL WRITE_MSP USING "DELETE"
+        ELSE
+            debug
+            CALL WRITE_LOG USING "DELETE", "Earliest Effective Active Span later than Date previously reported"
+            CALL WRITE_MSP USING "DELETE"
+            BREAK
+        ENDIF
 
     REPEAT
 
@@ -276,7 +273,7 @@ WRITE_MSP LROUTINE CHGTYPE@
 + Wrapper for WRITE_MSP_OUTPUT
 CHGTYPE@        CHAR    @
 ...
-    CALL SET_DCN USING MSPX_MEM
+    CALL SET_DCN USING MEM_ID1
     CALL WRITE_MSP_OUTPUT USING CHGTYPE@,FIX_TERM_FILE,FIX_TERM_NAME
     RETURN
     ENDROUTINE
@@ -292,10 +289,13 @@ OUT_FILE@       CHAR    @
     SWITCH CHGTYPE@
         CASE "ADD"
             PACK MSPX_TRXT WITH "0"
+            CALL UTIL_XCOUNTER USING X_CNT3,100
         CASE "DELETE"
             PACK MSPX_TRXT WITH "1"
+            CALL UTIL_XCOUNTER USING X_CNT4,100
         CASE "UPDATE"
             PACK MSPX_TRXT WITH "2"
+            CALL UTIL_XCOUNTER USING X_CNT5,100
         DEFAULT
             debug
             CALL UTIL_ERRORMSG USING ("Invalid CMS change type ["+CHGTYPE@+"]"),"WRITE_MSP_OUTPUT"
@@ -326,10 +326,6 @@ INTERNAL_COUNT      NUM     7
     ENDIF
 
     ADD 1 TO INTERNAL_COUNT
-
-    IF (INTERNAL_COUNT > 1)
-        debug
-    ENDIF
 
     PACK MSPX_MEM WITH ID@,BLANKS
     PACK MSPX_JJJ WITH (CHAR INTERNAL_COUNT)
@@ -364,8 +360,6 @@ SEARCH_ID           CHAR    8
 
         SCAN SEARCH_ID IN PROCESSED_MEM_IDS
         BREAK IF EQUAL
-
-        debug .this person has a linked MEM - any health recs to add?
 
         CALL UTIL_MEM_FIND USING SEARCH_ID
         WHILE EQUAL
@@ -427,7 +421,7 @@ FIRST_MEME      NUM     1
 BUILD_ACTIVE_SPANS LROUTINE
 + Build continuous health records as an Active Covered Individual into
 + spans of coverage
-REC         NUM     1
+REC         NUM     7
 ...
     CLEAR ACTIVE_SPAN_LIST
 
@@ -514,26 +508,23 @@ ARRAY_COUNT@        NUM     @
 
 
 .#######################################################################
-CLEAN_UP
+CLEAN_UP LROUTINE
 + Cleanup after this process
 UPDATE_DIR      CHAR    150
 MSP_LOG         CHAR    150
 ...
     CLOCK CALENDAR TO END_DATETIME
-
+    debug
     CALL CLOSE_OGBFILE USING OLD_MSP_FILE,OLD_MSP_NAME
     CALL CLOSE_OGBFILE USING FIX_TERM_FILE,FIX_TERM_NAME
     CALL CLOSE_OGBFILE USING MSP_LOG_FILE,MSP_LOG_NAME
-.Anyting else?
 
 .Archives update file
-    CALL UTIL_GET_FILES_DIR USIN UPDATE_DIR
-    CALL UTIL_PENDING_BACKUP USING UPDATE_DIR,FIX_TERM_NAME,""
+    CALL UTIL_PENDING_BACKUP USING "/w/",FIX_TERM_NAME,""
 
 .Archives input file
-    CALL UTIL_PENDING_BACKUP USING "/w/",OLD_MSP_NAME,"_",RUNDATE
+    CALL UTIL_PENDING_BACKUP USING "/w/",OLD_MSP_NAME,""
 
-    debug
 .Cleanups log file
     CALL UTIL_TRIM_TRAILING_SPACE USING MSP_LOG_NAME,MSP_LOG_NAME
     PACK MSP_LOG WITH "/w/msp_update_log_",RUNDATE,".csv"
@@ -542,7 +533,7 @@ MSP_LOG         CHAR    150
     CALL EMAIL_LOG USING MSP_LOG
     CALL UTIL_PENDING_BACKUP USING "/w/",MSP_LOG,""
     CALL UTIL_DELETE_FILE USING MSP_LOG
-
+    debug
 .Removes work file
     CALL UTIL_DELETE_FILE USING OLD_MSP_NAME
 
@@ -558,7 +549,6 @@ SUBJECT     CHAR    100
 BODY        CHAR    5000
 RECIPIENTS  CHAR    100
 ...
-    debug
     CALL UTIL_SET_SUBJECT USING "A2006241 Complete - MSP File Update",ENABLE_TEST,SUBJECT
     CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,"Process to term the erroneously sent 2015 MSP file records."
