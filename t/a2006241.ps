@@ -201,6 +201,10 @@ REC         NUM     7
         CALL UTIL_MEM_FIND USING MSPX_MEM
         WHILE EQUAL
 
+        IF (MSPX_TRM = "00000000")
+            PACK MSPX_TRM WITH LAST_DATE
+        ENDIF
+
         CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
         CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
         CALL TERM_MSP_REC
@@ -218,7 +222,11 @@ REC         NUM     7
 ...
     FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
         UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
-
+...CASES
++ SKIP IF EFF DATE AND TERM DATE MATCH LOG CASE
++ ACTIVE SPAN COUNT EQUAL 0 DELETE
++ EFF DATE MATCHES WHAT SENT ONT HE FILE BUT TRM DATE DIFFERS UPDATE THE TERM DATE
++
 .TODO: logic to determie which term to send
 
 
@@ -364,7 +372,8 @@ REC         NUM     1
 
 .If there is a break, save our completed span and start a new one
         CALL UTIL_SAFE_PACK_ARRAY_LIST USING ACTIVE_SPAN_LIST,ACTIVE_SPANS,ACTIVE_SPAN_COUNT,ACTIVE_MAX
-        CLEAR ACTIVE_SPAN_LIST
+        PACK SPAN_EFF WITH MEME_EFF
+        PACK SPAN_TRM WITH MEME_TRM
     REPEAT
 
     IF (CHOP SPAN_EFF > "")
