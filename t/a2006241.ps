@@ -207,7 +207,7 @@ REC         NUM     7
 
         CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
         CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
-        CALL TERM_MSP_REC
+        CALL FIX_MSP_REC
     REPEAT
 
     RETURN
@@ -215,11 +215,22 @@ REC         NUM     7
 
 
 .#######################################################################
-TERM_MSP_REC LROUTINE
+FIX_MSP_REC LROUTINE
 + Send a fix for the current MSP rec based on the periods of active
 + coverage
 REC         NUM     7
 ...
+    IF (ACTIVE_SPAN_COUNT = 0)
+        debug
+        CALL DATE_CALC USING MSPX_EFF,"SUB","DAYS",1,MSPX_TRM
+        CALL WRITE_MSP USING "DELETE"
+        RETURN
+    ENDIF
+
+    IF (ACTIVE_SPAN_COUNT > 1)
+        debug ...see if this selects the correct span
+    ENDIF
+
     FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
         UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
 ...CASES
@@ -231,6 +242,76 @@ REC         NUM     7
 
 
     REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_MSP LROUTINE CHGTYPE@
++ Wrapper for WRITE_MSP_OUTPUT
+CHGTYPE@        CHAR    @
+...
+    CALL SET_DCN USING MSPX_MEM
+    CALL WRITE_MSP_OUTPUT USING CHGTYPE@,FIX_TERM_FILE,FIX_TERM_NAME
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_MSP_OUTPUT LROUTINE CHGTYPE@,OUT_FD@,OUT_FILE@
++ Flesh out the MSP data fields
+CHGTYPE@        CHAR    @
+OUT_FD@         FILE    @
+OUT_FILE@       CHAR    @
+...
+    SWITCH CHGTYPE@
+        CASE "ADD"
+            PACK MSPX_TRXT WITH "0"
+        CASE "DELETE"
+            PACK MSPX_TRXT WITH "1"
+        CASE "UPDATE"
+            PACK MSPX_TRXT WITH "2"
+        DEFAULT
+            debug
+            CALL UTIL_ERRORMSG USING ("Invalid CMS change type ["+CHGTYPE@+"]"),"WRITE_MSP_OUTPUT"
+    ENDSWITCH
+
+.Do some final data conversions
+    IF (CHOP MSPX_TRM = "" | CHOP MSPX_TRM = LAST_DATE)
+        FILL "0" IN MSPX_TRM
+    ENDIF
+
+    CALL WRITE_OGBREC_SEQ USING OUT_FD@,OUT_FILE@,MSPX_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_DCN LROUTINE ID@
++ Generate a unique id for this record for this file
+ID@                 CHAR    @
+LAST_ID             CHAR    8
+INTERNAL_COUNT      NUM     7
+...
+    CLEAR MSPX_DCN
+
+    IF (CHOP ID@ != CHOP LAST_ID)
+        CLEAR INTERNAL_COUNT
+    ENDIF
+
+    ADD 1 TO INTERNAL_COUNT
+
+    IF (INTERNAL_COUNT > 1)
+        debug
+    ENDIF
+
+    PACK MSPX_MEM WITH ID@,BLANKS
+    PACK MSPX_JJJ WITH (CHAR INTERNAL_COUNT)
+    REPLACE " 0" IN MSPX_JJJ
+
+    PACK LAST_ID WITH ID@,BLANKS
 
     RETURN
     ENDROUTINE
@@ -286,7 +367,6 @@ FIRST_MEME      NUM     1
     SET FIRST_MEME
 
     LOOP
-        debug
         IF (FIRST_MEME)
             CLEAR FIRST_MEME
             CALL UTIL_MEME_FIND USING ID@,""
@@ -312,7 +392,6 @@ FIRST_MEME      NUM     1
         CALL IS_HEALTH_CLIP USING MEME_NET,MEME_PRD,MEME_PLAN
         CONTINUE IF (OVER)
 
-        debug
         CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_LIST,HEALTH_RECS,HEALTH_COUNT,HEALTH_MAX
     REPEAT
 
@@ -345,7 +424,6 @@ REC         NUM     1
 .We are only reporting on BCBS plans for the moment
         CONTINUE IF (CHOP MEME_NET != "BLUE")
 
-        debug
         IF (CHOP SPAN_EFF = "")
             PACK SPAN_EFF WITH MEME_EFF
             PACK SPAN_TRM WITH MEME_TRM
