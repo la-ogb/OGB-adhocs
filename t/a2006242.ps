@@ -99,6 +99,10 @@ SPAN_PRD                CHAR    5   20-24
 SPAN_PLAN               CHAR    4   25-28
                         LISTEND
 
+MSP_MAX                 EQU     20
+MSP_RECS                CHAR    MSPX_REC_SIZE[MSP_MAX]
+MSP_COUNT               NUM     7
+
 .# =================================================================== #
 .# Begin Program
 .# =================================================================== #
@@ -177,7 +181,7 @@ INITIALIZE LROUTINE
     CLOCK TIMESTAMP TO CURRDATE
     CLOCK CALENDAR TO START_DATETIME
 
-    MOVE "Members Processed     " TO X_CNTDESC1
+    MOVE "Input MSP Recs Proc'd " TO X_CNTDESC1
     MOVE "                      " TO X_CNTDESC2
     MOVE "                      " TO X_CNTDESC3
     MOVE "                      " TO X_CNTDESC4
@@ -207,43 +211,58 @@ INITIALIZE LROUTINE
 BUILD_MSP_HISTORY LROUTINE
 + Build MSP records for affected members from the 2015 data through
 + current
-REC                 NUM     7
-BASE_DATE           CHAR    8
+REC             NUM     7
+PENDING_MSP     CHAR    MSPX_REC_SIZE
+FILE_COMPLETE   NUM     V_FLAG
+CURR_ID         CHAR    8
 ...
-
-    CALL SORT_INPUT
+    CALL CLEAN_INPUT
 
     CALL UTIL_XMESSAGE USING "Building MSP Histories...",MSG_HEIGHT
 
     CALL OPEN_OGBFILE USING BADMSP_FD,BADMSP_FILE
     CALL PREP_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
 
-    MOVE OGB_SEQ1 TO OGB_SEQ
+    CLEAR FILE_COMPLETE
+
     LOOP
+        BREAK IF (FILE_COMPLETE & CHOP PENDING_MSP = "")
+
         CLEAR HEALTH_RECS,HEALTH_COUNT:
-              ACTIVE_SPANS,ACTIVE_SPAN_COUNT
+              ACTIVE_SPANS,ACTIVE_SPAN_COUNT:
+              MSP_RECS,MSP_COUNT
 
-        CALL READ_OGBFILE_SEQ USING BADMSP_FD,BADMSP_FILE,MSPX_LIST
-        WHILE (RESULT = 1)
+.Get all MSP records for the current member to start with
+        MOVE OGB_SEQ1 TO OGB_SEQ
+        CLEAR CURR_ID
+        LOOP
+            IF (CHOP PENDING_MSP > "")
+                UNPACK PENDING_MSP INTO MSPX_LIST
+                CLEAR PENDING_MSP
+            ELSE
+                CALL READ_OGBFILE_SEQ USING BADMSP_FD,BADMSP_FILE,MSPX_LIST
+                IF (RESULT = 1)
+                    SET FILE_COMPLETE
+                    BREAK
+                ENDIF
+                CONTINUE IF (CHOP MSPX_MEM = "") header or trailer
+                CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+            ENDIF
 
-        CONTINUE IF (CHOP MSPX_MEM = "") header or trailer
+            FILL " " IN MSPX_DCN
 
-.Normalize the MSP term date for comparisons
-        IF (MSPX_TRM = "00000000")
-            PACK MSPX_TRM WITH LAST_DATE
-        ENDIF
+            IF (CHOP CURR_ID = "" | CHOP CURR_ID = CHOP MSPX_MEM)
+                PACK CURR_ID WITH MSPX_MEM
+                CALL UTIL_SAFE_PACK_ARRAY_LIST USING MSPX_LIST,MSP_RECS,MSP_COUNT,MSP_MAX
+                CONTINUE
+            ENDIF
 
-        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+            PACK PENDING_MSP WITH MSPX_LIST .Save this record and process the current array
+            BREAK
+        REPEAT
 
-.Gather Member data
-        CALL UTIL_MEM_FIND USING MSPX_MEM
-        CONTINUE IF NOT EQUAL
-
-        CALL DBG_ON_ID USING MEM_ID1
-
-        CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
-        CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
-        CALL BUILD_MSP_SPANS
+        CALL BUILD_NEW_MSP_RECS
+        CALL WRITE_OUTPUT_RECS
     REPEAT
 
     CALL CLOSE_OGBFILE USING BADMSP_FD,BADMSP_FILE
@@ -256,7 +275,77 @@ BASE_DATE           CHAR    8
 
 
 .#######################################################################
-SORT_INPUT LROUTINE
+BUILD_NEW_MSP_RECS LROUTINE
++ For each MSP record from the input file, we need to process
+REC         NUM     7
+BASE_MSP    CHAR    MSPX_REC_SIZE
+LAST_MSP    CHAR    MSPX_REC_SIZE
+...
+    CLEAR BASE_MSP,LAST_MSP
+
+    CALL UTIL_MEM_FIND USING MSPX_MEM
+    IF NOT EQUAL
+        debug .what to do here?
+        PACK MEM_ID1 WITH MSPX_MEM
+    ENDIF
+
+    CALL DBG_ON_ID USING MEM_ID1
+
+    CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
+    CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
+
+    IF (MSP_COUNT > 1)
+        debug .interesting case
+    ENDIF
+
+.Identify the MSP record we are using as our starting point.
+    FOR REC FROM 1 TO MSP_COUNT
+        IF (CHOP LAST_MSP > "")
+            IF (CHOP LAST_MSP = CHOP MSP_RECS[REC])
+                debug .remove duplicates
+                FILL " " IN MSP_RECS[REC]
+                CONTINUE
+            ENDIF
+        ENDIF
+
+        UNPACK MSP_RECS[REC] INTO MSPX_LIST
+        PACK LAST_MSP WITH MSPX_LIST
+
+        CONTINUE IF (CHOP MSPX_TRXT = "1")  .deletes don't need changes or processing - just write them
+
+        CALL NORMALIZE_MSP
+
+        PACK BASE_MSP WITH MSPX_LIST
+    REPEAT
+
+    UNPACK BASE_MSP INTO MSPX_LIST
+
+    CALL BUILD_MSP_SPANS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_OUTPUT_RECS LROUTINE
++ Add this member's MSP records to the output file
+REC         NUM     7
+...
+    FOR REC FROM 1 TO MSP_COUNT
+        CONTINUE IF (CHOP MSP_RECS[REC] = "") .a delete record from the array
+
+        UNPACK MSP_RECS[REC] INTO MSPX_LIST
+
+        CALL SET_DCN USING MSPX_MEM
+        CALL WRITE_MSP_OUTPUT USING OUTPUT_FD,OUTPUT_FILE
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_INPUT LROUTINE
 + Make sure the input file is sorted by Id
 
     CALL UTIL_XMESSAGE USING "Sorting input file...",MSG_HEIGHT
@@ -265,7 +354,7 @@ SORT_INPUT LROUTINE
     SORT SCRATCH
     IF OVER
         debug
-        CALL UTIL_ERRORMSG USING "Sort failed","SORT_INPUT"
+        CALL UTIL_ERRORMSG USING "Sort failed","CLEAN_INPUT"
     ENDIF
 
     MESSAGEERASE
@@ -275,15 +364,29 @@ SORT_INPUT LROUTINE
 
 
 .#######################################################################
+NORMALIZE_MSP LROUTINE
++ Convert MSP data to OGB format
+
+    IF (MSPX_TRM = "00000000")
+        PACK MSPX_TRM WITH LAST_DATE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
 BUILD_MSP_SPANS LROUTINE
 + Convert spans of active coverage into a MSP records
-REC         NUM     7
-BASE_DATE   CHAR    V_DATE
+REC             NUM     7
+BASE_MSP_EFF    CHAR    V_DATE
+BASE_MSP_TRM    CHAR    V_DATE
 ...
     debug
 
 .Determine per span what sort of changes are necessary
-    PACK BASE_DATE WITH MSPX_EFF
+    PACK BASE_MSP_EFF WITH MSPX_EFF
+    PACK BASE_MSP_TRM WITH MSPX_TRM
 
     IF (ACTIVE_SPAN_COUNT > 1)
         debug
@@ -292,36 +395,25 @@ BASE_DATE   CHAR    V_DATE
     FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
         UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
 
-        IF (SPAN_TRM < BASE_DATE)
+.Ignore spans before or during the MSP record we start with
+
+        IF (SPAN_TRM < BASE_MSP_EFF)
             debug .If this span ended before the most recent MSP, skip it
             CONTINUE
-
-        ELSE IF (SPAN_EFF = BASE_DATE)
-            debug .matched the last sent record. Update it
-
-            IF (SPAN_TRM = MSPX_TRM)
-                debug .no change detected - skip trying to fix this member
-                BREAK
-            ENDIF
-
-            PACK MSPX_TRM WITH SPAN_TRM
-            CALL SET_DCN USING SPAN_LAST_ID
-            CALL WRITE_MSP USING "UPDATE"
-
-        ELSE
-            IF (SPAN_EFF < BASE_DATE)
-                debug .TODO: requires a delete of the base and a a new ADD
-            ENDIF
-
-            debug .time to build a new MSP record
-            CALL CMS_BUILD_NEW_MSP USING ACTIVE_SPANS[REC]
-            CALL WRITE_MSP USING "ADD"
-
         ENDIF
 
-        BREAK IF (MSPX_TRM = "00000000")
+        IF (SPAN_EFF = BASE_MSP_EFF)
+            IF (SPAN_TRM != BASE_MSP_TRM)
+                debug .this should not happen
+            ENDIF
+            CONTINUE
+        ENDIF
 
-        CALL DATE_CALC USING MSPX_TRM,"ADD","DAYS",1,BASE_DATE
+.Process this span after the fixed record
+        CALL CMS_BUILD_NEW_MSP USING ACTIVE_SPANS[REC]
+        CALL PACK_MSP_REC USING "ADD"
+
+        BREAK IF (MSPX_TRM = LAST_DATE)
     REPEAT
 
     RETURN
@@ -332,7 +424,7 @@ BASE_DATE   CHAR    V_DATE
 GET_ALL_HEALTH_PLANS LROUTINE
 + Get all health plans and sort into ascending date order
 
-.We report on the plasn that OGB coveres claims for:
+.We report on the plans that OGB covers claims for:
 .   PPO:
 .       OGB-PPO: 1/1/70 - 12/31/2012
 .   EPO:
@@ -536,15 +628,13 @@ IS_ACTIVE_GHP LROUTINE
 
 
 .#######################################################################
-WRITE_MSP LROUTINE CHGTYPE@
-+ Write the current MSP record with the provided transaction type to
-+ output
+PACK_MSP_REC LROUTINE CHGTYPE@
++ Add the current MSP record to our array
 CHGTYPE@        CHAR    @
 ...
-    CALL WRITE_MSP_OUTPUT USING CHGTYPE@,OUTPUT_FD,OUTPUT_FILE
-
-.TODO: log this
-
+    FILL " " IN MSPX_DCN
+    CALL SET_MSP_TRANSACTION_CODE USING CHGTYPE@,MSPX_TRXT
+    CALL UTIL_SAFE_PACK_ARRAY_LIST USING MSPX_LIST,MSP_RECS,MSP_COUNT,MSP_MAX
     RETURN
     ENDROUTINE
 
@@ -566,7 +656,8 @@ CLEAN_UP LROUTINE
 
 .#######################################################################
 CMS_BUILD_NEW_MSP LROUTINE SPAN_DATA@
-+ Flesh out the MSP data fields. Transaction set at write time.
++ Flesh out the MSP data fields. Transaction set at write time. DCN and
++ transaction code are unset
 SPAN_DATA@          CHAR    @
 BENEFICIARY_MEM     CHAR    X_MEM_SIZE
 PRIMARY_MEM         CHAR    X_MEM_SIZE
@@ -629,8 +720,6 @@ PRIMARY_MEM         CHAR    X_MEM_SIZE
 .period...
     PACK MSPX_STAT WITH "1",BLANKS
 
-.Set unique record Id
-    CALL SET_DCN USING SPAN_LAST_ID
 
 .Set plan details
     PACK MSPX_COVT WITH "W",BLANKS
@@ -807,23 +896,11 @@ INTERNAL_COUNT      NUM     7
 
 
 .#######################################################################
-WRITE_MSP_OUTPUT LROUTINE CHGTYPE@,OUT_FD@,OUT_FILE@
-+ Flesh out the MSP data fields
-CHGTYPE@        CHAR    @
+WRITE_MSP_OUTPUT LROUTINE OUT_FD@,OUT_FILE@
++ Normalize data to MSP format and write it to a file
 OUT_FD@         FILE    @
 OUT_FILE@       CHAR    @
 ...
-    SWITCH CHGTYPE@
-        CASE "ADD"
-            PACK MSPX_TRXT WITH "0"
-        CASE "DELETE"
-            PACK MSPX_TRXT WITH "1"
-        CASE "UPDATE"
-            PACK MSPX_TRXT WITH "2"
-        DEFAULT
-            debug
-            CALL UTIL_ERRORMSG USING ("Invalid CMS change type ["+CHGTYPE@+"]"),"WRITE_MSP"
-    ENDSWITCH
 
 .Do some final data conversions
     IF (CHOP MSPX_TRM = "" | CHOP MSPX_TRM = LAST_DATE)
@@ -832,6 +909,28 @@ OUT_FILE@       CHAR    @
 
     CALL WRITE_OGBREC_SEQ USING OUT_FD@,OUT_FILE@,MSPX_LIST
 
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_MSP_TRANSACTION_CODE LROUTINE CHGTYPE@,CODE@
++ Convert action into MSP transaction code
+CHGTYPE@        CHAR    @
+CODE@           CHAR    @
+...
+    FILL " " IN CODE@
+    SWITCH CHGTYPE@
+        CASE "ADD"
+            PACK CODE@ WITH "0",BLANKS
+        CASE "DELETE"
+            PACK CODE@ WITH "1",BLANKS
+        CASE "UPDATE"
+            PACK CODE@ WITH "2",BLANKS
+        DEFAULT
+            debug
+            CALL UTIL_ERRORMSG USING ("Invalid CMS change type ["+CHGTYPE@+"]"),"WRITE_MSP"
+    ENDSWITCH
     RETURN
     ENDROUTINE
 
