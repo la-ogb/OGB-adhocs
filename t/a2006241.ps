@@ -33,6 +33,7 @@ PARAM_TEST              CHAR    4
 
 ENABLE_TEST             NUM     1
 TEST_CONFIG             LIST
+TEST_MAX_RECS           NUM     "1000"
 TEST_EMAIL              INIT    "donald.hutchinson@la.gov"
                         LISTEND
 
@@ -64,7 +65,7 @@ MSP_LOG_FILE            FILE    VAR=200,TEXT
 MSP_LOG_NAME            INIT    "/w/msp_update.log"
 
 HEALTH_MAX              EQU     100
-HEALTH_RECS                CHAR    X_MEME_SIZE[HEALTH_MAX]   ...HEALTH_RECS
+HEALTH_RECS             CHAR    X_MEME_SIZE[HEALTH_MAX]
 HEALTH_COUNT            NUM     3
 
 ACTIVE_MAX              EQU     100
@@ -84,10 +85,12 @@ LOG_HEADER              VARLIST "TYPE",COMMA:
                                 "NEW EFFECTIVE",COMMA:
                                 "NEW TERM"
 
-LOG_INFO                CHAR    125
 RUNDATE                 CHAR    8
 START_DATETIME          CHAR    24
 END_DATETIME            CHAR    24
+ORIGINAL_EFF            CHAR    8
+ORIGINAL_TRM            CHAR    8
+
 
 ./* =============
 . * Begin Program
@@ -206,12 +209,21 @@ PROCESS_MSP LROUTINE
         WHILE (RESULT = 1)
 
         CALL UTIL_XCOUNTER USING X_CNT1,100
+        IF (TEST_MAX_RECS > 0)
+            BREAK IF (X_CNT1 > TEST_MAX_RECS)
+        ENDIF
         CALL UTIL_MEM_FIND USING MSPX_MEM
-        WHILE EQUAL
+        IF (NOT EQUAL)
+            CALL WRITE_LOG USING "ERROR", "MEMBER NOT FOUND"
+            CONTINUE
+        ENDIF
 
         IF (MSPX_TRM = "00000000")
             PACK MSPX_TRM WITH LAST_DATE
         ENDIF
+
+        PACK ORIGINAL_EFF WITH MSPX_EFF
+        PACK ORIGINAL_TRM WITH MSPX_TRM
 
         CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
         CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
@@ -231,11 +243,12 @@ REC         NUM     7
 
     CALL UTIL_XCOUNTER USING X_CNT2,100
     IF (ACTIVE_SPAN_COUNT > 1)
-        debug ...see if this selects the correct span
+.        debug ...see if this selects the correct span
     ENDIF
 
     IF (ACTIVE_SPAN_COUNT = 0)
         CALL WRITE_MSP USING "DELETE"
+        CALL WRITE_LOG USING "DELETE", "NO PERIODS OF REPORTABLE ACTIVE COVERAGE"
         RETURN
     ENDIF
 
@@ -251,14 +264,17 @@ REC         NUM     7
             BREAK IF (SPAN_TRM = MSPX_TRM)
             MOVE SPAN_TRM TO MSPX_TRM
             CALL WRITE_MSP USING "UPDATE"
+            CALL WRITE_LOG USING "UPDATE", "UPDATED TERM DATE"
             BREAK
         ELSE IF (SPAN_EFF < MSPX_EFF)
-            debug
+.            debug
             CALL WRITE_MSP USING "DELETE"
+            CALL WRITE_LOG USING "DELETE", "Earliest Effective Active Span EARLIER than Date previously reported"
         ELSE
-            debug
-            CALL WRITE_LOG USING "DELETE", "Earliest Effective Active Span later than Date previously reported"
+.            debug
             CALL WRITE_MSP USING "DELETE"
+            CALL WRITE_LOG USING "DELETE", "Earliest Effective Active Span later than Date previously reported"
+
             BREAK
         ENDIF
 
@@ -537,6 +553,28 @@ MSP_LOG         CHAR    150
 .Removes work file
     CALL UTIL_DELETE_FILE USING OLD_MSP_NAME
 
+    RETURN
+    ENDROUTINE
+
+.######################################################################
+WRITE_LOG LROUTINE TYPE@,MSG@
++ Write to log file
+TYPE@       CHAR    @
+MSG@        CHAR    @
+LOG_LIST    LIST
+LOG_REC     CHAR    200
+            LISTEND
+
+...
+    PACK LOG_REC WITH TYPE@,COMMA:
+                      MSG@,COMMA:
+                      MEM_ID1,COMMA:
+                      ORIGINAL_EFF,COMMA:
+                      ORIGINAL_TRM,COMMA:
+                      MSPX_EFF,COMMA:
+                      MSPX_TRM
+
+    CALL  WRITE_OGBREC_SEQ USING MSP_LOG_FILE,MSP_LOG_NAME,LOG_LIST
     RETURN
     ENDROUTINE
 
