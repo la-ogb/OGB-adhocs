@@ -39,7 +39,7 @@ PARAM_TEST              CHAR    4
 V_FLAG                  EQU     1   ...0 or 1
 V_DATE                  EQU     8   ...YYYYMMDD
 MSG_HEIGHT              EQU     24
-REFRESH_RATE            EQU     1000
+REFRESH_RATE            EQU     100
 
 .# =================================================================== #
 .# Configuration
@@ -192,7 +192,7 @@ INITIALIZE LROUTINE
     MOVE "Input MSP Recs Proc'd " TO X_CNTDESC1
     MOVE "People Proc'd         " TO X_CNTDESC2
     MOVE "New MSP Records Added " TO X_CNTDESC3
-    MOVE "                      " TO X_CNTDESC4
+    MOVE "Duplicates Removed    " TO X_CNTDESC4
     MOVE "                      " TO X_CNTDESC5
     MOVE "                      " TO X_CNTDESC6
 
@@ -271,7 +271,6 @@ FILE_COMPLETE   NUM     V_FLAG
         debug
         CALL DBG_ON_ID USING CURRENT_MEMBER
         CALL BUILD_NEW_MSP_RECS USING CURRENT_MEMBER
-
         CALL WRITE_OUTPUT_RECS
     REPEAT
 
@@ -350,12 +349,23 @@ ID@         CHAR    @
 WRITE_OUTPUT_RECS LROUTINE
 + Add this member's MSP records to the output file
 REC         NUM     7
+THIS_MSP    CHAR    MSPX_REC_SIZE
+LAST_MSP    CHAR    MSPX_REC_SIZE
 ...
-    IF (MSP_COUNT > 1)
-        debug
-    ENDIF
+    CLEAR LAST_MSP,THIS_MSP
     FOR REC FROM 1 TO MSP_COUNT
         CONTINUE IF (CHOP MSP_RECS[REC] = "") .a deleted record from the array
+
+.Skip duplicates
+        PACK THIS_MSP WITH MSPX_LIST
+        IF (CHOP LAST_MSP > "")
+            IF (LAST_MSP = THIS_MSP)
+                debug
+                CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+                CONTINUE
+            ENDIF
+        ENDIF
+        PACK LAST_MSP WITH THIS_MSP
 
         UNPACK MSP_RECS[REC] INTO MSPX_LIST
 
@@ -422,12 +432,13 @@ BUILD_NEW_MSP   NUM     V_FLAG
 
             CONTINUE IF (MSPX_TRM < SPAN_EFF)
             IF (MSPX_EFF = SPAN_EFF)
-                IF (MSPX_TRM = SPAN_TRM)
-                    CLEAR BUILD_NEW_MSP
-                    BREAK
+                CLEAR BUILD_NEW_MSP
+                IF (MSPX_TRM != SPAN_TRM)
+                    debug .update the term date
+                    PACK MSPX_TRM WITH SPAN_TRM,BLANKS
+                    PACK MSP_RECS[MSP_REC] WITH MSPX_LIST
                 ENDIF
-
-                debug .hmmm what do we do here?
+                BREAK
             ENDIF
         REPEAT
         CONTINUE IF NOT (BUILD_NEW_MSP)
@@ -559,8 +570,24 @@ BUILD_ACTIVE_SPANS LROUTINE
 + start of coverage under the GHP.
 +
 + In this case it is floored to what was sent previously
-REC         NUM     1
+REC             NUM     7
+EARLIEST_EFF    CHAR    V_DATE
+MSP_REC         NUM     7
 ...
+
+.Get the earliest effective date on the current MSP records
+    CLEAR EARLIEST_EFF
+    FOR MSP_REC FROM 1 TO MSP_COUNT
+        UNPACK MSP_RECS[MSP_REC] INTO MSPX_LIST
+        IF (CHOP EARLIEST_EFF = "")
+            PACK EARLIEST_EFF WITH MSPX_EFF
+        ELSE
+            CONTINUE IF (CHOP MSPX_TRXT = "1") .ignore deletes
+            IF (CHOP MSPX_EFF < CHOP EARLIEST_EFF)
+                PACK EARLIEST_EFF WITH MSPX_EFF
+            ENDIF
+        ENDIF
+    REPEAT
 
 .The MSP process' effective date is the start of a period of being an
 .Active Covered Individual - it does not change to reflect the start of
@@ -569,6 +596,10 @@ REC         NUM     1
 
     FOR REC FROM 1 TO HEALTH_COUNT
         UNPACK HEALTH_RECS[REC] INTO MEME_LIST
+        CONTINUE IF (CHOP MEME_TRM < CHOP EARLIEST_EFF)
+        IF (CHOP MEME_EFF < CHOP EARLIEST_EFF)
+            PACK MEME_EFF WITH EARLIEST_EFF
+        ENDIF
 
         CALL IS_ACTIVE_GHP
         CONTINUE IF NOT EQUAL
@@ -812,7 +843,6 @@ NET         CHAR    10
 PRD         CHAR    10
 PLAN        CHAR    10
 ...
-    debug
     PACK NET WITH (CHOP NET@)
     PACK PRD WITH (CHOP PRD@)
     PACK PLAN WITH (CHOP PLAN@)
