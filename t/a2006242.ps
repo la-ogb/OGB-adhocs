@@ -51,11 +51,10 @@ REFRESH_RATE            EQU     100
 
 ENABLE_TEST             NUM     V_FLAG
 TEST_CONFIG             LIST
-TEST_THESE_IDS          INIT    "|00264462|":
-                                "|00701163|":
-                                "|00000705|":
-                                "|00705347|": .needs a new ADD - 3/1/15 - onward
-                                "|00030808|" .this one will be a delete, and needs a new ADD for 1/1/16 - 5/31/16
+TEST_THESE_IDS          INIT    "||":
+                                "|00701163|": .the incoming record is a delete, so we need to add 1/1/16 - 12/31/2018
+                                "|00705347|": .needs to skip the update record, and ignore the delete
+                                "||"
                         LISTEND
 
 .# =================================================================== #
@@ -95,12 +94,12 @@ ACTIVE_SPAN_COUNT       NUM     3
 ACTIVE_SPAN_LIST        LIST
 SPAN_EFF                CHAR    V_DATE
 SPAN_TRM                CHAR    V_DATE
-SPAN_LAST_ID            CHAR    8   1-8
-SPAN_LAST_ID2           CHAR    4   9-12
-SPAN_LAST_COV           CHAR    2   13-14
-SPAN_NET                CHAR    5   15-19
-SPAN_PRD                CHAR    5   20-24
-SPAN_PLAN               CHAR    4   25-28
+SPAN_LAST_ID            CHAR    8
+SPAN_LAST_ID2           CHAR    4
+SPAN_LAST_COV           CHAR    2
+SPAN_NET                CHAR    5
+SPAN_PRD                CHAR    5
+SPAN_PLAN               CHAR    4
                         LISTEND
 
 MSP_MAX                 EQU     20
@@ -256,6 +255,8 @@ FILE_COMPLETE   NUM     V_FLAG
                 CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
             ENDIF
 
+            CALL NORMALIZE_MSP
+
             IF (CHOP CURRENT_MEMBER = "" | CHOP CURRENT_MEMBER = CHOP MSPX_MEM)
                 PACK CURRENT_MEMBER WITH MSPX_MEM
                 CALL UTIL_SAFE_PACK_ARRAY_LIST USING MSPX_LIST,MSP_RECS,MSP_COUNT,MSP_MAX
@@ -269,7 +270,7 @@ FILE_COMPLETE   NUM     V_FLAG
         CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
         debug
-        CALL DBG_ON_ID USING CURRENT_MEMBER
+.        CALL DBG_ON_ID USING CURRENT_MEMBER
         CALL BUILD_NEW_MSP_RECS USING CURRENT_MEMBER
         CALL WRITE_OUTPUT_RECS
     REPEAT
@@ -278,42 +279,6 @@ FILE_COMPLETE   NUM     V_FLAG
     CALL CLOSE_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
 
     MESSAGEERASE
-
-    RETURN
-    ENDROUTINE
-
-
-.#######################################################################
-FIND_BASE_MSP LROUTINE
-+ For each MSP record from the input file, we need to process
-REC         NUM     7
-BASE_MSP    CHAR    MSPX_REC_SIZE
-LAST_MSP    CHAR    MSPX_REC_SIZE
-...
-    CLEAR BASE_MSP,LAST_MSP
-
-.Identify the MSP record we are using as our starting point.
-    FOR REC FROM 1 TO MSP_COUNT
-        IF (CHOP LAST_MSP > "")
-            IF (CHOP LAST_MSP = CHOP MSP_RECS[REC])
-                debug .remove duplicates
-                FILL " " IN MSP_RECS[REC]
-                CONTINUE
-            ENDIF
-        ENDIF
-
-        UNPACK MSP_RECS[REC] INTO MSPX_LIST
-        PACK LAST_MSP WITH MSPX_LIST
-
-        IF (CHOP MSPX_TRXT = "1")  .deletes don't need changes or processing - just write them
-            CONTINUE IF (CHOP BASE_MSP > "")
-        ENDIF
-
-        CALL NORMALIZE_MSP
-        PACK BASE_MSP WITH MSPX_LIST
-    REPEAT
-
-    UNPACK BASE_MSP INTO MSPX_LIST
 
     RETURN
     ENDROUTINE
@@ -334,11 +299,6 @@ ID@         CHAR    @
 
     CALL GET_ALL_HEALTH_PLANS   .gets the raw data we care about
     CALL BUILD_ACTIVE_SPANS     .builds the model we need for this program
-
-    IF (MSP_COUNT > 1)
-        debug .interesting case
-    ENDIF
-
     CALL BUILD_MSP_SPANS
 
     RETURN
@@ -360,7 +320,7 @@ LAST_MSP    CHAR    MSPX_REC_SIZE
         PACK THIS_MSP WITH MSPX_LIST
         IF (CHOP LAST_MSP > "")
             IF (LAST_MSP = THIS_MSP)
-                debug
+                CALL WRITE_LOG USING "WARN","Duplicate removed"
                 CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
                 CONTINUE
             ENDIF
@@ -370,6 +330,7 @@ LAST_MSP    CHAR    MSPX_REC_SIZE
         UNPACK MSP_RECS[REC] INTO MSPX_LIST
 
         CALL SET_DCN USING CURRENT_MEMBER
+        PACK MSP_RECS[REC] WITH MSPX_LIST
         CALL WRITE_MSP_OUTPUT USING OUTPUT_FD,OUTPUT_FILE
     REPEAT
 
@@ -419,18 +380,18 @@ BUILD_NEW_MSP   NUM     V_FLAG
         debug
     ENDIF
 
-    CALL DBG_ON_ID USING MEM_ID1
-
     FOR REC FROM 1 TO ACTIVE_SPAN_COUNT
         UNPACK ACTIVE_SPANS[REC] INTO ACTIVE_SPAN_LIST
 
 .See if we already have an MSP record for this span of time
         SET BUILD_NEW_MSP
         FOR MSP_REC FROM 1 TO MSP_COUNT
+            CONTINUE IF (CHOP MSP_RECS[MSP_REC] = "")
             UNPACK MSP_RECS[MSP_REC] INTO MSPX_LIST
-            CONTINUE IF (CHOP MSPX_TRXT = "1") .ignore deletes
 
+            CONTINUE IF (CHOP MSPX_TRXT = "1") .ignore deletes
             CONTINUE IF (MSPX_TRM < SPAN_EFF)
+
             IF (MSPX_EFF = SPAN_EFF)
                 CLEAR BUILD_NEW_MSP
                 IF (MSPX_TRM != SPAN_TRM)
@@ -440,6 +401,16 @@ BUILD_NEW_MSP   NUM     V_FLAG
                 ENDIF
                 BREAK
             ENDIF
+
+.Validate the first span against the incoming record
+.            IF (REC = 1)
+.                IF (SPAN_EFF > MSPX_EFF & SPAN_TRM > MSPX_EFF)
+.                    debug .bad incoing data
+.                    CALL WRITE_LOG USING "ERROR","First inital span doesn't match the base MSP record"
+.                    CLEAR MSP_RECS[MSP_REC]
+.                    CONTINUE
+.                ENDIF
+.            ENDIF
         REPEAT
         CONTINUE IF NOT (BUILD_NEW_MSP)
 
@@ -450,7 +421,7 @@ BUILD_NEW_MSP   NUM     V_FLAG
         CALL CMS_BUILD_NEW_MSP USING ACTIVE_SPANS[REC]
         CALL PACK_MSP_REC USING "ADD"
 
-        CALL WRITE_LOG USING "New MSP record added"
+        CALL WRITE_LOG USING "ADD","New MSP record added"
 
         BREAK IF (SPAN_TRM = LAST_DATE)
     REPEAT
@@ -699,9 +670,11 @@ CHGTYPE@        CHAR    @
 
 
 .#######################################################################
-WRITE_LOG LROUTINE MSG@
+WRITE_LOG LROUTINE TYPE@,MSG@
 + Write to the log record
+TYPE@       CHAR    @
 MSG@        CHAR    @
+...
 
 .TODO: write a log record
 
@@ -951,7 +924,7 @@ INTERNAL_COUNT      NUM     7
     ADD 1 TO INTERNAL_COUNT
 
     IF (INTERNAL_COUNT > 1)
-        debug
+.        debug
     ENDIF
 
     PACK MSPX_MEM WITH ID@,BLANKS
