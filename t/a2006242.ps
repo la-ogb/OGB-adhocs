@@ -45,12 +45,15 @@ REFRESH_RATE            EQU     100
 .# Configuration
 .# =================================================================== #
 
+EMAIL_GROUP             INIT     "${ITAPPS}"
+
 .# =================================================================== #
 .# Debugging Configuration
 .# =================================================================== #
 
 ENABLE_TEST             NUM     V_FLAG
 TEST_CONFIG             LIST
+TEST_EMAIL              INIT    "jakob.hendrix@la.gov"
 TEST_THESE_IDS          INIT    "||":
                                 "|00701163|": .the incoming record is a delete, so we need to add 1/1/16 - 12/31/2018
                                 "|00705347|": .needs to skip the update record, and ignore the delete
@@ -64,12 +67,24 @@ TEST_THESE_IDS          INIT    "||":
 BADMSP_FD               FILE    VAR=MSPX_REC_SIZE,TEXT
 BADMSP_FILE             INIT    "/w/a2006242_input.txt"
 
+OUTPUT_FD               FILE    VAR=MSPX_REC_SIZE,TEXT
+OUTPUT_FILE             INIT    "/w/a2006242_output.txt"
+
+LOG_FD                  FILE    VAR=1000,TEXT
+LOG_FILE                INIT    "/w/a2006242_log.csv"
+
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
-OUTPUT_FD               FILE    VAR=MSPX_REC_SIZE,TEXT
-OUTPUT_FILE             INIT    "/w/a2006242_output.txt"
+LOG_HEADER              VARLIST "Type",COMMA:
+                                "Message",COMMA:
+                                "MemberId",COMMA:
+                                "MSP_Eff",COMMA:
+                                "MSP_Trm"
+LOG_LIST                LIST
+LOG_REC                 CHAR    1000
+                        LISTEND
 
 .# =================================================================== #
 .# Program Variables
@@ -228,6 +243,8 @@ FILE_COMPLETE   NUM     V_FLAG
 
     CALL OPEN_OGBFILE USING BADMSP_FD,BADMSP_FILE
     CALL PREP_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
 
     CLEAR FILE_COMPLETE
     debug
@@ -277,6 +294,7 @@ FILE_COMPLETE   NUM     V_FLAG
 
     CALL CLOSE_OGBFILE USING BADMSP_FD,BADMSP_FILE
     CALL CLOSE_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
 
     MESSAGEERASE
 
@@ -675,8 +693,13 @@ WRITE_LOG LROUTINE TYPE@,MSG@
 TYPE@       CHAR    @
 MSG@        CHAR    @
 ...
+    PACK LOG_REC WITH TYPE@,COMMA:
+                      MSG@,COMMA:
+                      MEM_ID1,COMMA:
+                      MSPX_EFF,COMMA:
+                      MSPX_TRM
 
-.TODO: write a log record
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
 
     RETURN
     ENDROUTINE
@@ -687,8 +710,35 @@ CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
 
-.TODO: final clean up
+    CALL UTIL_PENDING_BACKUP USING "/w/",BADMSP_FILE,""
+    CALL UTIL_PENDING_BACKUP USING "/w/",OUTPUT_FILE,""
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
 
+    CALL EMAIL_LOG USING LOG_FILE
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOG@
++ Send log file in an email
+LOG@        CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING "A2006242 Complete - MSP File History Update",ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,"Process to fill out MSP coverage spans on members fixed by the A2006241.ps process."
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
     RETURN
     ENDROUTINE
 
@@ -1065,6 +1115,7 @@ ID@     CHAR    @
     INC UTIL_MEME.SR
     INC UTIL_MEMO.SR
     INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
     INC FILTER_NON_HEALTH.SR
 
 .# =================================================================== #
