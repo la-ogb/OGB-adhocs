@@ -1,0 +1,533 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2006243.ps
++
++ DESCRIPTION:
++   Merge MSP records in the consolidated MSP file (a full extract from
++   Q1-2020 and the output from A2006242)
++
++ CREATED BY:
++   apjwh - 2020-07-06
++
++ LAST MODIFIED BY:
++   apjwh - 2020-07-07
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC CMS_MSP_INPUT.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+.TODO: add configuration settings here
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_THESE_IDS      INIT    "||":
+                            "|00001115|":  .blank term
+                            "|00037599|":  .blank term and
+                            "||"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+BASE_FD             FILE    VAR=MSPX_REC_SIZE,TEXT
+BASE_FILE           INIT    "/w/fullmsp.txt"
+
+TEMP_FD             FILE    FIXED=MSPX_REC_SIZE,TEXT
+TEMP_FILE           INIT    "/w/a2006243.tmp"
+
+OUTPUT_FD           FILE    FIXED=MSPX_REC_SIZE,TEXT
+OUTPUT_FILE         INIT    "/w/ogb_msp_2020q1_fix_20200707.txt"
+
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+MSP_MAX             EQU     20
+MSP_COUNT           NUM     4
+MSP_RECS            CHAR    MSPX_REC_SIZE[MSP_MAX]
+
+MEMBER_WRITE_COUNT  NUM     7
+
+HEADER_REC          CHAR    MSPX_REC_SIZE
+TRAILER_REC         CHAR    MSPX_REC_SIZE
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2006243" TO C_PROG        ...Program name
+    MOVE "MSP Fix Merge" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL MERGE_MSP_RECS
+    CALL BUILD_FINAL_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "Input Records         " TO X_CNTDESC1
+    MOVE "Members Proc'd        " TO X_CNTDESC2
+    MOVE "MSP Records Written   " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    LOADMOD "UTIL_ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MERGE_MSP_RECS LROUTINE
++ Merge the records from the adhoc and full MSP processes
+CURR_MEMBER         CHAR    8
+PEND_REC            CHAR    MSPX_REC_SIZE
+...
+
+    CALL SORT_MSP_FILE_BY_MEMBER
+
+    CALL UTIL_XMESSAGE USING "Building merged MSP file...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING BASE_FD,BASE_FILE
+    CALL PREP_OGBFILE USING TEMP_FD,TEMP_FILE
+
+    CLEAR HEADER_REC:
+          TRAILER_REC:
+          CURR_MEMBER:
+          PEND_REC
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        IF (CHOP PEND_REC > "")
+            UNPACK PEND_REC INTO MSPX_LIST
+            CLEAR PEND_REC
+        ELSE
+            CALL READ_OGBFILE_SEQ USING BASE_FD,BASE_FILE,MSPX_LIST
+            WHILE (RESULT = 1)
+
+            CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+        ENDIF
+
+        IF (CHOP HEADER_REC = "")
+            CMATCH "H" IN MSPX_HICN
+            IF EQUAL
+                PACK HEADER_REC WITH MSPX_LIST
+                CONTINUE
+            ENDIF
+        ENDIF
+        IF (CHOP TRAILER_REC = "")
+            CMATCH "T" IN MSPX_HICN
+            IF EQUAL
+                PACK TRAILER_REC WITH MSPX_LIST
+                CONTINUE
+            ENDIF
+        ENDIF
+
+        IF (CHOP MSPX_TRM = "00000000")
+            PACK MSPX_TRM WITH LAST_DATE
+        ENDIF
+
+        IF (CHOP CURR_MEMBER = "" | CHOP MSPX_MEM = CHOP CURR_MEMBER)
+            PACK CURR_MEMBER WITH MSPX_MEM
+            CALL UTIL_SAFE_PACK_ARRAY_LIST USING MSPX_LIST,MSP_RECS,MSP_COUNT,MSP_MAX
+        ELSE
+            PACK PEND_REC WITH MSPX_LIST
+
+            IF (CHOP TEST_THESE_IDS > "")
+                SCAN CURR_MEMBER IN TEST_THESE_IDS
+                IF EQUAL
+                    RESET TEST_THESE_IDS
+                    debug
+                ENDIF
+            ENDIF
+
+            CALL PROCESS_MEMBER
+            CLEAR MSP_RECS,MSP_COUNT,CURR_MEMBER,MEMBER_WRITE_COUNT
+        ENDIF
+    REPEAT
+
+    IF (MSP_COUNT > 0)
+        CALL PROCESS_MEMBER
+        CLEAR MSP_RECS,MSP_COUNT,CURR_MEMBER,MEMBER_WRITE_COUNT
+    ENDIF
+
+    CALL CLOSE_OGBFILE USING BASE_FD,BASE_FILE
+    CALL CLOSE_OGBFILE USING TEMP_FD,TEMP_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SORT_MSP_FILE_BY_MEMBER LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Sort MSP file by member",MSG_HEIGHT
+
+    CALL SORT_OGBFILE USING BASE_FILE,BASE_FILE,"29-36 -t"
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "Member sort failed","SORT_MSP_FILE_BY_MEMBER"
+    ENDIF
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_MEMBER LROUTINE
++ Sort and merge any MSP records that overlap
+REC             NUM     7
+LAST_EFF        CHAR    V_DATE
+LAST_TRM        CHAR    V_DATE
+SAVE_MED_ID     CHAR    30
+MAX_TRM         CHAR    8
+NEW_COUNT       NUM     7
+...
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    IF (MSP_COUNT = 1)
+        UNPACK MSP_RECS[1] INTO MSPX_LIST
+        CALL WRITE_MSP
+        RETURN
+    ENDIF
+
+    ASORT ATYPE="REC":
+          ARRAY=MSP_RECS:
+          AMAX=MSP_COUNT:
+          SRTFLD1="55-62",SRTORD1="A":
+          SRTFLD2="63-70",SRTORD2="D"
+
+.Write all delete records
+    FOR REC FROM 1 TO MSP_COUNT
+        UNPACK MSP_RECS[REC] INTO MSPX_LIST
+        CONTINUE IF (MSPX_TRXT != "1") .delete
+        CALL WRITE_MSP
+        FILL " " IN MSP_RECS[REC]
+.        debug
+    REPEAT
+
+.Write add and updates, skipping duplicates
+    CLEAR LAST_EFF,LAST_TRM,SAVE_MED_ID,MAX_TRM
+
+    FOR REC FROM 1 TO MSP_COUNT
+        CONTINUE IF (CHOP MSP_RECS[REC] = "")
+        UNPACK MSP_RECS[REC] INTO MSPX_LIST
+
+        IF (CHOP MSPX_HICN > "")
+            PACK SAVE_MED_ID WITH MSPX_HICN
+        ENDIF
+
+.Store the max term date from base MSP records only (the DCN is generated
+.differently)
+        CMATCH "2" IN MSPX_JJJ  .does the DNC have the julian date?
+        IF EQUAL
+            IF (CHOP MAX_TRM = "" | CHOP MSPX_TRM > CHOP MAX_TRM)
+                PACK MAX_TRM WITH MSPX_TRM
+            ENDIF
+        ENDIF
+
+        IF (LAST_TRM = LAST_DATE)
+            FILL " " IN MSP_RECS[REC]
+.            debug
+            CONTINUE
+        ENDIF
+
+        IF (CHOP LAST_EFF = "")
+            PACK LAST_EFF WITH MSPX_EFF
+            PACK LAST_TRM WITH MSPX_TRM
+            CONTINUE
+        ENDIF
+
+        IF (CHOP MSPX_EFF > CHOP LAST_TRM)
+            PACK LAST_EFF WITH MSPX_EFF
+            PACK LAST_TRM WITH MSPX_TRM
+            CONTINUE
+        ENDIF
+
+        CONTINUE IF (CHOP MSPX_EFF = CHOP LAST_EFF & CHOP MSPX_TRM = CHOP LAST_TRM)
+
+        IF (MSPX_EFF < LAST_TRM)
+            IF (MSPX_TRM >= LAST_TRM)
+                debug
+                CALL DATE_CALC USING MSPX_EFF,"SUB","DAYS",1,DATE_CCYYMMDD
+                UNPACK MSP_RECS[REC - 1] INTO MSPX_LIST
+                PACK MSPX_TRM WITH DATE_CCYYMMDD
+                PACK MSP_RECS[REC - 1] WITH MSPX_LIST
+                UNPACK MSP_RECS[REC] INTO MSPX_LIST
+
+                PACK LAST_EFF WITH MSPX_EFF
+                PACK LAST_TRM WITH MSPX_TRM
+            ELSE
+                debug .do we hit this?
+            ENDIF
+            CONTINUE
+        ENDIF
+
+        debug .do we hit this?
+    REPEAT
+
+    CALL REMOVE_DELETED_RECS
+
+.Write all remaining records. Backfill the Medicare Id
+    FOR REC FROM 1 TO MSP_COUNT
+        CONTINUE IF (CHOP MSP_RECS[REC] = "")
+        UNPACK MSP_RECS[REC] INTO MSPX_LIST
+
+.Add a medicare Id
+        IF (CHOP MSPX_HICN = "" & CHOP SAVE_MED_ID > "")
+            PACK MSPX_HICN WITH SAVE_MED_ID
+        ENDIF
+
+.Hard term this member's data to the latest term from the main MSP process
+        IF (CHOP MAX_TRM > "")
+            IF (MSPX_TRM >= MAX_TRM)
+                PACK MSPX_TRM WITH MAX_TRM
+                CALL WRITE_MSP
+                BREAK
+            ENDIF
+        ENDIF
+
+        CALL WRITE_MSP
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REMOVE_DELETED_RECS LROUTINE
++ Resort the array
+TEMP_MSP_RECS   CHAR    MSPX_REC_SIZE[MSP_MAX]
+TEMP_COUNT      NUM     7
+REC             NUM     7
+...
+    FILL " " IN TEMP_MSP_RECS
+    CLEAR TEMP_MSP_RECS,TEMP_COUNT
+
+    FOR REC FROM 1 TO MSP_COUNT
+        CONTINUE IF (CHOP MSP_RECS[REC] = "")
+        CALL UTIL_SAFE_PACK_ARRAY USING MSP_RECS[REC],TEMP_MSP_RECS,TEMP_COUNT,MSP_MAX
+    REPEAT
+
+    FILL " " IN MSP_RECS
+
+    MOVE TEMP_MSP_RECS TO MSP_RECS
+    MOVE TEMP_COUNT TO MSP_COUNT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_MSP LROUTINE
++ Write the current MSP data to the output file
+
+    ADD 1 TO MEMBER_WRITE_COUNT
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    CALL SET_DCN USING MSPX_MEM
+
+    IF (CHOP MSPX_TRM = LAST_DATE)
+        FILL "0" IN MSPX_TRM
+    ENDIF
+
+    CALL WRITE_OGBREC_SEQ USING TEMP_FD,TEMP_FILE,MSPX_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_DCN LROUTINE ID@
++ Generate a unique id for this record for this file
+ID@                 CHAR    @
+LAST_ID             CHAR    8
+INTERNAL_COUNT      NUM     7
+...
+    IF (CHOP ID@ != CHOP LAST_ID)
+        CLEAR INTERNAL_COUNT
+    ENDIF
+
+    ADD 1 TO INTERNAL_COUNT
+
+    IF (INTERNAL_COUNT > 1)
+.        debug
+    ENDIF
+
+    PACK MSPX_MEM WITH ID@,BLANKS
+    PACK MSPX_JJJ WITH (CHAR INTERNAL_COUNT)
+    REPLACE " 0" IN MSPX_JJJ
+
+    PACK LAST_ID WITH ID@,BLANKS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_FINAL_FILE LROUTINE
+    debug
+    CALL UTIL_XMESSAGE USING "Building final file...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING TEMP_FD,TEMP_FILE
+    CALL PREP_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    UNPACK HEADER_REC INTO MSPX_LIST
+    CALL WRITE_OGBREC_SEQ USING OUTPUT_FD,OUTPUT_FILE,MSPX_LIST
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING TEMP_FD,TEMP_FILE,MSPX_LIST
+        WHILE (RESULT = 1)
+
+        CALL WRITE_OGBREC_SEQ USING OUTPUT_FD,OUTPUT_FILE,MSPX_LIST
+    REPEAT
+
+    UNPACK TRAILER_REC INTO MSPX_LIST
+    CALL WRITE_OGBREC_SEQ USING OUTPUT_FD,OUTPUT_FILE,MSPX_LIST
+
+    CALL CLOSE_OGBFILE USING TEMP_FD,TEMP_FILE
+    CALL CLOSE_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+.TODO: final clean up
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
