@@ -1,0 +1,315 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2007211.ps
++
++ DESCRIPTION:
++   Fix records voided by the 834 on 7/21/2020
++
++ CREATED BY:
++   apjwh - 2020-07-21
++
++ LAST MODIFIED BY:
++   apjwh - 2020-07-21
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "A00003"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_THESE_IDS      INIT    "||":
+                            "||":
+                            "||"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    VAR=1000,TEXT
+INPUT_FILE          INIT    "/w/a2007211.csv"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2007211.inm"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+INPUT_LIST          LIST
+INPUT_REC           CHAR    1000
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+ID1                 CHAR    8
+ID2                 CHAR    4
+TRM                 CHAR    V_DATE
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2007211" TO C_PROG        ...Program name
+    MOVE "834 Void Fix" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL PROCESS_CSV
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "Input Records         " TO X_CNTDESC1
+    MOVE "Updates Written       " TO X_CNTDESC2
+    MOVE "Skipped: Already Fixed" TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    LOADMOD "UTIL_ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_CSV LROUTINE
++ Read the input file and fix the indicated voided records
+HEADER_SKIPPED  NUM     1
+...
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    debug
+    CLEAR HEADER_SKIPPED
+    LOOP
+        CLEAR TRM,ID1,ID2
+
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
+        WHILE (RESULT = 1)
+
+        IF NOT (HEADER_SKIPPED)
+            SET HEADER_SKIPPED
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL DELIMIT_STRING USING INPUT_REC,1,TRM,COMMA
+        CALL DELIMIT_STRING USING INPUT_REC,2,ID1,COMMA
+        CALL DELIMIT_STRING USING INPUT_REC,3,ID2,COMMA
+
+        CALL UTIL_MEM_FIND USING ID1
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_MEME_FIND USING ID1,ID2
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+
+        CALL UPDATE_MEME
+
+        CALL FIX_LBLA
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_MEME LROUTINE
++ Insert the TRM and remove the void term letter
+
+    PACK MEME_SAV WITH MEME_LIST
+    CALL INIT_INM_NOMEM
+    UNPACK MEME_SAV INTO MEME_LIST
+    CALL PACK_INM
+
+    IF (CHOP INME_TRM = CHOP TRM & CHOP INME_TLET != "V")
+        debug
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        RETURN
+    ENDIF
+
+    PACK INME_TRM WITH TRM,BLANKS
+    IF (CHOP INME_TLET = "V")
+        PACK INME_TLET WITH "C",BLANKS
+    ENDIF
+
+    PACK INME_CHGBY WITH PROG_NAME,BLANKS
+    FILL " " IN INME_CHGDT
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_LBLA LROUTINE
++ Find a voided LBLA from 2020 that was voided by the 834 and fix
+    CLEAR MEME_LIST
+    LOOP
+        IF (CHOP MEME_ID1 = "")
+            CALL UTIL_MEME_FIND USING ID1,""
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP MEME_PRD != "LBLA")
+
+        CONTINUE IF (CHOP MEME_CHGDT < "20200721")
+        CONTINUE IF NOT (CHOP MEME_TRM > "" & MEME_TRM < MEME_EFF)
+
+        CONTINUE IF (CHOP MEME_EFF > TRM)
+
+        UNPACK MEME_EFF INTO DATE_CCYY
+        CONTINUE IF (DATE_CCYY != "2020")
+
+        CALL UPDATE_MEME
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+.TODO: final clean up
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_MEMMEM.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
