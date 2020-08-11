@@ -1,0 +1,370 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2008111.ps
++
++ DESCRIPTION:
++   Fix improperly voided MEMI record by the 8/10 Section111 Query file
++   run
++
++ CREATED BY:
++   apjwh - 2020-08-11
++
++ LAST MODIFIED BY:
++   apjwh - 2020-08-11
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEMI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "A00004"
+EMAIL_GROUP         INIT    "${ITAPPS}"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_THESE_IDS      INIT    "||":
+                            "||":
+                            "||"
+TEST_EMAIL          INIT    "jakob.hendrix@la.gov"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=8,TEXT
+WORK_FILE           INIT    "/w/a2008111.wrk"
+
+LOG_FD              FILE    VAR=150,TEXT
+LOG_FILE            INIT    "/w/a2008111.log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+WORK_LIST           LIST
+WORK_ID             CHAR    8
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    150
+                    LISTEND
+
+LOG_HEADER          VARLIST "Id,Voided MEMI Data"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2008111" TO C_PROG        ...Program name
+    MOVE "Fix Void CMS Ids" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_ISSUES
+    CALL FIX_ISSUES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "Processed Members     " TO X_CNTDESC1
+    MOVE "Issue Members Found   " TO X_CNTDESC2
+    MOVE "MEMIs Fixed           " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    LOADMOD "UTIL_ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_ISSUES LROUTINE
++ Find MEMI records updated by CMSQRY
+
+    PACK MEMI_CHGBY WITH "CMSQRP"
+    PACK MEMI_CHGDT WITH "20200810"
+    PACK SCRATCH WITH "memi.dbf ",WORK_FILE," -t 1-8 ":
+        " -p70-75eq#"",MEMI_CHGBY,"#" ":
+        " -p62-69eq#"",MEMI_CHGDT,"#""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finded Updated Members From MEMI"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_ISSUES LROUTINE
+
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,WORK_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+.See if there are multiple open MEMIs. We need to void the one NOT created
+.by CMSQRP
+        CALL HAS_DUP_ID
+        CONTINUE IF NOT EQUAL
+
+        debug
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+        CALL VOID_OLDER_DUP_ID
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+HAS_DUP_ID LROUTINE
++ Set EQUAL if there are > 1 open ended CMS id
+FIRST_READ      NUM     1
+CMS_CNT         NUM     7
+...
+    CLEAR CMS_CNT
+    SET FIRST_READ
+    LOOP
+        IF (FIRST_READ)
+            CLEAR FIRST_READ
+            CALL UTIL_MEMI_FIND_ID_AND_CAT USING WORK_ID,"CMS"
+        ELSE
+            CALL UTIL_MEMI_NEXT_ID_AND_CAT
+        ENDIF
+        WHILE EQUAL
+
+        IF (CHOP MEMI_TRM = "")
+            ADD 1 TO CMS_CNT
+        ENDIF
+    REPEAT
+
+    IF (CMS_CNT > 1)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VOID_OLDER_DUP_ID LROUTINE
++ Void all CMS ids that weren't written by the 8/10 Section 111 Query
++ process - CMSQRP
+FIRST_READ      NUM     1
+...
+    SET FIRST_READ
+    LOOP
+        IF (FIRST_READ)
+            CLEAR FIRST_READ
+            CALL UTIL_MEMI_FIND_ID_AND_CAT USING WORK_ID,"CMS"
+        ELSE
+            CALL UTIL_MEMI_NEXT_ID_AND_CAT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP MEMI_TRM > "")
+        CONTINUE IF (CHOP MEMI_NEWBY = "CMSQRP" & CHOP MEMI_NEWDT = "20200810")
+
+        debug
+
+        CALL WRITE_MEMI_VOID
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_MEMI_VOID LROUTINE
++ Update the current MEMI record
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    PACK LOG_REC WITH MEMI_ID,COMMA:
+                      MEMI_REC
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    IF (CHOP MEMI_EFF = "")
+        PACK MEMI_EFF WITH CURRDATE
+    ENDIF
+    CALL DATE_CALC USING MEMI_EFF,"SUB","DAYS",1,MEMI_TRM
+
+    PACK MEMI_CHGBY WITH PROG_NAME,BLANKS
+    PACK MEMI_CHGDT WITH CURRDATE,BLANKS
+
+    debug
+
+    CALL MEMI_WRITE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_LOG USING LOG_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOG@
++ Email the log
+LOG@         CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING "A2008111 Complete - Duplicate CMS Alt Id Void",ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY:
+        "Manually void the CMS alt ids the D_MEMMEM failed to void from the 8/10 Section111 Query Response file load"
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_MEMI.SR
+    INC UTIL_EMAIL.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
