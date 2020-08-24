@@ -1,0 +1,449 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2007171.ps
++
++ DESCRIPTION:
++   Extract of EGWP enrollees for CVS
++
++ CREATED BY:
++   apjwh - 2020-07-17
++
++ LAST MODIFIED BY:
++   apjwh - 2020-07-17
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEM.RL
+    INC MEME.RL
+    INC MEMO.RL
+    INC MEMI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_GROUP         INIT    "${ITAPPS}"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_RF        NUM     "1"
+TEST_EMAIL_GROUP    INIT    "jakob.hendrix@la.gov"
+TEST_SKIP_DELETE    NUM     "0"
+TEST_SKIP_BACKUP    NUM     "1"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FILE           INIT    "/w/a2007171.wrk"
+
+RPT_FD              FILE    VAR=200,TEXT
+RPT_FILE            INIT    "/w/a2007171.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+RTP_LIST            LIST
+RPT_REC             CHAR    200
+                    LISTEND
+
+RPT_HEADER          VARLIST "MBI",COMMA:
+                            "FN",COMMA:
+                            "MI",COMMA:
+                            "LN",COMMA:
+                            "DOB",COMMA:
+                            "Gender",COMMA:
+                            "Mailing Address Line 1",COMMA:
+                            "Mailing Address Line 2",COMMA:
+                            "Mailing City",COMMA:
+                            "Mailing State",COMMA:
+                            "Mailing Zip"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+MOST_FUTURE_EFF     CHAR    8
+
+CURRDATE            CHAR    8
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2007171" TO C_PROG        ...Program name
+    MOVE "CSV EGWP Extract" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL GET_EGWP_RECS
+    CALL BUILD_REPORT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+    MOVE "EGWP Recs Read        " TO X_CNTDESC1
+    MOVE "Members Processed     " TO X_CNTDESC2
+    MOVE "Members Reported      " TO X_CNTDESC3
+    MOVE "                      " TO X_CNTDESC4
+    MOVE "                      " TO X_CNTDESC5
+    MOVE "                      " TO X_CNTDESC6
+
+    CALL X_ZERO_COUNTS
+    IF (NOT C_CMDPAR)
+        CALL X_DISPLAY_COUNTS
+    ENDIF
+
+    IF (TEST_SKIP_RF)
+        CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+        IF NOT EQUAL
+            CLEAR TEST_SKIP_RF
+        ENDIF
+    ENDIF
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_EGWP_RECS LROUTINE
++ Reformat the MEME for all EGWP records
+
+    CALL UTIL_XMESSAGE USING "Building EGWP Records",MSG_HEIGHT
+
+    IF NOT (TEST_SKIP_RF)
+        PACK SCRATCH WITH MEME_FNS," ",WORK_FILE," -t ":
+            "-p112-116eq#"EGWP #""
+        CALL UTIL_DO_REFORMAT USING SCRATCH,"Getting EGWP records"
+    ENDIF
+
+    PACK SCRATCH WITH WORK_FILE," ",WORK_FILE," 1-8 -t"
+    CALL UTIL_DO_SORT USING SCRATCH,"Sorting by member"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_REPORT LROUTINE
++ Generate report of members with qualifying EGWP
+CURR_MEMBER         CHAR    8
+DONE_WITH_MEMBER    NUM     1
+...
+
+    CALL UTIL_XMESSAGE USING "Building Report",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING RPT_FD,RPT_FILE
+    CALL WRITE_OGBREC_SEQ USING RPT_FD,RPT_FILE,RPT_HEADER
+
+    debug
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CLEAR CURR_MEMBER,DONE_WITH_MEMBER
+    LOOP
+        IF (CHOP MEME_SAV > "")
+            UNPACK MEME_SAV INTO MEME_LIST
+            CLEAR MEME_SAV
+        ELSE
+            CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,MEME_LIST
+            WHILE (RESULT = 1)
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        IF (CURR_MEMBER = "")
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+            PACK CURR_MEMBER WITH MEME_ID1
+            CALL UTIL_MEM_FIND_REAL USING MEME_ID1
+            IF NOT EQUAL
+                SET DONE_WITH_MEMBER
+                CONTINUE
+            ENDIF
+        ELSE IF (CURR_MEMBER != MEME_ID1)
+            PACK MEME_SAV WITH MEME_LIST
+
+            CLEAR DONE_WITH_MEMBER:
+                  CURR_MEMBER
+
+            CONTINUE
+        ELSE
+            CONTINUE IF (DONE_WITH_MEMBER)
+        ENDIF
+
+.Determine which EGWP records to use
+        CONTINUE IF (CHOP MEME_RT = "RS")
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE
+        ENDIF
+
+        CONTINUE IF (MEME_EFF > "20210101")
+
+.Skip voided records
+        CONTINUE IF (CHOP MEME_TRM < CHOP MEME_EFF & MEME_TLET != "W")
+
+        CONTINUE IF (MEME_TRM < "20210101")
+
+        SET DONE_WITH_MEMBER
+        CALL ADD_TO_REPORT
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING RPT_FD,RPT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_TO_REPORT LROUTINE
++ Build a report record for this member
+MEDICARE_ID     CHAR    30
+ZIP_5           CHAR    5
+...
+    debug
+    CLEAR MEDICARE_ID:
+          ZIP_5
+
+    CALL GET_MEDICARE_ID USING MEDICARE_ID
+
+    IF (CHOP MEDICARE_ID = "")
+        debug
+    ENDIF
+
+    PACK MEM_REC WITH MEM_LIST
+    REPLACE MAKEUPPER IN MEM_REC
+    REPLACE ", " IN MEM_REC
+    UNPACK MEM_REC INTO MEM_LIST
+
+    MOVE MEM_ZIP INTO ZIP_5
+
+    PACK RPT_REC WITH (CHOP MEDICARE_ID),COMMA:
+                      (CHOP MEM_FNAME),COMMA:
+                      (CHOP MEM_MINIT),COMMA:
+                      (CHOP MEM_LNAME),COMMA:
+                      (CHOP MEM_DOB),COMMA:
+                      (CHOP MEM_SEX),COMMA:
+                      (CHOP MEM_ADDR1),COMMA:
+                      (CHOP MEM_ADDR2),COMMA:
+                      (CHOP MEM_CITY),COMMA:
+                      (CHOP MEM_STATE),COMMA:
+                      (CHOP ZIP_5)
+
+    CALL WRITE_OGBREC_SEQ USING RPT_FD,RPT_FILE,RTP_LIST
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_MEDICARE_ID LROUTINE ID@
++ Look for the ID in the MEMI. If not found, look in the MEMO
+ID@         CHAR    @
+...
+
+.Search Alt Ids
+    CLEAR MEMI_REC
+    LOOP
+        IF (CHOP MEMI_ID = "")
+            CALL UTIL_MEMI_FIND_ID_AND_CAT USING MEM_ID1,"CMS"
+        ELSE
+            CALL UTIL_MEMI_NEXT_ID_AND_CAT
+        ENDIF
+        WHILE EQUAL
+
+        IF (CHOP MEMI_EFF = "")
+            PACK MEMI_EFF WITH "19010101"
+        ENDIF
+        IF (CHOP MEMI_TRM = "")
+            PACK MEMI_TRM WITH LAST_DATE
+        ENDIF
+
+        CONTINUE IF (MEMI_TRM < CURRDATE)
+        CONTINUE IF (MEMI_TRM < MEMI_EFF)
+        CONTINUE IF (CHOP MEMI_ID = "")
+
+        PACK ID@ WITH MEMI_ID
+        BREAK
+    REPEAT
+
+    RETURN IF (CHOP ID@ > "")
+
+.Search Medicare Records
+    CLEAR MEMO_LIST
+    LOOP
+        IF (CHOP MEMO_ID1 = "")
+            CALL UTIL_MEMO_FIND USING MEM_ID1,""
+        ELSE
+            CALL UTIL_MEMO_NEXT
+        ENDIF
+        WHILE EQUAL
+        SWITCH MEMO_TYPE
+            CASE "MEDA" | "MEDB"
+            DEFAULT
+                CONTINUE
+        ENDSWITCH
+        CONTINUE IF (MEMO_VER != "Y")
+        CONTINUE IF (CHOP MEMO_POL = "")
+
+        PACK ID@ WITH MEMO_POL
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING RPT_FILE,RPT_FILE
+    CALL SEND_EMAIL
+
+    IF NOT (TEST_SKIP_BACKUP)
+        CALL UTIL_PENDING_BACKUP USING "/w/",RPT_FILE,""
+    ENDIF
+    IF NOT (TEST_SKIP_DELETE)
+        CALL UTIL_DELETE_FILE USING WORK_FILE
+        CALL UTIL_DELETE_FILE USING RPT_FILE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the log
+RECIPIENTS  CHAR    100
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+...
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL_GROUP
+    CALL UTIL_SET_SUBJECT USING "CVS EGWP Extract",ENABLE_TEST,SUBJECT
+
+    PACK SCRATCH WITH "Extract of 1/1/21 EGWP enrollees for CVS"
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               RPT_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_MEM.SR
+    INC UTIL_MEMO.SR
+    INC UTIL_MEMI.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
