@@ -9,7 +9,7 @@
 +   apjwh - 2020-07-17
 +
 + LAST MODIFIED BY:
-+   apjwh - 2020-07-17
++   apjwh - 2020-09-01
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 .# =================================================================== #
@@ -308,6 +308,10 @@ ZIP_5           CHAR    5
     REPLACE ", " IN MEM_REC
     UNPACK MEM_REC INTO MEM_LIST
 
+    CALL UTIL_REMOVE_PUNC USING MEM_FNAME
+    CALL UTIL_REMOVE_PUNC USING MEM_LNAME
+    CALL UTIL_REMOVE_PUNC USING MEM_MINIT
+
     MOVE MEM_ZIP INTO ZIP_5
 
     PACK RPT_REC WITH (CHOP MEDICARE_ID),COMMA:
@@ -356,7 +360,7 @@ ID@         CHAR    @
         CONTINUE IF (MEMI_TRM < MEMI_EFF)
         CONTINUE IF (CHOP MEMI_ID = "")
 
-        PACK ID@ WITH MEMI_ID
+        PACK ID@ WITH MEMI_ALT,BLANKS
         BREAK
     REPEAT
 
