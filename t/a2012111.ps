@@ -1,0 +1,303 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2012111.ps
++
++ DESCRIPTION:
++   Build autobila queue file for HSA enrollees
++
++ CREATED BY:
++   apjwh - 2020-12-11
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC AUTOBILA_QUEUE.RL
+    INC MEM.RL
+    INC MEME.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+CFG_FLOOR_DATE      INIT    "20100101"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+HSA_FD              FILE    FIXED=X_MEME_SIZE,TEXT
+HSA_FILE            INIT    "/w/hsa_adju_adhoc.wrk"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+CURRENT_LIST        LIST
+CURRENT_ID          CHAR    8
+CURRENT_EFF         CHAR    V_DATE
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2012111" TO C_PROG        ...Program name
+    MOVE "HSA Autobila" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_HSA_RECORDS
+    CALL STAGE_MEMBERS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input Members":
+                                  "No MEM Found":
+                                  "Staged Already":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    PACK AUTOBILA_FILE WITH AUTOBILA_QUEUE_DIR,"zz_hsa_autobila_",CURRDATE,".in"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_HSA_RECORDS LROUTINE
++ Build list of all HSA health plans
+
+    CALL UTIL_XMESSAGE USING "Searching for members with HSA...",MSG_HEIGHT
+
+    PACK MEME_NET WITH "BLUE",BLANKS
+    PACK MEME_PLAN WITH "HSA",BLANKS
+    PACK SCRATCH WITH MEME_FNS," ",HSA_FILE," -t ":
+        " -p0112-0116eq#"",MEME_NET,"#" ":
+        " -p0126-0129eq#"",MEME_PLAN,"#" ": .HSA
+        " -p0130-0131ne#"  #""              .rate exists
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Searching for HSA plans"
+
+    CALL UTIL_XMESSAGE USING "Sorting work file",MSG_HEIGHT
+    PACK SCRATCH WITH HSA_FILE," ",HSA_FILE," 1-8 -t -u"
+    CALL UTIL_DO_SORT USING SCRATCH,"Sorting by member"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+STAGE_MEMBERS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Staging HSA enrollees",MSG_HEIGHT
+
+    debug
+    CALL PREP_OGBFILE USING AUTOBILA_FD,AUTOBILA_FILE
+    CALL OPEN_OGBFILE USING HSA_FD,HSA_FILE
+
+    LOOP
+        FILL " " IN CURRENT_LIST
+
+        CALL READ_OGBFILE_SEQ USING HSA_FD,HSA_FILE,MEME_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEM_FIND USING MEME_ID1
+        IF NOT EQUAL
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+            CONTINUE
+        ENDIF
+
+        PACK CURRENT_ID WITH MEM_ID1
+        CALL GET_EARLIEST_EFF
+        CONTINUE IF (CHOP CURRENT_EFF = "")
+
+        debug
+        CALL CHECK_IF_ON_PENDING_FILE USING CURRENT_ID,CURRENT_EFF
+        IF (EQUAL)
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+            CONTINUE
+        ENDIF
+
+        CALL WRITE_OGBREC_SEQ USING AUTOBILA_FD,AUTOBILA_FILE,CURRENT_LIST
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING AUTOBILA_FD,AUTOBILA_FILE
+    CALL CLOSE_OGBFILE USING HSA_FD,HSA_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_EARLIEST_EFF LROUTINE
+
+    FILL " " IN CURRENT_EFF
+    CLEAR MEME_LIST
+    LOOP
+        IF (CHOP MEME_ID2 = "")
+            CALL UTIL_MEME_FIND USING MEM_ID1,""
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        IF (CHOP CURRENT_EFF = "" | CHOP MEME_EFF < CHOP CURRENT_EFF)
+            PACK CURRENT_EFF WITH MEME_EFF
+        ENDIF
+    REPEAT
+
+.    IF (CHOP CURRENT_EFF > "" & CURRENT_EFF < CFG_FLOOR_DATE)
+.        PACK CURRENT_EFF WITH CFG_FLOOR_DATE
+.    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_DELETE_FILE USING HSA_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC AUTOBILA_QUEUE.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
