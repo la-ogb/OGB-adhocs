@@ -1,0 +1,271 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  A210121.PS 
++    Description    :  CUS - RECONCILES AND UPDATES LDH INDICATORS WITH LEADING
++                            ZEROS
++    APSJM 01/21/2021 DEV - INITIAL VERSION
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+. ----------------------------
+. Required Program Includes
+. ----------------------------
+
+              INC       UTIL_COMMON.CB       ...Common work area
+              INC       VALID.RL             ...Valid codes
+              
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+              INC       MEM.RL
+              INC       MEME.RL
+              INC       MEMO.RL
+              INC       MEMS.RL
+              INC       MEMB.RL
+              INC       MEMQ.RL
+              INC       MEML.RL
+              INC       MEMF.RL
+              INC       MEMI.RL
+              INC       D_MEMMEM.CB
+
+. ----------------------------
+. File Declarations
+. ----------------------------
+INP_MEMI_FD        FILE VAR=200,TEXT                  
+INP_MEMI_NAME      INIT "/w/memi_baddate.txt"
+INP_MEMI_LIST      LIST
+INP_MEMI_ID        DIM  08
+                   LISTEND
+.
+.Output Files
+MEMI_O_FD     FILE     VAR=5320,TEXT
+MEMI_O_NAME   INIT    "a210126.txt"      
+.
+. ----------------------------
+. Program Specific Variables & Working Storage
+. ----------------------------
+W_MEMI_REC    DIM  100
+OGB_LDH_ID    DIM  13
+CNT1_4        DIM  4
+CNT1_3        DIM  3
+CNT3_4        DIM  4
+CNT3_3        DIM  3
+FORM2         FORM 2
+FROM_DATE     DIM  8
+FROM_MM       DIM  2
+FROM_DD       DIM  2
+FROM_CCYY     DIM  4
+THRU_DATE     DIM  8
+THRU_MM       DIM  2
+THRU_DD       DIM  2
+THRU_CCYY     DIM  4
+YN_ANS        DIM  1
+WS_AR_SW      DIM  1
+WS_AGENCY     DIM  4
+WS_AGY1       DIM  1
+WS_DIM1       DIM  1
+WS_DIM4       DIM  4
+SSN2          DIM  2          
+SSN3          DIM  3
+SSN4          DIM  4
+DIM7          DIM  7
+DIM2          DIM  2
+DIM19         DIM  19
+DIMMM         DIM  2
+DIMDD         DIM  2
+DIMCCYY       DIM  4
+CNT_5         DIM  5
+CNT_4         DIM  4
+CNT_3         DIM  3
+CNT_2         DIM  2
+CLI_RESULT    FORM      1
+BIL_RESULT    FORM      1
+COLD_RESULT   FORM      1
+FIRST_BILL_READ DIM       1  
+FIRST_CLM_READ DIM       1  
+FIRST_DRUG_READ DIM       1  
+FIRST_PAGE    DIM       1
+FIRST_TIME    DIM       1
+WORK_COUNT    DIM       8
+FRONT         DIM       5
+BACK          DIM       3
+TIMESTAMP     DIM       14
+CURRDATE      DIM       8
+CAL_CLOCK     DIM       21
+TODAY         DIM       8
+PARAM_LIST    LIST
+PARAM_XXX     DIM      10
+PARAM_YYY     DIM       5
+PARAM_DATE    DIM       6
+              LISTEND
+
+. ----------------------------
+. Begin Program
+. ----------------------------
+
+. ----------------------------
+. Start here if selected from menu   
+. ----------------------------
+
+
+         CALL      RUN_NOW
+
+         CHAIN     C_NEXT
+
+. ----------------------------
+. Start here if called by the Scheduler    
+. ----------------------------
+
+         INC       SCHED_NP.SR              Scheduler routines (w/o printer)
+
+RUN_NOW
+. ...Check return stack
+    RETCOUNT  ORIG_RETURN
+. ----------------------------
+. Fill top of screen
+. ----------------------------
+
+. ...Screen Display
+         DISPLAY   *ES
+         MOVE      "LDH IND UPDATES" TO  C_OPER
+         MOVE      "A210126"           TO  C_PROG
+         MOVE      BLANKS              TO  C_LABEL
+         MOVE      BLANKS              TO  C_FILE
+         MOVE      BLANKS              TO  C_KEYS
+         CLOCK     CALENDAR            INTO  CAL_CLOCK
+         
+         CALL X_BLANK_SCREEN
+
+. ----------------------------
+. Set Applicable Traps
+. ----------------------------
+         
+. ...Set Applicable Traps
+         TRAPSAVE  TRAP_DATA
+         TRAPCLR   ALL
+         TRAP      QUIT   NORESET  IF F9
+	
+. ----------------------------
+. Get scheduler information
+. ----------------------------
+
+         CALL     SCHED_PICK
+
+         IF (RUN_MODE = "B" OR RUN_MODE = "N")
+            CALL      MAIN_PROCESS
+         ENDIF
+         RETURN
+
+. ----------------------------
+. Main Process
+. ----------------------------
+
+MAIN_PROCESS
+   DEBUG
+   CALL INITIALIZE
+   CALL OPEN_FILES
+   CALL PROCESS_INP_FILE
+   CALL      CLOSE_FILES 
+   CALL      X_DISPLAY_COUNTS
+   TRAPREST  TRAP_DATA
+   MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+   RETURN                                                   
+
+
+PROCESS_INP_FILE
+ MOVE OGB_SEQ1 TO OGB_SEQ
+ LOOP
+  CALL READ_OGBFILE USING INP_MEMI_FD,INP_MEMI_NAME,INP_MEMI_LIST
+   IF (RESULT <> 1)
+    BREAK
+   ENDIF
+   PACK      MEM_FK11 WITH INP_MEMI_ID
+   CALL      FILE_READ USING MEM_FD:    ...File declaration list
+                             MEM_FN:          ...File name list
+                             MEM_FC:          ...(I)ndex or (A)imdex
+                             MEM_FV:          ...File key varlists
+                             MEM_FK:          ...File key sizes
+                             MEM_LIST:        ...File record (field list)
+                             MEM_REC:         ...File record (packed)
+                             MEM_OLD:         ...File saved when read
+                             MEM_QTY:         ...Number of files
+                             1                ...File number for this read
+
+
+  PACKLEN MEMI_KEY WITH MEM_ID1,"DHH",BLANKS
+  CLEAR W_MEMI_REC
+  CALL MEMI_READ
+  LOOP
+      CALL MEMI_NEXT
+      BREAK IF (RESULT <> 1)
+      BREAK IF (MEMI_ID <> MEM_ID1)
+      BREAK IF (MEMI_CAT <> "DHH")
+      IF (SQUEEZE MEMI_CHGDT <> "APSJM")
+          CONTINUE
+      ENDIF 
+      PACKLEN W_MEMI_REC WITH MEMI_REC
+  REPEAT
+  IF (SQUEEZE W_MEMI_REC <> "")
+        CLEAR MEME_REC
+        CLEAR MEMO_REC
+        CLEAR MEMS_REC
+        CLEAR MEMB_REC
+        CLEAR MEMQ_REC
+        CLEAR MEML_REC
+        CLEAR MEMF_REC
+        PACKLEN INM_REC WITH MEM_REC,MEME_REC,MEMO_REC,MEMS_REC,MEMB_REC,MEMQ_REC,MEML_REC,MEMF_REC,W_MEMI_REC
+        UNPACK INM_REC INTO INM_LIST
+        CLEAR INMI_CHGDT
+        CALL WRITE_OGBREC USING MEMI_O_FD,MEMI_O_NAME,INM_LIST
+        CLEAR INM_LIST
+  ENDIF 
+ REPEAT                   
+ RETURN
+
+....Close Files
+    CALL      CLOSE_FILES 
+    CALL      X_DISPLAY_COUNTS
+    TRAPREST  TRAP_DATA
+    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
+    RETURN                                                   
+. ----------------------------
+. End of Main Process
+. ----------------------------
+
+
+INITIALIZE
+         DISPLAY *P1:9,*ES
+         CALL X_BLANK_SCREEN
+         CLOCK     TIMESTAMP   INTO  TIMESTAMP
+         CLOCK     TIMESTAMP   INTO  CURRDATE
+         CLOCK     TIMESTAMP     TO  TODAY
+
+. ...Display Counters
+	 MOVE      "COL  Recs Read:     " TO X_CNTDESC1
+	 MOVE      "COLD Recs Read:     " TO X_CNTDESC2
+	 MOVE      "Recs Written:      " TO X_CNTDESC3
+	 MOVE      "Not Used:          " TO X_CNTDESC4
+	 MOVE      "Not Used:         " TO X_CNTDESC5
+	 MOVE      "Not Used:          " TO X_CNTDESC6
+	 CALL      X_DISPLAY_COUNTS
+         RETURN
+.
+OPEN_FILES
+         CALL      OPEN_OGBFILE USING INP_MEMI_FD,INP_MEMI_NAME
+         CALL      PREP_OGBFILE USING MEMI_O_FD,MEMI_O_NAME
+         RETURN
+
+CLOSE_FILES
+         RETURN
+
+    INC       VALID.IO
+
+. ----------------------------
+. Program Specific Includes
+. ----------------------------
+
+    INC       UTIL_COMMON.SR               
+    INC       UTIL_SYSTEM.SR
+    INC       MEMI.IO
+
+. +++++++++++++++++++++++++++++++++++++
+. /End of A210121.PS   
+. +++++++++++++++++++++++++++++++++++++
