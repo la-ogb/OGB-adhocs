@@ -1,5 +1,5 @@
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-+    Program name   :  A210121.PS 
++    Program name   :  A210121.PS
 +    Description    :  CUS - RECONCILES AND UPDATES LDH INDICATORS WITH LEADING
 +                            ZEROS
 +    APSJM 01/21/2021 DEV - INITIAL VERSION
@@ -11,7 +11,7 @@
 
               INC       UTIL_COMMON.CB       ...Common work area
               INC       VALID.RL             ...Valid codes
-              
+
 . ----------------------------
 . Program Specific Includes
 . ----------------------------
@@ -29,20 +29,18 @@
 . ----------------------------
 . File Declarations
 . ----------------------------
-INP_MEMI_FD        FILE VAR=200,TEXT                  
+INP_MEMI_FD        FILE VAR=200,TEXT
 INP_MEMI_NAME      INIT "/w/lzro_ldh_ind.txt"
 INP_MEMI_LIST      LIST
-INP_MEMI_WOLZ      DIM  12
-INP_MEMI_PSSN      DIM  09
-INP_MEMI_MEM_NAME  DIM  29
-INP_MEMI_DOB       DIM  08
-INP_DIM32          DIM  32
 INP_MEMI_WLZ       DIM  13
+INP_MEMI_FIL4      DIM  04
+INP_MEMI_PSSN      DIM  09
+INP_MEMI_REL       DIM  10
                    LISTEND
 .
 .Output Files
 MEMI_O_FD     FILE     VAR=5320,TEXT
-MEMI_O_NAME   INIT    "a2101211.txt"      
+MEMI_O_NAME   INIT    "a2101211.txt"
 .
 MEMI_NEW_FD   FILE    VAR=100,TEXT
 MEMI_NEW_NAME INIT    "/w/a2101211_memi_new.txt"
@@ -71,7 +69,7 @@ WS_AGENCY     DIM  4
 WS_AGY1       DIM  1
 WS_DIM1       DIM  1
 WS_DIM4       DIM  4
-SSN2          DIM  2          
+SSN2          DIM  2
 SSN3          DIM  3
 SSN4          DIM  4
 DIM7          DIM  7
@@ -87,9 +85,9 @@ CNT_2         DIM  2
 CLI_RESULT    FORM      1
 BIL_RESULT    FORM      1
 COLD_RESULT   FORM      1
-FIRST_BILL_READ DIM       1  
-FIRST_CLM_READ DIM       1  
-FIRST_DRUG_READ DIM       1  
+FIRST_BILL_READ DIM       1
+FIRST_CLM_READ DIM       1
+FIRST_DRUG_READ DIM       1
 FIRST_PAGE    DIM       1
 FIRST_TIME    DIM       1
 WORK_COUNT    DIM       8
@@ -110,7 +108,7 @@ PARAM_DATE    DIM       6
 . ----------------------------
 
 . ----------------------------
-. Start here if selected from menu   
+. Start here if selected from menu
 . ----------------------------
 
 
@@ -119,7 +117,7 @@ PARAM_DATE    DIM       6
          CHAIN     C_NEXT
 
 . ----------------------------
-. Start here if called by the Scheduler    
+. Start here if called by the Scheduler
 . ----------------------------
 
          INC       SCHED_NP.SR              Scheduler routines (w/o printer)
@@ -139,18 +137,18 @@ RUN_NOW
          MOVE      BLANKS              TO  C_FILE
          MOVE      BLANKS              TO  C_KEYS
          CLOCK     CALENDAR            INTO  CAL_CLOCK
-         
+
          CALL X_BLANK_SCREEN
 
 . ----------------------------
 . Set Applicable Traps
 . ----------------------------
-         
+
 . ...Set Applicable Traps
          TRAPSAVE  TRAP_DATA
          TRAPCLR   ALL
          TRAP      QUIT   NORESET  IF F9
-	
+
 . ----------------------------
 . Get scheduler information
 . ----------------------------
@@ -171,11 +169,11 @@ MAIN_PROCESS
    CALL INITIALIZE
    CALL OPEN_FILES
    CALL PROCESS_INP_FILE
-   CALL      CLOSE_FILES 
+   CALL      CLOSE_FILES
    CALL      X_DISPLAY_COUNTS
    TRAPREST  TRAP_DATA
    MOVE      SCH_RTSUCC  TO  SCH@RTCODE
-   RETURN                                                   
+   RETURN
 
 
 PROCESS_INP_FILE
@@ -187,7 +185,11 @@ PROCESS_INP_FILE
    ENDIF
    CLEAR     MEM_AIM
    PACK      MEM_AIM1 WITH "02X",INP_MEMI_PSSN,BLANKS
-   PACK      MEM_AIM3 WITH "03X","03",BLANKS
+   IF        (SQUEEZE INP_MEMI_REL = "Subscriber")
+             PACK      MEM_AIM3 WITH "03X","01",BLANKS
+   ELSE
+             PACK      MEM_AIM3 WITH "03X","03",BLANKS
+   ENDIF
    CALL      FILE_READ USING MEM_FD:    ...FILE DECLARATION LIST
                             MEM_FN:          ...FILE NAME LIST
                             MEM_FC:          ...(I)NDEX OR (A)IMDEX
@@ -233,7 +235,7 @@ PROCESS_INP_FILE
         MOVE MEM_ID1 TO INMI_ID
         MOVE "DHH" TO INMI_CAT
         MOVE INP_MEMI_WLZ TO INMI_ALT
-        CLEAR INMI_CHGBY             
+        CLEAR INMI_CHGBY
         CLEAR INMI_NEWBY
         CLEAR INMI_CHGDT
         CLEAR INMI_NEWDT
@@ -314,13 +316,13 @@ PROCESS_INP_FILE
   ENDIF
  REPEAT
  RETURN
-         
+
 ....Close Files
-    CALL      CLOSE_FILES 
+    CALL      CLOSE_FILES
     CALL      X_DISPLAY_COUNTS
     TRAPREST  TRAP_DATA
     MOVE      SCH_RTSUCC  TO  SCH@RTCODE
-    RETURN                                                   
+    RETURN
 . ----------------------------
 . End of Main Process
 . ----------------------------
@@ -358,10 +360,10 @@ CLOSE_FILES
 . Program Specific Includes
 . ----------------------------
 
-    INC       UTIL_COMMON.SR               
+    INC       UTIL_COMMON.SR
     INC       UTIL_SYSTEM.SR
     INC       MEMI.IO
 
 . +++++++++++++++++++++++++++++++++++++
-. /End of A210121.PS   
+. /End of A210121.PS
 . +++++++++++++++++++++++++++++++++++++
