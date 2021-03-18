@@ -1,0 +1,277 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2103181.ps
++
++ DESCRIPTION:
++   Fix bad update dates on MEMI records (from Discoverer)
++
++ CREATED BY:
++   apjwh - 2021-03-18
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "A21031"    A+YY+MM+count of adhocs in month
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+BAD_MEMI_FD         FILE    FIXED=X_MEMI_SIZE,TEXT      .MEMI_LIST
+BAD_MEMI_FILE       INIT    "/w/memi_list_301.bad"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT    .INM_LIST
+UPDATE_FILE         INIT    "a2103181.inp"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2103181" TO C_PROG        ...Program name
+    MOVE "BAD MEMI FIX" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL BUILD_UPDATES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input MEMI Recs":
+                                  "No MEM Found":
+                                  "Records Fixed":
+                                  "MEMI Rec Not Found":
+                                  "MEMI Rec Differs":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+BUILD_UPDATES LROUTINE
+BASE_REC        CHAR    X_MEMI_SIZE
+READ_REC        CHAR    X_MEMI_SIZE
+...
+    CALL UTIL_XMESSAGE USING "Fixing MEMI Records",MSG_HEIGHT
+
+    debug
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL OPEN_OGBFILE USING BAD_MEMI_FD,BAD_MEMI_FILE
+
+    LOOP
+        CLEAR BASE_REC,READ_REC
+        CALL INIT_INM
+
+        CALL READ_OGBFILE_SEQ USING BAD_MEMI_FD,BAD_MEMI_FILE,MEMI_REC
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEM_FIND USING MEMI_ID
+        IF NOT EQUAL
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+            CONTINUE
+        ENDIF
+
+        PACK BASE_REC WITH MEMI_REC
+
+        PACK MEMI_KEY WITH MEMI_KZ
+        CALL MEMI_READ
+        IF (RESULT != 1)
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+            CONTINUE
+        ENDIF
+
+        PACK READ_REC WITH MEMI_REC
+        IF (BASE_REC != READ_REC)
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+            CONTINUE
+        ENDIF
+
+        debug
+
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        CALL MEMI_DEL
+.        CALL BUILD_INM
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING BAD_MEMI_FD,BAD_MEMI_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_INM LROUTINE
+    CALL PACK_INM
+
+    debug
+    FILL " " IN INMI_CHGDT
+    PACK INMI_CHGBY WITH PROG_NAME,BLANKS
+
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_PENDING_BACKUP USING "/w/",BAD_MEMI_FILE,""
+    CALL UTIL_PENDING_BACKUP USING "/w/",UPDATE_FILE,""
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_MEMMEM.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
