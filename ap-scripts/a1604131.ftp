@@ -21,22 +21,22 @@ DSTFILE="currdeps.csv"            # file name copying to on ntftp
 SRCFILE=currdeps.csv              # name of file on unix host
 SRCPATH=/w                        # path on unix host
 ENCNAME="STLA-OSUP-UNIX"          # Name of the Company's Public Key
-DSTPATH=ups                       # path beneath transfer directory on ntftp
+DSTPATH=ups/outbound                       # path beneath transfer directory on ntftp
 COPYMODE=bin                      # can be ascii or binary- binary: exe,gnt...
 LOGIN=ftpogb                      # users NT login
 PASSWORD=ak28t9                   # users NT password
 ###############################################################################
 #
 ##############################################################################
-#       Do not change below this line.                               
+#       Do not change below this line.
 ###############################################################################
-#       CONSTANTS                                                    
+#       CONSTANTS
 ###############################################################################
 DSTHST=ntftp2
 SRCHOST="uname -n"
 COUNT=0
 ###############################################################################
-#       CODE                                                         
+#       CODE
 ###############################################################################
 . /u/model/lib/ap_stdproc.lib
 ftp_run  () {              ## ENCRPYPT AND FTP dmg0400.txt FILE
@@ -51,7 +51,7 @@ if [ -f $HOME/.netrc ]
       sleep 3
    fi
    return 0
-else 
+else
   . encrypt.ftp
   echo "machine" $DSTHST "login" $LOGIN "password" $PASSWORD > $HOME/.netrc
   echo "macdef init" >> $HOME/.netrc
@@ -62,25 +62,25 @@ else
   echo "" >> $HOME/.netrc
   if [ -f $HOME/.netrc ]
     then
-      chmod 600 $HOME/.netrc 
-      ftp $DSTHST $DSTPORT 
-      rm $HOME/.netrc 
+      chmod 600 $HOME/.netrc
+      ftp $DSTHST $DSTPORT
+      rm $HOME/.netrc
       return 1
-  else 
+  else
       echo "\n An error has occured: could not create .netrc, rerun ftp \n"
       end_logfile
       exit 1
-  fi 
+  fi
 fi }
 #.......................................................................
 ##############################################################################
-# Main Loop 
+# Main Loop
 ##############################################################################
 #
 start_logfile
 while true ; do                    #Main Menu Loop
         ftp_run || break
-done   
+done
 end_logfile
 exit 0
 
