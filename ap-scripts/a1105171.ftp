@@ -1,0 +1,80 @@
+#       ********************************************************************
+#       *               STATE EMPLOYEES GROUP BENEFITS PROGRAM             *
+#       *------------------------------------------------------------------*
+#       *  NAME: a1105171.ftp                                              *
+#       *  DESCRIPTION: FTP the $25K DHH file to their outbound directory  *
+#       *                                                                  *
+#       *  apdlm 07/08/2009 A0906181 dev - Initial Version                 * 
+#       *                                                                  *
+#       *...............    REVISIONS  ....................................*
+#       *                                                                  *
+#       *  apdlm 06/28/2013 A1306271 mnt - Changed the DHH public key      * 
+#       *                                                                  *
+#       ********************************************************************
+#
+############################################################################
+#       VARIABLES THAT CAN BE CHANGED                                      #
+############################################################################
+LOGFILE=/work/logs/ap_logs/$0.log     # Error File
+############################################################################
+#       FTP VARIABLES                                                      #
+############################################################################
+DSTFILE="dhh_25k_cumlative.csv" # file name copying to on ntftp
+SRCFILE=a1105171.csv            # name of file on unix host
+SRCPATH=/w                      # path on unix host
+ENCNAME="cmautner@dhh.la.gov"   # Name of the Company's Public Key
+DSTPATH=DHH/outbound            # path beneath transfer directory on ntftp
+COPYMODE=ascii                  # can be ascii or binary- binary: exe,gnt... 
+LOGIN=ftpogb                    # users NT login
+PASSWORD=ak28t9                 # users NT password
+###############################################################################
+#       Do not change below this line.                               
+###############################################################################
+#       CONSTANTS                                                    
+###############################################################################
+DSTHST=ntftp2
+SRCHOST="uname -n"
+COUNT=0
+###############################################################################
+#       CODE                                                         
+###############################################################################
+ftp_run  () {         
+if [ -f $HOME/.netrc ]
+   then
+   if [ $COUNT -eq 3 ]
+    then
+      rm $HOME/ .netrc
+    else
+      COUNT=`expr $COUNT + 1`
+      echo "\n  Wait for .netrc config file from another copy to clear... \n"
+      sleep 3
+   fi
+   return 0
+else 
+. encryptasc.ftp
+  echo "machine" $DSTHST "login" $LOGIN "password" $PASSWORD > $HOME/.netrc
+  echo "macdef init" >> $HOME/.netrc
+  echo $COPYMODE >> $HOME/.netrc
+  echo "cd" $DSTPATH >> $HOME/.netrc
+  echo "put" $SRCPATH"/"$SRCFILE $DSTFILE >> $HOME/.netrc
+  echo "quit" >> $HOME/.netrc
+  echo "" >> $HOME/.netrc
+  if [ -f $HOME/.netrc ]
+    then
+      chmod 600 $HOME/.netrc 
+      ftp $DSTHST $DSTPORT 
+      rm $HOME/.netrc 
+      return 1
+  else 
+      echo "\n An error has occured: could not create .netrc, rerun ftp \n"
+      end_logfile
+      exit 1
+  fi 
+fi }
+##############################################################################
+# Main Loop 
+##############################################################################
+while true ; do                   #  Main menu loop.
+    ftp_run || break
+    done
+exit 0

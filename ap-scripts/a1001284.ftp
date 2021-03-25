@@ -1,0 +1,77 @@
+#       ********************************************************************
+#       *               STATE EMPLOYEES GROUP BENEFITS PROGRAM             *
+#       *------------------------------------------------------------------*
+#       *  NAME: a1001284.ftp                                              *
+#       *  DESCRIPTION:         *
+#       *                   *
+#       *                                                                  *
+#       * apsjm a1001284 02/25/2010 dev - initial version.                 * 
+#       *...............    REVISIONS  ....................................*
+#       ********************************************************************
+#
+############################################################################
+#       VARIABLES THAT CAN BE CHANGED                                      #
+############################################################################
+############################################################################
+#       FTP VARIABLES                                                      #
+############################################################################
+LOGFILE=/work/logs/ap_logs/$0.log         # Error File
+DSTFILE=flex_splits.txt               # file name copying to on GB2(Unix)
+SRCFILE=flex_splits.txt          # name of file getting from ntftp
+SRCPATH=/k/docs                  # path on Remote Host beneath entry point
+DSTPATH=/w                       # path on Unix box (GB2) to place file
+COPYMODE=ascii                   # can be ascii or binary- binary: exe,gnt... 
+LOGIN=ftpogb                     # users NT login
+PASSWORD=ak28t9                  # users NT password
+###############################################################################
+#       Do not change below this line.                               
+###############################################################################
+#       CONSTANTS                                                    
+###############################################################################
+SRCHST=ntftp2                    # name of remote ftp host
+DSTHST="uname -n"
+COUNT=0
+###########################################################################
+#       CODE                                                              #
+###########################################################################
+. /u/model/lib/ap_stdproc.lib                #Contains procedures common
+start_logfile                             #to Logfile Initialization
+ftp_run  () {         
+if [ -f $HOME/.netrc ]
+   then
+   if [ $COUNT -eq 3 ]
+    then
+      rm $HOME/.netrc
+    else
+      COUNT=`expr $COUNT + 1`
+      echo "\n  Wait for .netrc config file from another copy to clear... \n"
+      sleep 3
+   fi
+   return 0
+else 
+  echo "machine" $SRCHST "login" $LOGIN "password" $PASSWORD > $HOME/.netrc
+  echo "macdef init" >> $HOME/.netrc
+  echo $COPYMODE >> $HOME/.netrc
+  echo "cd" $SRCPATH >> $HOME/.netrc
+  echo "get" $SRCFILE $DSTPATH"/"$DSTFILE >> $HOME/.netrc
+  echo "quit" >> $HOME/.netrc
+  echo "" >> $HOME/.netrc
+  if [ -f $HOME/.netrc ]
+    then
+      chmod 600 $HOME/.netrc 
+      ftp $SRCHST $SRCPORT 
+      rm $HOME/.netrc 
+      return 1
+  else 
+      echo "\n An error has occured: could not create .netrc, rerun ftp \n"
+      exit 1
+  fi 
+fi }
+##############################################################################
+# Main Loop 
+##############################################################################
+while true ; do                   #  Main menu loop.
+    ftp_run || break
+    done
+end_logfile
+exit 0

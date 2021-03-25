@@ -1,0 +1,26 @@
+#  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#  +                 STATE EMPLOYEES GROUP BENEFITS PROGRAM                 +
+#  +                                                                        +
+#  +  NAME:  a1408212.mail                                                   +
+#  +  DESCRIPTION: Email notification to Operations to run ANSAFONE
+#  +  apsjm 05/19/2014  A1309253 DEV - Initial Version.                      +
+#  +::::::::::::::::::::  REVISIONS  ::::::::::::::::::::::::::::::::::::::::
+#   appmi - 04/13/2018 - MOD - changed USRGROUP to OPS and added CC function
+#                              for ITAPPS. 
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Adjustable Variables
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+LOGNAM=$0.log
+LOGPATH=/work/logs/ap_logs
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+DATE=`date +%H:%M:%S`
+. /u/model/lib/stdproc.lib
+LOGFILE=$LOGPATH/$LOGNAM
+echo START TIME: $DATE
+date >> $LOGFILE
+
+export USRGROUP="${OPS}" 
+export HEADER="ANSAFONE BAT JOB"
+
+mail -s "$HEADER" -c "${ITAPPS}" $USRGROUP < /emails/a1408212.msg
+echo END TIME: $DATE

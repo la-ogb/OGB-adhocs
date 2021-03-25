@@ -1,0 +1,81 @@
+#       ********************************************************************
+#       *               STATE EMPLOYEES GROUP BENEFITS PROGRAM             *
+#       *------------------------------------------------------------------*
+#       *  NAME: a0612011_pdf.ftp                                          *
+#       *  DESCRIPTION: Puts UTILIZATION REVIEW CONTRACT COUNTS on         *
+#       *               I:\Groups\Shared\                                  *
+#       *                                                                  *
+#       * aplls 09/29/2006 A0612011-dev - Initial Version 
+#       *...............    REVISIONS  ....................................*
+#       *                               -                                  *    
+#       ********************************************************************
+############################################################################
+#       VARIABLES THAT CAN BE CHANGED                                      #
+############################################################################
+############################################################################
+#       FTP VARIABLES                                                      #
+############################################################################
+LOGFILE=/work/logs/ap_logs/$0.log         # Error file
+
+DATE=`date +%y +%m +%d`          # System date
+#DSTFILE="a0612011_"$1".txt"
+DSTFILE="a0612011_"$1".pdf"
+SRCFILE="a0612011.pdf"            # name of file on unix host
+SRCPATH=/w                       # path on unix host
+DSTPATH=/I/Groups/Shared/        # Path on NT             
+COPYMODE=bin                     # can be ascii or binary- binary: exe,gnt...
+LOGIN=ftpogb                     # users NT login
+PASSWORD=ak28t9                  # users NT password
+###############################################################################
+#       Do not change below this line.                               
+###############################################################################
+#       CONSTANTS                                                    
+###############################################################################
+DSTHST=ntftp2
+SRCHOST="uname -n"
+COUNT=0
+###############################################################################
+#       CODE                                                         
+###############################################################################
+. /u/model/lib/ap_stdproc.lib
+start_logfile
+ftp_run  () {         
+if [ -f $HOME/.netrc ]
+   then
+   if [ $COUNT -eq 3 ]
+    then
+      rm $HOME/.netrc
+    else
+      COUNT=`expr $COUNT + 1`
+      echo "\n  Wait for .netrc config file from another copy to clear... \n"
+      sleep 3
+   fi
+   return 0
+else 
+  echo "machine" $DSTHST "login" $LOGIN "password" $PASSWORD > $HOME/.netrc
+  echo "macdef init" >> $HOME/.netrc
+  echo $COPYMODE >> $HOME/.netrc
+  echo "cd" $DSTPATH >> $HOME/.netrc
+  echo "put" $SRCPATH"/"$SRCFILE $DSTFILE >> $HOME/.netrc
+  echo "quit" >> $HOME/.netrc
+  echo "" >> $HOME/.netrc
+  if [ -f $HOME/.netrc ]
+    then
+      chmod 600 $HOME/.netrc 
+      ftp $DSTHST $DSTPORT 
+      rm $HOME/.netrc 
+      return 1
+  else 
+      echo "\n An error has occured: could not create .netrc, rerun ftp \n"
+      end_logfile
+      exit 1
+  fi 
+fi }
+##############################################################################
+# Main Loop 
+##############################################################################
+while true ; do                   #  Main menu loop.
+    ftp_run || break
+    done
+end_logfile
+exit 0

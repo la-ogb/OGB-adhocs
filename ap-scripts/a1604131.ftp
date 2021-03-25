@@ -1,0 +1,89 @@
+#       ********************************************************************
+#       *               STATE EMPLOYEES GROUP BENEFITS PROGRAM             *
+#       *------------------------------------------------------------------*
+#       *  NAME: a1604131.ftp                                              *
+#       *  DESCRIPTION: Encrypts and puts LaGov current Dependents file out*
+#       *               on FTP site to push to LaGov.                      *
+#       *                                                                  *
+#       * aplls 04/21/2016 A1604131 dev - initial version                  *
+#       *.................  REVISIONS  ....................................*
+#       * apiii mm/dd/ccyy A####### typ - Comments                         *
+#       ********************************************************************
+#
+############################################################################
+#       VARIABLES THAT CAN BE CHANGED                                      #
+############################################################################
+############################################################################
+#       FTP VARIABLES                                                      #
+############################################################################
+LOGFILE=/work/logs/ap_logs/$0.log # Error file
+DSTFILE="currdeps.csv"            # file name copying to on ntftp
+SRCFILE=currdeps.csv              # name of file on unix host
+SRCPATH=/w                        # path on unix host
+ENCNAME="STLA-OSUP-UNIX"          # Name of the Company's Public Key
+DSTPATH=ups                       # path beneath transfer directory on ntftp
+COPYMODE=bin                      # can be ascii or binary- binary: exe,gnt...
+LOGIN=ftpogb                      # users NT login
+PASSWORD=ak28t9                   # users NT password
+###############################################################################
+#
+##############################################################################
+#       Do not change below this line.                               
+###############################################################################
+#       CONSTANTS                                                    
+###############################################################################
+DSTHST=ntftp2
+SRCHOST="uname -n"
+COUNT=0
+###############################################################################
+#       CODE                                                         
+###############################################################################
+. /u/model/lib/ap_stdproc.lib
+ftp_run  () {              ## ENCRPYPT AND FTP dmg0400.txt FILE
+if [ -f $HOME/.netrc ]
+   then
+   if [ $COUNT -eq 3 ]
+    then
+      rm $HOME/.netrc
+    else
+      COUNT=`expr $COUNT + 1`
+      echo "\n  Wait for .netrc config file from another copy to clear... \n"
+      sleep 3
+   fi
+   return 0
+else 
+  . encrypt.ftp
+  echo "machine" $DSTHST "login" $LOGIN "password" $PASSWORD > $HOME/.netrc
+  echo "macdef init" >> $HOME/.netrc
+  echo $COPYMODE >> $HOME/.netrc
+  echo "cd" $DSTPATH >> $HOME/.netrc
+  echo "put" $SRCPATH"/"$SRCFILE $DSTFILE >> $HOME/.netrc
+  echo "quit" >> $HOME/.netrc
+  echo "" >> $HOME/.netrc
+  if [ -f $HOME/.netrc ]
+    then
+      chmod 600 $HOME/.netrc 
+      ftp $DSTHST $DSTPORT 
+      rm $HOME/.netrc 
+      return 1
+  else 
+      echo "\n An error has occured: could not create .netrc, rerun ftp \n"
+      end_logfile
+      exit 1
+  fi 
+fi }
+#.......................................................................
+##############################################################################
+# Main Loop 
+##############################################################################
+#
+start_logfile
+while true ; do                    #Main Menu Loop
+        ftp_run || break
+done   
+end_logfile
+exit 0
+
+#:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::%
+#                      END OF FTP SCRIPT aca0030.ftp                          #
+#:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::%

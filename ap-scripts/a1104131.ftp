@@ -1,0 +1,80 @@
+#       ********************************************************************
+#       *               STATE EMPLOYEES GROUP BENEFITS PROGRAM             *
+#       *------------------------------------------------------------------*
+#       *  NAME: a1104131.ftp                                              *
+#       *  DESCRIPTION: Encrypts and puts Blue Cross XREF                  *
+#       *               on our FTP website.                                *
+#       *                                                                  *
+#       * appnc 04/20/2011 A1104131 DEV - initial version                  *
+############################################################################
+#       VARIABLES THAT CAN BE CHANGED                                      #
+############################################################################
+############################################################################
+#       FTP VARIABLES                                                      #
+############################################################################
+LOGFILE=/ogb/work/logs/ap_logs/$0.log   # Error file
+
+DATE="`date +%y +%m +%d`.txt"    # "med" + System date + ".txt" extention
+DSTFILE="blue_xref.txt"          #   make up the file name copying to ntftp
+SRCFILE=a1104131.srt             # name of file on unix host
+SRCPATH=/ogb/work                # path on unix host
+ENCNAME="BCBSLA-OGB"             # Name of the Company's Public Key
+DSTPATH=BCBSLA/outbound          # path beneath transfer directory on ntftp
+COPYMODE=binary                  # can be ascii or binary- binary: exe,gnt...
+LOGIN=ftpogb                     # users NT login
+PASSWORD=ak28t9                  # users NT password
+###############################################################################
+#       Do not change below this line.                               
+###############################################################################
+#       CONSTANTS                                                    
+###############################################################################
+DSTHST=ntftp
+DSTPORT=21
+SRCHOST="uname -n"
+COUNT=0
+###############################################################################
+#       CODE                                                         
+###############################################################################
+. /u/model/lib/ap_stdproc.lib
+start_logfile
+ftp_run  () {         
+if [ -f $HOME/.netrc ]
+   then
+   if [ $COUNT -eq 3 ]
+    then
+      rm $HOME/.netrc
+    else
+      COUNT=`expr $COUNT + 1`
+      echo "\n  Wait for .netrc config file from another copy to clear... \n"
+      sleep 3
+   fi
+   return 0
+else 
+. encrypt.ftp
+  echo "machine" $DSTHST "login" $LOGIN "password" $PASSWORD > $HOME/.netrc
+  echo "macdef init" >> $HOME/.netrc
+  echo $COPYMODE >> $HOME/.netrc
+  echo "cd" $DSTPATH >> $HOME/.netrc
+  echo "put" $SRCPATH"/"$SRCFILE $DSTFILE >> $HOME/.netrc
+  echo "quit" >> $HOME/.netrc
+  echo "" >> $HOME/.netrc
+  if [ -f $HOME/.netrc ]
+    then
+      chmod 600 $HOME/.netrc 
+      ftp $DSTHST $DSTPORT 
+      rm $HOME/.netrc 
+      return 1
+  else 
+      echo "\n An error has occured: could not create .netrc, rerun ftp \n"
+      end_logfile
+      exit 1
+  fi 
+fi }
+##############################################################################
+# Main Loop 
+##############################################################################
+while true ; do                   #  Main menu loop.
+    ftp_run || break
+    done
+end_logfile
+exit 0
