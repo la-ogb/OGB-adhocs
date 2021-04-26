@@ -1,0 +1,752 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2104231
++
++ DESCRIPTION:
++   Build COBRA subsidy CLIPS for the 2021 COVID-19 COBRA subsidy
++   (eff: 4/1/21)
++
++ CREATED BY:
++   apjwh - 2021-04-21
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC CLI.RL
+    INC CLIP.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     100
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_GROUP         INIT    "${ITAPPS}"
+PROG_NAME           INIT    "C19CBSY"
+
+.0: no update
+.1: do update
+
+CFG_CREATE_CLI      NUM     "1"
+CFG_TERM_OLD_CLIP   NUM     "1"
+CFG_BUILD_NEW_CLIP  NUM     "1"
+
+.Date limits
+CFG_PRIOR_SUB_END   INIT    "20111231"
+CFG_NEW_SUB_START   INIT    "20210401"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_CLI_WRITE NUM     "0"
+TEST_SKIP_CLIP_WRITE NUM    "0"
+TEST_EMAIL          INIT    "${CURRENT_USER_EMAIL}"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+BILL_CLI_FD         FILE    FIXED=X_CLI_SIZE,TEXT
+BILL_CLI_FILE       INIT    "/w/tmp/a2104231_bill.cli"
+
+CLI_90_FD           FILE    FIXED=X_CLI_SIZE,TEXT
+CLI_90_FILE         INIT    "/w/tmp/a2104231_90.cli"
+
+LOG_FD              FILE    VAR=1000,TEXT
+LOG_FILE            INIT    "/w/a2104231_log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_REC             CHAR    1000
+LOG_LIST            VARLIST LOG_REC
+
+LOG_HEADER          VARLIST "Log Type",COMMA:
+                            "Message",COMMA:
+                            "CLI Id1",COMMA:
+                            "CLI Name",COMMA:
+                            "CLI Lev1",COMMA:
+                            "CLI Lev2",COMMA:
+                            "CLIP Net",COMMA:
+                            "CLIP Prd",COMMA:
+                            "CLIP Plan",COMMA:
+                            "CLIP Eff",COMMA:
+                            "CLIP Trm",COMMA:
+                            "CLIP Rate"
+
+
+WORK_CLI_REC        CHAR    X_CLI_SIZE
+WORK_CLI_LIST       VARLIST WORK_CLI_REC
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+W_CLIP_MAX          EQU     200
+W_CLIP_RECS         CHAR    X_CLIP_SIZE[W_CLIP_MAX]
+W_CLIP_CNT          NUM     5
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT        .go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     .for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2104231" TO C_PROG        ...Program name
+    MOVE "NEW COV19 CLIPS" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL SETUP_COBRA_SUBSIDY
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "BILL CLI Proc'd":
+                                  "Old CLIPs Termed":
+                                  "New CLIP Created":
+                                  "New 90 CLI Created":
+                                  "Errors":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SETUP_COBRA_SUBSIDY LROUTINE
++ Configure any runtime settings here
+
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    debug
+    CALL CREATE_MISSING_90_CLI
+    CALL MANAGE_90_CLIPS
+
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_BILL_CLI_RECS LROUTINE
++ Search for a list of all clients with a BILL LEV2
+    CALL UTIL_XMESSAGE USING "Finding BILL clients...",MSG_HEIGHT
+
+    PACK SCRATCH WITH CLI_FNS," ",BILL_CLI_FILE," -p14-18eq#"BILL #" -t"
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Find BILL Cli"
+
+    PACK SCRATCH WITH BILL_CLI_FILE," ",BILL_CLI_FILE," 9-13 -t -u"
+    CALL UTIL_DO_SORT USING SCRATCH,"Sorting 90 file for uniques"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CREATE_MISSING_90_CLI LROUTINE
++ Find agency clients with no 90 LEV2 - create as a copy of the 90
+FOUND_90        NUM     V_FLAG
+HOLD_00         CHAR    X_CLI_SIZE
+...
+    debug
+    CALL FIND_BILL_CLI_RECS
+
+    CALL UTIL_XMESSAGE USING "Building 90 Clients...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING BILL_CLI_FD,BILL_CLI_FILE
+
+    LOOP
+        CLEAR CLI_LIST,CLIP_LIST,FOUND_90,HOLD_00
+
+        CALL READ_OGBFILE_SEQ USING BILL_CLI_FD,BILL_CLI_FILE,WORK_CLI_LIST
+        WHILE (RESULT = 1)
+
+        UNPACK WORK_CLI_REC INTO CLI_LIST
+
+.Skip retirement groups
+        CMATCH "R" IN CLI_LEV1
+        CONTINUE IF EQUAL
+
+        CALL IS_NON_AGENCY_CLI
+        CONTINUE IF OVER
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+.        debug
+        CALL WRITE_LOG USING "NOTE",("PROCESSING AGENCY: "+CLI_LEV1)
+
+        CLEAR FOUND_90,HOLD_00:
+              CLI_AIM
+
+        PACK CLI_AIM1 WITH "01X",CLI_LEV1,BLANKS
+
+.Find the 00 and if a 90 exists
+        CLEAR CLI_LIST
+        LOOP
+            IF (CLI_ID1 = "")
+                CALL UTIL_CLI_AIMFIND
+            ELSE
+                CALL UTIL_CLI_AIMNEXT
+            ENDIF
+            WHILE EQUAL
+
+            PACK SCRATCH WITH (SQUEEZE CLI_LEV2)
+            SWITCH SCRATCH
+                CASE "00"
+                    PACK HOLD_00 WITH CLI_LIST
+                CASE "90"
+                    SET FOUND_90
+                    BREAK
+            ENDSWITCH
+        REPEAT
+        CONTINUE IF (FOUND_90)
+
+        IF (CHOP HOLD_00 = "")
+            debug .error
+            UNPACK WORK_CLI_REC INTO CLI_LIST
+            CALL WRITE_LOG USING "ERROR","NO 00 FOUND TO COPY"
+            CONTINUE
+        ENDIF
+
+        IF (CHOP CLI_TRM > "" & CLI_TRM < CFG_NEW_SUB_START)
+            debug
+            CALL WRITE_LOG USING "NOTE",("00 CLI IS TERMED PRIOR TO "+CFG_NEW_SUB_START+". NO 90 CREATED")
+            CONTINUE
+        ENDIF
+
+        UNPACK HOLD_00 INTO CLI_LIST
+
+        PACK CLI_LEV2 WITH "90",BLANKS
+
+        FILL " " IN CLI_ID1
+        PACK CLI_NEWDT WITH CURRDATE,BLANKS
+        PACK CLI_NEWBY WITH PROG_NAME,BLANKS
+        PACK CLI_CHGDT WITH CLI_NEWDT,BLANKS
+        PACK CLI_CHGBY WITH CLI_NEWBY,BLANKS
+
+        CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+        IF (CFG_CREATE_CLI)
+            IF NOT (TEST_SKIP_CLI_WRITE)
+                CALL FILE_WRITE USING CLI_FD:          ...File declaration list
+                                    CLI_FN:          ...File name list
+                                    CLI_FC:          ...(I)ndex or (A)imdex
+                                    CLI_FV:          ...File key varlists
+                                    CLI_FK:          ...File key sizes
+                                    CLI_LIST:        ...File record (field list)
+                                    CLI_REC:         ...File record (packed)
+                                    CLI_OLD:         ...File saved when read
+                                    CLI_QTY:         ...Number of files
+                                    1                ...File number for this read
+            ENDIF
+            CALL WRITE_LOG USING "UPDATE","NEW CLI CREATED"
+        ELSE
+            CLEAR CLI_ID1
+            CALL WRITE_LOG USING "UPDATE","(TEST) NEW CLI NEEDED"
+        ENDIF
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING BILL_CLI_FD,BILL_CLI_FILE
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MANAGE_90_CLIPS LROUTINE
++ Create and fix CLIP records for all COBRA Subsidy clients
++ (CLI_LEV2 = "90"). These should only be health records and the
++ MED NOCOV. Copy these from the "00" active client where the rate is AC.
++
++ We also want to clean up the client records a bit, so we need to term
++ all current 90 CLIP records back to 12/31/2011 (which is rounded up
++ roughly the end of the period of the prior 2009 COBRA subsidy).
+IDX             NUM     5
+...
+    debug
+    CALL FIND_90_RECS
+
+    CALL UTIL_XMESSAGE USING "Building 90 CLIPs...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING CLI_90_FD,CLI_90_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING CLI_90_FD,CLI_90_FILE,WORK_CLI_LIST
+        WHILE (RESULT = 1)
+
+        UNPACK WORK_CLI_REC INTO CLI_LIST
+
+        CALL IS_NON_AGENCY_CLI
+        CONTINUE IF OVER
+
+        PACK SCRATCH WITH (SQUEEZE CLI_LEV1)
+        SWITCH SCRATCH
+            CASE "5000" | "5005" | "5006"
+                CONTINUE
+        ENDSWITCH
+
+.Term all current CLIPs for 12/31/2011 (max end roudned of possible prior
+.subsidy coverage)
+        CALL UPDATE_CURRENT_CLIPS
+
+        IF (CHOP CLI_TRM > "" & CLI_TRM < CFG_NEW_SUB_START)
+            debug
+            CALL WRITE_LOG USING "NOTE",("90 CLI IS TERMED PRIOR TO "+CFG_NEW_SUB_START+". NO NEW CLIPS CREATED")
+            CONTINUE
+        ENDIF
+
+.For each 90, create CLIPs (CS rate) for all AC rate records (that are health)
+.things to watch for:
+.   create NOCOV MED
+.   skip NOCOV-WAIVE
+        CALL GET_ACTIVE_CLIPS
+        UNPACK WORK_CLI_REC INTO CLI_LIST
+
+        IF (W_CLIP_CNT = 0)
+            debug
+            CLEAR CLIP_LIST
+            CALL WRITE_LOG USING "ERROR","NO CLIP RECS TO COPY FROM AN 00 CLIENT"
+            CONTINUE
+        ENDIF
+
+        debug
+        FOR IDX FROM 1 TO W_CLIP_CNT
+            UNPACK W_CLIP_RECS[IDX] INTO CLIP_LIST
+
+.Setup new CLIP fields for COBRA subsidy
+            PACK CLIP_ID1 WITH CLI_ID1
+            FILL " " IN CLIP_ID2
+            PACK CLIP_EFF WITH CFG_NEW_SUB_START,BLANKS
+            FILL " " IN CLIP_TRM
+            PACK CLIP_RT WITH "CS",BLANKS
+
+            IF (CFG_BUILD_NEW_CLIP)
+                CALL WRITE_CLIP
+                IF OVER
+                    CALL WRITE_LOG USING "NOTE","CLIP NOT CREATED - ALREADY FOUND UNDER 90 CLIENT"
+                ELSE
+                    CALL WRITE_LOG USING "UPDATE","CREATED NEW CLIP"
+                ENDIF
+            ELSE
+                CALL WRITE_LOG USING "UPDATE","(TEST) NEW CLIP NEEDED"
+            ENDIF
+
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        REPEAT
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING CLI_90_FD,CLI_90_FILE
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_90_RECS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Finding COBRA subsidy clients...",MSG_HEIGHT
+
+    PACK SCRATCH WITH CLI_FNS," ",CLI_90_FILE," -p14-18eq#"90   #" -t"
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Find 90 Cli"
+
+    PACK SCRATCH WITH CLI_90_FILE," ",CLI_90_FILE," 9-13 1-8 -t"
+    CALL UTIL_DO_SORT USING SCRATCH,"Sorting 90 file for uniques"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_CURRENT_CLIPS LROUTINE
++ Update the term date of all current CLIP records to be 12/31/2011
+FLOOR_DATE      CHAR    V_DATE
+...
+    CLEAR CLIP_LIST
+    LOOP
+        IF (CHOP CLIP_ID2 = "")
+            CALL UTIL_FIND_FIRST_CLIP USING CLI_ID1
+        ELSE
+            CALL UTIL_CLIP_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP CLIP_TRM > "" & CHOP CLIP_TRM <= CFG_PRIOR_SUB_END)
+
+.Keep or open up the NOCOV-MED record
+        IF (CHOP CLIP_NET = "NOCOV" & CHOP CLIP_PRD = "MED")
+            IF (CHOP CLIP_TRM > "")
+                debug
+                FILL " " IN CLIP_TRM
+            ELSE
+                CONTINUE
+            ENDIF
+        ELSE
+
+.Term or void the CLIP record
+            PACK CLIP_TRM WITH CFG_PRIOR_SUB_END,BLANKS
+            IF (CLIP_TRM < CLIP_EFF)
+                CALL DATE_CALC USING CLIP_EFF,"SUB","DAYS",1,CLIP_TRM
+            ENDIF
+        ENDIF
+
+        IF (CFG_TERM_OLD_CLIP)
+            CALL WRITE_LOG USING "UPDATE","Old CLIP Records Termed"
+            CALL WRITE_CLIP
+        ELSE
+            CALL WRITE_LOG USING "UPDATE","Old CLIP Records Need To Be Termed"
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_ACTIVE_CLIPS LROUTINE
++ Find the 00 client and all valid CLIPs to write to the 90
+    CLEAR W_CLIP_RECS,W_CLIP_CNT,CLIP_LIST
+.    debug
+
+.Find the 00 and all CLIP recs to copy
+    CLEAR CLI_AIM
+    PACK CLI_AIM1 WITH "01X",CLI_LEV1,BLANKS
+    PACK CLI_AIM2 WITH "02X","00",BLANKS
+    CALL UTIL_CLI_AIMFIND
+    RETURN IF NOT EQUAL
+
+.Find all of the CLIP records we want to create copies for under the 90
+    CLEAR CLIP_LIST
+    LOOP
+        IF (CHOP CLIP_ID2 = "")
+            CALL UTIL_FIND_FIRST_CLIP USING CLI_ID1
+        ELSE
+            CALL UTIL_CLIP_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP CLIP_TRM > "" & CHOP CLIP_TRM < CFG_NEW_SUB_START)
+        CONTINUE IF (CHOP CLIP_NET = "NOCOV")
+        CONTINUE IF (CLIP_RT != "AC")
+
+        CALL IS_HEALTH_CLIP USING CLIP_NET,CLIP_PRD,CLIP_PLAN
+        CONTINUE IF OVER
+
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING CLIP_LIST,W_CLIP_RECS,W_CLIP_CNT,W_CLIP_MAX
+    REPEAT
+
+    CLEAR CLIP_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_CLIP LROUTINE
++ Update or - if ID2 is blank - create a CLIP. OVER will be set if the
++ write does not occur.
+.Is a create?
+    IF (CHOP CLIP_ID2 = "")
+        CALL CHECK_IF_CLIP_EXISTS
+        IF EQUAL
+            SETFLAG OVER
+            RETURN
+        ENDIF
+
+        PACK CLIP_NEWDT WITH CURRDATE,BLANKS
+        PACK CLIP_NEWBY WITH PROG_NAME,BLANKS
+    ENDIF
+
+    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+    PACK CLIP_CHGBY WITH PROG_NAME,BLANKS
+
+    IF NOT (TEST_SKIP_CLIP_WRITE)
+        CALL FILE_WRITE USING CLIP_FD:   ...File declaration
+                            CLIP_FN:         ...File name list
+                            CLIP_FC:         ...(I)ndex or (A)imdex
+                            CLIP_FV:         ...File key varlists
+                            CLIP_FK:         ...File key sizes
+                            CLIP_LIST:       ...File record (field list)
+                            CLIP_REC:        ...File record (packed)
+                            CLIP_OLD:        ...File saved when read
+                            CLIP_QTY:        ...Number of files
+                            1                ...File number for this read
+    ENDIF
+    SETFLAG NOT OVER
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_IF_CLIP_EXISTS LROUTINE
++ Before writing a new CLIP record, make sure one that matches
++ doesn't already exist
+HOLD_CURR_CLIP      CHAR    X_CLIP_SIZE
+MATCH_FOUND         NUM     V_FLAG
+SEARCH_ID           CHAR    8
+T_NPP               CHAR    20
+T_RATE              CHAR    2
+...
+    debug
+    PACK HOLD_CURR_CLIP WITH CLIP_LIST
+
+    PACK SEARCH_ID WITH CLIP_ID1
+    PACK T_NPP WITH CLIP_NET,CLIP_PRD,CLIP_PLAN
+    PACK T_RATE WITH CLIP_RT
+
+    CLEAR CLIP_LIST,MATCH_FOUND
+    LOOP
+        IF (CHOP CLIP_ID2 = "")
+            CALL UTIL_FIND_FIRST_CLIP USING SEARCH_ID
+        ELSE
+            CALL UTIL_CLIP_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP CLIP_TRM > "" & CHOP CLIP_TRM < CFG_NEW_SUB_START)
+        CONTINUE IF (T_NPP != (CLIP_NET + CLIP_PRD + CLIP_PLAN))
+        CONTINUE IF (CLIP_RT != T_RATE)
+
+        debug
+        SET MATCH_FOUND
+        BREAK
+    REPEAT
+
+    UNPACK HOLD_CURR_CLIP INTO CLIP_LIST
+    IF (MATCH_FOUND)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE TYPE@,MSG@
+TYPE@       CHAR    @
+MSG@        CHAR    @
+...
+    IF (CHOP TYPE@ = "ERROR")
+        CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+    ENDIF
+
+    REPLACE ", " IN CLI_NAME
+
+    PACK LOG_REC WITH TYPE@,COMMA:
+                      MSG@,COMMA:
+                      (SQUEEZE CLI_ID1),COMMA:
+                      (CHOP CLI_NAME),COMMA:
+                      (SQUEEZE CLI_LEV1),COMMA:
+                      (SQUEEZE CLI_LEV2),COMMA:
+                      (SQUEEZE CLIP_NET),COMMA:
+                      (SQUEEZE CLIP_PRD),COMMA:
+                      (SQUEEZE CLIP_PLAN),COMMA:
+                      (SQUEEZE CLIP_EFF),COMMA:
+                      (SQUEEZE CLIP_TRM),COMMA:
+                      (SQUEEZE CLIP_RT)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+IS_NON_AGENCY_CLI LROUTINE
++ Sets OVER if the client is not a normal agency that needs
++ consideration
+
+    LOOP
+.Skip COBRA and DHH and other non-standard agencies
+        SQUEEZE CLI_LEV1 INTO SCRATCH
+        SWITCH SCRATCH
+            CASE "5000" | "5006" | "5005" | "5100" | "5200" | "5400" | "5500":
+                 | "SGB":
+                 | "9000":
+                 | "9500"
+                 debug
+                BREAK
+        ENDSWITCH
+
+        SETFLAG NOT OVER
+        RETURN
+    REPEAT
+
+    SETFLAG OVER
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_DELETE_FILE USING BILL_CLI_FILE
+    CALL UTIL_DELETE_FILE USING CLI_90_FILE
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_LOG USING LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOG@
++ Email the log
+LOG@         CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING (C_PROG+" Complete - COVID-19 COBRA Subsidy CLI/CLIP Updates"),ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY:
+        "Building 90 Clients and Active Health CLIPs for COVID-19 COBRA Subsidy"
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_CLI.SR
+    INC UTIL_CLIP.SR
+    INC FILTER_NON_HEALTH.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
