@@ -1,0 +1,320 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2105031.ps
++
++ DESCRIPTION:
++   Queue members from enrollment lines with mid-month effective dates
++
++ CREATED BY:
++   apjwh - 2021-05-03
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEM.RL
+    INC MEME.RL
+    INC AUTOBILA_QUEUE.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     25
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+CFG_EMAILTO         INIT    "${ITAPPS}"
+CFG_EARLIEST_DATE   INIT    "20020701"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAILTO        INIT    "${CURRENT_USER_EMAIL}"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+ENR_FD              FILE    FIXED=16,TEXT
+ENR_FILE            INIT    "/w/tmp/a2105031.wrk"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+ENR_LIST            LIST
+ENR_ID              CHAR    8
+ENR_EFF             CHAR    8
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+LAST_RUN_DATE       CHAR    V_DATE
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2105031" TO C_PROG        ...Program name
+    MOVE "ADJ MID-MO EFF" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_QUAL_ENROLLMENTS
+    CALL STAGE_ADJUS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input Recs Read":
+                                  "Members Processed":
+                                  "Members Staged":
+                                  "Members Skipped":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+    debug
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_QUAL_ENROLLMENTS LROUTINE
++ Find bills in invalid statuses
+
+    CALL UTIL_XMESSAGE USING "Searching for mid-month eff date enrollments...",MSG_HEIGHT
+
+.Find MEME records where the effective date is not on the 1st, and the rate
+.exists
+    PACK SCRATCH WITH "":
+        "1-8 96-103 ":
+        "-p102-103ne#"01#" ":
+        "-p130-131ne#"  #" ":
+        "-p96-103ge",CFG_EARLIEST_DATE," ":
+        "-t"
+    REFORMAT MEME_FNS,ENR_FILE,SCRATCH
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "Reformat failed","FIND_QUAL_ENROLLMENTS"
+    ENDIF
+
+.Sort for unique ids by the earliest eff date
+    PACK SCRATCH WITH "1-16 -t -u"
+    SORT ENR_FILE,ENR_FILE,SCRATCH
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "Sort failed","FIND_QUAL_ENROLLMENTS"
+    ENDIF
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+STAGE_ADJUS LROUTINE
+CURRENT_MEM         CHAR    8
+ALREADY_PROCESSED   NUM     V_FLAG
+...
+    CALL UTIL_XMESSAGE USING "Building ADJU file ...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING ENR_FD,ENR_FILE
+    CALL PREP_AUTOBILA_QUEUE USING ""
+
+    CLEAR CURRENT_MEM,ALREADY_PROCESSED
+    LOOP
+        CALL READ_OGBFILE_SEQ USING ENR_FD,ENR_FILE,ENR_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        IF (CHOP CURRENT_MEM = "" | CHOP CURRENT_MEM != CHOP ENR_ID)
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+            CALL UTIL_MEM_FIND_REAL USING ENR_ID
+            IF NOT EQUAL
+                CLEAR MEM_LIST
+            ENDIF
+            PACK CURRENT_MEM WITH ENR_ID
+            CLEAR ALREADY_PROCESSED
+        ENDIF
+        CONTINUE IF (CHOP MEM_REL != "01")
+        CONTINUE IF (ALREADY_PROCESSED)
+
+        CALL QUEUE_MEMBER_TO_ADJUST USING MEM_ID1,ENR_EFF
+        IF EQUAL
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        ELSE
+            CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+        ENDIF
+        SET ALREADY_PROCESSED
+    REPEAT
+
+    CALL CLOSE_AUTOBILA_QUEUE
+    CALL CLOSE_OGBFILE USING ENR_FD,ENR_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    debug
+    CALL UTIL_DELETE_FILE USING ENR_FILE
+    CALL FORCE_STAGE_AUTOBILA
+    CALL SEND_EMAIL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
+RECIPIENTS  CHAR    200
+SUBJECT     CHAR    200
+BODY        CHAR    1000
+...
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,CFG_EMAILTO,TEST_EMAILTO
+    CALL UTIL_SET_SUBJECT USING (C_PROG+": Stage Adjustments For Mid-Month Eff Enrollments"):
+                                ENABLE_TEST:
+                                SUBJECT
+    PACK SCRATCH WITH "":
+        "\n\tProcess to stage members with enrollment lines where the effective date is not the 1st."
+    CALL UTIL_PACK_BODY_AND_COUNTERS WITH BODY,SCRATCH
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC AUTOBILA_QUEUE.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
