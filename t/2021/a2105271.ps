@@ -1,0 +1,289 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2105271.ps
++
++ DESCRIPTION:
++   CMS Query Response file adjustment listing
++
++ CREATED BY:
++   apjwh - 2021-05-27
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEM.RL
+    INC MEMO.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+.TODO: add configuration settings here
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+CHG_FD              FILE    FIXED=X_MEMO_SIZE,TEXT
+CHG_FILE            INIT    "/w/tmp/cmsqrp_adju_finder.tmp"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+.TODO: add file lists
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+CURRENT_MEM         CHAR    X_MEM_SIZE
+CURRENT_MEMO        CHAR    X_MEMO_SIZE
+
+.# =================================================================== #
+.# Externals
+.# =================================================================== #
+
+U_MEMEDT_ONE  EXTERNAL
+RUN_U_MEMODT  EXTERNAL
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2105271" TO C_PROG        ...Program name
+    MOVE "CMSQRP MEMO CLEAN" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_CHG_RECS
+    CALL PROCESS_CHANGES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_CHG_RECS LROUTINE
+
+    PACK SCRATCH WITH "-p464-469eqCMSQRP -t"
+    REFORMAT MEMO_FNS,CHG_FILE,SCRATCH
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "MEMO reformat failed","FIND_CHG_RECS"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_CHANGES LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Processing changes...",MSG_HEIGHT
+    CALL OPEN_OGBFILE USING CHG_FD,CHG_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING CHG_FD,CHG_FILE,MEMO_LIST
+        WHILE (RESULT = 1)
+
+        PACK CURRENT_MEMO WITH MEMO_LIST
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEM_FIND_REAL USING MEMO_ID1
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+
+        PACK CURRENT_MEM WITH MEM_LIST
+        PACK MEM_REC WITH CURRENT_MEM
+
+        CALL FIX_MEMO
+
+.The rate fix won't work since the single-mem process has a prompt when done
+.        CALL FIX_RATES
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING CHG_FD,CHG_FILE
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_MEMO LROUTINE
+    debug
+    LOADMOD "u_memodt"
+    CALL RUN_U_MEMODT USING CURRENT_MEMO,"MEMO"
+    UNLOAD  "u_memodt"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_RATES LROUTINE ID@
+ID@         CHAR    @
+...
+    debug
+    LOADMOD "u_memedt"
+    PACK SCRATCH WITH MEM_ID1,BLANKS
+    CALL U_MEMEDT_ONE USING SCRATCH
+    UNLOAD  "u_memedt"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Modified MEMOs Proc'd":
+                                  "":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_DELETE_FILE USING CHG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
