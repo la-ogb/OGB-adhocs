@@ -1,0 +1,334 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2107131.ps
++
++ DESCRIPTION:
++   Delete remaining COL records from the 6/2021 DBI remit load
++
++ CREATED BY:
++   apjwh - 2021-07-13
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC COL.RL
+    INC COLD.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+CFG_EMAILTO         INIT    "${ITAPPS}"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_DEL       NUM     "0"
+TEST_EMAILTO        INIT    "${CURRENT_USER_EMAIL}"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+LOG_FD              FILE    VAR=20,TEXT
+LOG_FILE            INIT    "/w/tmp/a2107131.log"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_REC             CHAR    20
+LOG_LIST            VARLIST LOG_REC
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+CURRENT_MEM         CHAR    X_MEM_SIZE
+CURRENT_MEMO        CHAR    X_MEMO_SIZE
+
+.# =================================================================== #
+.# Externals
+.# =================================================================== #
+
+U_MEMEDT_ONE  EXTERNAL
+RUN_U_MEMODT  EXTERNAL
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2107131" TO C_PROG        ...Program name
+    MOVE "DBI REMIT COL DEL" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL DELETE_COL
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "COL Read":
+                                  "COL Deleted":
+                                  "COLD Read":
+                                  "COLD Deleted":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_COL LROUTINE
+    debug
+
+    CALL UTIL_XMESSAGE USING "Cleaning up COL/D records...",MSG_HEIGHT
+
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+
+    CLEAR COL_AIM
+    PACK COL_AIM8 WITH "08X","COBRAUTO",BLANKS
+    PACK COL_AIM5 WITH "05X","20210601",BLANKS
+
+    LOOP
+        IF (CHOP COL_ID1 = "")
+            CALL UTIL_COL_AIMFIND
+        ELSE
+            CALL UTIL_COL_AIMNEXT
+        ENDIF
+        WHILE EQUAL
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        PACK LOG_REC WITH "COL: ",COL_ID1
+        CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+        CALL DELETE_COLD
+
+        CONTINUE IF (TEST_SKIP_DEL)
+
+        CALL FILE_DELETE USING COL_FD:    ...File declaration list
+                               COL_FN:          ...File name list
+                               COL_FC:          ...(I)ndex or (A)imdex
+                               COL_FV:          ...File key varlists
+                               COL_FK:          ...File key sizes
+                               COL_LIST:        ...File record (field list)
+                               COL_REC:         ...File record (packed)
+                               COL_OLD:         ...File saved when read
+                               COL_QTY:         ...Number of files
+                               1                ...File number for this read
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    REPEAT
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_COLD LROUTINE
+    CLEAR COLD_LIST
+    PACK COLD_FK11 WITH COL_ID1,BLANKS
+
+    CALL UTIL_COLD_IDX_FILE_READ1
+    LOOP
+        CALL FILE_NEXT
+        WHILE (RESULT = 1 & COLD_ID1 = COL_ID1)
+
+        PACK LOG_REC WITH "COLD: ",COL_ID1,"-",COLD_ID2
+        CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        CONTINUE IF (TEST_SKIP_DEL)
+
+        CALL FILE_DELETE USING COLD_FD:    ...File declaration list
+                               COLD_FN:    ...File name list
+                               COLD_FC:    ...(I)ndex or (A)imdex
+                               COLD_FV:    ...File key varlists
+                               COLD_FK:    ...File key sizes
+                               COLD_LIST:  ...File record (field list)
+                               COLD_REC:   ...File record (packed)
+                               COLD_OLD:   ...File saved when read
+                               COLD_QTY:   ...Number of files
+                               1           ...File number for this read
+
+        CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    CALL SEND_EMAIL
+
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
+RECIPIENTS  CHAR    200
+SUBJECT     CHAR    200
+BODY        CHAR    1000
+...
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,CFG_EMAILTO,TEST_EMAILTO
+    CALL UTIL_SET_SUBJECT USING (C_PROG+": Delete COL From 6/21 DBI Remit Load"):
+                                ENABLE_TEST:
+                                SUBJECT
+    PACK SCRATCH WITH "":
+        "\n\tProcess to delete COL and COLD records created by the ":
+        "06/2021 bad DBI remit load. IDs effected:\n":
+        "$(cat ",LOG_FILE,")"
+    IF (TEST_SKIP_DEL)
+        PACK SCRATCH WITH SCRATCH,"\n":
+            "\n\tCurrent test settings skip the delete."
+    ENDIF
+    CALL UTIL_PACK_BODY_AND_COUNTERS WITH BODY,SCRATCH
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_COLLECTIONS.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
