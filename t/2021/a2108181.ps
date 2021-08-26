@@ -1,0 +1,467 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2108181
++
++ DESCRIPTION:
++   Build new BCBSLA HMO PPO CLIP records
++
++ CREATED BY:
++   apjwh - 2021-04-21
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC CLI.RL
+    INC CLIP.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     100
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_GROUP         INIT    "${ITAPPS}"
+PROG_NAME           INIT    "NEWPPO"
+
+NEW_EFF             INIT    "20220101"
+NEW_NET             INIT    "BLU65"
+NEW_PRD             INIT    "PPO65"
+NEW_PLAN            INIT    "NATL"
+
+.0: no update
+.1: do update
+
+CFG_BUILD_NEW_CLIP  NUM     "0"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_CLIP_WRITE NUM    "1"
+TEST_EMAIL          INIT    "${CURRENT_USER_EMAIL}"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+BASE_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
+BASE_FILE           INIT    "/w/tmp/a2108181_base_clip.txt"
+
+LOG_FD              FILE    VAR=1000,TEXT
+LOG_FILE            INIT    "/w/a2108181_log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_REC             CHAR    1000
+LOG_LIST            VARLIST LOG_REC
+
+LOG_HEADER          VARLIST "Log Type",COMMA:
+                            "Message",COMMA:
+                            "CLI Id1",COMMA:
+                            "CLI Name",COMMA:
+                            "CLI Lev1",COMMA:
+                            "CLI Lev2",COMMA:
+                            "CLIP Net",COMMA:
+                            "CLIP Prd",COMMA:
+                            "CLIP Plan",COMMA:
+                            "CLIP Eff",COMMA:
+                            "CLIP Trm",COMMA:
+                            "CLIP Rate"
+
+
+WORK_CLI_REC        CHAR    X_CLI_SIZE
+WORK_CLI_LIST       VARLIST WORK_CLI_REC
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+W_CLIP_MAX          EQU     200
+W_CLIP_RECS         CHAR    X_CLIP_SIZE[W_CLIP_MAX]
+W_CLIP_CNT          NUM     5
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT        .go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     .for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2108181" TO C_PROG        ...Program name
+    MOVE "NEW BLUE65 PPO" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL BUILD_NEW_PLAN
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Clients Proc'd":
+                                  "CLIP Recs Created":
+                                  "Skipped":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.Make sure the new CLIP values exist in the valid code tables
+    CALL CHECK_IS_IN_VALID USING NEW_NET,"522"
+    CALL CHECK_IS_IN_VALID USING NEW_PRD,"521"
+    CALL CHECK_IS_IN_VALID USING NEW_PLAN,"529"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_IS_IN_VALID LROUTINE VALUE@,TABLE@
+VALUE@      CHAR    @
+TABLE@      CHAR    @
+...
+    CALL UTIL_READVALID USING TABLE@,VALUE@
+    IF NOT EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING (VALUE@+" not found in valid table "+TABLE@),"CHECK_IS_IN_VALID"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_NEW_PLAN LROUTINE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    debug
+    CALL FIND_BASE_CLIPS
+    CALL OPEN_OGBFILE USING BASE_FD,BASE_FILE
+
+    CALL UTIL_XMESSAGE USING "Building new CLIP records",MSG_HEIGHT
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING BASE_FD,BASE_FILE,CLIP_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+.Skip voids
+        CONTINUE IF (CHOP CLIP_TRM > "" & CLIP_TRM < CLIP_EFF)
+
+        CALL BUILD_NEW_CLIP
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING BASE_FD,BASE_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_BASE_CLIPS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Searching for base CLIP recs...",MSG_HEIGHT
+
+    PACK CLIP_NET WITH "BLU65",BLANKS
+    PACK CLIP_PRD WITH "HMO65",BLANKS
+    PACK CLIP_PLAN WITH "RGN1",BLANKS
+
+    PACK SCRATCH WITH CLIP_FNS," ",BASE_FILE," 1-12 ":
+        " -p0013-0017eq#"",CLIP_NET,"#"":
+        " -p0018-0022eq#"",CLIP_PRD,"#"":
+        " -p0027-0030eq#"",CLIP_PLAN,"#"":
+        " -t"
+    CALL UTIL_DO_SORT USING SCRATCH,"Find base CLIP recs"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_NEW_CLIP LROUTINE
+    PACK CLIP_NET WITH NEW_NET,BLANKS
+    PACK CLIP_PRD WITH NEW_PRD,BLANKS
+    PACK CLIP_PLAN WITH NEW_PLAN,BLANKS
+
+    PACK CLIP_EFF WITH NEW_EFF
+    FILL " " IN CLIP_ID2
+    FILL " " IN CLIP_TRM
+
+    PACK CLIP_NEWDT WITH CURRDATE,BLANKS
+    PACK CLIP_NEWBY WITH PROG_NAME,BLANKS
+
+    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+    PACK CLIP_CHGBY WITH PROG_NAME,BLANKS
+
+    CALL DOES_CLIP_EXIST_ALREADY
+    IF EQUAL
+        debug
+        CALL WRITE_LOG USING "SKIP","CLIP already created. Skipped"
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        RETURN
+    ENDIF
+
+    IF NOT (TEST_SKIP_CLIP_WRITE)
+        debug
+        CALL FILE_WRITE USING CLIP_FD:   ...File declaration
+                            CLIP_FN:         ...File name list
+                            CLIP_FC:         ...(I)ndex or (A)imdex
+                            CLIP_FV:         ...File key varlists
+                            CLIP_FK:         ...File key sizes
+                            CLIP_LIST:       ...File record (field list)
+                            CLIP_REC:        ...File record (packed)
+                            CLIP_OLD:        ...File saved when read
+                            CLIP_QTY:        ...Number of files
+                            1                ...File number for this read
+    ENDIF
+
+    CALL WRITE_LOG USING "UPDATE","Created new CLIP"
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DOES_CLIP_EXIST_ALREADY LROUTINE
+CURR_CLIP       CHAR    X_CLIP_SIZE
+FOUND_CLIP      NUM     1
+SRC_LIST        LIST
+SRC_ID1         CHAR    8
+SRC_NET         CHAR    5
+SRC_PRD         CHAR    5
+SRC_PLAN        CHAR    4
+SRC_RT          CHAR    2
+                LISTEND
+...
+    PACK CURR_CLIP WITH CLIP_LIST
+
+    PACK SRC_ID1 WITH CLIP_ID1
+    PACK SRC_NET WITH CLIP_NET
+    PACK SRC_PRD WITH CLIP_PRD
+    PACK SRC_PLAN WITH CLIP_PLAN
+    PACK SRC_RT WITH CLIP_RT
+
+    CLEAR FOUND_CLIP,CLIP_LIST
+    LOOP
+        IF (CHOP CLIP_ID2 = "")
+            CALL UTIL_CLIP_FIND_BY_PLAN USING SRC_ID1,SRC_NET,SRC_PRD,SRC_PLAN
+        ELSE
+            CALL UTIL_CLIP_NEXT_BY_PLAN
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP CLIP_RT != SRC_RT)
+        CONTINUE IF (CHOP CLIP_TRM > "" & (CLIP_TRM < CLIP_EFF | CLIP_TRM < NEW_EFF))
+
+        debug
+
+        SET FOUND_CLIP
+        BREAK
+    REPEAT
+
+    UNPACK CURR_CLIP INTO CLIP_LIST
+    IF (FOUND_CLIP)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE TYPE@,MSG@
+TYPE@       CHAR    @
+MSG@        CHAR    @
+...
+    REPLACE ", " IN CLI_NAME
+
+    CALL UTIL_CLI_FIND USING CLIP_ID1
+
+    PACK LOG_REC WITH TYPE@,COMMA:
+                      MSG@,COMMA:
+                      (SQUEEZE CLI_ID1),COMMA:
+                      (CHOP CLI_NAME),COMMA:
+                      (SQUEEZE CLI_LEV1),COMMA:
+                      (SQUEEZE CLI_LEV2),COMMA:
+                      (SQUEEZE CLIP_NET),COMMA:
+                      (SQUEEZE CLIP_PRD),COMMA:
+                      (SQUEEZE CLIP_PLAN),COMMA:
+                      (SQUEEZE CLIP_EFF),COMMA:
+                      (SQUEEZE CLIP_TRM),COMMA:
+                      (SQUEEZE CLIP_RT)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    ERASE BASE_FILE
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_LOG USING LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOG@
++ Email the log
+LOG@         CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING (C_PROG+" New BCBS Medicare Advantage CLIP Creator"),ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+
+    PACK SCRATCH WITH "Building new plan CLIPs\n":
+        "\tNetwork: ",NEW_NET,"\n":
+        "\tProduct: ",NEW_PRD,"\n":
+        "\tPlan: ",NEW_PLAN
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_CLI.SR
+    INC UTIL_CLIP.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
