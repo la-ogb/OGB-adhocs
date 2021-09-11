@@ -1,6 +1,6 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   a2108181
++   a2109111
 +
 + DESCRIPTION:
 +   Update new PPO plan CLIP eff date to 1/1/23
@@ -42,9 +42,9 @@ EMAIL_GROUP         INIT    "${ITAPPS}"
 PROG_NAME           INIT    "PPOUP1"
 
 NEW_EFF             INIT    "20230101"
-NEW_NET             INIT    "BLU65"
-NEW_PRD             INIT    "PPO65"
-NEW_PLAN            INIT    "NATL"
+.NEW_NET             INIT    "BLU65"
+.NEW_PRD             INIT    "PPO65"
+.NEW_PLAN            INIT    "NATL"
 
 .0: no update
 .1: do update
@@ -66,10 +66,10 @@ TEST_EMAIL          INIT    "${CURRENT_USER_EMAIL}"
 .# =================================================================== #
 
 BASE_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
-BASE_FILE           INIT    "/w/tmp/a2108181_base_clip.txt"
+BASE_FILE           INIT    "/w/tmp/a2109111_base_clip.txt"
 
 LOG_FD              FILE    VAR=1000,TEXT
-LOG_FILE            INIT    "/w/a2108181_log.csv"
+LOG_FILE            INIT    "/w/a2109111_log.csv"
 
 .# =================================================================== #
 .# File lists
