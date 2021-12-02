@@ -1,0 +1,306 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2112021.ps
++
++ DESCRIPTION:
++   Delete errorneous LBLA records created from the old 2021 file
++
++ CREATED BY:
++   apjwh - 2021-12-02
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEME.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "${ITAPPS}"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_DEL       NUM     "0"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+BAD_REC_FD          FILE    FIXED=12,TEXT
+BAD_REC_FILE        INIT    "/w/tmp/a2112022.wrk"
+
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/bad_2022_lbla_log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+BAD_REC_DATA        LIST
+BAD_ID1             CHAR    8
+BAD_ID2             CHAR    4
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    200
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2112022" TO C_PROG        ...Program name
+    MOVE "DEL BAD LBLA" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_BAD_FILES
+    CALL DELETE_FILES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+    CALL UTIL_INIT_COUNTERS USING "Recs Reviewed":
+                                  "Recs Deleted":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_FILES LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Deleting bad recs",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING BAD_REC_FD,BAD_REC_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    PACK LOG_REC WITH "MEMBER_ID,MEME_ID2,MSG"
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    debug
+    LOOP
+        CALL READ_OGBFILE_SEQ USING BAD_REC_FD,BAD_REC_FILE,BAD_REC_DATA
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEME_FIND USING BAD_ID1,BAD_ID2
+        CONTINUE IF NOT EQUAL
+
+        IF ((CHOP MEME_PRD != "LBLA") |:
+           (CHOP MEME_NEWBY != "AELBLA") |:
+           (CHOP MEME_EFF != "20220101"))
+            debug
+            PACK LOG_REC WITH MEME_ID1,COMMA,MEME_ID2,COMMA,"skipped"
+            CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+            CONTINUE
+        ENDIF
+
+        debug
+        PACK LOG_REC WITH MEME_ID1,COMMA,MEME_ID2,COMMA,"deleted - ",MEME_NET,MEME_PRD,MEME_PLAN,MEME_EFF,MEME_TRM
+        CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+        CONTINUE IF (TEST_SKIP_DEL)
+
+        CALL FILE_DELETE
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING BAD_REC_FD,BAD_REC_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_BAD_FILES LROUTINE
++ Identify the MEME records created by the process and effective on
++ 1/1/22
+    CALL UTIL_XMESSAGE USING "Searching for bad recs",MSG_HEIGHT
+
+    PACK SCRATCH WITH MEME_FNS," ",BAD_REC_FILE," -t ":
+        " 1-12 ":
+        " -p0220-0225eqAELBLA ":
+        " -p0096-0103eq20220101"
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"searching for bad LBLA"
+
+    MESSAGEERASE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_DELETE_FILE USING BAD_REC_FILE
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_LOG
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
+    CALL UTIL_DELETE_FILE LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+EMAIL_LOG LROUTINE
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    PACK SUBJECT WITH "ADHOC: delete bad 2022 LBLA records"
+    IF (ENABLE_TEST)
+        PACK SUBJECT WITH SUBJECT," [Test]"
+    ENDIF
+    PACK RECIPIENTS WITH EMAIL_TO
+    PACK SCRATCH WITH "":
+        "Deleting LBLA records created for 2022 using the 2021 file."
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                            RECIPIENTS:
+                            SUBJECT:
+                            BODY:
+                            START_DATETIME:
+                            END_DATETIME:
+                            LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
