@@ -1,0 +1,290 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2201041.ps
++
++ DESCRIPTION:
++   Merge sent AE data into the DPA tracker file
++
++ CREATED BY:
++   apjwh - 2022-01-04
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC DATAPATH_SHARED.CB
+    INC DATAPATH_FSA_SHARED.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "${ITAPPS}"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    FIXED=DPA_FSA_REC_SIZE,TEXT
+INPUT_FILE          INIT    "/w/tmp/a2201041_in.txt"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+WORK_ID             CHAR    8
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2112022" TO C_PROG        ...Program name
+    MOVE "DEL BAD LBLA" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL MERGE_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+    CALL UTIL_INIT_COUNTERS USING "Input Reads":
+                                  "Tracker Updates":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MERGE_FILE LROUTINE
+FIRST_READ      NUM     1
+    debug
+    CALL INIT_FSA_TRACKER
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+
+.TODO: do work
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,DPA_FSA_FULL_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE    .reads
+
+        CALL GRAB_DEMOGRAPHICS
+
+        PACK WORK_ID WITH DPA_FSA_MEM_ID
+        PACK DPA_FSA_TRK_KEY WITH DPA_FSA_TRK_ID,BLANKS
+
+.Merge these demographics into the tracker record uisng the correct layout
+        SET FIRST_READ
+        LOOP
+            IF (FIRST_READ)
+                CLEAR FIRST_READ
+                CALL READ_OGBFILE_IX USING FSA_TRK_IDX_FD,FSA_TRK_IDX_FILE,DPA_FSA_TRK_KEY,DPA_FSA_TRK_LIST
+            ELSE
+                CALL READKS_OGBFILE_IX USING FSA_TRK_IDX_FD,FSA_TRK_IDX_FILE,DPA_FSA_TRK_LIST
+            ENDIF
+            WHILE (RESULT = 1 & DPA_FSA_TRK_ID = WORK_ID)
+            CONTINUE IF (CHOP DPA_FSA_TRK_DATA > "")
+
+            debug
+            IF (DPA_FSA_TRK_SOURCE = SRC_AE)
+                debug
+                FILL " " IN DPA_AE_FSA_FULL_LIST
+
+                MOVE (DEMO_SSN[1]+BLANKS) TO DPA_AE_FSA_SSN
+                MOVE (DEMO_FNAME[1]+BLANKS) TO DPA_AE_FSA_FNAME
+                MOVE (DEMO_LNAME[1]+BLANKS) TO DPA_AE_FSA_LNAME
+                MOVE (DEMO_MINIT[1]+BLANKS) TO DPA_AE_FSA_MINIT
+                MOVE (DEMO_DOB[1]+BLANKS) TO DPA_AE_FSA_DOB
+                MOVE (DEMO_PHONE[1]+BLANKS) TO DPA_AE_FSA_PHONE
+                MOVE (DEMO_ADDR1[1]+BLANKS) TO DPA_AE_FSA_ADDR1
+                MOVE (DEMO_ADDR2[1]+BLANKS) TO DPA_AE_FSA_ADDR2
+                MOVE (DEMO_CITY[1]+BLANKS) TO DPA_AE_FSA_CITY
+                MOVE (DEMO_STATE[1]+BLANKS) TO DPA_AE_FSA_STATE
+                MOVE (DEMO_ZIP[1]+BLANKS) TO DPA_AE_FSA_ZIP
+                MOVE (DEMO_EMAIL[1]+BLANKS) TO DPA_AE_FSA_EMAIL
+
+                PACK DPA_FSA_TRK_DATA WITH DPA_AE_FSA_FULL_LIST,BLANKS
+            ELSE
+                debug
+                FILL " " IN DPA_FSA_FULL_LIST
+
+                MOVE (DEMO_SSN[1]+BLANKS) TO DPA_FSA_SSN
+                MOVE (DEMO_FNAME[1]+BLANKS) TO DPA_FSA_FNAME
+                MOVE (DEMO_LNAME[1]+BLANKS) TO DPA_FSA_LNAME
+                MOVE (DEMO_MINIT[1]+BLANKS) TO DPA_FSA_MINIT
+                MOVE (DEMO_DOB[1]+BLANKS) TO DPA_FSA_DOB
+                MOVE (DEMO_PHONE[1]+BLANKS) TO DPA_FSA_PHONE
+                MOVE (DEMO_ADDR1[1]+BLANKS) TO DPA_FSA_ADDR1
+                MOVE (DEMO_ADDR2[1]+BLANKS) TO DPA_FSA_ADDR2
+                MOVE (DEMO_CITY[1]+BLANKS) TO DPA_FSA_CITY
+                MOVE (DEMO_STATE[1]+BLANKS) TO DPA_FSA_STATE
+                MOVE (DEMO_ZIP[1]+BLANKS) TO DPA_FSA_ZIP
+                MOVE (DEMO_EMAIL[1]+BLANKS) TO DPA_FSA_EMAIL
+
+                PACK DPA_FSA_TRK_DATA WITH DPA_FSA_FULL_LIST,BLANKS
+            ENDIF
+
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE    .updates
+            CALL UPDATE_OGBREC_IX USING FSA_TRK_IDX_FD,DPA_FSA_TRK_LIST
+        REPEAT
+    REPEAT
+
+    debug
+    CALL CLOSE_FSA_TRACKER
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GRAB_DEMOGRAPHICS LROUTINE
+    debug
+    PACK DEMO_SSN[1] WITH DPA_AE_FSA_SSN
+    PACK DEMO_FNAME[1] WITH DPA_AE_FSA_FNAME
+    PACK DEMO_LNAME[1] WITH DPA_AE_FSA_LNAME
+    PACK DEMO_MINIT[1] WITH DPA_AE_FSA_MINIT
+    PACK DEMO_DOB[1] WITH DPA_AE_FSA_DOB
+    PACK DEMO_PHONE[1] WITH DPA_AE_FSA_PHONE
+    PACK DEMO_ADDR1[1] WITH DPA_AE_FSA_ADDR1
+    PACK DEMO_ADDR2[1] WITH DPA_AE_FSA_ADDR2
+    PACK DEMO_CITY[1] WITH DPA_AE_FSA_CITY
+    PACK DEMO_STATE[1] WITH DPA_AE_FSA_STATE
+    PACK DEMO_ZIP[1] WITH DPA_AE_FSA_ZIP
+    PACK DEMO_EMAIL[1] WITH DPA_AE_FSA_EMAIL
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC DATAPATH_FSA_SHARED.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
