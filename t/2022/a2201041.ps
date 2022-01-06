@@ -52,8 +52,12 @@ TEST_CONFIG         LIST
 .# File Declarations
 .# =================================================================== #
 
-INPUT_FD            FILE    FIXED=DPA_FSA_REC_SIZE,TEXT
+INPUT_FD            FILE    VAR=1000,TEXT
 INPUT_FILE          INIT    "/w/tmp/a2201041_in.txt"
+
+INPUT_DATA          LIST
+INPUT_REC           CHAR    1000
+                    LISTEND
 
 .# =================================================================== #
 .# Program Variables
@@ -146,8 +150,8 @@ INITIALIZE LROUTINE
     CALL UTIL_GET_SYS_DIRS_COMMON
     CALL UTIL_INIT_COUNTERS USING "Input Reads":
                                   "Tracker Updates":
-                                  "":
-                                  "":
+                                  "Last Sent Was AE":
+                                  "Last Sent Not AE":
                                   "":
                                   ""
 
@@ -176,31 +180,39 @@ FIRST_READ      NUM     1
 
 .TODO: do work
     LOOP
-        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,DPA_FSA_FULL_LIST
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_DATA
         WHILE (RESULT = 1)
+
+.Skip the header
+        SCAN "SSN," IN INPUT_REC
+        CONTINUE IF EQUAL
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE    .reads
 
+        CALL DELIMIT_STRING_INTO_ARRAY USING INPUT_REC,",",DPA_AE_FSA_FULL_LIST
+        IF OVER
+            debug
+            CALL UTIL_ERRORMSG USING "record unpacking failed","MERGE_FILE"
+        ENDIF
         CALL GRAB_DEMOGRAPHICS
 
-        PACK WORK_ID WITH DPA_FSA_MEM_ID
-        PACK DPA_FSA_TRK_KEY WITH DPA_FSA_TRK_ID,BLANKS
-
 .Merge these demographics into the tracker record uisng the correct layout
+        PACK WORK_ID WITH DPA_AE_FSA_MEM_ID,BLANKS
         SET FIRST_READ
         LOOP
             IF (FIRST_READ)
                 CLEAR FIRST_READ
-                CALL READ_OGBFILE_IX USING FSA_TRK_IDX_FD,FSA_TRK_IDX_FILE,DPA_FSA_TRK_KEY,DPA_FSA_TRK_LIST
-            ELSE
-                CALL READKS_OGBFILE_IX USING FSA_TRK_IDX_FD,FSA_TRK_IDX_FILE,DPA_FSA_TRK_LIST
+                CALL READ_OGBFILE_IX USING FSA_TRK_IDX_FD,FSA_TRK_IDX_FILE,WORK_ID,DPA_FSA_TRK_LIST
             ENDIF
+            CALL READKS_OGBFILE_IX USING FSA_TRK_IDX_FD,FSA_TRK_IDX_FILE,DPA_FSA_TRK_LIST
+
             WHILE (RESULT = 1 & DPA_FSA_TRK_ID = WORK_ID)
             CONTINUE IF (CHOP DPA_FSA_TRK_DATA > "")
 
             debug
             IF (DPA_FSA_TRK_SOURCE = SRC_AE)
                 debug
+                CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE    .last sent was AE
                 FILL " " IN DPA_AE_FSA_FULL_LIST
 
                 MOVE (DEMO_SSN[1]+BLANKS) TO DPA_AE_FSA_SSN
@@ -219,6 +231,7 @@ FIRST_READ      NUM     1
                 PACK DPA_FSA_TRK_DATA WITH DPA_AE_FSA_FULL_LIST,BLANKS
             ELSE
                 debug
+                CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE    .last sent was not AE
                 FILL " " IN DPA_FSA_FULL_LIST
 
                 MOVE (DEMO_SSN[1]+BLANKS) TO DPA_FSA_SSN
@@ -253,7 +266,6 @@ FIRST_READ      NUM     1
 
 .#######################################################################
 GRAB_DEMOGRAPHICS LROUTINE
-    debug
     PACK DEMO_SSN[1] WITH DPA_AE_FSA_SSN
     PACK DEMO_FNAME[1] WITH DPA_AE_FSA_FNAME
     PACK DEMO_LNAME[1] WITH DPA_AE_FSA_LNAME
