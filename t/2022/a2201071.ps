@@ -1,0 +1,335 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2201071.ps
++
++ DESCRIPTION:
++   Force adjustments for list of members (due to bad rate for 1/1/22)
++
++ CREATED BY:
++   apjwh - 2022-01-07
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEM.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "${ITAPPS}"
+MAX_ADJU            NUM     "750"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    FIXED=16,TEXT
+INPUT_FILE          INIT    "/w/tmp/a2201071.wrk"
+
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/tmp/a2201071_log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+INPUT_LIST          LIST
+INPUT_ID            CHAR    8
+INPUT_DATE          CHAR    8
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    200
+                    LISTEND
+
+LOG_HEADER          VARLIST "Member_Id,Log_Type,Message,Adjust_Date,Adju_Bill_Id,Feedback"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+FILE_COMPLETED      NUM     1
+
+RSP_BILID           CHAR    8
+RSP_FEEDBACK        CHAR    200
+
+HOLD_MEM            CHAR    X_MEM_SIZE
+
+CALC_ADJUST         EXTERNAL
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    CALL SET_METADATA
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_METADATA LROUTINE
+    MOVE "a2201071" TO C_PROG        ...Program name
+    MOVE "FORCE ADJU" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL PROCESS_INPUT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+    CALL UTIL_INIT_COUNTERS USING "Input Recs":
+                                  "Adju Started":
+                                  "Adju Finished":
+                                  "Adju Okay":
+                                  "Adju Errors":
+                                  ""
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_INPUT LROUTINE
+
+    CALL UTIL_XMESSAGE USING ("Building adjustments (max of "+(SQUEEZE CHAR MAX_ADJU)+")..."),MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
+        IF (RESULT != 1)
+            SET FILE_COMPLETED
+            BREAK
+        ENDIF
+
+        CLEAR RSP_BILID,RSP_FEEDBACK
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEM_FIND_REAL USING INPUT_ID
+        IF NOT EQUAL
+            debug
+            CALL WRITE_LOG USING "ERROR","MEMBER RECORD NOT FOUND"
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+        PACK HOLD_MEM WITH MEM_LIST
+
+        LOADMOD "BILLADJ"
+        debug
+        CALL CALC_ADJUST USING HOLD_MEM,INPUT_DATE,RSP_BILID,RSP_FEEDBACK
+        UNLOAD "BILLADJ"
+        CALL SET_METADATA
+
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+        SQUEEZE RSP_FEEDBACK INTO SCRATCH
+        SWITCH SCRATCH
+            CASE "OK"
+                CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+            DEFAULT
+                debug
+                CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+        ENDSWITCH
+
+        debug
+        CALL WRITE_LOG USING "PROCESSED","CALC_ADJUST FINISHED - SEE FEEDBACK"
+
+        DELETE INPUT_FD
+        BREAK IF (X_CNT1 >= MAX_ADJU)
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE TYP@,MSG@
+TYP@        CHAR    @
+MSG@        CHAR    @
+...
+    PACK LOG_REC WITH INPUT_ID,COMMA:
+                      TYP@,COMMA:
+                      MSG@,COMMA:
+                      INPUT_DATE,COMMA:
+                      (CHOP RSP_BILID),COMMA:
+                      (CHOP RSP_FEEDBACK)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_LOG
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",LOG_FILE,""
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    debug .STOP HERE TO KEEP TESTING
+
+    IF (FILE_COMPLETED)
+        CALL UTIL_PENDING_BACKUP USING "/w/tmp/",INPUT_FILE,""
+        CALL UTIL_DELETE_FILE USING INPUT_FILE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.###########################################################################
+EMAIL_LOG LROUTINE
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    PACK SUBJECT WITH "ADHOC: force adju due to bad rates Jan 2022"
+    IF (ENABLE_TEST)
+        PACK SUBJECT WITH SUBJECT," [Test]"
+    ENDIF
+    PACK RECIPIENTS WITH EMAIL_TO
+    PACK SCRATCH WITH "":
+        "Force adjustments for members affected by the bad rate entry."
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                            RECIPIENTS:
+                            SUBJECT:
+                            BODY:
+                            START_DATETIME:
+                            END_DATETIME:
+                            LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
