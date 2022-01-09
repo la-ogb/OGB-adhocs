@@ -22,6 +22,7 @@
 
 PARAM_LIST          LIST WITH NAMES
 PARAM_TEST          CHAR    4
+PARAM_MAX           CHAR    7
                     LISTEND
 
 .# =================================================================== #
@@ -38,7 +39,7 @@ REFRESH_RATE        EQU     1
 .# =================================================================== #
 
 EMAIL_TO            INIT    "${ITAPPS}"
-MAX_ADJU            NUM     "750"
+DEFAULT_MAX_ADJU    NUM     "750"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -87,6 +88,8 @@ RSP_BILID           CHAR    8
 RSP_FEEDBACK        CHAR    200
 
 HOLD_MEM            CHAR    X_MEM_SIZE
+
+MAX_ADJU            NUM     7
 
 CALC_ADJUST         EXTERNAL
 
@@ -183,6 +186,17 @@ INITIALIZE LROUTINE
                                   "Adju Okay":
                                   "Adju Errors":
                                   ""
+
+    CLEAR MAX_ADJU
+    IF (CHOP PARAM_MAX > "")
+        debug
+        MOVE (SQUEEZE PARAM_MAX) TO MAX_ADJU
+    ENDIF
+
+    IF (MAX_ADJU <= 0)
+        MOVE DEFAULT_MAX_ADJU TO MAX_ADJU
+    ENDIF
+
     RETURN
     ENDROUTINE
 
@@ -190,7 +204,7 @@ INITIALIZE LROUTINE
 .#######################################################################
 PROCESS_INPUT LROUTINE
 
-    CALL UTIL_XMESSAGE USING ("Building adjustments (max of "+(SQUEEZE CHAR MAX_ADJU)+")..."),MSG_HEIGHT
+    CALL UTIL_XMESSAGE USING ("Building adjustments (max of "+(SQUEEZE CHAR DEFAULT_MAX_ADJU)+")..."),MSG_HEIGHT
 
     CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
     CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
@@ -239,7 +253,7 @@ PROCESS_INPUT LROUTINE
         CALL WRITE_LOG USING "PROCESSED","CALC_ADJUST FINISHED - SEE FEEDBACK"
 
         DELETE INPUT_FD
-        BREAK IF (X_CNT1 >= MAX_ADJU)
+        BREAK IF (X_CNT1 >= DEFAULT_MAX_ADJU)
     REPEAT
 
     CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
