@@ -1,0 +1,216 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2201181.ps
++
++ DESCRIPTION:
++   Convert ESI DMG tracker to the new layout
++
++ CREATED BY:
++   apjwh - 2022-01-18
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC ESI_DMG_LIB.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    VAR=400,TEXT
+INPUT_FILE          INIT    "/w/tmp/dmgtrk_in.txt"
+
+OUTPUT_FD           FILE    FIXED=DMG_SENT_SIZE,TEXT
+OUTPUT_FILE         INIT    "/w/tmp/dmgtrk_out.txt"
+
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2201181" TO C_PROG        ...Program name
+    MOVE "ESI DMG TRK CONVERT" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL CONVERT_LAYOUT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "inputs":
+                                  "":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CONVERT_LAYOUT LROUTINE
+OLD_LIST            LIST
+OLD_ID              CHAR    8
+OLD_EFF             CHAR    8
+OLD_FIRST           CHAR    8
+OLD_LAST            CHAR    8
+OLD_DATA            CHAR    ESIDMG_RECSIZE
+                    LISTEND
+
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL PREP_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,OLD_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,7
+
+        PACK DMG_TRK_ID WITH OLD_ID,BLANKS
+        PACK DMG_TRK_EFF WITH OLD_EFF,BLANKS
+        PACK DMG_TRK_FIRST WITH OLD_FIRST,BLANKS
+        PACK DMG_TRK_LAST WITH OLD_LAST,BLANKS
+        PACK DMG_TRK_ATTEST WITH OLD_LAST,BLANKS
+        FILL " " IN DMG_TRK_RECTYPE
+        PACK DMG_TRK_DATA WITH OLD_DATA,BLANKS
+
+        CALL WRITE_OGBREC_SEQ USING OUTPUT_FD,OUTPUT_FILE,DMG_TRK_LIST
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL CLOSE_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
