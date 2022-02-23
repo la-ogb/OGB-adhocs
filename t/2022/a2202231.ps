@@ -1,0 +1,368 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2202231.ps
++
++ DESCRIPTION:
++   Convert Medimpact MMR files to CSV for OGB to review
++
++ CREATED BY:
++   apjwh - 2022-02-23
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC DATAPATH_COBRA_SHARED.CB
+    INC EGWP_MMR.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     100
+
+.# =================================================================== #
+.# Prod Configuration
+.# =================================================================== #
+
+OGB_REMOTE          INIT    "/i/groups/shared/EGWP/mmr-csvs/"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_REMOTE         INIT    "/i/groups/it/apps/staging/test/"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    VAR=200,TEXT
+INPUT_FILE          INIT    "/w/tmp/a2202231_in.txt"
+
+MMR_FD              FILE    VAR=1000,TEXT
+MMR_FILE            INIT    "/w/tmp/working_mmr.txt"
+
+OUT_FD              FILE    VAR=5000,TEXT
+OUT_FILE            CHAR    200
+
+.# =================================================================== #
+.# Record Lists
+.# =================================================================== #
+
+INPUT_LIST          LIST
+INPUT_FILENAME      CHAR    200
+                    LISTEND
+
+OUT_LIST            LIST
+OUT_REC             CHAR    5000
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+HEADER_REC          CHAR    5000
+INPUT_DIR           INIT    "/w/tmp/mmr-to-csv"
+REMOTE_DIR          CHAR    200
+
+FIELD_CNT           NUM     3
+FIELD_NAME          CHAR    30
+LIST_PTR            VAR     @
+LAST_FIELD          CHAR    30
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2202231" TO C_PROG        ...Program name
+    MOVE "MI MMR-TO-CSV" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL CONVERT_FILES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input Files":
+                                  "Output Recs":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    PACK REMOTE_DIR WITH OGB_REMOTE
+    IF (CHOP TEST_REMOTE > "")
+        PACK REMOTE_DIR WITH TEST_REMOTE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CONVERT_FILES LROUTINE
+
+    CALL GENERATE_HEADER
+    CALL UTIL_FINDFILES USING "ogb.*efto*.txt":
+                              INPUT_DIR:
+                              INPUT_FILE:
+                              "NEW"
+
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,1
+
+        REFORMAT INPUT_FILENAME,MMR_FILE,"-t"
+        IF OVER
+            debug
+            BREAK
+        ENDIF
+
+        CALL OPEN_OGBFILE USING MMR_FD,MMR_FILE
+
+        CALL SET_OUT_NAME
+        CALL PREP_OGBFILE USING OUT_FD,OUT_FILE
+
+        PACK OUT_REC WITH HEADER_REC
+        CALL WRITE_OGBREC_SEQ USING OUT_FD,OUT_FILE,OUT_LIST
+
+        debug
+
+        LOOP
+            CALL READ_OGBFILE_SEQ USING MMR_FD,MMR_FILE,MMR_LIST
+            WHILE (RESULT = 1)
+
+            CALL UTIL_XCOUNTER USING X_CNT2,1000
+
+            CALL WRITE_CSV_REC
+        REPEAT
+
+        CALL CLOSE_OGBFILE USING MMR_FD,MMR_FILE
+        CALL CLOSE_OGBFILE USING OUT_FD,OUT_FILE
+
+        debug
+
+        CALL UTIL_TRIM_TRAILING_SPACE USING OUT_FILE,OUT_FILE
+        CALL UTIL_FTP_SEND_FILE USING INPUT_DIR,REMOTE_DIR,OUT_FILE,"ascii"
+        CALL UTIL_DELETE_FILE USING OUT_FILE
+        CALL UTIL_DELETE_FILE USING MMR_FILE
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL UTIL_DELETE_FILE USING INPUT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GENERATE_HEADER LROUTINE
++ Dynamically generate the CSV field
+    CLEAR LAST_FIELD,HEADER_REC
+
+    FOR FIELD_CNT FROM 1 TO 999
+        LOADADR LIST_PTR FROM FIELD_CNT OF MMR_LIST
+        GETNAME LIST_PTR TO FIELD_NAME
+
+        BREAK IF OVER
+        BREAK IF (SQUEEZE FIELD_NAME = "")
+        BREAK IF (SQUEEZE LAST_FIELD = SQUEEZE FIELD_NAME)
+        PACK LAST_FIELD WITH FIELD_NAME
+
+        IF (CHOP HEADER_REC > "")
+            PACK HEADER_REC WITH HEADER_REC,","
+        ENDIF
+        PACK HEADER_REC WITH HEADER_REC,FIELD_NAME," (##",(SQUEEZE CHAR FIELD_CNT),")"
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_OUT_NAME LROUTINE
+NAME_PART_CNT   NUM     4
+NAME_PARTS      CHAR    100[999]
+DATE_PART       CHAR    10
+TIME_PART       CHAR    10
+IDX             NUM     5
+...
+    CLEAR DATE_PART,TIME_PART,NAME_PARTS
+
+    LOADMOD "EXPLODE"
+
+    EXPLODE     RECSTR=INPUT_FILENAME:
+                DELIM=".":
+                AMAX=NAME_PART_CNT:
+                ARRAY=NAME_PARTS
+
+    UNLOAD "EXPLODE"
+
+    FOR IDX FROM 1 TO 20
+        BREAK IF (CHOP NAME_PARTS[IDX] = "")
+
+        CMATCH "d" TO NAME_PARTS[IDX]
+        IF EQUAL
+            PACK DATE_PART WITH (CHOP NAME_PARTS[IDX])
+            PACK TIME_PART WITH (CHOP NAME_PARTS[IDX + 1])
+            BREAK
+        ENDIF
+    REPEAT
+
+    debug
+    PACK OUT_FILE WITH INPUT_DIR,"/mmr_",DATE_PART,"_",TIME_PART,"_from_medimpact.csv"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_CSV_REC LROUTINE
++ Convert the MMR to a CSV rec and write to the file
+FIELD           CHAR    200
+...
+    CLEAR FIELD_NAME,FIELD,OUT_REC
+
+    FOR FIELD_CNT FROM 1 TO 999
+        LOADADR LIST_PTR FROM FIELD_CNT OF MMR_LIST
+        GETNAME LIST_PTR TO FIELD_NAME
+
+        BREAK IF OVER
+        BREAK IF (SQUEEZE FIELD_NAME = "")
+        BREAK IF (SQUEEZE LAST_FIELD = SQUEEZE FIELD_NAME)
+        PACK LAST_FIELD WITH FIELD_NAME
+
+        LOAD FIELD FROM FIELD_CNT OF MMR_LIST
+        REPLACE ",;" IN FIELD
+
+        IF (FIELD_CNT > 1)
+            PACK OUT_REC WITH OUT_REC,","
+        ENDIF
+        PACK OUT_REC WITH OUT_REC,(TRIM (CHOP FIELD))
+    REPEAT
+
+    CALL WRITE_OGBREC_SEQ USING OUT_FD,OUT_FILE,OUT_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_FTP.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
