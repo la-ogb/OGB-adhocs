@@ -47,21 +47,17 @@ TEST_CONFIG         LIST
 .# File Declarations
 .# =================================================================== #
 
-OPTUM_FD             FILE    VAR=60,TEXT
-OPTUM_FILE           INIT    "/w/a2203161.wrk.txt"
-OPTUM_LOG_FILE       INIT    "/w/a2203161.log.csv"
-OPTUM_CSV_LIST       LIST
-OPTUM_CSV_REC        CHAR    60
+OPTUM_FILE           FILE    VAR=60,TEXT
+OPTUM_NAME           INIT    "/w/a2203161.txt"
+OPTUM_LIST           LIST
+OPTUM_ID             CHAR    4
+OPTUM_NAME           CHAR    35
                      LISTEND
 
-.# =================================================================== #
-.# File lists
-.# =================================================================== #
-
-OPTUM_LIST           LIST
-OPTUM_ID             CHAR    5
-OPTUM_ID2            CHAR    5
-OPTUM_NAME           CHAR    35
+OPTUM_CSV_FILE       FILE    VAR=60,TEXT
+OPTUM_CSV_NAME       INIT    "/w/a2203161.csv"
+OPTUM_CSV_LIST       LIST
+OPTUM_CSV_REC        CHAR    60
                      LISTEND
 
 OPTUM_HEADER        LIST
@@ -70,15 +66,9 @@ OPTUM_HEADER_REC    INIT    "Agency ID":
                     LISTEND
 
 OPTUM_R_ID          CHAR    1
-
-.# =================================================================== #
-.# Program Variables
-.# =================================================================== #
-
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
-
 
 
 .# =================================================================== #
@@ -152,6 +142,7 @@ MAIN_PROCESS LROUTINE
 
     debug
     CALL INITIALIZE
+    debug
     CALL BUILD_CLI_LIST
     debug
     CALL CREATE_CLI_LIST
@@ -178,7 +169,6 @@ INITIALIZE LROUTINE
                                   "":
                                   ""
 
-
     RETURN
     ENDROUTINE
 
@@ -188,7 +178,7 @@ BUILD_CLI_LIST LROUTINE
     CALL UTIL_XMESSAGE USING "Building CLI Agency List",MSG_HEIGHT
     
     PACK CLI_LEV2 WITH "00",BLANKS
-    PACK SCRATCH WITH "cli.dbf "," ",OPTUM_FILE," -t ":
+    PACK SCRATCH WITH "cli.dbf "," ",OPTUM_NAME," -t ":
                       " 09-13 ":
                       " -p14-18eq#"",CLI_LEV2,"#"": 
                       " 34-68 "
@@ -199,15 +189,12 @@ BUILD_CLI_LIST LROUTINE
         CALL UTIL_ERRORMSG USING "Reformat failed","BUILD_CLI_AGENCY_LIST"
     ENDIF
 
-    PACK SCRATCH WITH OPTUM_FILE," ",OPTUM_FILE," 01-05 -t -u"
+    PACK SCRATCH WITH OPTUM_NAME," ",OPTUM_NAME," 01-04 -t -u"
     SORT SCRATCH
     IF (OVER)
         debug
         CALL UTIL_ERRORMSG USING "Sort failed","BUILD_CLI_LIST"
     ENDIF
-
- 
-
 
     RETURN
     ENDROUTINE
@@ -216,36 +203,33 @@ BUILD_CLI_LIST LROUTINE
 CREATE_CLI_LIST LROUTINE
 + Core logic
 
-
     MOVE OGB_SEQ1 TO OGB_SEQ
-    CALL PREP_OGBFILE USING OPTUM_FD,OPTUM_FILE
-    CALL WRITE_OGBREC USING OPTUM_FD,OPTUM_FILE,OPTUM_HEADER
+    CALL PREP_OGBFILE USING OPTUM_FILE,OPTUM_NAME
+    CALL PREP_OGBFILE USING OPTUM_CSV_FILE,OPTUM_CSV_NAME
+    CALL WRITE_OGBREC USING OPTUM_CSV_FILE,OPTUM_CSV_NAME,OPTUM_HEADER
 
     LOOP
-        CALL READ_OGBFILE USING OPTUM_FD,OPTUM_FILE,OPTUM_LIST
+        CALL READ_OGBFILE USING OPTUM_FILE,OPTUM_NAME,OPTUM_LIST
         WHILE (RESULT = 1)
 
-        CALL UTIL_XCOUNTER USING X_CNT1,10
-
-        MOVE CLI_LEV1 INTO OPTUM_ID
+...CALL UTIL_XCOUNTER USING X_CNT1,10
        
         CALL UTIL_CLI_FIND USING OPTUM_ID
         IF (NOT EQUAL)
             debug
             CONTINUE
         ENDIF
-  
-        PACK OPTUM_ID INTO OPTUM_R_ID
-        CONTINUE IF (OPTUM_R_ID = "R")
-        CONTINUE IF (CLI_LEV1 = "5000") 
-        CONTINUE IF (CLI_LEV2 != "00")
+
+        CMATCH "R" IN OPTUM_ID
+        CONTINUE IF EQUAL
+        CONTINUE IF (OPTUM_ID = "5000") 
         PACK OPTUM_NAME WITH CLI_NAME
 
-        CALL CLI_CSV
+        CALL WRITE_TO_CSV
 
     REPEAT
 
-    CALL CLOSE_OGBFILE USING OPTUM_FD,OPTUM_FILE
+    CALL CLOSE_OGBFILE USING OPTUM_FILE,OPTUM_NAME
 
 
 
@@ -253,12 +237,13 @@ CREATE_CLI_LIST LROUTINE
     ENDROUTINE
 
 .#######################################################################
-CLI_CSV LROUTINE
+WRITE_TO_CSV LROUTINE
 
-    PACK OPTUM_CSV_REC WITH OPTUM_ID,COMMA:
-                            OPTUM_NAME
+    PACK OPTUM_CSV_REC WITH (CHOP OPTUM_ID),COMMA:
+                            (CHOP OPTUM_NAME),COMMA,BLANKS
 
-    CALL WRITE_OGBREC USING OPTUM_FD,OPTUM_LOG_FILE,OPTUM_CSV_LIST
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    CALL WRITE_OGBREC USING OPTUM_CSV_FILE,OPTUM_CSV_FILE,OPTUM_CSV_LIST
 
     RETURN
     ENDROUTINE
