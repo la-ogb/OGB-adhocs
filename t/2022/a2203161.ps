@@ -40,25 +40,24 @@ REFRESH_RATE        EQU     1000
 
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
-.TODO: add test settings
                     LISTEND
 
 .# =================================================================== #
 .# File Declarations
 .# =================================================================== #
 
-OPTUM_FILE           FILE    VAR=60,TEXT
-OPTUM_NAME           INIT    "/w/a2203161.txt"
-OPTUM_LIST           LIST
-OPTUM_ID             CHAR    4
-OPTUM_NAME           CHAR    35
-                     LISTEND
+OPTUM_FILE          FILE    VAR=60,TEXT
+OPTUM_NAME          INIT    "/w/a2203161.txt"
+OPTUM_LIST          LIST
+OPTUM_ID            CHAR    4
+OPTUM_AGY_NAME      CHAR    35
+                    LISTEND
 
-OPTUM_CSV_FILE       FILE    VAR=60,TEXT
-OPTUM_CSV_NAME       INIT    "/w/a2203161.csv"
-OPTUM_CSV_LIST       LIST
-OPTUM_CSV_REC        CHAR    60
-                     LISTEND
+OPTUM_CSV_FILE      FILE    VAR=60,TEXT
+OPTUM_CSV_NAME      INIT    "/w/a2203161.csv"
+OPTUM_CSV_LIST      LIST
+OPTUM_CSV_REC       CHAR    60
+                    LISTEND
 
 OPTUM_HEADER        LIST
 OPTUM_HEADER_REC    INIT    "Agency ID":
@@ -117,10 +116,6 @@ RUN_NOW ROUTINE
                                  ENABLE_TEST:  ...test toggle
                                  TEST_CONFIG  ...test settings list
 
-.TODO: make sure any parameter that can be called from the CMD line are
-. filled with spaces or value and space before the SCHED_PICK for them
-. to be populated in an automatically generated Impact Scheduler record
-
 .Set up run mode or build SCH record
     CALL SCHED_PICK
 
@@ -142,9 +137,7 @@ MAIN_PROCESS LROUTINE
 
     debug
     CALL INITIALIZE
-    debug
     CALL BUILD_CLI_LIST
-    debug
     CALL CREATE_CLI_LIST
     CALL CLEAN_UP
 
@@ -204,7 +197,7 @@ CREATE_CLI_LIST LROUTINE
 + Core logic
 
     MOVE OGB_SEQ1 TO OGB_SEQ
-    CALL PREP_OGBFILE USING OPTUM_FILE,OPTUM_NAME
+    CALL OPEN_OGBFILE USING OPTUM_FILE,OPTUM_NAME
     CALL PREP_OGBFILE USING OPTUM_CSV_FILE,OPTUM_CSV_NAME
     CALL WRITE_OGBREC USING OPTUM_CSV_FILE,OPTUM_CSV_NAME,OPTUM_HEADER
 
@@ -215,15 +208,18 @@ CREATE_CLI_LIST LROUTINE
 ...CALL UTIL_XCOUNTER USING X_CNT1,10
        
         CALL UTIL_CLI_FIND USING OPTUM_ID
-        IF (NOT EQUAL)
-            debug
-            CONTINUE
-        ENDIF
 
         CMATCH "R" IN OPTUM_ID
         CONTINUE IF EQUAL
         CONTINUE IF (OPTUM_ID = "5000") 
-        PACK OPTUM_NAME WITH CLI_NAME
+        CONTINUE IF (OPTUM_ID = "5002")
+        CONTINUE IF (OPTUM_ID = "5005")
+        CONTINUE IF (OPTUM_ID = "5006")
+        CONTINUE IF (OPTUM_ID = "5007")
+        CONTINUE IF (OPTUM_ID = "5100")
+        CONTINUE IF (OPTUM_ID = "5200")
+        CONTINUE IF (OPTUM_ID = "5300")
+        CONTINUE IF (OPTUM_ID = "5400")
 
         CALL WRITE_TO_CSV
 
@@ -231,19 +227,16 @@ CREATE_CLI_LIST LROUTINE
 
     CALL CLOSE_OGBFILE USING OPTUM_FILE,OPTUM_NAME
 
-
-
     RETURN
     ENDROUTINE
 
 .#######################################################################
 WRITE_TO_CSV LROUTINE
-
+    debug
     PACK OPTUM_CSV_REC WITH (CHOP OPTUM_ID),COMMA:
-                            (CHOP OPTUM_NAME),COMMA,BLANKS
+                            (CHOP OPTUM_AGY_NAME),COMMA,BLANKS
 
-    MOVE OGB_SEQ1 TO OGB_SEQ
-    CALL WRITE_OGBREC USING OPTUM_CSV_FILE,OPTUM_CSV_FILE,OPTUM_CSV_LIST
+    CALL WRITE_OGBREC USING OPTUM_CSV_FILE,OPTUM_CSV_NAME,OPTUM_CSV_LIST
 
     RETURN
     ENDROUTINE
@@ -254,7 +247,7 @@ CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
 
-.TODO: final clean up
+
 
     RETURN
     ENDROUTINE
