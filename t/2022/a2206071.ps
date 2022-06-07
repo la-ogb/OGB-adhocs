@@ -1,0 +1,286 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2206071.ps
++
++ DESCRIPTION:
++   Delete COBRA adjustments bills from Jan to May 2022
++
++ CREATED BY:
++   apjwh - 2022-06-07
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC BIL.RL
+    INC BILD.RL
+    INC BILS.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+CFG_EMAIL_TO        CHAR    100,INITIAL "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_DEL       NUM     "1"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+.TODO: add files
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+.TODO: add file lists
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2206071" TO C_PROG        ...Program name
+    MOVE "DEL COBRA ADJU" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL DELETE_BILLS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "COBRA bills found":
+                                  "Bills in window":
+                                  "BIL deleted":
+                                  "BILD deleted":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_BILLS LROUTINE
+    CALL UTIL_XMESSAGE USING "Deleting COBRA bills",MSG_HEIGHT
+
+    CLEAR BIL_AIM
+    PACK BIL_AIM1 WITH "01X","5000",BLANKS
+    PACK BIL_AIM2 WITH "02X","01",BLANKS
+    PACK BIL_AIM9 WITH "09X","ADJU",BLANKS
+
+    CLEAR BIL_LIST
+    debug
+    LOOP
+        IF (CHOP BIL_ID1 = "")
+            CALL UTIL_BIL_AIMFIND
+        ELSE
+            CALL UTIL_BIL_AIMNEXT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (BIL_STAT != "ADJU")
+        CONTINUE IF (CHOP BIL_LEV1 != "5000")
+        CONTINUE IF (CHOP BIL_LEV2 != "01")
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE    .COBRA bill found
+
+        CONTINUE IF (BIL_INVDT < "20220101" | BIL_INVDT > "20220601")
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE    .COBRA bill found in window
+        debug
+
+        CLEAR BILD_LIST
+        LOOP
+            IF (CHOP BILD_ID2 = "")
+                CALL UTIL_BILD_FIND USING BIL_ID1,""
+            ELSE
+                CALL UTIL_BILD_NEXT
+            ENDIF
+            WHILE EQUAL
+
+            CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE    .BILD deleted
+
+            CONTINUE IF (TEST_SKIP_DEL)
+
+            debug
+            CALL FILE_DELETE
+        REPEAT
+
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE    .BIL deleted
+
+        CONTINUE IF (TEST_SKIP_DEL)
+
+        debug
+
+        CALL FILE_DELETE USING  BIL_FD:    ...File declaration list
+                                BIL_FN:    ...File name list
+                                BIL_FC:    ...(I)ndex or (A)imdex
+                                BIL_FV:    ...File key varlists
+                                BIL_FK:    ...File key sizes
+                                BIL_LIST:  ...File record (field list)
+                                BIL_REC:   ...File record (packed)
+                                BIL_OLD:   ...File saved when read
+                                BIL_QTY:   ...Number of files
+                                1           ...File number for this read
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+EMAIL_TO        CHAR    100
+...
+    CLOCK CALENDAR INTO END_DATETIME
+    debug
+
+    PACK SCRATCH WITH C_PROG," DELETE COBRA ADJU BILLS FROM JAN TO MAY 2022"
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    CALL UTIL_SET_RECIPIENTS USING EMAIL_TO,CFG_EMAIL_TO,TEST_EMAIL_TO
+
+    PACK SCRATCH WITH "":
+        "Adhoc process to delete COBRA adjustment bills for 1/1/22 to ":
+        "5/1/22 invoice months."
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG,EMAIL_TO,SUBJECT,BODY,START_DATETIME,END_DATETIME
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
