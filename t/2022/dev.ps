@@ -50,14 +50,14 @@ HED_DT                  INIT    "20220601"
 
 ENABLE_TEST             NUM     V_FLAG
 TEST_CONFIG             LIST
-TEST_MAX_PROC_COUNT     NUM     "1"
+TEST_MAX_PROC_COUNT     NUM     "2"
 TEST_SKIP_ALL_WRITES    NUM     "0"
 TEST_SKIP_BIL_WRITE     NUM     "0"
 TEST_SKIP_BILD_WRITE    NUM     "0"
 TEST_SKIP_BILS_WRITE    NUM     "0"
 TEST_SKIP_COL_WRITE     NUM     "0"
 TEST_SKIP_NOTE_WRITE    NUM     "0"
-TEST_SKIP_POST          NUM     "1"
+TEST_SKIP_POST          NUM     "0"
                         LISTEND
 
 .# =================================================================== #
@@ -302,6 +302,9 @@ HEADER_SKIPPED      NUM     1
         CALL REC_CLEANER USING INPUT_REC
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+        IF (TEST_MAX_PROC_COUNT > 0)
+            BREAK IF (X_CNT1 > TEST_MAX_PROC_COUNT)
+        ENDIF
 
         CALL ADD_TO_BIL
     REPEAT
@@ -913,86 +916,42 @@ POPULATE_PLAN_INFO LROUTINE I@CODE,I@EFF
 I@CODE      DIM     @
 I@EFF       DIM     @
 ...
-         PACK      BILD_NET      WITH    BLANKS
-         PACK      BILD_PRD      WITH    BLANKS
-         PACK      BILD_CARR     WITH    BLANKS
-         PACK      BILD_PLAN     WITH    BLANKS
-         IF (I@EFF < "20150101")
-             debug
-             PACK SCRATCH WITH "COVG EFF PRIOR TO 01-01-2015",BLANKS
-             CALL UTIL_ERRORMSG USING SCRATCH,"POPULATE_PLAN_INFO"
-         ENDIF
-         IF (I@EFF < "20150301")   .VERIFY
-            PACK      BILD_NET      WITH    "BLUE",BLANKS
-            RETURN
-         ENDIF
-         PACK SCRATCH WITH I@CODE,BLANKS
-         REPLACE MAKEUPPER IN SCRATCH
-         SCAN "VANTAGE" IN SCRATCH
-         IF EQUAL
-            PACK      BILD_NET      WITH    "VANTA",BLANKS
-            PACK      BILD_PRD      WITH    "MHHP",BLANKS
-            PACK      BILD_PLAN     WITH    "REGN",BLANKS
-         ENDIF
-         SCAN "MAGNOLIA LOCAL HMO" IN SCRATCH
-         IF EQUAL
+    PACK      BILD_NET      WITH    BLANKS
+    PACK      BILD_PRD      WITH    BLANKS
+    PACK      BILD_CARR     WITH    BLANKS
+    PACK      BILD_PLAN     WITH    BLANKS
+
+    PACK SCRATCH WITH (CHOP I@CODE)
+    REPLACE MAKEUPPER IN SCRATCH
+
+    SWITCH SCRATCH
+        CASE "MAGNOLIA LOCAL PLUS"
             PACK      BILD_NET      WITH    "BLUE",BLANKS
             PACK      BILD_PRD      WITH    "MAGNO",BLANKS
             PACK      BILD_PLAN     WITH    "PLUS",BLANKS
-         ENDIF
-         SCAN "PELICAN HRA" IN SCRATCH
-         IF EQUAL
-            PACK      BILD_NET      WITH    "BLUE",BLANKS
-            PACK      BILD_PRD      WITH    "PELCN",BLANKS
-            PACK      BILD_PLAN     WITH    "HRA",BLANKS
-         ENDIF
-         SCAN "PELICAN HSA" IN SCRATCH
-         IF EQUAL
-            PACK      BILD_NET      WITH    "BLUE",BLANKS
-            PACK      BILD_PRD      WITH    "PELCN",BLANKS
-            PACK      BILD_PLAN     WITH    "HSA",BLANKS
-         ENDIF
-
-         SCAN "NEW ORLEANS" IN SCRATCH
-         IF EQUAL
-            PACK      BILD_NET      WITH    "BLUE",BLANKS
-            PACK      BILD_PRD      WITH    "MAGNO",BLANKS
-            PACK      BILD_PLAN     WITH    "LOCL",BLANKS
-         ENDIF
-         SCAN "BATON ROUGE" IN SCRATCH
-         IF EQUAL
-            PACK      BILD_NET      WITH    "BLUE",BLANKS
-            PACK      BILD_PRD      WITH    "MAGNO",BLANKS
-            PACK      BILD_PLAN     WITH    "LOCL",BLANKS
-         ENDIF
-
-         SCAN "MAGNOLIA OPEN" IN SCRATCH
-         IF EQUAL
+        CASE "MAGNOLIA OPEN ACCESS"
             PACK      BILD_NET      WITH    "BLUE",BLANKS
             PACK      BILD_PRD      WITH    "MAGNO",BLANKS
             PACK      BILD_PLAN     WITH    "OPEN",BLANKS
-         ENDIF
-
-         SCAN "MAGNOLIA LOCAL PLUS HMO" IN SCRATCH
-         IF EQUAL
+        CASE "PELICAN HRA1000" | "PELICAN HRA1000 SCHOOLBOARD"
             PACK      BILD_NET      WITH    "BLUE",BLANKS
-            PACK      BILD_PRD      WITH    "MAGNO",BLANKS
-            PACK      BILD_PLAN     WITH    "PLUS",BLANKS
-         ENDIF
+            PACK      BILD_PRD      WITH    "PELCN",BLANKS
+            PACK      BILD_PLAN     WITH    "HRA",BLANKS
+        CASE "PELICAN HSA775"
+            PACK      BILD_NET      WITH    "BLUE",BLANKS
+            PACK      BILD_PRD      WITH    "PELCN",BLANKS
+            PACK      BILD_PLAN     WITH    "HSA",BLANKS
+        CASE "VANTAGE MEDICAL HOME HMO"
+            PACK      BILD_NET      WITH    "VANTA",BLANKS
+            PACK      BILD_PRD      WITH    "MHHP",BLANKS
+            PACK      BILD_PLAN     WITH    "REGN",BLANKS
+        DEFAULT
+            debug
+            CALL UTIL_ERRORMSG USING "Invalid plan","POPULATE_PLAN_INFO"
+    ENDSWITCH
 
-         SCAN "DISCOVERY BENEFITS MEDICAL FSA" IN SCRATCH
-         IF EQUAL
-            RESET SCRATCH
-            RETURN   .IGNORE
-         ENDIF
-         RESET SCRATCH
-         IF (SQUEEZE BILD_NET = "")
-             debug
-             PACK SCRATCH WITH "PLAN NOT IDENTIFIED",BLANKS
-             CALL UTIL_ERRORMSG USING SCRATCH,"ADD_TO_BIL"
-         ENDIF
-         RETURN
-         ENDROUTINE
+    RETURN
+    ENDROUTINE
 
 
 .#######################################################################
