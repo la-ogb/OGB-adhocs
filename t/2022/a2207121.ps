@@ -43,6 +43,7 @@ REFRESH_RATE        EQU     10
 .# =================================================================== #
 
 HED_DT                  INIT    "20220601"
+CFG_EMAIL_TO            INIT    "$ITAPPS"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -50,7 +51,8 @@ HED_DT                  INIT    "20220601"
 
 ENABLE_TEST             NUM     V_FLAG
 TEST_CONFIG             LIST
-TEST_MAX_PROC_COUNT     NUM     "2"
+TEST_EMAIL_TO           INIT    "$CURRENT_USER_EMAIL"
+TEST_MAX_PROC_COUNT     NUM     "3"
 TEST_SKIP_ALL_WRITES    NUM     "0"
 TEST_SKIP_BIL_WRITE     NUM     "0"
 TEST_SKIP_BILD_WRITE    NUM     "0"
@@ -67,6 +69,9 @@ TEST_SKIP_POST          NUM     "0"
 INPUT_FD            FILE    VAR=1000,TEXT
 INPUT_FILE          INIT    "/w/optum_june2022_remit.csv"
 
+LOG_FD              FILE    VAR=1000,TEXT
+LOG_FILE            CHAR    100
+
 Q_FILE              FILE VAR=8,COMP
 Q_NAME              DIM     100
 
@@ -79,6 +84,10 @@ X_NAME              DIM     100
 
 INPUT_LIST          LIST
 INPUT_REC           CHAR    1000
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    1000
                     LISTEND
 
 Q_LIST              LIST
@@ -127,6 +136,8 @@ RUNTIME             CHAR    8
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
+
+ERROR_FOUND         NUM     1
 
 EXPL_ARA            CHAR    100[999]
 CNT                 NUM     4
@@ -291,6 +302,8 @@ HEADER_SKIPPED      NUM     1
     debug
     CLEAR HEADER_SKIPPED
     LOOP
+        CLEAR ERROR_FOUND
+
         CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
         WHILE (RESULT = 1)
 
@@ -320,13 +333,28 @@ HEADER_SKIPPED      NUM     1
 
 .#######################################################################
 DO_COLLECTIONS LROUTINE
+    debug
 
+    CALL BUILD_COL
+
+    RETURN IF (X_CNT <= 0)
+
+    CALL POST_COL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_COL LROUTINE
     debug
     CALL CLOSE_OGBFILE USING Q_FILE,Q_NAME
     RETURN IF (Q_CNT <= 0)
 
     CALL OPEN_OGBFILE USING Q_FILE,Q_NAME
     LOOP
+        CLEAR ERROR_FOUND
+
         CALL READ_OGBFILE_SEQ USING Q_FILE,Q_NAME,Q_LIST
         WHILE (RESULT = 1)
 
@@ -338,13 +366,19 @@ DO_COLLECTIONS LROUTINE
         CALL DO_ONE_COL
     REPEAT
     CALL CLOSE_OGBFILE USING Q_FILE,Q_NAME
-
     CALL CLOSE_OGBFILE USING X_FILE,X_NAME
-    RETURN IF (X_CNT <= 0)
 
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+POST_COL LROUTINE
     debug
     CALL OPEN_OGBFILE USING X_FILE,X_NAME
     LOOP
+        CLEAR ERROR_FOUND
+
         CALL READ_OGBFILE_SEQ USING X_FILE,X_NAME,X_LIST
         WHILE (RESULT = 1)
 
@@ -361,6 +395,7 @@ DO_COLLECTIONS LROUTINE
 
     RETURN
     ENDROUTINE
+
 
 
 .#######################################################################
@@ -399,17 +434,21 @@ SPLIT_DATA LROUTINE
 
 .#######################################################################
 FIND_MEMBER LROUTINE
-    PACK MEM_FK11 WITH REG_INDIVIDUALIDENTIFIER
-    CALL JUST_RIGHT USING MEM_FK11,MEM_FK11
-    REPLACE " 0" IN MEM_FK11
-    IF (MEM_FK11 > "00000000")
-        CALL UTIL_MEM_FIND USING MEM_FK11
-        IF NOT EQUAL
-            debug
-            PACK SCRATCH WITH "MEM:",MEM_FK11," NOT FOUND"
-            CALL UTIL_ERRORMSG USING SCRATCH,"FIND_MEMBER"
-        ENDIF
-    ELSE
+    RETURN IF (ERROR_FOUND)
+.NOTE: IMPACT ID is unreliable from Optum for now. Use SSN for member
+.lookup
+
+.    PACK MEM_FK11 WITH REG_INDIVIDUALIDENTIFIER
+.    CALL JUST_RIGHT USING MEM_FK11,MEM_FK11
+.    REPLACE " 0" IN MEM_FK11
+.    IF (MEM_FK11 > "00000000")
+.        CALL UTIL_MEM_FIND USING MEM_FK11
+.        IF NOT EQUAL
+.            debug
+.            PACK SCRATCH WITH "MEM:",MEM_FK11," NOT FOUND"
+.            CALL UTIL_ERRORMSG USING SCRATCH,"FIND_MEMBER"
+.        ENDIF
+.    ELSE
         REPLACE "- " IN REG_SSN
         PACK SCRATCH WITH (SQUEEZE REG_SSN)
         PACK MEM_AIM1 WITH "01X",SCRATCH,BLANKS
@@ -418,9 +457,10 @@ FIND_MEMBER LROUTINE
         IF NOT EQUAL
             debug
             PACK SCRATCH WITH "MEM SSN:",SCRATCH," NOT FOUND"
-            CALL UTIL_ERRORMSG USING SCRATCH,"FIND_MEMBER"
+            CALL ADD_TO_LOG USING "ERROR",SCRATCH
+            RETURN
         ENDIF
-    ENDIF
+.    ENDIF
 
     RETURN
     ENDROUTINE
@@ -428,6 +468,8 @@ FIND_MEMBER LROUTINE
 
 .#######################################################################
 FIND_CURR_BIL LROUTINE
+    RETURN IF (ERROR_FOUND)
+
     CLEAR BIL_AIM
     PACK BIL_AIM6 WITH "06X",HED_DT,BLANKS
     PACK BIL_AIM11 WITH "11X",MEM_ID1,BLANKS
@@ -440,7 +482,8 @@ FIND_CURR_BIL LROUTINE
     IF (EQUAL AND BIL_CYCLE <> RUNTIME)
         debug
         PACK SCRATCH WITH "MEM:",BIL_MEM," ALREADY BILLED",BLANKS
-        CALL UTIL_ERRORMSG USING SCRATCH,"FIND_CURR_BIL"
+        CALL ADD_TO_LOG USING "ERROR",SCRATCH
+        RETURN
     ENDIF
 
     IF NOT (EQUAL)    new BIL needed
@@ -495,6 +538,8 @@ FIND_CURR_BIL LROUTINE
 .#######################################################################
 CREATE_BILD LROUTINE
 .Billing detail for premium
+    RETURN IF (ERROR_FOUND)
+
     FILL " " IN BILD_LIST
     FILL " " IN BILD_REC
     FILL " " IN BILD_OLD
@@ -534,10 +579,6 @@ CREATE_BILD LROUTINE
     CALL PUSH_COMMON_TO_BILD
 
     CALL POPULATE_PLAN_INFO USING REG_PLANNAME,BILD_COVGF
-    IF (SQUEEZE BILD_NET = "")
-        debug
-        CALL UTIL_ERRORMSG USING "Plan not found","ADD_TO_BIL"
-    ENDIF
 
     CALL WRITE_BILD
 
@@ -548,6 +589,8 @@ CREATE_BILD LROUTINE
 .#######################################################################
 CREATE_BILS LROUTINE
 .billing summary record for REG  (PREM+FEES)
+    RETURN IF (ERROR_FOUND)
+
     FILL " " IN BILS_LIST
     FILL " " IN BILS_REC
     FILL " " IN BILS_OLD
@@ -582,6 +625,8 @@ WRITE_BIL LROUTINE
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_BIL_WRITE)
 
+    CALL ADD_TO_LOG USING "LOG","BIL created"
+
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
     CALL FILE_WRITE USING   BIL_FD:    ...File declaration list
@@ -600,8 +645,11 @@ WRITE_BIL LROUTINE
 
 .#######################################################################
 WRITE_BILD LROUTINE
+    RETURN IF (ERROR_FOUND)
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_BILD_WRITE)
+
+    CALL ADD_TO_LOG USING "LOG","BILD created"
 
     CALL FILE_WRITE USING   BILD_FD:    ...File declaration list
                             BILD_FN:          ...File name list
@@ -620,8 +668,11 @@ WRITE_BILD LROUTINE
 
 .#######################################################################
 WRITE_BILS LROUTINE
+    RETURN IF (ERROR_FOUND)
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_BILS_WRITE)
+
+    CALL ADD_TO_LOG USING "LOG","BILS created"
 
     CALL FILE_WRITE USING   BILS_FD:    ...File declaration list
                             BILS_FN:          ...File name list
@@ -640,8 +691,11 @@ WRITE_BILS LROUTINE
 
 .#######################################################################
 WRITE_COL LROUTINE
+    RETURN IF (ERROR_FOUND)
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_COL_WRITE)
+
+    CALL ADD_TO_LOG USING "LOG","COL created"
 
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
 
@@ -903,6 +957,8 @@ DO_ONE_POST
 
     CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
 
+    CALL ADD_TO_LOG USING "LOG","COL posted"
+
     LOADMOD   "colin"
     SETLPTR   COL_REC
     RESET     COL_REC
@@ -916,10 +972,10 @@ POPULATE_PLAN_INFO LROUTINE I@CODE,I@EFF
 I@CODE      DIM     @
 I@EFF       DIM     @
 ...
-    PACK      BILD_NET      WITH    BLANKS
-    PACK      BILD_PRD      WITH    BLANKS
-    PACK      BILD_CARR     WITH    BLANKS
-    PACK      BILD_PLAN     WITH    BLANKS
+    FILL " " IN BILD_NET:
+                BILD_PRD:
+                BILD_CARR:
+                BILD_PLAN
 
     PACK SCRATCH WITH (CHOP I@CODE)
     REPLACE MAKEUPPER IN SCRATCH
@@ -947,7 +1003,8 @@ I@EFF       DIM     @
             PACK      BILD_PLAN     WITH    "REGN",BLANKS
         DEFAULT
             debug
-            CALL UTIL_ERRORMSG USING "Invalid plan","POPULATE_PLAN_INFO"
+            CALL ADD_TO_LOG USING "ERROR","Unable to set plan value"
+            RETURN
     ENDSWITCH
 
     RETURN
@@ -1021,11 +1078,77 @@ N@DATA      DIM     @
 
 
 .#######################################################################
+ADD_TO_LOG LROUTINE TYP@,MSG@
+TYP@        CHAR    @
+MSG@        CHAR    @
+...
+    IF (CHOP LOG_FILE = "")
+        PACK LOG_FILE WITH "/w/",(CHOP C_PROG),"_",(CHOP C_USER),"_",(CHOP CURRDATE),".csv"
+        CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+
+        PACK LOG_REC WITH "LOG_TYPE",COMMA:
+                          "LOG_MSG",COMMA:
+                          "NAME",COMMA:
+                          "SSN",COMMA:
+                          "OGB_ID_ON_FILE",COMMA:
+                          "TOTAL_REMIT"
+
+        CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+    ENDIF
+
+    SWITCH TYP@
+        CASE "ERROR"
+            SET ERROR_FOUND
+    ENDSWITCH
+
+    PACK LOG_REC WITH (CHOP TYP@),COMMA:
+                      (CHOP MSG@),COMMA:
+                      (CHOP REG_MEMBERNAME),COMMA:
+                      (CHOP REG_SSN),COMMA:
+                      (CHOP REG_INDIVIDUALIDENTIFIER),COMMA:
+                      (CHOP REG_TOTALTOREMITTOCLIENT)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
     debug
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_REPORT
 
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_REPORT LROUTINE
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+EMAIL_TO    CHAR    100
+...
+    PACK SCRATCH WITH C_PROG," BUILD JUNE OPTUM COBRA BILLS"
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    CALL UTIL_SET_RECIPIENTS USING EMAIL_TO,CFG_EMAIL_TO,TEST_EMAIL_TO
+
+    PACK SCRATCH WITH "":
+        "Adhoc process to load Optum remittance data into Impact billing."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               EMAIL_TO:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG_FILE
     RETURN
     ENDROUTINE
 
