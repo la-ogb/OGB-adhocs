@@ -1,0 +1,1238 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2207111.ps
++
++ DESCRIPTION:
++   Load June 2022 billing file into Impact BIL system for CAFR reports
++
++ CREATED BY:
++   apjwh - 2022-07-11
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEM.RL
+    INC BIL.RL
+    INC BILD.RL
+    INC BILS.RL
+    INC COL.RL
+    INC NOTES.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+JOB_ID                  INIT    "OTM226"    ."Optum June 2022 Bill Load"
+HED_DT                  INIT    "20220601"
+CFG_EMAIL_TO            INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST             NUM     V_FLAG
+TEST_CONFIG             LIST
+TEST_EMAIL_TO           INIT    "$CURRENT_USER_EMAIL"
+TEST_MAX_PROC_COUNT     NUM     "3"
+TEST_SKIP_ALL_WRITES    NUM     "0"
+TEST_SKIP_BIL_WRITE     NUM     "0"
+TEST_SKIP_BILD_WRITE    NUM     "0"
+TEST_SKIP_BILS_WRITE    NUM     "0"
+TEST_SKIP_COL_WRITE     NUM     "0"
+TEST_SKIP_NOTE_WRITE    NUM     "0"
+TEST_SKIP_POST          NUM     "0"
+                        LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    VAR=1000,TEXT
+INPUT_FILE          INIT    "/w/optum_june2022_remit.csv"
+
+LOG_FD              FILE    VAR=1000,TEXT
+LOG_FILE            CHAR    100
+
+Q_FILE              FILE    VAR=8,COMP
+Q_NAME              DIM     100
+
+X_FILE              FILE    VAR=8,COMP
+X_NAME              DIM     100
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+INPUT_LIST          LIST
+INPUT_REC           CHAR    1000
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    1000
+                    LISTEND
+
+Q_LIST              LIST
+Q_BIL               DIM     8
+                    LISTEND
+
+X_LIST              LIST
+X_COL               DIM     8
+                    LISTEND
+
+REG_LIST                            LIST WITH NAMES
+REG_CLIENTID                        CHAR    20     1473
+REG_CLIENTDIVISIONID                CHAR    20     5220
+REG_REMITTO                         CHAR    20     Client
+REG_CLIENTNAME                      CHAR    100    State of Louisiana Office of Group Benefits
+REG_DIVISIONNAME                    CHAR    100    State of Louisiana Office of Group Benefits
+REG_PREMIUMYEAR                     CHAR    20     2022
+REG_PREMIUMMONTH                    CHAR    20     6
+REG_PLANNAME                        CHAR    100    Magnolia Local Plus
+REG_CARRIERPLANIDENTIFICATION       CHAR    20     Magnolia Local Plus
+REG_CARRIERNAME                     CHAR    20     Blue Cross and Blue Shield of LA
+REG_MEMBERNAME                      CHAR    100    "XXXXXXXX, TERRESA S"
+REG_ENTITYTYPENAME                  CHAR    20     QB
+REG_SSN                             CHAR    20     111-22-3333
+REG_PREMIUMWITHOUTADMINFEEAMT       CHAR    20     527.22
+REG_ADMINFEEAMOUNT                  CHAR    20     10.54
+REG_MEMBERPAIDAMOUNT                CHAR    20     537.76
+REG_SUBSIDYALLOCATEDAMOUNT          CHAR    20     0
+REG_AEI2021SUBSIDYALLOCAMT          CHAR    20      0
+REG_MEMBERPAIDADMINFEEAMOUNT        CHAR    20     10.54
+REG_MEMBERPAIDREMITTABLEADMIN       CHAR    20     0
+REG_SUBSIDIZEDADMINFEEAMOUNT        CHAR    20     0
+REG_AEI2021SUBSIDIZEDADMFEEAMT      CHAR    20     0
+REG_MEMBERPAIDPREMIUMTOREMITA       CHAR    20     527.22
+REG_TOTALTOREMITTOCLIENT            CHAR    20     527.22
+REG_TOTALTOREMITTOCARRIER           CHAR    20     0
+REG_INDIVIDUALIDENTIFIER            CHAR    20     688454
+REG_MEMBERID                        CHAR    20     3327729
+                                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+RUNTIME             CHAR    8
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+ERROR_FOUND         NUM     1
+
+EXPL_ARA            CHAR    100[999]
+CNT                 NUM     4
+
+REMIT_AMT           NUM     7.2
+PREM_AMT            NUM     7.2
+FEE_AMT             NUM     7.2
+
+COV_DT              DIM     8
+BUCKS               NUM     7.2
+BUCKS2              NUM     7.2
+FORM7.2             NUM     7.2
+FORM7.2A            FORM    7.2
+FORM3               FORM    3
+DIM2                CHAR    2
+DIM20               DIM     20
+
+Q_CNT               FORM    10
+X_CNT               FORM    10
+
+WHEN                DIM     30
+
+HR                  DIM     2
+MN                  DIM     2
+SC                  DIM     4
+MO                  DIM     2
+DY                  DIM     2
+YR                  DIM     4
+
+.# =================================================================== #
+.# Externals
+.# =================================================================== #
+
+RUN_COLIN           EXTERNAL
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2207111" TO C_PROG        ...Program name
+    MOVE "BIL JUNE OTM" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL BUILD_BILL
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO SCRATCH
+    UNPACK SCRATCH INTO CURRDATE,RUNTIME
+
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input Recs Proc'd":
+                                  "Created BIL Recs":
+                                  "Created COL Recs":
+                                  "Posted COL Recs":
+                                  "Errors":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    CALL UTIL_EXISTS USING INPUT_FILE,"FILE"
+    IF NOT EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING "Input file not found","SET_RUN_CONFIG"
+    ENDIF
+
+    LOADMOD "explode"
+
+.Configure test permissions to trickle down dependency chain
+    IF (TEST_SKIP_BIL_WRITE)
+        SET TEST_SKIP_BILD_WRITE
+        SET TEST_SKIP_COL_WRITE
+    ENDIF
+    IF (TEST_SKIP_BILD_WRITE)
+        SET TEST_SKIP_BILS_WRITE
+    ENDIF
+    IF (TEST_SKIP_COL_WRITE)
+        SET TEST_SKIP_NOTE_WRITE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_BILL LROUTINE
+HEADER_SKIPPED      NUM     1
+...
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+
+    debug
+    CLEAR HEADER_SKIPPED
+    LOOP
+        CLEAR ERROR_FOUND
+
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
+        WHILE (RESULT = 1)
+
+        IF NOT (HEADER_SKIPPED)
+            SET HEADER_SKIPPED
+            CONTINUE
+        ENDIF
+
+        CALL REC_CLEANER USING INPUT_REC
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+        IF (TEST_MAX_PROC_COUNT > 0)
+            BREAK IF (X_CNT2 > TEST_MAX_PROC_COUNT)
+        ENDIF
+
+        CALL ADD_TO_BIL
+    REPEAT
+
+    debug
+    CALL DO_COLLECTIONS
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DO_COLLECTIONS LROUTINE
+    debug
+
+    CALL BUILD_COL
+
+    RETURN IF (X_CNT <= 0)
+
+    CALL POST_COL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_COL LROUTINE
++ Build collection from the just created bill
++ TODO: this may not be correct - it assumes that the entire bill has
++ been remitted, but the TOTALREMITTOCLIENT field does not include the
++ admin fee
+    debug
+    CALL CLOSE_OGBFILE USING Q_FILE,Q_NAME
+    RETURN IF (Q_CNT <= 0)
+
+    CALL OPEN_OGBFILE USING Q_FILE,Q_NAME
+    LOOP
+        CLEAR ERROR_FOUND
+
+        CALL READ_OGBFILE_SEQ USING Q_FILE,Q_NAME,Q_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_BIL_FIND USING Q_BIL
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+        CALL DO_ONE_COL
+    REPEAT
+    CALL CLOSE_OGBFILE USING Q_FILE,Q_NAME
+    CALL CLOSE_OGBFILE USING X_FILE,X_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+POST_COL LROUTINE
+    debug
+    CALL OPEN_OGBFILE USING X_FILE,X_NAME
+    LOOP
+        CLEAR ERROR_FOUND
+
+        CALL READ_OGBFILE_SEQ USING X_FILE,X_NAME,X_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_COL_FIND USING X_COL
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+
+        CALL DO_ONE_POST
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING X_FILE,X_NAME
+
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+ADD_TO_BIL LROUTINE
+    debug
+    CALL SPLIT_DATA
+    CALL FIND_MEMBER
+    CALL FIND_CURR_BIL
+    CALL CREATE_BILD
+    CALL CREATE_BILS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SPLIT_DATA LROUTINE
+    FILL " " IN REG_LIST
+    CLEAR REG_LIST
+
+    EXPLODE RECSTR=INPUT_REC:
+            DELIM=",":
+            AMAX=EXPL_IDX:
+            ARRAY=EXPL_ARA:
+            RLIST=REG_LIST
+
+    FILL " " IN REG_LIST
+    CLEAR REG_LIST
+    FOR CNT FROM 1 TO EXPL_IDX
+        STORE EXPL_ARA[CNT] TO CNT OF REG_LIST
+    REPEAT
+
+    MOVE (SQUEEZE REG_PREMIUMWITHOUTADMINFEEAMT) TO PREM_AMT
+    MOVE (SQUEEZE REG_ADMINFEEAMOUNT) TO FEE_AMT
+    MOVE (SQUEEZE REG_MEMBERPAIDPREMIUMTOREMITA) TO REMIT_AMT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_MEMBER LROUTINE
+    RETURN IF (ERROR_FOUND)
+.NOTE: IMPACT ID is unreliable from Optum for now. Use SSN for member
+.lookup
+
+.    PACK MEM_FK11 WITH REG_INDIVIDUALIDENTIFIER
+.    CALL JUST_RIGHT USING MEM_FK11,MEM_FK11
+.    REPLACE " 0" IN MEM_FK11
+.    IF (MEM_FK11 > "00000000")
+.        CALL UTIL_MEM_FIND USING MEM_FK11
+.        IF NOT EQUAL
+.            debug
+.            PACK SCRATCH WITH "MEM:",MEM_FK11," NOT FOUND"
+.            CALL UTIL_ERRORMSG USING SCRATCH,"FIND_MEMBER"
+.        ENDIF
+.    ELSE
+        REPLACE "- " IN REG_SSN
+        PACK SCRATCH WITH (SQUEEZE REG_SSN)
+        PACK MEM_AIM1 WITH "01X",SCRATCH,BLANKS
+        PACK MEM_AIM3 WITH "03X01",BLANKS
+        CALL UTIL_MEM_AIMFIND
+        IF NOT EQUAL
+            debug
+            PACK SCRATCH WITH "SSN NOT FOUND: ",(SQUEEZE REG_SSN)," NAME=",REG_MEMBERNAME
+            CALL LOG_ERROR USING SCRATCH
+            RETURN
+        ENDIF
+.    ENDIF
+
+    CALL CHECK_FOR_COBRA_MEME
+    IF NOT EQUAL
+        debug
+        CALL LOG_ERROR USING "NO COBRA MEME FOUND"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_FOR_COBRA_MEME LROUTINE
++ Make sure the current member record has a COBRA enrollment
+
+.TODO: dev this
+.      how do we reload data that errors
+    SETFLAG EQUAL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_CURR_BIL LROUTINE
+    RETURN IF (ERROR_FOUND)
+
+    CLEAR BIL_AIM
+    PACK BIL_AIM6 WITH "06X",HED_DT,BLANKS
+    PACK BIL_AIM11 WITH "11X",MEM_ID1,BLANKS
+    PACK BIL_AIM9 WITH "09LP"
+    PACK BIL_AIM1 WITH "01X5000",BLANKS
+    PACK BIL_AIM2 WITH "02X01",BLANKS
+    PACK BIL_AIM10 WITH "10X00001385",BLANKS
+
+    CALL UTIL_BIL_AIMFIND
+    IF (EQUAL AND BIL_CYCLE <> RUNTIME)
+        debug
+        PACK SCRATCH WITH "MEMBER ALREADY BILLED: ID=",MEM_ID1," NAME=",REG_MEMBERNAME
+        CALL LOG_ERROR USING SCRATCH
+        RETURN
+    ENDIF
+
+    IF NOT (EQUAL)    new BIL needed
+        FILL " " IN BIL_LIST
+        FILL " " IN BIL_REC
+        FILL " " IN BIL_OLD
+
+        CALL PUSH_MEM_TO_BIL
+
+        PACK BIL_INVDT WITH HED_DT,BLANKS
+
+        CALL PUSH_COMMON_TO_BIL
+
+        CLEAR BUCKS
+        MOVE (PREM_AMT + FEE_AMT) TO BUCKS
+
+        PACK BIL_NEWCHG WITH BUCKS,BLANKS
+
+        PACK BIL_STAT WITH "POST",BLANKS
+        CLOCK TIMESTAMP INTO BIL_CALCDT
+        PACK BIL_CYCLE WITH RUNTIME,BLANKS   (helps identify bills created in this process)
+
+        PACK BIL_COVGF WITH HED_DT,BLANKS
+        CALL DATE_CALC USING BIL_COVGF,"ADD","MONTHS",1,SCRATCH
+        CALL DATE_CALC USING SCRATCH,"SUB","DAYS",1,BIL_COVGT
+
+        PACK BIL_PSTCHG WITH BUCKS,BLANKS
+        PACK BIL_PSTREM WITH BUCKS,BLANKS
+        CLEAR BUCKS
+        PACK BIL_PSTPMT WITH BUCKS
+
+        CALL WRITE_BIL
+        CALL ADD_BIL_TO_QUEUE
+    ELSE
+
+. Add detail to existing BIL
+        CLEAR BUCKS
+        CLEAR BUCKS2
+
+        MOVE (PREM_AMT + FEE_AMT) TO BUCKS2
+
+        MOVE BIL_NEWCHG TO BUCKS
+        ADD BUCKS2 TO BUCKS
+        PACK BIL_NEWCHG WITH BUCKS,BLANKS
+        PACK BIL_PSTCHG WITH BUCKS,BLANKS
+        PACK BIL_PSTREM WITH BUCKS,BLANKS
+
+        CALL WRITE_BIL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CREATE_BILD LROUTINE
+.Billing detail for premium. Create PREM for the premium and FEES for
+.the admin fee amount
+    RETURN IF (ERROR_FOUND)
+
+    CALL BUILD_BASIC_BILD USING "PREM",PREM_AMT,"COBRA PREM PAID BY MEMBER"
+    CALL WRITE_BILD
+
+    CALL BUILD_BASIC_BILD USING "FEES",FEE_AMT,"COBRA 2% ADMIN FEE"
+    CALL WRITE_BILD
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_BASIC_BILD LROUTINE TYP@,AMT@,DESC@
+TYP@        CHAR    @
+AMT@        NUM     @
+DESC@       CHAR    @
+...
+    FILL " " IN BILD_LIST
+    FILL " " IN BILD_REC
+    FILL " " IN BILD_OLD
+
+    PACK BILD_ID1 WITH BIL_ID1,BLANKS
+    FILL " " IN BILD_ID2
+
+    PACK DIM2 WITH (SQUEEZE REG_PREMIUMMONTH)
+    CALL JUST_RIGHT USING DIM2,DIM2
+    REPLACE " 0" IN DIM2
+    PACK COV_DT WITH (SQUEEZE REG_PREMIUMYEAR),DIM2,"01",BLANKS
+
+    PACK BILD_EFF WITH COV_DT,BLANKS
+    CALL DATE_CALC USING BILD_EFF,"ADD","MONTHS",1,SCRATCH
+    CALL DATE_CALC USING SCRATCH,"SUB","DAYS",1,BILD_TRM
+    PACK BILD_COVGF WITH BILD_EFF,BLANKS
+    PACK BILD_COVGT WITH BILD_TRM,BLANKS
+
+    CLEAR BUCKS
+    MOVE AMT@ TO BUCKS
+    PACK BILD_AMT WITH BUCKS,BLANKS
+
+    PACK BILD_DESC WITH DESC@,BLANKS
+
+    CALL WRITE_REG_NOTES
+
+    PACK BILD_RATE WITH BUCKS,BLANKS
+    PACK BILD_EEAMT WITH BUCKS,BLANKS
+    PACK BILD_EEPOR WITH BUCKS,BLANKS
+    CLEAR BUCKS
+    PACK BILD_EMPOR WITH BUCKS,BLANKS
+    PACK BILD_SUBCR WITH BUCKS,BLANKS
+
+    PACK BILD_TRAN WITH "BILL",BLANKS
+    IF (BILD_COVGF <> BIL_INVDT)
+        PACK BILD_TRAN WITH "ADJM",BLANKS
+    ENDIF
+
+    CALL PUSH_COMMON_TO_BILD
+    CALL POPULATE_PLAN_INFO USING REG_PLANNAME,BILD_COVGF
+
+    PACK BILD_TYPE WITH TYP@,BLANKS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CREATE_BILS LROUTINE
+.billing summary record for REG  (PREM+FEES)
+    RETURN IF (ERROR_FOUND)
+
+    FILL " " IN BILS_LIST
+    FILL " " IN BILS_REC
+    FILL " " IN BILS_OLD
+    PACK BILS_ID1 WITH BIL_ID1,BLANKS
+
+    CALL PUSH_COMMON_TO_BILS
+
+    PACK BILS_TRAN  WITH BILD_TRAN,BLANKS
+    PACK BILS_POSTD WITH BIL_POSTDT,BLANKS
+    PACK BILS_COVDT WITH BILD_COVGF,BLANKS
+
+    CLEAR BUCKS
+    MOVE (PREM_AMT + FEE_AMT) TO BUCKS
+    PACK BILS_AMT   WITH BUCKS,BLANKS
+    PACK BILS_EEPOR WITH BILS_AMT,BLANKS
+
+    CLEAR BUCKS
+    PACK BILS_EMPOR WITH BUCKS,BLANKS
+    PACK BILS_SUBCR WITH BUCKS,BLANKS
+
+    IF (BUCKS >= 0)
+        MOVE 1 TO FORM7.2
+    ELSE
+        MOVE -1 TO FORM7.2
+    ENDIF
+    PACK BILS_REIMB WITH FORM7.2,BLANKS
+
+    CALL WRITE_BILS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_BIL LROUTINE
+    RETURN IF (TEST_SKIP_ALL_WRITES)
+    RETURN IF (TEST_SKIP_BIL_WRITE)
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    CALL FILE_WRITE USING   BIL_FD:    ...File declaration list
+                            BIL_FN:          ...File name list
+                            BIL_FC:          ...(I)ndex or (A)imdex
+                            BIL_FV:          ...File key varlists
+                            BIL_FK:          ...File key sizes
+                            BIL_LIST:        ...File record (field list)
+                            BIL_REC:         ...File record (packed)
+                            BIL_OLD:         ...File saved when read
+                            BIL_QTY:         ...Number of files
+                            1                ...File number for this read
+
+    PACK SCRATCH WITH "BIL CREATED: ID=",BIL_ID1," MEMBER=",BIL_MEM," ",REG_MEMBERNAME," AMT=",BIL_NEWCHG
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_BILD LROUTINE
+    RETURN IF (ERROR_FOUND)
+    RETURN IF (TEST_SKIP_ALL_WRITES)
+    RETURN IF (TEST_SKIP_BILD_WRITE)
+
+    CALL FILE_WRITE USING   BILD_FD:    ...File declaration list
+                            BILD_FN:          ...File name list
+                            BILD_FC:          ...(I)ndex or (A)imdex
+                            BILD_FV:          ...File key varlists
+                            BILD_FK:          ...File key sizes
+                            BILD_LIST:        ...File record (field list)
+                            BILD_REC:         ...File record (packed)
+                            BILD_OLD:         ...File saved when read
+                            BILD_QTY:         ...Number of files
+                            1                ...File number for this read
+
+    PACK SCRATCH WITH "BILD CREATED: ID1=",BILD_ID1," ID2=",BILD_ID2," TYPE=",BILD_TYPE," AMT=",BILD_AMT
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_BILS LROUTINE
+    RETURN IF (ERROR_FOUND)
+    RETURN IF (TEST_SKIP_ALL_WRITES)
+    RETURN IF (TEST_SKIP_BILS_WRITE)
+
+    CALL FILE_WRITE USING   BILS_FD:    ...File declaration list
+                            BILS_FN:          ...File name list
+                            BILS_FC:          ...(I)ndex or (A)imdex
+                            BILS_FV:          ...File key varlists
+                            BILS_FK:          ...File key sizes
+                            BILS_LIST:        ...File record (field list)
+                            BILS_REC:         ...File record (packed)
+                            BILS_OLD:         ...File saved when read
+                            BILS_QTY:         ...Number of files
+                            1                ...File number for this read
+
+    PACK SCRATCH WITH "BILS CREATED: ID1=",BILS_ID1," ID2=",BILS_ID2," AMT=",BILS_AMT
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_COL LROUTINE
+    RETURN IF (ERROR_FOUND)
+    RETURN IF (TEST_SKIP_ALL_WRITES)
+    RETURN IF (TEST_SKIP_COL_WRITE)
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    CALL FILE_WRITE USING   COL_FD:
+                            COL_FN:
+                            COL_FC:
+                            COL_FV:
+                            COL_FK:
+                            COL_LIST:
+                            COL_REC:
+                            COL_OLD:
+                            COL_QTY:
+                            1
+
+    PACK SCRATCH WITH "COL CREATED: ID1=",COL_ID1," MEMBER=",COL_MEMID," AMT=",COL_AMT
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REC_CLEANER  LROUTINE CLN@REC
+CLN@REC     DIM     @
+CLNREC      DIM     2000
+CLN1        DIM     2000
+CLN2        DIM     2000
+KEEPER      FORM    5
+KEEPER2     FORM    5
+LOOK_START  FORM    1
+LOOK_END    FORM    1
+...
+.FIND ANY STRINGS LIKE THIS
+.   "JOHNSON, BILL W." and change to
+.   JOHNSON; BILL W.
+         REPLACE MAKEUPPER IN CLN@REC
+
+         FILL " " IN CLNREC
+         FILL " " IN CLN1
+         FILL " " IN CLN2
+         PACK CLNREC WITH CLN@REC
+         SET LOOK_START
+         CLEAR LOOK_END
+         LOOP
+            SCAN "#"" IN CLNREC
+            BREAK IF NOT EQUAL
+            IF (LOOK_START)
+               SET LOOK_END         .Now we are looking for the closing ""
+               CLEAR LOOK_START
+               BUMP CLNREC BY -1     .Last char beore ""
+               MOVEFPTR CLNREC TO KEEPER
+               LENSET CLNREC         .LP = FP
+               RESET  CLNREC         .FP = 1
+               PACK   CLN1    WITH CLNREC    .data before the first "" (, at end)
+
+               RESET  CLNREC TO KEEPER    . Back on the ""
+               SETLPTR CLNREC             . LP = PL
+               BUMP   CLNREC BY 2         . fp = first char after ""
+               MOVEFPTR CLNREC TO KEEPER2      .start of quoted string
+               LOOP
+                  BREAK IF OVER
+                  MOVE CLNREC TO DIM1   .So we can debug/view character
+                  CMATCH "#"" WITH CLNREC
+                  IF EQUAL               .end of qouted string
+                      CLEAR LOOK_END     .Done looking for the ending ""
+                      SET   LOOK_START   .ready to look for the next "" pair
+                      CMOVE " " TO CLNREC   .Get rid of ""
+                      BREAK
+                  ENDIF
+                  CMATCH "," WITH CLNREC
+                  IF EQUAL
+                     CMOVE ";" TO CLNREC     Change "," to ";"
+                  ENDIF
+                  BUMP CLNREC BY 1
+               REPEAT
+
+               IF (LOOK_END)
+.                 .did not find terminating "
+.                 .handle error
+.                  todo
+               ENDIF
+
+               RESET CLNREC TO KEEPER2      .Charcter after the starting ""
+               SETLPTR CLNREC
+               PACK CLN2 WITH CLN1,CLNREC
+               PACK CLNREC WITH CLN2
+               RESET CLNREC     .FP = 1
+            ENDIF
+         REPEAT
+
+         PACK CLN@REC WITH CLNREC
+         RETURN
+         ENDROUTINE
+
+
+.#######################################################################
+PUSH_MEM_TO_BIL
+    PACK BIL_MEM WITH MEM_ID1,BLANKS
+    PACK SCRATCH WITH " ",MEM_MINIT,". ",BLANKS
+    IF (SQUEEZE SCRATCH = ".")
+        FILL " " IN SCRATCH
+    ENDIF
+    PACK BIL_GRPN WITH (CHOP MEM_LNAME),", ",(CHOP MEM_FNAME),SCRATCH,BLANKS
+    PACK BIL_ADDR1 WITH MEM_ADDR1,BLANKS
+    PACK BIL_ADDR2 WITH MEM_ADDR2,BLANKS
+    PACK BIL_CITY WITH MEM_CITY,BLANKS
+    PACK BIL_STATE WITH MEM_STATE,BLANKS
+    PACK BIL_ZIP WITH MEM_ZIP,BLANKS
+    PACK BIL_COUNTY WITH MEM_COUNTY,BLANKS
+    PACK BIL_CONT WITH BIL_GRPN,BLANKS
+    PACK BIL_FAX WITH BLANKS
+    PACK BIL_PHONE WITH MEM_HPHN,BLANKS
+    RETURN
+
+
+.#######################################################################
+PUSH_COMMON_TO_BIL
+    CLOCK TIMESTAMP INTO BIL_POSTDT
+    CLOCK TIMESTAMP INTO BIL_NEWDT
+    CLOCK TIMESTAMP INTO BIL_CHGDT
+    PACK  BIL_NEWBY WITH JOB_ID,BLANKS
+    PACK  BIL_CHGBY WITH JOB_ID,BLANKS
+    PACK  BIL_LEV1  WITH "5000",BLANKS
+    PACK  BIL_LEV2  WITH "01",BLANKS
+    PACK  BIL_CLIR  WITH "00001385",BLANKS
+    RETURN
+
+
+.#######################################################################
+PUSH_COMMON_TO_BILD
+    PACK BILD_MEM   WITH MEM_ID1,BLANKS
+    PACK BILD_ESSN  WITH MEM_ESSN,BLANKS
+    PACK BILD_PSSN  WITH MEM_PSSN,BLANKS
+    PACK BILD_REL   WITH MEM_REL,BLANKS
+    PACK BILD_LNAME WITH MEM_LNAME,BLANKS
+    PACK BILD_FNAME WITH MEM_FNAME,BLANKS
+    PACK BILD_MINIT WITH MEM_MINIT,BLANKS
+    PACK BILD_US01  WITH MEM_US01,BLANKS
+    PACK BILD_ADDR1 WITH MEM_ADDR1,BLANKS
+    PACK BILD_ADDR2 WITH MEM_ADDR2,BLANKS
+    PACK BILD_CITY  WITH MEM_CITY,BLANKS
+    PACK BILD_STATE WITH MEM_STATE,BLANKS
+    PACK BILD_ZIP   WITH MEM_ZIP,BLANKS
+    PACK BILD_CNTY  WITH MEM_COUNTY,BLANKS
+    PACK BILD_SEX   WITH MEM_SEX,BLANKS
+    PACK BILD_DOB   WITH MEM_DOB,BLANKS
+    PACK BILD_DOD   WITH MEM_DOD,BLANKS
+    PACK BILD_MAR   WITH MEM_MAR,BLANKS
+    PACK BILD_STUD  WITH MEM_STUD,BLANKS
+    PACK BILD_MED   WITH MEM_MED,BLANKS
+    PACK BILD_COB   WITH MEM_COB,BLANKS
+    PACK BILD_LIFE  WITH MEM_LIFE,BLANKS
+    PACK BILD_ALTID WITH MEM_ALTID,BLANKS
+    PACK BILD_LEV1  WITH BIL_LEV1,BLANKS
+    PACK BILD_LEV2  WITH BIL_LEV2,BLANKS
+    PACK BILD_LEV3  WITH BIL_LEV3,BLANKS
+    PACK BILD_LEV4  WITH BIL_LEV4,BLANKS
+    PACK BILD_LEV5  WITH BIL_LEV5,BLANKS
+    PACK BILD_CLIR  WITH BIL_CLIR,BLANKS
+    PACK BILD_RT    WITH "CB",BLANKS
+    PACK BILD_COBR  WITH "C",BLANKS
+    PACK BILD_MODE  WITH "M",BLANKS
+    PACK BILD_REL   WITH "01",BLANKS
+
+    CLEAR FORM7.2
+    MOVE BILD_AMT TO FORM7.2
+    IF (FORM7.2 >= 0)
+        MOVE 1 TO FORM7.2A
+    ELSE
+        MOVE -1 TO FORM7.2A
+    ENDIF
+
+    PACK BILD_REIMB WITH FORM7.2A,BLANKS
+
+    CLOCK TIMESTAMP INTO BILD_NEWDT
+    CLOCK TIMESTAMP INTO BILD_CHGDT
+    PACK BILD_NEWBY WITH JOB_ID,BLANKS
+    PACK BILD_CHGBY WITH JOB_ID,BLANKS
+    RETURN
+
+
+.#######################################################################
+PUSH_COMMON_TO_BILS
+    PACK BILS_TRAN  WITH BILD_TRAN,BLANKS
+    PACK BILS_CLIR  WITH BILD_CLIR,BLANKS
+    PACK BILS_CLIN  WITH BILD_CLIN,BLANKS
+.    PACK BILS_DESC  WITH BILD_DESC,BLANKS
+    PACK BILS_INVDT WITH BIL_INVDT,BLANKS
+    PACK BILS_LEV1  WITH BILD_LEV1,BLANKS
+    PACK BILS_LEV2  WITH BILD_LEV2,BLANKS
+    PACK BILS_LEV3  WITH BILD_LEV3,BLANKS
+    PACK BILS_LEV4  WITH BILD_LEV4,BLANKS
+    PACK BILS_LEV5  WITH BILD_LEV5,BLANKS
+    PACK BILS_NET   WITH BILD_NET,BLANKS
+    PACK BILS_PRD   WITH BILD_PRD,BLANKS
+    PACK BILS_PLAN  WITH BILD_PLAN,BLANKS
+
+    CLOCK TIMESTAMP INTO BILS_NEWDT
+    CLOCK TIMESTAMP INTO BILS_CHGDT
+    PACK  BILS_NEWBY WITH JOB_ID,BLANKS
+    PACK  BILS_CHGBY WITH JOB_ID,BLANKS
+    RETURN
+
+
+.#######################################################################
+ADD_BIL_TO_QUEUE
+    IF (SQUEEZE Q_NAME = "")
+        PACK Q_NAME WITH "bil_dbcb",(SQUEEZE C_USER),".tmp",BLANKS
+        REPLACE MAKELOWER IN Q_NAME
+        CALL PREP_OGBFILE USING Q_FILE,Q_NAME
+    ENDIF
+
+    PACK  Q_BIL WITH BIL_ID1,BLANKS
+    CALL  WRITE_OGBREC_SEQ  USING Q_FILE,Q_NAME,Q_LIST
+    ADD 1 TO Q_CNT
+    RETURN
+
+
+.#######################################################################
+DO_ONE_COL
+    FILL  " "           IN COL_REC
+    FILL  " "           IN COL_LIST
+    PACK  COL_RECDT   WITH CURRDATE,BLANKS
+    PACK  COL_DEPID   WITH "COBRAUTO",BLANKS
+    PACK  COL_CLIID   WITH BIL_CLIR,BLANKS
+    PACK  COL_MEMID   WITH BIL_MEM,BLANKS
+    PACK  COL_REF     WITH BIL_INVDT,BLANKS
+    PACK  COL_TYPE    WITH "A",BLANKS
+    PACK  COL_PAYNM   WITH BIL_GRPN,BLANKS
+    CLOCK TIMESTAMP TO COL_DEPDT
+    CLOCK TIMESTAMP TO COL_CHKDT
+    CLEAR BUCKS
+    MOVE (SQUEEZE BIL_PSTREM) TO BUCKS
+    PACK  COL_AMT WITH BUCKS,BLANKS
+    PACK  COL_REMAIN WITH BUCKS,BLANKS
+    PACK  COL_STATUS  WITH "OPEN",BLANKS
+    CLEAR FORM7.2
+    MOVE  FORM7.2       TO COL_DIST
+    MOVE  FORM7.2       TO COL_REFUND
+    CLOCK TIMESTAMP TO COL_CHGDT
+    MOVE  (JOB_ID + BLANKS) TO COL_CHGBY
+    CLOCK TIMESTAMP TO COL_NEWDT
+    MOVE  (JOB_ID + BLANKS) TO COL_NEWBY
+
+    CALL WRITE_COL
+    CALL  ADD_COL_TO_QUEUE
+    RETURN
+
+
+.#######################################################################
+ADD_COL_TO_QUEUE
+    IF (SQUEEZE X_NAME = "")
+        PACK X_NAME WITH "bil_dbcb_col",(SQUEEZE C_USER),".tmp",BLANKS
+        REPLACE MAKELOWER IN X_NAME
+        PREP X_FILE,X_NAME
+    ENDIF
+    PACK  X_COL WITH COL_ID1,BLANKS
+    CALL  WRITE_OGBREC_SEQ  USING X_FILE,X_NAME,X_LIST
+    ADD 1 TO X_CNT
+    RETURN
+
+
+.#######################################################################
+DO_ONE_POST
+.Post the cash to the bil
+    RETURN IF (TEST_SKIP_POST)
+
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    PACK SCRATCH WITH "COL POSTED: ID=",COL_ID1
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
+
+    LOADMOD   "colin"
+    SETLPTR   COL_REC
+    RESET     COL_REC
+    CALL      RUN_COLIN USING COL_REC
+    UNLOAD    "colin"
+    RETURN
+
+
+.#######################################################################
+POPULATE_PLAN_INFO LROUTINE I@CODE,I@EFF
+I@CODE      DIM     @
+I@EFF       DIM     @
+...
+    FILL " " IN BILD_NET:
+                BILD_PRD:
+                BILD_CARR:
+                BILD_PLAN
+
+    PACK SCRATCH WITH (CHOP I@CODE)
+    REPLACE MAKEUPPER IN SCRATCH
+
+    SWITCH SCRATCH
+        CASE "MAGNOLIA LOCAL PLUS"
+            PACK      BILD_NET      WITH    "BLUE",BLANKS
+            PACK      BILD_PRD      WITH    "MAGNO",BLANKS
+            PACK      BILD_PLAN     WITH    "PLUS",BLANKS
+        CASE "MAGNOLIA OPEN ACCESS"
+            PACK      BILD_NET      WITH    "BLUE",BLANKS
+            PACK      BILD_PRD      WITH    "MAGNO",BLANKS
+            PACK      BILD_PLAN     WITH    "OPEN",BLANKS
+        CASE "PELICAN HRA1000" | "PELICAN HRA1000 SCHOOLBOARD"
+            PACK      BILD_NET      WITH    "BLUE",BLANKS
+            PACK      BILD_PRD      WITH    "PELCN",BLANKS
+            PACK      BILD_PLAN     WITH    "HRA",BLANKS
+        CASE "PELICAN HSA775"
+            PACK      BILD_NET      WITH    "BLUE",BLANKS
+            PACK      BILD_PRD      WITH    "PELCN",BLANKS
+            PACK      BILD_PLAN     WITH    "HSA",BLANKS
+        CASE "VANTAGE MEDICAL HOME HMO"
+            PACK      BILD_NET      WITH    "VANTA",BLANKS
+            PACK      BILD_PRD      WITH    "MHHP",BLANKS
+            PACK      BILD_PLAN     WITH    "REGN",BLANKS
+        DEFAULT
+            debug
+            CALL LOG_ERROR USING "Unable to set plan value"
+            RETURN
+    ENDSWITCH
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_REG_NOTES
+         PACK NOTE_SYS WITH "BIL",BLANKS
+         PACK NOTE_ID  WITH BIL_ID1,BLANKS
+         PACK DIM20    WITH BIL_ID1,BLANKS
+         FILL "9"        IN NOTE_LINE
+         PACK NOTE_KEY WITH NOTE_SYS,NOTE_ID,NOTE_LINE
+         CALL NOTE_READ
+         CALL NOTE_PREV
+         IF ((RESULT = 1) AND:
+             (NOTE_SYS = "BIL     ") AND:
+             (NOTE_ID = DIM20))
+             MOVE NOTE_LINE TO FORM3
+         ELSE
+             MOVE "  0" TO NOTE_LINE
+         ENDIF
+         PACK NOTE_SYS WITH "BIL",BLANKS
+         PACK NOTE_ID  WITH BIL_ID1,BLANKS
+         MOVE C_USER   TO   NOTE_USER
+         MOVE C_USECURE TO  NOTE_SECU
+
+         CALL ADD_NOTE USING "COBRA Regular Billing and Payment Details:"
+         CALL ADD_NOTE USING "-------------------------------------------"
+         CALL ADD_NOTE USING ("PREMIUMYEAR               :" + (CHOP REG_PREMIUMYEAR))
+         CALL ADD_NOTE USING ("PREMIUMMONTH              :" + (CHOP REG_PREMIUMMONTH))
+         CALL ADD_NOTE USING ("PLANNAME                  :" + (CHOP REG_PLANNAME))
+         CALL ADD_NOTE USING ("CARRIERPLANIDENTIFICATION :" + (CHOP REG_CARRIERPLANIDENTIFICATION))
+         CALL ADD_NOTE USING ("CARRIERNAME               :" + (CHOP REG_CARRIERNAME))
+         CALL ADD_NOTE USING ("MEMBERNAME                :" + (CHOP REG_MEMBERNAME))
+         CALL ADD_NOTE USING ("ENTITYTYPENAME            :" + (CHOP REG_ENTITYTYPENAME))
+         CALL ADD_NOTE USING ("SSN                       :" + (CHOP REG_SSN))
+         CALL ADD_NOTE USING ("PREMIUMWITHOUTADMINFEEAMT :" + (CHOP REG_PREMIUMWITHOUTADMINFEEAMT))
+         CALL ADD_NOTE USING ("ADMINFEEAMOUNT            :" + (CHOP REG_ADMINFEEAMOUNT))
+         CALL ADD_NOTE USING ("MEMBERPAIDAMOUNT          :" + (CHOP REG_MEMBERPAIDAMOUNT))
+         CALL ADD_NOTE USING ("SUBSIDYALLOCATEDAMOUNT    :" + (CHOP REG_SUBSIDYALLOCATEDAMOUNT))
+         CALL ADD_NOTE USING ("MEMBERPAIDADMINFEEAMOUNT  :" + (CHOP REG_MEMBERPAIDADMINFEEAMOUNT))
+         CALL ADD_NOTE USING ("MEMBERPAIDREMITTABLEADMIN :" + (CHOP REG_MEMBERPAIDREMITTABLEADMIN))
+         CALL ADD_NOTE USING ("SUBSIDIZEDADMINFEEAMOUNT  :" + (CHOP REG_SUBSIDIZEDADMINFEEAMOUNT))
+         CALL ADD_NOTE USING ("MEMBERPAIDPREMIUMTOREMITA :" + (CHOP REG_MEMBERPAIDPREMIUMTOREMITA))
+         CALL ADD_NOTE USING ("TOTALTOREMITTOCLIENT      :" + (CHOP REG_TOTALTOREMITTOCLIENT))
+         CALL ADD_NOTE USING ("TOTALTOREMITTOCARRIER     :" + (CHOP REG_TOTALTOREMITTOCARRIER))
+         CALL ADD_NOTE USING ("INDIVIDUALIDENTIFIER      :" + (CHOP REG_INDIVIDUALIDENTIFIER))
+         CALL ADD_NOTE USING ("MEMBERID                  :" + (CHOP REG_MEMBERID))
+         CLOCK   TIMESTAMP TO WHEN
+         UNPACK  WHEN TO YR,MO,DY,HR,MN,SC
+         CALL ADD_NOTE USING ("----------Above Note/Auto Note: " + C_USER + "on " + MO + "/" + DY + "/" + YR + " at " + HR + ":" + MN + "-----------------")
+         RETURN
+
+
+.#######################################################################
+ADD_NOTE LROUTINE N@DATA
+N@DATA      DIM     @
+...
+    RETURN IF (TEST_SKIP_ALL_WRITES)
+    RETURN IF (TEST_SKIP_NOTE_WRITE)
+
+    MOVE NOTE_LINE TO FORM3
+    ADD  1 TO FORM3
+    MOVE FORM3 TO NOTE_LINE
+    PACK NOTE_DATA WITH N@DATA,BLANKS
+    PACK NOTE_KEY WITH NOTE_SYS,NOTE_ID,NOTE_LINE
+    CALL NOTE_WRITE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_ERROR LROUTINE MSG@
+MSG@            CHAR    @
+...
+    CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+    SET ERROR_FOUND
+
+    CALL ADD_TO_LOG USING "ERROR",MSG@
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_TO_LOG LROUTINE TYP@,MSG@
+TYP@        CHAR    @
+MSG@        CHAR    @
+...
+    IF (CHOP LOG_FILE = "")
+        PACK LOG_FILE WITH "/w/",(CHOP C_PROG),"_",(CHOP C_USER),"_",(CHOP CURRDATE),".csv"
+        REPLACE MAKELOWER IN LOG_FILE
+        CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+
+        PACK LOG_REC WITH "LOG_TYPE",COMMA:
+                          "LOG_MSG"
+
+        CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+    ENDIF
+
+    PACK LOG_REC WITH (CHOP TYP@),COMMA:
+                      (CHOP MSG@),COMMA
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+    debug
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_REPORT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_REPORT LROUTINE
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+EMAIL_TO    CHAR    100
+...
+    PACK SCRATCH WITH C_PROG," BUILD JUNE OPTUM COBRA BILLS"
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    CALL UTIL_SET_RECIPIENTS USING EMAIL_TO,CFG_EMAIL_TO,TEST_EMAIL_TO
+
+    PACK SCRATCH WITH "":
+        "Adhoc process to load Optum remittance data into Impact billing."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               EMAIL_TO:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC NOTES.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_COLLECTIONS.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
