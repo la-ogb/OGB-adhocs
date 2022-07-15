@@ -260,7 +260,7 @@ INITIALIZE LROUTINE
                                   "Created BIL Recs":
                                   "Created COL Recs":
                                   "Posted COL Recs":
-                                  "":
+                                  "Errors":
                                   ""
 
     CALL SET_RUN_CONFIG
@@ -320,7 +320,7 @@ HEADER_SKIPPED      NUM     1
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
         IF (TEST_MAX_PROC_COUNT > 0)
-            BREAK IF (X_CNT1 > TEST_MAX_PROC_COUNT)
+            BREAK IF (X_CNT2 > TEST_MAX_PROC_COUNT)
         ENDIF
 
         CALL ADD_TO_BIL
@@ -468,11 +468,29 @@ FIND_MEMBER LROUTINE
         CALL UTIL_MEM_AIMFIND
         IF NOT EQUAL
             debug
-            PACK SCRATCH WITH "MEM SSN:",SCRATCH," NOT FOUND"
-            CALL ADD_TO_LOG USING "ERROR",SCRATCH
+            PACK SCRATCH WITH "SSN NOT FOUND: ",(SQUEEZE REG_SSN)," NAME=",REG_MEMBERNAME
+            CALL LOG_ERROR USING SCRATCH
             RETURN
         ENDIF
 .    ENDIF
+
+    CALL CHECK_FOR_COBRA_MEME
+    IF NOT EQUAL
+        debug
+        CALL LOG_ERROR USING "NO COBRA MEME FOUND"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_FOR_COBRA_MEME LROUTINE
++ Make sure the current member record has a COBRA enrollment
+
+.TODO: dev this
+.      how do we reload data that errors
+    SETFLAG EQUAL
 
     RETURN
     ENDROUTINE
@@ -493,8 +511,8 @@ FIND_CURR_BIL LROUTINE
     CALL UTIL_BIL_AIMFIND
     IF (EQUAL AND BIL_CYCLE <> RUNTIME)
         debug
-        PACK SCRATCH WITH "MEM:",BIL_MEM," ALREADY BILLED",BLANKS
-        CALL ADD_TO_LOG USING "ERROR",SCRATCH
+        PACK SCRATCH WITH "MEMBER ALREADY BILLED: ID=",MEM_ID1," NAME=",REG_MEMBERNAME
+        CALL LOG_ERROR USING SCRATCH
         RETURN
     ENDIF
 
@@ -556,7 +574,6 @@ CREATE_BILD LROUTINE
 .the admin fee amount
     RETURN IF (ERROR_FOUND)
 
-    debug .untested
     CALL BUILD_BASIC_BILD USING "PREM",PREM_AMT,"COBRA PREM PAID BY MEMBER"
     CALL WRITE_BILD
 
@@ -604,6 +621,7 @@ DESC@       CHAR    @
     PACK BILD_EEPOR WITH BUCKS,BLANKS
     CLEAR BUCKS
     PACK BILD_EMPOR WITH BUCKS,BLANKS
+    PACK BILD_SUBCR WITH BUCKS,BLANKS
 
     PACK BILD_TRAN WITH "BILL",BLANKS
     IF (BILD_COVGF <> BIL_INVDT)
@@ -635,7 +653,6 @@ CREATE_BILS LROUTINE
     PACK BILS_POSTD WITH BIL_POSTDT,BLANKS
     PACK BILS_COVDT WITH BILD_COVGF,BLANKS
 
-    debug . untested
     CLEAR BUCKS
     MOVE (PREM_AMT + FEE_AMT) TO BUCKS
     PACK BILS_AMT   WITH BUCKS,BLANKS
@@ -663,8 +680,6 @@ WRITE_BIL LROUTINE
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_BIL_WRITE)
 
-    CALL ADD_TO_LOG USING "LOG","BIL created"
-
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
     CALL FILE_WRITE USING   BIL_FD:    ...File declaration list
@@ -677,6 +692,10 @@ WRITE_BIL LROUTINE
                             BIL_OLD:         ...File saved when read
                             BIL_QTY:         ...Number of files
                             1                ...File number for this read
+
+    PACK SCRATCH WITH "BIL CREATED: ID=",BIL_ID1," MEMBER=",BIL_MEM," ",REG_MEMBERNAME," AMT=",BIL_NEWCHG
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
+
     RETURN
     ENDROUTINE
 
@@ -686,8 +705,6 @@ WRITE_BILD LROUTINE
     RETURN IF (ERROR_FOUND)
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_BILD_WRITE)
-
-    CALL ADD_TO_LOG USING "LOG",("BILD ("+BILD_TYPE+") created")
 
     CALL FILE_WRITE USING   BILD_FD:    ...File declaration list
                             BILD_FN:          ...File name list
@@ -700,6 +717,9 @@ WRITE_BILD LROUTINE
                             BILD_QTY:         ...Number of files
                             1                ...File number for this read
 
+    PACK SCRATCH WITH "BILD CREATED: ID1=",BILD_ID1," ID2=",BILD_ID2," TYPE=",BILD_TYPE," AMT=",BILD_AMT
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
+
     RETURN
     ENDROUTINE
 
@@ -709,8 +729,6 @@ WRITE_BILS LROUTINE
     RETURN IF (ERROR_FOUND)
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_BILS_WRITE)
-
-    CALL ADD_TO_LOG USING "LOG","BILS created"
 
     CALL FILE_WRITE USING   BILS_FD:    ...File declaration list
                             BILS_FN:          ...File name list
@@ -723,6 +741,8 @@ WRITE_BILS LROUTINE
                             BILS_QTY:         ...Number of files
                             1                ...File number for this read
 
+    PACK SCRATCH WITH "BILS CREATED: ID1=",BILS_ID1," ID2=",BILS_ID2," AMT=",BILS_AMT
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
     RETURN
     ENDROUTINE
 
@@ -733,10 +753,7 @@ WRITE_COL LROUTINE
     RETURN IF (TEST_SKIP_ALL_WRITES)
     RETURN IF (TEST_SKIP_COL_WRITE)
 
-    CALL ADD_TO_LOG USING "LOG","COL created"
-
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-
     CALL FILE_WRITE USING   COL_FD:
                             COL_FN:
                             COL_FC:
@@ -747,6 +764,9 @@ WRITE_COL LROUTINE
                             COL_OLD:
                             COL_QTY:
                             1
+
+    PACK SCRATCH WITH "COL CREATED: ID1=",COL_ID1," MEMBER=",COL_MEMID," AMT=",COL_AMT
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
 
     RETURN
     ENDROUTINE
@@ -914,16 +934,20 @@ PUSH_COMMON_TO_BILD
 
 .#######################################################################
 PUSH_COMMON_TO_BILS
-    PACK BILS_TRAN   WITH BILD_TRAN,BLANKS
-    PACK BILS_CLIR   WITH BILD_CLIR,BLANKS
-    PACK BILS_CLIN   WITH BILD_CLIN,BLANKS
-    PACK BILS_DESC   WITH BILD_DESC,BLANKS
-    PACK BILS_INVDT  WITH BIL_INVDT,BLANKS
-    PACK BILS_LEV1   WITH BILD_LEV1,BLANKS
-    PACK BILS_LEV2   WITH BILD_LEV2,BLANKS
-    PACK BILS_LEV3   WITH BILD_LEV3,BLANKS
-    PACK BILS_LEV4   WITH BILD_LEV4,BLANKS
-    PACK BILS_LEV5   WITH BILD_LEV5,BLANKS
+    PACK BILS_TRAN  WITH BILD_TRAN,BLANKS
+    PACK BILS_CLIR  WITH BILD_CLIR,BLANKS
+    PACK BILS_CLIN  WITH BILD_CLIN,BLANKS
+.    PACK BILS_DESC  WITH BILD_DESC,BLANKS
+    PACK BILS_INVDT WITH BIL_INVDT,BLANKS
+    PACK BILS_LEV1  WITH BILD_LEV1,BLANKS
+    PACK BILS_LEV2  WITH BILD_LEV2,BLANKS
+    PACK BILS_LEV3  WITH BILD_LEV3,BLANKS
+    PACK BILS_LEV4  WITH BILD_LEV4,BLANKS
+    PACK BILS_LEV5  WITH BILD_LEV5,BLANKS
+    PACK BILS_NET   WITH BILD_NET,BLANKS
+    PACK BILS_PRD   WITH BILD_PRD,BLANKS
+    PACK BILS_PLAN  WITH BILD_PLAN,BLANKS
+
     CLOCK TIMESTAMP INTO BILS_NEWDT
     CLOCK TIMESTAMP INTO BILS_CHGDT
     PACK  BILS_NEWBY WITH C_USER,BLANKS
@@ -996,7 +1020,8 @@ DO_ONE_POST
 
     CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
 
-    CALL ADD_TO_LOG USING "LOG","COL posted"
+    PACK SCRATCH WITH "COL POSTED: ID=",COL_ID1
+    CALL ADD_TO_LOG USING "LOG",SCRATCH
 
     LOADMOD   "colin"
     SETLPTR   COL_REC
@@ -1042,7 +1067,7 @@ I@EFF       DIM     @
             PACK      BILD_PLAN     WITH    "REGN",BLANKS
         DEFAULT
             debug
-            CALL ADD_TO_LOG USING "ERROR","Unable to set plan value"
+            CALL LOG_ERROR USING "Unable to set plan value"
             RETURN
     ENDSWITCH
 
@@ -1117,35 +1142,35 @@ N@DATA      DIM     @
 
 
 .#######################################################################
+LOG_ERROR LROUTINE MSG@
+MSG@            CHAR    @
+...
+    CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+    SET ERROR_FOUND
+
+    CALL ADD_TO_LOG USING "ERROR",MSG@
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
 ADD_TO_LOG LROUTINE TYP@,MSG@
 TYP@        CHAR    @
 MSG@        CHAR    @
 ...
     IF (CHOP LOG_FILE = "")
         PACK LOG_FILE WITH "/w/",(CHOP C_PROG),"_",(CHOP C_USER),"_",(CHOP CURRDATE),".csv"
+        REPLACE MAKELOWER IN LOG_FILE
         CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
 
         PACK LOG_REC WITH "LOG_TYPE",COMMA:
-                          "LOG_MSG",COMMA:
-                          "NAME",COMMA:
-                          "SSN",COMMA:
-                          "OGB_ID_ON_FILE",COMMA:
-                          "TOTAL_REMIT"
+                          "LOG_MSG"
 
         CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
     ENDIF
 
-    SWITCH TYP@
-        CASE "ERROR"
-            SET ERROR_FOUND
-    ENDSWITCH
-
     PACK LOG_REC WITH (CHOP TYP@),COMMA:
-                      (CHOP MSG@),COMMA:
-                      (CHOP REG_MEMBERNAME),COMMA:
-                      (CHOP REG_SSN),COMMA:
-                      (CHOP REG_INDIVIDUALIDENTIFIER),COMMA:
-                      (CHOP REG_TOTALTOREMITTOCLIENT)
+                      (CHOP MSG@),COMMA
 
     CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
     RETURN
