@@ -1,0 +1,308 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2208251.ps
++
++ DESCRIPTION:
++   Update Intended Client Specific CLIPs to Correct "S" CLIP_CLIS
++   Value
++
++ CREATED BY:
++   apjwh - 2022-08-25
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC CLIP.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "CLPBFX"
+EMAIL_GROUP         INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST             NUM     V_FLAG
+TEST_CONFIG             LIST
+TEST_SKIP_CLIP_WRITE    NUM     "1"
+TEST_EMAIL              INIT    "$CURRENT_USER_EMAIL"
+                        LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+LOAD_FD             FILE    VAR=12,TEXT
+LOAD_FILE           INIT    "/w/tmp/clis_load.txt"
+
+LOG_FD              FILE    VAR=1000,TEXT
+LOG_FILE            INIT    "/w/a2208251_log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOAD_LIST           LIST
+LOAD_ID1            CHAR    8
+LOAD_ID2            CHAR    4
+                    LISTEND
+
+LOG_REC             CHAR    1000
+LOG_LIST            VARLIST LOG_REC
+
+LOG_HEADER          VARLIST "Log Type",COMMA:
+                            "Message",COMMA:
+                            "Load ID1",COMMA:
+                            "Load ID2"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2208251" TO C_PROG        ...Program name
+    MOVE "CLIS UPD TO S" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIX_CLIPS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input Recs":
+                                  "Updated":
+                                  "Skipped":
+                                  "Errors":
+                                  "":
+                                  ""
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_CLIPS LROUTINE
+
+    CALL OPEN_OGBFILE USING LOAD_FD,LOAD_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+    CALL UTIL_XMESSAGE USING "Fixing CLIPs...",MSG_HEIGHT
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING LOAD_FD,LOAD_FILE,LOAD_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        IF (CHOP LOAD_ID1 = "" | CHOP LOAD_ID2 = "")
+            debug
+            CALL WRITE_LOG USING "ERROR","BAD LOAD DATA"
+            CONTINUE
+        ENDIF
+
+        debug
+        CALL UTIL_CLIP_FIND USING LOAD_ID1,LOAD_ID2
+        IF NOT EQUAL
+            debug
+            CALL WRITE_LOG USING "ERROR","CLIP NOT FOUND"
+            CONTINUE
+        ENDIF
+
+        IF (CHOP CLIP_CLIS = "S")
+            debug
+            CALL WRITE_LOG USING "NOCHG","CLIS VALUE ALREADY S"
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+        PACK CLIP_CLIS WITH "S",BLANKS
+        PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+        PACK CLIP_CHGBY WITH PROG_NAME,BLANKS
+
+        IF NOT (TEST_SKIP_CLIP_WRITE)
+            debug
+            CALL FILE_WRITE
+        ENDIF
+    REPEAT
+
+    MESSAGEERASE
+    CALL CLOSE_OGBFILE USING LOAD_FD,LOAD_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+WRITE_LOG LROUTINE T@,M@
+T@      CHAR    @
+M@      CHAR    @
+...
+    SWITCH T@
+        CASE "ERROR"
+            CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+        DEFAULT
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    ENDSWITCH
+
+    PACK LOG_REC WITH (CHOP T@),COMMA:
+                      (CHOP M@),COMMA:
+                      LOAD_ID1,COMMA:
+                      LOAD_ID2
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_LOG USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOG@
++ Email the log
+LOG@         CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING (C_PROG+" CLIP Client Billing Flag Fix"),ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_CLIP.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
