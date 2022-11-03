@@ -1,0 +1,388 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2211031.ps
++
++ DESCRIPTION:
++   Un-term members termed by ESI TRR on 11/3/22
++
++ CREATED BY:
++   apjwh - 2022-11-03
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+    INC CLI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_GROUP         INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_RF        NUM     "1"
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FILE           INIT    "/w/tmp/a2211031.tmp"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2211031.upd"
+
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/a2211031.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_LIST            LIST
+LOG_REC             CHAR    200
+                    LISTEND
+
+LOG_HDR             VARLIST "MemberId,id2,network,eff,trm"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2211031" TO C_PROG        ...Program name
+    MOVE "FIX ESI TRR TRM" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_TERMS
+    CALL FIX_TERMS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "EGWP Recs":
+                                  "Updates":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    IF (TEST_SKIP_RF)
+        CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+        IF NOT EQUAL
+            CLEAR TEST_SKIP_RF
+        ENDIF
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_TERMS LROUTINE
++ Find members termed by ESI TRR on 11/3/22 - term code 14
+
+    RETURN IF (TEST_SKIP_RF)
+
+    CALL UTIL_XMESSAGE USING "Finding terms",MSG_HEIGHT
+
+    PACK SCRATCH WITH MEME_FNS," ",WORK_FILE," -t ":
+        " -p0234-0239eqTRRESI ":
+        " -p0226-0233eq20221103 ":
+        " -p0104-0111eq20221231 ":
+        " -p0275-0277eq014 ":
+        " -p0112-0116eq#"EGWP #""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding terms"
+
+    PACK SCRATCH WITH WORK_FILE," ",WORK_FILE," 1-12 -t"
+    CALL UTIL_DO_SORT USING SCRATCH,"Sorting by id"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_TERMS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Fixing terms",MSG_HEIGHT
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HDR
+
+    debug
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,MEME_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,100
+
+        CALL UTIL_MEM_FIND USING MEME_ID1
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+        PACK MEM_REC WITH MEM_LIST
+
+        CALL FIX_EGWP
+        CALL FIX_BCBS
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_EGWP LROUTINE
+
+.Here, we have the EGWP record
+.   remove term date, term letter date, term reason, MEME_US08, MEME_US01
+    FILL "~" IN MEME_TRM:
+                MEME_TRUN:
+                MEME_TLET:
+                MEME_US08:
+                MEME_US01
+
+    CALL WRITE_UPDATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_BCBS LROUTINE
+
+    CLEAR MEME_LIST
+    LOOP
+        IF (CHOP MEME_ID2 = "")
+            CALL UTIL_MEME_FIND USING MEM_ID1,""
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP MEME_NET != "BLUE")
+        CONTINUE IF (CHOP MEME_CHGBY != "TRRESI")
+        CONTINUE IF (CHOP MEME_CHGDT != "20221103")
+        CONTINUE IF (CHOP MEME_TRM != "20221231")
+
+        FILL "~" IN MEME_TRM:
+                    MEME_TRUN:
+                    MEME_TLET
+
+        CALL WRITE_UPDATE
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_UPDATE LROUTINE
+
+    PACK MEME_REC WITH MEME_LIST
+    FILL " " IN INM_LIST
+    PACK INM_REC WITH MEM_LIST,MEME_LIST
+    UNPACK INM_REC INTO INM_LIST
+
+    CALL UTIL_FORMAT_INME USING "A22113"
+
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    PACK LOG_REC WITH MEM_ID1,COMMA:
+                      MEME_ID2,COMMA:
+                      MEME_NET,COMMA:
+                      MEME_EFF,COMMA:
+                      MEME_TRM
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
+
+    CALL EMAIL_LOG USING LOG_FILE
+
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+    CALL UTIL_DELETE_FILE USING WORK_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOG@
++ Email the log
+LOG@         CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING (C_PROG+" ESI TRR De-term"),ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    PACK SCRATCH WITH "Un-term ESI TRR terms due to CVS' first prod file."
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_MEMMEM.SR
+    INC UTIL_FORMAT_UPDATES.SR
+    INC UTIL_CLI.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #

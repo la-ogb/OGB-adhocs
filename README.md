@@ -13,3 +13,4 @@ These processes are named:
 - a1902151.ps - repair termed EGWP record on employees where the record existsed only to bill EGWP for their spouse. This is a fix for a issue caused by the TRR during the 2018 VibrantRx transition.
 - a2005061.ps - close duplicate OA letter events created by `elg0011` on 2020-05-06
 - a2112022.ps - cleanup LBLA records created for the 2022 AE (by `elg2500`), but using the 2021 file by mistake.
+- a2211031.ps - un-term records termed by ESI TRR after CVS submitted their 1st prod file to CMS
