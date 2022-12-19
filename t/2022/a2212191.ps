@@ -1,0 +1,307 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2212191.ps
++
++ DESCRIPTION:
++   Find affected MEME records from CLIP file from FIX0026
++
++ CREATED BY:
++   apjwh - 2022-12-19
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEME.RL
+    INC CLIP.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+.TODO: add configuration settings here
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    FIXED=12,TEXT
+INPUT_FILE          INIT    "/w/fix0026_updated_clip.txt"
+
+ENR_IDX_FILE        INIT    "/w/tmp/a2212191.ix1"
+ENR_TXT_FILE        INIT    "/w/tmp/a2212191.txt"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+INPUT_LIST          LIST
+INPUT_ID1           CHAR    8
+INPUT_ID2           CHAR    4
+                    LISTEND
+
+SEARCH_KEY          CHAR    100
+
+ENR_DATA_LIST       VARLIST MEME_CLIR:
+                            MEME_NET:
+                            MEME_PRD:
+                            MEME_PLAN:
+                            MEME_RT:
+                            MEME_ID1:
+                            MEME_ID2
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2212191" TO C_PROG        ...Program name
+    MOVE "FIX0026 MEME SRC" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_AFFECTED_MEME
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "CLIP Input Recs":
+                                  "":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    CALL UTIL_EXISTS USING INPUT_FILE,"FILE"
+    IF NOT EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING "Input file not found - check for FIX0026 output file",""
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_AFFECTED_MEME LROUTINE
+
+    CALL BUILD_MEME_INDEX_FILE
+
+    CALL UTIL_XMESSAGE USING "Searching for MEME recs for CLIP",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_CLIP_FIND USING INPUT_ID1,INPUT_ID2
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+
+        debug .TODO: do work
+.At this point, we have a CLIP. How do we find MEME data linked to this
+.CLIP?
+
+.Read for CLI id on the MEME_CLIR field
+.   skip if dates are not inside the CLIP range
+.   skip if net/prd/plan/rt do not match
+.   skip if the member is not an 01 (shouldn't have a rate)
+        CALL SEARCH_MEME_DATA
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_MEME_INDEX_FILE LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Building MEME index file",MSG_HEIGHT
+
+.We need file of all MEME records where we can lookup the CLIP data by
+.   CLIR
+.   NET
+.   PRD
+.   PLAN
+.   RT
+
+    PACK SCRATCH WITH MEME_FNS," ",ENR_TXT_FILE," -t -j ":
+        " 13-20 ":      CLIR
+        " 112-116 ":    NET
+        " 117-121 ":    PRD
+        " 126-129 ":    PLAN
+        " 130-131 ":    RT
+        " 1-12 "        ID1/2
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Building MEME data file"
+
+.    INDEX ENR_TXT_FILE,ENR_IDX_FILE," "
+    debug
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEARCH_MEME_DATA LROUTINE
+
+    PACK SEARCH_KEY WITH CLIP_ID1,CLIP_NET,CLIP_PRD,CLIP_PLAN,CLIP_RT,BLANKS
+
+.TODO: read through index file via search key
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+.TODO: final clean up
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_CLIP.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
