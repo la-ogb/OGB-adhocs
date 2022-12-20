@@ -47,7 +47,7 @@ REFRESH_RATE        EQU     1000
 
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
-.TODO: add test settings
+TEST_SKIP_MEME_BLD  NUM     "1"
                     LISTEND
 
 .# =================================================================== #
@@ -195,6 +195,13 @@ SET_RUN_CONFIG LROUTINE
         CALL UTIL_ERRORMSG USING "Input file not found - check for FIX0026 output file",""
     ENDIF
 
+    IF (TEST_SKIP_MEME_BLD)
+        CALL UTIL_EXISTS USING ENR_IDX_FILE,"FILE"
+        IF NOT EQUAL
+            CLEAR TEST_SKIP_MEME_BLD
+        ENDIF
+    ENDIF
+
     RETURN
     ENDROUTINE
 
@@ -237,6 +244,8 @@ FIND_AFFECTED_MEME LROUTINE
 .#######################################################################
 BUILD_MEME_INDEX_FILE LROUTINE
 
+    RETURN IF (TEST_SKIP_MEME_BLD)
+
     CALL UTIL_XMESSAGE USING "Building MEME index file",MSG_HEIGHT
 
 .We need file of all MEME records where we can lookup the CLIP data by
@@ -245,7 +254,6 @@ BUILD_MEME_INDEX_FILE LROUTINE
 .   PRD
 .   PLAN
 .   RT
-    debug
     PACK SCRATCH WITH MEME_FNS," ",ENR_TXT_FILE," -t -j ":
         " 13-20 ":      CLIR    8
         " 112-116 ":    NET     5
@@ -286,7 +294,7 @@ FIRST_READ      NUM     1
             CALL READKS_OGBFILE_IX USING ENR_IDX_FD,ENR_IDX_FILE,ENR_LIST
         ENDIF
         WHILE (RESULT = 1)
-        PACK SCRATCH WITH ENR_ID1,ENR_NET,ENR_PRD,ENR_PLAN,ENR_RT,BLANKS
+        PACK SCRATCH WITH ENR_CLIR,ENR_NET,ENR_PRD,ENR_PLAN,ENR_RT,BLANKS
         WHILE (CHOP SCRATCH = CHOP SEARCH_KEY)
 
         debug .TODO: found a MEME record that looks like it would use our clip
