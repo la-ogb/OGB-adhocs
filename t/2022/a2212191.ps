@@ -14,6 +14,7 @@
 .# =================================================================== #
     INC VALID.RL
     INC UTIL_COMMON.CB
+    INC MEM.RL
     INC MEME.RL
     INC CLIP.RL
 
@@ -56,6 +57,8 @@ TEST_CONFIG         LIST
 INPUT_FD            FILE    FIXED=12,TEXT
 INPUT_FILE          INIT    "/w/fix0026_updated_clip.txt"
 
+ENR_KEYL            EQU     24
+ENR_IDX_FD          IFILE   FIXED=36,KEYL=ENR_KEYL,TEXT,DUP
 ENR_IDX_FILE        INIT    "/w/tmp/a2212191.ix1"
 ENR_TXT_FILE        INIT    "/w/tmp/a2212191.txt"
 
@@ -68,15 +71,17 @@ INPUT_ID1           CHAR    8
 INPUT_ID2           CHAR    4
                     LISTEND
 
-SEARCH_KEY          CHAR    100
+SEARCH_KEY          CHAR    ENR_KEYL
 
-ENR_DATA_LIST       VARLIST MEME_CLIR:
-                            MEME_NET:
-                            MEME_PRD:
-                            MEME_PLAN:
-                            MEME_RT:
-                            MEME_ID1:
-                            MEME_ID2
+ENR_LIST            LIST
+ENR_CLIR            CHAR    8
+ENR_NET             CHAR    5
+ENR_PRD             CHAR    5
+ENR_PLAN            CHAR    4
+ENR_RT              CHAR    2
+ENR_ID1             CHAR    8
+ENR_ID2             CHAR    4
+                    LISTEND
 
 .# =================================================================== #
 .# Program Variables
@@ -202,7 +207,9 @@ FIND_AFFECTED_MEME LROUTINE
     CALL UTIL_XMESSAGE USING "Searching for MEME recs for CLIP",MSG_HEIGHT
 
     CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL OPEN_OGBFILE_IX USING ENR_IDX_FD,ENR_IDX_FILE
 
+    debug
     LOOP
         CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
         WHILE (RESULT = 1)
@@ -215,19 +222,11 @@ FIND_AFFECTED_MEME LROUTINE
             CONTINUE
         ENDIF
 
-        debug .TODO: do work
-.At this point, we have a CLIP. How do we find MEME data linked to this
-.CLIP?
-
-.Read for CLI id on the MEME_CLIR field
-.   skip if dates are not inside the CLIP range
-.   skip if net/prd/plan/rt do not match
-.   skip if the member is not an 01 (shouldn't have a rate)
         CALL SEARCH_MEME_DATA
-
     REPEAT
 
     CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL CLOSE_OGBFILE_IX USING ENR_IDX_FD,ENR_IDX_FILE
 
     MESSAGEERASE
 
@@ -246,19 +245,25 @@ BUILD_MEME_INDEX_FILE LROUTINE
 .   PRD
 .   PLAN
 .   RT
-
+    debug
     PACK SCRATCH WITH MEME_FNS," ",ENR_TXT_FILE," -t -j ":
-        " 13-20 ":      CLIR
-        " 112-116 ":    NET
-        " 117-121 ":    PRD
-        " 126-129 ":    PLAN
-        " 130-131 ":    RT
+        " 13-20 ":      CLIR    8
+        " 112-116 ":    NET     5
+        " 117-121 ":    PRD     5
+        " 126-129 ":    PLAN    4
+        " 130-131 ":    RT      2
         " 1-12 "        ID1/2
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Building MEME data file"
 
-.    INDEX ENR_TXT_FILE,ENR_IDX_FILE," "
-    debug
+    PACK SCRATCH WITH ENR_TXT_FILE," ",ENR_TXT_FILE," 1-24 -t"
+    CALL UTIL_DO_SORT USING SCRATCH,"Sorting MEME data file"
+
+    INDEX ENR_TXT_FILE,ENR_IDX_FILE," 1-24 -d"
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "index failed",""
+    ENDIF
 
     MESSAGEERASE
 
@@ -268,10 +273,36 @@ BUILD_MEME_INDEX_FILE LROUTINE
 
 .#######################################################################
 SEARCH_MEME_DATA LROUTINE
-
+FIRST_READ      NUM     1
+...
+    SET FIRST_READ
     PACK SEARCH_KEY WITH CLIP_ID1,CLIP_NET,CLIP_PRD,CLIP_PLAN,CLIP_RT,BLANKS
 
-.TODO: read through index file via search key
+    LOOP
+        IF (FIRST_READ)
+            CLEAR FIRST_READ
+            CALL READ_OGBFILE_IX USING ENR_IDX_FD,ENR_IDX_FILE,SEARCH_KEY,ENR_LIST
+        ELSE
+            CALL READKS_OGBFILE_IX USING ENR_IDX_FD,ENR_IDX_FILE,ENR_LIST
+        ENDIF
+        WHILE (RESULT = 1)
+        PACK SCRATCH WITH ENR_ID1,ENR_NET,ENR_PRD,ENR_PLAN,ENR_RT,BLANKS
+        WHILE (CHOP SCRATCH = CHOP SEARCH_KEY)
+
+        debug .TODO: found a MEME record that looks like it would use our clip
+
+        CALL UTIL_MEM_FIND_REAL USING ENR_ID1
+        CONTINUE IF NOT EQUAL
+        CONTINUE IF (MEM_REL != "01")
+
+        debug .found an 01
+
+        CALL UTIL_MEME_FIND USING ENR_ID1,ENR_ID2
+        CONTINUE IF NOT EQUAL
+        CONTINUE IF (CHOP MEME_TRM > "" & CHOP MEME_TRM < MEME_EFF) .skip voids
+
+        debug .found a MEME record that matters
+    REPEAT
 
     RETURN
     ENDROUTINE
