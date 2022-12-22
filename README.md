@@ -14,3 +14,4 @@ These processes are named:
 - a2005061.ps - close duplicate OA letter events created by `elg0011` on 2020-05-06
 - a2112022.ps - cleanup LBLA records created for the 2022 AE (by `elg2500`), but using the 2021 file by mistake.
 - a2211031.ps - un-term records termed by ESI TRR after CVS submitted their 1st prod file to CMS
+- a2212211.ps - change the EGWP eff date for some CVS people (from file) to 2/1/23 - removing it for Jan
