@@ -1,0 +1,498 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2212211.ps
++
++ DESCRIPTION:
++   Update CVS 1/1 EGWP with issues to have 2/1 EGWP instead
++
++ CREATED BY:
++   apjwh - 2022-12-21
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+    INC CLI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     3
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "FXEG23"
+EMAIL_GROUP         INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    VAR=100,TEXT
+INPUT_FILE          INIT    "/w/a2212211.txt"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2212211.inm"
+
+LOG_FD              FILE    VAR=500,TEXT
+LOG_FILE            INIT    "/w/tmp/a2212211.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+INPUT_LIST          LIST
+INPUT_MBI           CHAR    11
+INPUT_GAP           CHAR    4
+INPUT_SSN           CHAR    9
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    500
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2212211" TO C_PROG        ...Program name
+    MOVE "CVS FEB EGWP FIX" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL PROCESS_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input Recs":
+                                  "Voids":
+                                  "New":
+                                  "Terms":
+                                  "Errors":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    CALL UTIL_EXISTS USING INPUT_FILE,"FILE"
+    IF NOT EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING ("Input file not found: "+INPUT_FILE),""
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_FILE LROUTINE
++ Fix the EGWP records for the members on the CVS report
+FOUND_MEMBER        NUM     1
+FIRST_MEMI          NUM     1
+...
+    CALL UTIL_XMESSAGE USING "Fixing EGWP recs...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+
+    debug
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INPUT_LIST
+        WHILE (RESULT = 1)
+
+        SWITCH INPUT_MBI
+            CASE "2Q46PW7RC64"
+                debug
+            DEFAULT
+        ENDSWITCH
+
+.Use the MBI to find the MEM
+        CLEAR FOUND_MEMBER
+        SET FIRST_MEMI
+        LOOP
+            IF (FIRST_MEMI)
+                CLEAR FIRST_MEMI
+                CALL UTIL_MEMI_FIND_ALTID USING "CMS",INPUT_MBI
+            ELSE
+                CALL UTIL_MEMI_NEXT_ALTID
+            ENDIF
+            WHILE EQUAL
+
+            CALL UTIL_MEM_FIND_REAL USING MEMI_ID
+            CONTINUE IF NOT EQUAL
+            CONTINUE IF (MEM_PSSN != INPUT_SSN)
+
+            CALL FIND_EGWP_TO_FIX
+            CONTINUE IF (CHOP MEME_ID2 = "")
+
+            SET FOUND_MEMBER
+            BREAK
+        REPEAT
+
+        IF NOT (FOUND_MEMBER)
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+            CALL WRITE_LOG USING "ERROR - Unable to Find Member Using MBI"
+            CONTINUE
+        ENDIF
+
+        FILL " " IN MEMI_REC
+
+.Fix the member
+.        debug .fix these people
+
+        IF (MEME_EFF <= MEME_TRM)
+.If the EGWP is open
+.   if the eff is < 1/1/23, we need to split it
+.   if the eff is = 1/1/23, we need to void it, and copy to 2/1 eff
+            IF (MEME_TRM = "20230131")
+                debug
+                PACK MEME_EFF WITH "20230201"
+                CALL VOID_CURRENT
+            ELSE IF (MEME_EFF = "20230101")
+                debug
+                CALL VOID_CURRENT
+                CALL CREATE_NEW
+            ELSE
+.                debug
+                CALL TERM_CURRENT
+                CALL CREATE_NEW
+            ENDIF
+        ELSE
+            debug
+.If the EGWP is pending
+.   we need to void it, and enter a new pending for 2/1
+            CALL VOID_CURRENT
+            CALL CREATE_NEW
+        ENDIF
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_EGWP_TO_FIX LROUTINE
+
+    CLEAR MEME_LIST
+
+    LOOP
+        CALL UTIL_READ_THRU_MEME USING MEM_ID1
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP MEME_NET != "EGWP")
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE
+        ENDIF
+        IF (MEME_TRM < MEME_EFF)
+            CONTINUE IF (MEME_TLET != "W")
+            CONTINUE IF (MEME_TRM < "20221231")
+        ELSE
+            CONTINUE IF (MEME_TRM < "20230101")
+        ENDIF
+        CONTINUE IF (MEME_EFF > "20230101")
+
+.        debug .found one
+        RETURN
+    REPEAT
+
+    CLEAR MEME_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VOID_CURRENT LROUTINE
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    CALL PREP_UPDATE
+
+    CALL UTIL_CALC_DAY_BEFORE USING INME_EFF,INME_TRM
+    PACK INME_TLET WITH "V",BLANKS
+
+    CALL WRITE_UPDATE
+
+    CALL WRITE_LOG USING "Voided the current EGWP"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CREATE_NEW LROUTINE
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    CALL PREP_UPDATE
+
+    FILL " " IN INME_ID2,INME_NEWBY,INME_NEWDT
+
+    PACK INME_EFF WITH "20230201",BLANKS
+    IF (MEME_TLET = "W")
+        PACK INME_TRM WITH "20230131",BLANKS
+    ELSE
+        IF (MEME_TRM < MEME_EFF)
+            debug .how?
+            RETURN
+        ENDIF
+        FILL "~" IN INME_TLET
+    ENDIF
+
+    CALL WRITE_UPDATE
+
+    CALL WRITE_LOG USING "Created new 2/1/23 EGWP"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+TERM_CURRENT LROUTINE
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    CALL PREP_UPDATE
+
+    PACK INME_TRM WITH "20221231",BLANKS
+
+    CALL WRITE_UPDATE
+
+    CALL WRITE_LOG USING "Termed current EGWP for 12/31/22"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PREP_UPDATE LROUTINE
+    PACK INM_REC WITH MEM_LIST,MEME_LIST
+    UNPACK INM_REC INTO INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_UPDATE LROUTINE
+    CALL UTIL_FORMAT_INME USING PROG_NAME
+    IF (INME_TRM = LAST_DATE)
+        debug
+        FILL "~" IN INME_TRM,INME_TLET,INME_TRUN
+    ENDIF
+
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE MSG@
+MSG@            CHAR    @
+DO_HEADER       NUM     "1"
+...
+    IF (DO_HEADER)
+        CLEAR DO_HEADER
+        PACK LOG_REC WITH "MEMBER ID",COMMA:
+                          "ACTION",COMMA:
+                          "CVS REPORT MBI",COMMA:
+                          "CVS REPORT SSN",COMMA:
+                          "RATE CODE",COMMA:
+                          "MEMBER REL",COMMA:
+                          "RATE NOTE"
+
+        CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+    ENDIF
+
+    PACK LOG_REC WITH MEM_ID1,COMMA:
+                      MSG@,COMMA:
+                      INPUT_MBI,COMMA:
+                      INPUT_SSN,COMMA:
+                      MEME_RT,COMMA:
+                      MEM_REL,COMMA
+
+    IF (MEM_REL = "02")
+        PACK LOG_REC WITH LOG_REC,"Member is spouse - review the 01's rate"
+    ELSE
+        IF (MEME_RT = "R2")
+            PACK LOG_REC WITH LOG_REC,"Primary member with R2 rate. May need RS for January"
+        ENDIF
+    ENDIF
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL EMAIL_LOG USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE LOG@
++ Email the log
+LOG@         CHAR    @
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING (C_PROG+" 1/1/23 EGWP EFF CHANGE TO 2/1/23"),ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    PACK SCRATCH WITH "Update the select members from CVS to have their CVS EGWP start on 2/1/23."
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               LOG@
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_CLI.SR
+    INC UTIL_MEMMEM.SR
+    INC UTIL_FORMAT_UPDATES.SR
+    INC UTIL_DATES.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
