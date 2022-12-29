@@ -1,0 +1,329 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   <name>.ps
++
++ DESCRIPTION:
++   Goes through esi_trr files to search for members with a BLUE plan
++   and no term date
++
++ CREATED BY:
++   apvwn - 2022-11-28
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEME.RL
+    INC MEM.RL
+    INC MEMI.RL
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "victoria.nickel@la.gov"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL          INIT    "victoria.nickel@la.gov"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FILE           INIT    "/w/tmp/dev.tmp"
+
+REPORT_FD           FILE    VAR=1000,TEXT
+REPORT_FILE         INIT    "/w/tmp/dev.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+.TODO: add file lists
+REPORT_LIST         LIST
+REPORT_REC         CHAR    1000
+                              LISTEND
+
+REPORT_HEADER       VARLIST "BENEFICIARY_ID,":
+                            "SURNAME,":
+                            "FIRST_NAME,":
+                            "MI,":
+                            "GENDER,":
+                            "DOB"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+INPUT_REC           CHAR    24
+MEDICARE_ID         CHAR    24
+MEMBER_ID           CHAR    24
+SURNAME             CHAR    24
+FIRST_NAME          CHAR    24
+MI                  CHAR    24
+GENDER              CHAR    24
+DOB                 CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "TODO:" TO C_PROG        ...Program name
+    MOVE "TODO:" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.TODO: make sure any parameter that can be called from the CMD line are
+. filled with spaces or value and space before the SCHED_PICK for them
+. to be populated in an automatically generated Impact Scheduler record
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+
+.    CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+.    CALL UTIL_XMESSAGE USING "Add Code Here",MSG_HEIGHT
+.    CALL UTIL_ERRORMSG USING "Not implemented","MAIN_PROCESS"
+    CALL BUILD_REPORT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+.TODO: set counter desc
+    CALL UTIL_INIT_COUNTERS USING "Counter 1 - Not Used":
+                                  "Counter 2 - Not Used":
+                                  "Counter 3 - Not Used":
+                                  "Counter 4 - Not Used":
+                                  "Counter 5 - Not Used":
+                                  "Counter 6 - Not Used"
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+.TODO: Read into a list that has a string variable long enough to hold record
+BUILD_REPORT LROUTINE
+...
+    CALL OPEN_OGBFILE USING WORK_FD, WORK_FILE
+    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, MEMI_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1, 1000
+
+.TODO: Split that single record into its fields
+        CALL DELIMIT_STRING USING INPUT_REC,0,MEDICARE_ID,","
+
+.TODO: Get Medicare ID
+        CALL UTIL_MEMI_FIND_ID_AND_CAT ROUTINE ID1@,CAT@
+        CALL UTIL_MEMI_NEXT_ID_AND_CAT ROUTINE
+
+        CLEAR MEMI_REC,MEMBER_ID
+        IF (CHOP MEMI_ID = "")
+            CALL UTIL_MEMI_FIND_ID_AND_CAT USING MEDICARE_ID, "CMS"
+        ELSE
+            CALL UTIL_MEMI_NEXT_ID_AND_CAT
+        ENDIF
+        WHILE EQUAL
+    debug
+
+.Get the Member Id (ie MEM_ID1, MEME_ID1, etc) from the MEMI field
+        IF (CHOP MEMI_EFF = "" | MEMI_EFF < CURRDATE)
+            IF (CHOP MEMI_TRM = "" | CHOP MEMI_TRM > CURRDATE)
+                PACK MEMBER_ID WITH MEMI_ID
+                BREAK
+            ENDIF
+        ENDIF
+    debug
+
+.TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
+        CALL UTIL_MEM_FIND USING MEMI_ID
+        IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
+            CONTINUE
+        ENDIF
+
+.Write findings to report
+        PACK REPORT_REC WITH (MEMI_ID),COMMA:
+                            (CHOP SURNAME),COMMA:
+                            (CHOP FIRST_NAME),COMMA:
+                            (CHOP MI),COMMA:
+                            (CHOP GENDER),COMMA:
+                            (CHOP DOB)
+        CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
+    debug
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD, WORK_FILE
+    CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+    debug
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+.TODO: final clean up
+. trim trailing whitespace off report
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "BLUE plans and no term date"
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Members with BLUE plans and no term date"
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
