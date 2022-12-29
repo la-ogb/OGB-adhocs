@@ -214,6 +214,7 @@ BUILD_REPORT LROUTINE
     CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
 
+
     LOOP
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, MEMI_LIST
         WHILE (RESULT = 1)
@@ -221,21 +222,56 @@ BUILD_REPORT LROUTINE
         CALL UTIL_XCOUNTER USING X_CNT1, 1000
 
 .TODO: Split that single record into its fields
-        CALL DELIMIT_STRING USING INPUT_REC,0,MEDICARE_ID,","
+.CALL DELIMIT_STRING USING INPUT_REC,0,MEDICARE_ID,","
 
+        CALL GET_MEDICARE_ID
+.CALL GET_MEMBER_ID
+
+.TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
+.CALL UTIL_MEM_FIND USING MEMI_ID
+.IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
+.CONTINUE
+.ENDIF
+
+.Write findings to report
+.PACK REPORT_REC WITH (MEMI_ID),COMMA:
+.(CHOP SURNAME),COMMA:
+.(CHOP FIRST_NAME),COMMA:
+.(CHOP MI),COMMA:
+.(CHOP GENDER),COMMA:
+.(CHOP DOB)
+.CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD, WORK_FILE
+    CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+    debug
+
+.#######################################################################
+GET_MEDICARE_ID LROUTINE
 .TODO: Get Medicare ID
-        CALL UTIL_MEMI_FIND_ID_AND_CAT ROUTINE ID1@,CAT@
-        CALL UTIL_MEMI_NEXT_ID_AND_CAT ROUTINE
+    CALL UTIL_MEMI_FIND_ID_AND_CAT ROUTINE ID1@,CAT@
+    CALL UTIL_MEMI_NEXT_ID_AND_CAT ROUTINE
 
-        CLEAR MEMI_REC,MEMBER_ID
+    CLEAR MEMI_REC,MEMBER_ID
+    LOOP
         IF (CHOP MEMI_ID = "")
             CALL UTIL_MEMI_FIND_ID_AND_CAT USING MEDICARE_ID, "CMS"
         ELSE
             CALL UTIL_MEMI_NEXT_ID_AND_CAT
         ENDIF
         WHILE EQUAL
-    debug
+    REPEAT
 
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+GET_MEMBER_ID LROUTINE
 .Get the Member Id (ie MEM_ID1, MEME_ID1, etc) from the MEMI field
         IF (CHOP MEMI_EFF = "" | MEMI_EFF < CURRDATE)
             IF (CHOP MEMI_TRM = "" | CHOP MEMI_TRM > CURRDATE)
@@ -245,29 +281,8 @@ BUILD_REPORT LROUTINE
         ENDIF
     debug
 
-.TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
-        CALL UTIL_MEM_FIND USING MEMI_ID
-        IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
-            CONTINUE
-        ENDIF
-
-.Write findings to report
-        PACK REPORT_REC WITH (MEMI_ID),COMMA:
-                            (CHOP SURNAME),COMMA:
-                            (CHOP FIRST_NAME),COMMA:
-                            (CHOP MI),COMMA:
-                            (CHOP GENDER),COMMA:
-                            (CHOP DOB)
-        CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-    debug
-    REPEAT
-
-    CALL CLOSE_OGBFILE USING WORK_FD, WORK_FILE
-    CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
-
     RETURN
     ENDROUTINE
-    debug
 
 .#######################################################################
 CLEAN_UP LROUTINE
