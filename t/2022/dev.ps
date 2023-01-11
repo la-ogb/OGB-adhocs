@@ -91,6 +91,7 @@ FIRST_NAME          CHAR    24
 MI                  CHAR    24
 GENDER              CHAR    24
 DOB                 CHAR    24
+MEMI_LIST           CHAR    24
 
 .# =================================================================== #
 .# Begin Program
@@ -222,13 +223,12 @@ BUILD_REPORT LROUTINE
         CALL UTIL_XCOUNTER USING X_CNT1, 1000
 
 .TODO: Split that single record into its fields
-.CALL DELIMIT_STRING USING INPUT_REC,0,MEDICARE_ID,","
+        CALL DELIMIT_STRING USING INPUT_REC,0,MEDICARE_ID,","
 
         CALL GET_MEDICARE_ID
-.CALL GET_MEMBER_ID
 
 .TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
-.CALL UTIL_MEM_FIND USING MEMI_ID
+        CALL UTIL_MEM_FIND USING MEMI_ID
 .IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
 .CONTINUE
 .ENDIF
@@ -265,21 +265,15 @@ GET_MEDICARE_ID LROUTINE
             CALL UTIL_MEMI_NEXT_ID_AND_CAT
         ENDIF
         WHILE EQUAL
-    REPEAT
 
-    RETURN
-    ENDROUTINE
-
-.#######################################################################
-GET_MEMBER_ID LROUTINE
-.Get the Member Id (ie MEM_ID1, MEME_ID1, etc) from the MEMI field
+.Get the Member ID (ie MEM_ID1, MEME_ID1, etc) from the MEMI field
         IF (CHOP MEMI_EFF = "" | MEMI_EFF < CURRDATE)
             IF (CHOP MEMI_TRM = "" | CHOP MEMI_TRM > CURRDATE)
                 PACK MEMBER_ID WITH MEMI_ID
                 BREAK
             ENDIF
         ENDIF
-    debug
+    REPEAT
 
     RETURN
     ENDROUTINE
