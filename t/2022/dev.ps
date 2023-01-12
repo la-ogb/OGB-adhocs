@@ -3,7 +3,7 @@
 +   <name>.ps
 +
 + DESCRIPTION:
-+   Goes through esi_trr files to search for members with a BLUE plan
++   Goes through esi_trr files to search for members with a BLUE network
 +   and no term date
 +
 + CREATED BY:
@@ -54,8 +54,8 @@ TEST_EMAIL          INIT    "victoria.nickel@la.gov"
 .# File Declarations
 .# =================================================================== #
 
-WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
-WORK_FILE           INIT    "/w/tmp/dev.tmp"
+WORK_FD             FILE    VAR=1000,TEXT
+WORK_FILE           INIT    "/w/tmp/trr.csv"
 
 REPORT_FD           FILE    VAR=1000,TEXT
 REPORT_FILE         INIT    "/w/tmp/dev.csv"
@@ -65,9 +65,13 @@ REPORT_FILE         INIT    "/w/tmp/dev.csv"
 .# =================================================================== #
 
 .TODO: add file lists
-REPORT_LIST         LIST
+REPORT_LIST        LIST
 REPORT_REC         CHAR    1000
                               LISTEND
+
+WORK_LIST           LIST
+WORK_REC            CHAR    1000
+                    LISTEND
 
 REPORT_HEADER       VARLIST "BENEFICIARY_ID,":
                             "SURNAME,":
@@ -224,22 +228,27 @@ BUILD_REPORT LROUTINE
 
 .TODO: Split that single record into its fields
         CALL DELIMIT_STRING USING INPUT_REC,0,MEDICARE_ID,","
+        CALL DELIMIT_STRING USING INPUT_REC,1,SURNAME,","
+        CALL DELIMIT_STRING USING INPUT_REC,2,FIRST_NAME,","
+        CALL DELIMIT_STRING USING INPUT_REC,3,MI,","
+        CALL DELIMIT_STRING USING INPUT_REC,4,GENDER,","
+        CALL DELIMIT_STRING USING INPUT_REC,5,DOB,","
 
         CALL GET_MEDICARE_ID
 
 .TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
         CALL UTIL_MEM_FIND USING MEMI_ID
-.IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
-.CONTINUE
-.ENDIF
+            IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
+                CONTINUE
+            ENDIF
 
 .Write findings to report
-.PACK REPORT_REC WITH (MEMI_ID),COMMA:
-.(CHOP SURNAME),COMMA:
-.(CHOP FIRST_NAME),COMMA:
-.(CHOP MI),COMMA:
-.(CHOP GENDER),COMMA:
-.(CHOP DOB)
+        PACK REPORT_REC WITH (MEMI_ID),COMMA:
+                            (CHOP SURNAME),COMMA:
+                            (CHOP FIRST_NAME),COMMA:
+                            (CHOP MI),COMMA:
+                            (CHOP GENDER),COMMA:
+                            (CHOP DOB)
 .CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
 
     REPEAT
@@ -299,12 +308,12 @@ SUBJECT         CHAR    100
 BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
-    PACK SCRATCH WITH "BLUE plans and no term date"
+    PACK SCRATCH WITH "BLUE network and no term date"
 
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
     PACK BODY_BASE WITH "":
-        "Members with BLUE plans and no term date"
+        "Members with BLUE network and no term date"
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
