@@ -89,12 +89,12 @@ START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 INPUT_REC           CHAR    24
 MEDICARE_ID         CHAR    24
-MEMBER_ID           CHAR    24
+MEMBER_ID           CHAR    8
 SURNAME             CHAR    24
 FIRST_NAME          CHAR    24
-MI                  CHAR    24
-GENDER              CHAR    24
-DOB                 CHAR    24
+MI                  CHAR    1
+GENDER              CHAR    1
+DOB                 CHAR    8
 MEMI_LIST           CHAR    24
 
 .# =================================================================== #
@@ -124,7 +124,7 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "TODO:" TO C_PROG        ...Program name
+    MOVE "DEV" TO C_PROG        ...Program name
     MOVE "TODO:" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
@@ -221,23 +221,30 @@ BUILD_REPORT LROUTINE
 
 
     LOOP
-        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, MEMI_LIST
+        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, WORK_LIST
         WHILE (RESULT = 1)
 
         CALL UTIL_XCOUNTER USING X_CNT1, 1000
 
 .TODO: Split that single record into its fields
-        CALL DELIMIT_STRING USING INPUT_REC,0,MEDICARE_ID,","
-        CALL DELIMIT_STRING USING INPUT_REC,1,SURNAME,","
-        CALL DELIMIT_STRING USING INPUT_REC,2,FIRST_NAME,","
-        CALL DELIMIT_STRING USING INPUT_REC,3,MI,","
-        CALL DELIMIT_STRING USING INPUT_REC,4,GENDER,","
-        CALL DELIMIT_STRING USING INPUT_REC,5,DOB,","
+        debug
+        CALL DELIMIT_STRING USING WORK_REC,0,MEDICARE_ID,","
+        CALL DELIMIT_STRING USING WORK_REC,1,SURNAME,","
+        CALL DELIMIT_STRING USING WORK_REC,2,FIRST_NAME,","
+        CALL DELIMIT_STRING USING WORK_REC,3,MI,","
+        CALL DELIMIT_STRING USING WORK_REC,4,GENDER,","
+        CALL DELIMIT_STRING USING WORK_REC,5,DOB,","
+
+        debug
+        CONTINUE
 
         CALL GET_MEDICARE_ID
 
 .TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
-        CALL UTIL_MEM_FIND USING MEMI_ID
+        CALL UTIL_MEM_FIND USING MEMBER_ID
+        IF NOT EQUAL
+            CONTINUE
+        ENDIF
             IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
                 CONTINUE
             ENDIF
@@ -263,8 +270,6 @@ BUILD_REPORT LROUTINE
 .#######################################################################
 GET_MEDICARE_ID LROUTINE
 .TODO: Get Medicare ID
-    CALL UTIL_MEMI_FIND_ID_AND_CAT ROUTINE ID1@,CAT@
-    CALL UTIL_MEMI_NEXT_ID_AND_CAT ROUTINE
 
     CLEAR MEMI_REC,MEMBER_ID
     LOOP
