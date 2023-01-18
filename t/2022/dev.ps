@@ -238,9 +238,6 @@ BUILD_REPORT LROUTINE
         CALL DELIMIT_STRING USING WORK_REC,4,GENDER,","
         CALL DELIMIT_STRING USING WORK_REC,5,DOB,","
 
-        debug
-        CONTINUE
-
         CALL GET_MEDICARE_ID
 
 .TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
