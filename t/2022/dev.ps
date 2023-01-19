@@ -96,6 +96,8 @@ MI                  CHAR    1
 GENDER              CHAR    1
 DOB                 CHAR    8
 MEMI_LIST           CHAR    24
+SOURCE_ID           CHAR    5
+TRC_SHORT_NAME      CHAR    24
 
 .# =================================================================== #
 .# Begin Program
@@ -237,8 +239,16 @@ BUILD_REPORT LROUTINE
         CALL DELIMIT_STRING USING WORK_REC,3,MI,","
         CALL DELIMIT_STRING USING WORK_REC,4,GENDER,","
         CALL DELIMIT_STRING USING WORK_REC,5,DOB,","
-
-        CALL GET_MEDICARE_ID
+        CALL DELIMIT_STRING USING WORK_REC,28,SOURCE_ID, ","
+        SWITCH SOURCE_ID
+            CASE "S5601"
+                CONTINUE
+        ENDSWITCH
+        SCAN "DIS" IN TRC_SHORT_NAME
+        IF NOT EQUAL
+            CONTINUE
+        ENDIF
+        CALL GET_MEMBER_ID
 
 .TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
         CALL UTIL_MEM_FIND USING MEMBER_ID
@@ -268,15 +278,15 @@ BUILD_REPORT LROUTINE
     debug
 
 .#######################################################################
-GET_MEDICARE_ID LROUTINE
+GET_MEMBER_ID LROUTINE
 .TODO: Get Medicare ID
-
+    debug
     CLEAR MEMI_REC,MEMBER_ID
     LOOP
         IF (CHOP MEMI_ID = "")
-            CALL UTIL_MEMI_FIND_ID_AND_CAT USING MEDICARE_ID, "CMS"
+            CALL UTIL_MEMI_FIND_ALTID USING "CMS", MEDICARE_ID
         ELSE
-            CALL UTIL_MEMI_NEXT_ID_AND_CAT
+            CALL UTIL_MEMI_NEXT_ALTID
         ENDIF
         WHILE EQUAL
 
