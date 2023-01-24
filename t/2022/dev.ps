@@ -251,16 +251,18 @@ BUILD_REPORT LROUTINE
             ENDIF
 
         CALL GET_MEMBER_ID
-.check to see if MEMBER_ID is blank and add log it if so
+.check to see if MEMBER_ID is blank and log it if so
 
 .TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
         CALL UTIL_MEM_FIND USING MEMBER_ID
         IF NOT EQUAL
             CONTINUE
         ENDIF
-            IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "")
-                CONTINUE
-            ENDIF
+
+        CALL GET_ACTIVE_ENROLLMENT USING CURRDATE
+        IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "9")
+            CONTINUE
+        ENDIF
 
 .Write findings to report
         PACK REPORT_REC WITH (MEMI_ID),COMMA:
@@ -270,7 +272,6 @@ BUILD_REPORT LROUTINE
                             (CHOP GENDER),COMMA:
                             (CHOP DOB)
         CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-
 
     REPEAT
 
@@ -305,6 +306,33 @@ GET_MEMBER_ID LROUTINE
 
     RETURN
     ENDROUTINE
+
+.#######################################################################
+GET_ACTIVE_ENROLLMENT LROUTINE ASOF@
+ASOF@           CHAR    @
+
+    LOOP
+        IF (CHOP MEMBER_ID = "")
+            CALL UTIL_MEME_FIND USING MEMBER_ID
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        IF (SQUEEZE MEME_TRM = "")
+            FILL "9" IN MEME_TRM
+        ENDIF
+
+        CONTINUE IF (MEME_EFF > MEME_TRM)
+        IF NOT (ASOF@ >= MEME_EFF AND ASOF@ <= MEME_TRM)
+            CONTINUE
+        ENDIF
+
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
 
 .#######################################################################
 CLEAN_UP LROUTINE
