@@ -98,6 +98,7 @@ DOB                 CHAR    8
 MEMI_LIST           CHAR    24
 SOURCE_ID           CHAR    5
 TRC_SHORT_NAME      CHAR    24
+TRANSACTION_DATE    CHAR    8
 
 .# =================================================================== #
 .# Begin Program
@@ -214,7 +215,7 @@ SET_RUN_CONFIG LROUTINE
 
 
 .#######################################################################
-.TODO: Read into a list that has a string variable long enough to hold record
+.Read into a list that has a string variable long enough to hold record
 BUILD_REPORT LROUTINE
 ...
     CALL OPEN_OGBFILE USING WORK_FD, WORK_FILE
@@ -231,7 +232,7 @@ BUILD_REPORT LROUTINE
             CONTINUE
         ENDIF
 
-.TODO: Split that single record into its fields
+.Split that single record into its fields
         debug
         CALL DELIMIT_STRING USING WORK_REC,0,MEDICARE_ID,","
         CALL DELIMIT_STRING USING WORK_REC,1,SURNAME,","
@@ -239,6 +240,7 @@ BUILD_REPORT LROUTINE
         CALL DELIMIT_STRING USING WORK_REC,3,MI,","
         CALL DELIMIT_STRING USING WORK_REC,4,GENDER,","
         CALL DELIMIT_STRING USING WORK_REC,5,DOB,","
+        CALL DELIMIT_STRING USING WORK_REC,21,TRANSACTION_DATE, ","
         CALL DELIMIT_STRING USING WORK_REC,28,SOURCE_ID, ","
         SWITCH SOURCE_ID
             CASE "S5601"
@@ -251,21 +253,17 @@ BUILD_REPORT LROUTINE
             ENDIF
 
         CALL GET_MEMBER_ID
-.check to see if MEMBER_ID is blank and log it if so
 
-.TODO: Use Impact ID to lookup MEM & loop through MEME to check for BLUE
+.Use Impact ID to lookup MEM & loop through MEME to check for BLUE
         CALL UTIL_MEM_FIND USING MEMBER_ID
         IF NOT EQUAL
             CONTINUE
         ENDIF
 
-        CALL GET_ACTIVE_ENROLLMENT USING CURRDATE
-        IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "9")
-            CONTINUE
-        ENDIF
+        CALL GET_ACTIVE_ENROLLMENT USING TRANSACTION_DATE
 
 .Write findings to report
-        PACK REPORT_REC WITH (MEMI_ID),COMMA:
+        PACK REPORT_REC WITH (MEDICARE_ID),COMMA:
                             (CHOP SURNAME),COMMA:
                             (CHOP FIRST_NAME),COMMA:
                             (CHOP MI),COMMA:
@@ -284,7 +282,7 @@ BUILD_REPORT LROUTINE
 
 .#######################################################################
 GET_MEMBER_ID LROUTINE
-.TODO: Get Medicare ID
+.Get Medicare ID
     debug
     CLEAR MEMI_REC,MEMBER_ID
     LOOP
@@ -311,20 +309,28 @@ GET_MEMBER_ID LROUTINE
 GET_ACTIVE_ENROLLMENT LROUTINE ASOF@
 ASOF@           CHAR    @
 
+    CLEAR MEME_LIST
     LOOP
-        IF (CHOP MEMBER_ID = "")
+        IF (CHOP MEME_ID2 = "")
             CALL UTIL_MEME_FIND USING MEMBER_ID
         ELSE
             CALL UTIL_MEME_NEXT
         ENDIF
         WHILE EQUAL
 
-        IF (SQUEEZE MEME_TRM = "")
-            FILL "9" IN MEME_TRM
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH "9"
         ENDIF
 
-        CONTINUE IF (MEME_EFF > MEME_TRM)
+        IF (MEME_EFF > MEME_TRM)
+            CONTINUE
+        ENDIF
+
         IF NOT (ASOF@ >= MEME_EFF AND ASOF@ <= MEME_TRM)
+            CONTINUE
+        ENDIF
+
+        IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "9")
             CONTINUE
         ENDIF
 
