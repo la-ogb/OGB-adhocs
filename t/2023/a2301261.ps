@@ -1,0 +1,249 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2301261.ps
++
++ DESCRIPTION:
++   Filter LAGOV-834-caused issues in the report of bild/bil mismatch
++   records from Tony
++
++ CREATED BY:
++   apjwh - 2023-01-26
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC CLI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+.TODO: add configuration settings here
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+INPUT_FD            FILE    VAR=1000,TEXT
+INPUT_FILE          INIT    "/w/tmp/bad_clip_bills.csv"
+
+OUTPUT_FD           FILE    VAR=1000,TEXT
+OUTPUT_FILE         INIT    "/w/tmp/bad_clip_bills-fixed.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+CSV_LIST            LIST
+CSV_REC             CHAR    1000
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2301261" TO C_PROG        ...Program name
+    MOVE "FILTER BILD MISMATCH" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIX_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input recs":
+                                  "Output recs":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_FILE LROUTINE
+IS_HEADER       NUM     "1"
+IN_DATA         LIST
+IN_CLIR         CHAR    8
+IN_LEV1         CHAR    5
+IN_LEV2         CHAR    5
+                LISTEND
+...
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL PREP_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,CSV_LIST
+        WHILE (RESULT = 1)
+
+        IF (IS_HEADER)
+            CLEAR IS_HEADER
+            PACK CSV_REC WITH (CHOP CSV_REC),",Corrected Lev1,Corrected Lev2"
+            CALL WRITE_OGBREC_SEQ USING OUTPUT_FD,OUTPUT_FILE,CSV_LIST
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CLEAR IN_DATA
+        CALL DELIMIT_STRING USING CSV_REC,7,IN_CLIR,","
+        CALL DELIMIT_STRING USING CSV_REC,8,IN_LEV1,","
+        CALL DELIMIT_STRING USING CSV_REC,9,IN_LEV2,","
+
+        CALL UTIL_CLI_FIND USING IN_CLIR
+        IF NOT EQUAL
+            debug
+            PACK CSV_REC WITH (CHOP CSV_REC),COMMA,"Not Found",COMMA,"Not Found"
+            CALL WRITE_OGBREC_SEQ USING OUTPUT_FD,OUTPUT_FILE,CSV_LIST
+            CONTINUE
+        ENDIF
+
+        CONTINUE IF (CHOP CLI_LEV1 != CHOP IN_LEV1)
+        CONTINUE IF (CHOP CLI_LEV2 != CHOP IN_LEV2)
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+        PACK CSV_REC WITH (CHOP CSV_REC),COMMA,CLI_LEV1,COMMA,CLI_LEV2
+        CALL WRITE_OGBREC_SEQ USING OUTPUT_FD,OUTPUT_FILE,CSV_LIST
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL CLOSE_OGBFILE USING OUTPUT_FD,OUTPUT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING OUTPUT_FILE,OUTPUT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_CLI.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
