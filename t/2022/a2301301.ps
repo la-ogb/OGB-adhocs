@@ -1,6 +1,6 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   a230130.ps
++   a2301301.ps
 +
 + DESCRIPTION:
 +   Goes through esi_trr files to search for members with a BLUE network
@@ -59,7 +59,7 @@ WORK_FD             FILE    VAR=2500,TEXT
 WORK_FILE           INIT    "/w/tmp/trr.csv"
 
 REPORT_FD           FILE    VAR=1000,TEXT
-REPORT_FILE         INIT    "/w/tmp/a230130.csv"
+REPORT_FILE         INIT    "/w/tmp/a2301301.csv"
 
 .# =================================================================== #
 .# File lists
@@ -228,15 +228,15 @@ BUILD_REPORT LROUTINE
         CALL DELIMIT_STRING USING WORK_REC,5,DOB,","
         CALL DELIMIT_STRING USING WORK_REC,21,TRANSACTION_DATE, ","
         CALL DELIMIT_STRING USING WORK_REC,28,SOURCE_ID, ","
-            SWITCH SOURCE_ID
-                CASE "S5601"
-                    CONTINUE
+        SWITCH SOURCE_ID
+            CASE "S5601"
+                CONTINUE
             ENDSWITCH
         CALL DELIMIT_STRING USING WORK_REC,72,TRC_SHORT_NAME, ","
-            SCAN "DIS" IN TRC_SHORT_NAME
-                IF NOT EQUAL
-                    CONTINUE
-                ENDIF
+        SCAN "DIS" IN TRC_SHORT_NAME
+        IF NOT EQUAL
+            CONTINUE
+        ENDIF
 
         CALL GET_MEMBER_ID
 
