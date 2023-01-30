@@ -1,6 +1,6 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   <name>.ps
++   a230130.ps
 +
 + DESCRIPTION:
 +   Goes through esi_trr files to search for members with a BLUE network
@@ -40,7 +40,7 @@ REFRESH_RATE        EQU     1000
 .# Configuration
 .# =================================================================== #
 
-EMAIL_TO            INIT    "victoria.nickel@la.gov"
+EMAIL_TO            INIT    "$CURRENT_USER_EMAIL"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -48,7 +48,7 @@ EMAIL_TO            INIT    "victoria.nickel@la.gov"
 
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
-TEST_EMAIL          INIT    "victoria.nickel@la.gov"
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
                     LISTEND
 
 .# =================================================================== #
@@ -59,13 +59,12 @@ WORK_FD             FILE    VAR=2500,TEXT
 WORK_FILE           INIT    "/w/tmp/trr.csv"
 
 REPORT_FD           FILE    VAR=1000,TEXT
-REPORT_FILE         INIT    "/w/tmp/dev.csv"
+REPORT_FILE         INIT    "/w/tmp/a230130.csv"
 
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
-.add file lists
 REPORT_LIST        LIST
 REPORT_REC         CHAR    1000
                               LISTEND
@@ -149,10 +148,6 @@ RUN_NOW ROUTINE
                                  ENABLE_TEST:  ...test toggle
                                  TEST_CONFIG  ...test settings list
 
-.TODO: make sure any parameter that can be called from the CMD line are
-. filled with spaces or value and space before the SCHED_PICK for them
-. to be populated in an automatically generated Impact Scheduler record
-
 .Set up run mode or build SCH record
     CALL SCHED_PICK
 
@@ -173,10 +168,6 @@ MAIN_PROCESS LROUTINE
 + Core logic
     debug
     CALL INITIALIZE
-
-.    CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
-.    CALL UTIL_XMESSAGE USING "Add Code Here",MSG_HEIGHT
-.    CALL UTIL_ERRORMSG USING "Not implemented","MAIN_PROCESS"
     CALL BUILD_REPORT
     CALL CLEAN_UP
 
@@ -237,15 +228,15 @@ BUILD_REPORT LROUTINE
         CALL DELIMIT_STRING USING WORK_REC,5,DOB,","
         CALL DELIMIT_STRING USING WORK_REC,21,TRANSACTION_DATE, ","
         CALL DELIMIT_STRING USING WORK_REC,28,SOURCE_ID, ","
-        SWITCH SOURCE_ID
-            CASE "S5601"
-                CONTINUE
-        ENDSWITCH
+            SWITCH SOURCE_ID
+                CASE "S5601"
+                    CONTINUE
+            ENDSWITCH
         CALL DELIMIT_STRING USING WORK_REC,72,TRC_SHORT_NAME, ","
-        SCAN "DIS" IN TRC_SHORT_NAME
-            IF NOT EQUAL
-                CONTINUE
-            ENDIF
+            SCAN "DIS" IN TRC_SHORT_NAME
+                IF NOT EQUAL
+                    CONTINUE
+                ENDIF
 
         CALL GET_MEMBER_ID
 
@@ -273,7 +264,6 @@ BUILD_REPORT LROUTINE
 
     RETURN
     ENDROUTINE
-    debug
 
 .#######################################################################
 GET_MEMBER_ID LROUTINE
@@ -314,7 +304,7 @@ ASOF@           CHAR    @
         WHILE EQUAL
 
         IF (CHOP MEME_TRM = "")
-            PACK MEME_TRM WITH "9"
+            PACK MEME_TRM WITH "99999999"
         ENDIF
 
         IF (MEME_EFF > MEME_TRM)
@@ -358,12 +348,14 @@ SUBJECT         CHAR    100
 BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
-    PACK SCRATCH WITH "BLUE network and no term date"
+    PACK SCRATCH WITH "Esi_Trr files for review :"
+                      "with BLUE network and no term date"
 
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
     PACK BODY_BASE WITH "":
-        "Members with BLUE network and no term date"
+        "Contains a report of members from the esi_trr file with Blue :"
+        "Cross as the network and blank or passed term dates"
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
