@@ -65,7 +65,7 @@ REPORT_FILE         INIT    "/w/tmp/dev.csv"
 .# File lists
 .# =================================================================== #
 
-.TODO: add file lists
+.add file lists
 REPORT_LIST        LIST
 REPORT_REC         CHAR    1000
                               LISTEND
@@ -193,7 +193,7 @@ INITIALIZE LROUTINE
 .Get the files and EDI locations from valid 101
     CALL UTIL_GET_SYS_DIRS_COMMON
 
-.TODO: set counter desc
+.set counter desc
     CALL UTIL_INIT_COUNTERS USING "Records reviewed":
                                   "":
                                   "":
@@ -202,16 +202,6 @@ INITIALIZE LROUTINE
                                   ""
 
     CALL SET_RUN_CONFIG
-
-    RETURN
-    ENDROUTINE
-
-
-.#######################################################################
-SET_RUN_CONFIG LROUTINE
-+ Configure any runtime settings here
-
-.TODO: delete if not needed
 
     RETURN
     ENDROUTINE
@@ -350,7 +340,7 @@ CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
 
-.TODO: final clean up
+.final clean up
 . trim trailing whitespace off report
     CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
 .Email report
