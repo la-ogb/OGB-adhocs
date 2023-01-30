@@ -4,10 +4,11 @@
 +
 + DESCRIPTION:
 +   Goes through esi_trr files to search for members with a BLUE network
-+   and no term date
++   and a blank term date or a term date that is after the transaction
++   date
 +
 + CREATED BY:
-+   apvwn - 2022-11-28
++   apvwn - 2023-01-30
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 .# =================================================================== #
@@ -79,7 +80,6 @@ REPORT_HEADER       VARLIST "BENEFICIARY_ID,":
                             "MI,":
                             "GENDER,":
                             "DOB"
-
 .# =================================================================== #
 .# Program Variables
 .# =================================================================== #
@@ -99,6 +99,9 @@ MEMI_LIST           CHAR    24
 SOURCE_ID           CHAR    5
 TRC_SHORT_NAME      CHAR    24
 TRANSACTION_DATE    CHAR    8
+LOCAL_DIR           CHAR    7
+REMOTE_DIR          CHAR    38
+INPUT_FILE          CHAR    7
 
 .# =================================================================== #
 .# Begin Program
@@ -191,12 +194,12 @@ INITIALIZE LROUTINE
     CALL UTIL_GET_SYS_DIRS_COMMON
 
 .TODO: set counter desc
-    CALL UTIL_INIT_COUNTERS USING "Counter 1 - Not Used":
-                                  "Counter 2 - Not Used":
-                                  "Counter 3 - Not Used":
-                                  "Counter 4 - Not Used":
-                                  "Counter 5 - Not Used":
-                                  "Counter 6 - Not Used"
+    CALL UTIL_INIT_COUNTERS USING "Records reviewed":
+                                  "":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
 
     CALL SET_RUN_CONFIG
 
@@ -218,6 +221,8 @@ SET_RUN_CONFIG LROUTINE
 .Read into a list that has a string variable long enough to hold record
 BUILD_REPORT LROUTINE
 ...
+    CALL UTIL_FTP_GET_FILE USING LOCAL_DIR,REMOTE_DIR,INPUT_FILE,"ascii"
+
     CALL OPEN_OGBFILE USING WORK_FD, WORK_FILE
     CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
@@ -396,6 +401,7 @@ BODY_BASE       CHAR    1000
     INC UTIL_EMAIL.SR
     INC UTIL_MEMBERS.SR
     INC UTIL_BILLING.SR
+    INC UTIL_FTP.SR
 
 .# =================================================================== #
 .# End of Program
