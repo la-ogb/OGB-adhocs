@@ -1,0 +1,701 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++    Program name   :  SECURE (adhoc a2212271)
++    Description    :  MEM   - Apply Client security to member records
++                      Adhoc created to find index file issues
++    Author         :  Ken Hoel
++    Date created   :  03/07/1999
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+.
+              INC       COMMON.CB            ...Common work area
+              INC       MEM.RL               ...Members
+              INC       MEME.RL              ...Members enrollment
+              INC       CLI.RL               ...Clients
+              INC       CLM.RL               ...Claims
+              INC       EVE.RL               ...Events
+              INC       VALID.RL
+              INC       CMDPARAM.CB
+.
+.----------------------------------------------------------------------------
+.
+INF_CLI       FILE      VAR=1000,COMP
+TMP_FILE      FILE      VAR=8,COMP
+TMP_NAME      INIT      "secure.tmp                 "
+
+SEQ           FORM      "-1"
+SEQ4          FORM      "-4"
+SEQ3          FORM      "-3"
+CUR_RMEM      FORM      8
+CUR_CMEM      FORM      8
+CUR_RCLM      FORM      8
+CUR_CCLM      FORM      8
+CUR_REVE      FORM      8
+CUR_CEVE      FORM      8
+TOT_RMEM      FORM      8
+TOT_CMEM      FORM      8
+TOT_RCLM      FORM      8
+TOT_CCLM      FORM      8
+TOT_REVE      FORM      8
+TOT_CEVE      FORM      8
+FORM2         FORM      2
+FINAL         FORM      1
+MEMSOV        FORM      1
+MEMSAS        FORM      1
+DO_OVER       FORM      1
+LOOP_PREV     FORM      3
+
+PREV_ACCU     DIM       8
+FORCE         DIM       1
+FORCE_OVER    DIM       1
+DIM8          DIM       8
+MY_EFF        DIM       8
+ME_KEY        DIM       20
+CAL_CLOCK     DIM       21
+ACTION        DIM       10
+THIS_DATE     DIM       8
+LAST_ID1      DIM       8
+LAST_KEY      DIM       24
+.
+. Needed by the scheduler
+PARAM_LIST    LIST  WITH NAMES
+PARAM_DUMMY   DIM       1
+              LISTEND
+
+PROG_NAME       INIT    "AHCSEC"
+.
++ ---------------------------------------------------------�---------------
++   Begin Program
++ ---------------------------------------------------------�---------------�
+
+START
+
+. Where to go when the program quits
+. The name of this program
+. The description of this program (20 chars max)
+
+         MOVE      "menu"      TO C_NEXT
+         MOVE      "SECURE"    TO C_PROG
+         MOVE      "APPLY MEM SECURITY" TO C_OPER
+         CLOCK     CALENDAR    TO  CAL_CLOCK
+         MOVE      BLANKS TO C_LABEL
+         MOVE      BLANKS TO C_FILE
+         MOVE      BLANKS TO C_KEYS
+         SET       C_NOHIST
+
+         IF (C_CMDPAR)
+            CALL CMD_START USING C_PROG
+         ENDIF
+
+. ------------------------------
+.   Fill top of screen
+. ------------------------------
+         IF (C_RMODE = "I")
+            DISPLAY   *RESETSW,*BGCOLOR=C_DATB,*COLOR=C_DATL,*+:
+                      *P1:2,*RPTCHAR *HLN:80,*COLOR=C_DATF:
+                      *P3:2,"<",CAL_CLOCK,">":
+                      *P29:2,"<",C_OPER,">":
+                      *P54:2,"<",C_PROG,">":
+                      *P66:2,"<",ACTION,">":
+                      *P01:1,*BGCOLOR=C_F01B,*COLOR=C_F01F," 1-xxxx ":
+                      *P09:1,*BGCOLOR=C_F02B,*COLOR=C_F02F," 2-xxxx ":
+                      *P17:1,*BGCOLOR=C_F03B,*COLOR=C_F03F," 3-xxxx ":
+                      *P25:1,*BGCOLOR=C_F04B,*COLOR=C_F04F," 4-xxxx ":
+                      *P33:1,*BGCOLOR=C_F05B,*COLOR=C_F05F," 5-xxxx ":
+                      *P41:1,*BGCOLOR=C_F06B,*COLOR=C_F06F," 6-xxxx ":
+                      *P49:1,*BGCOLOR=C_F07B,*COLOR=C_F07F," 7-xxxx ":
+                      *P57:1,*BGCOLOR=C_F08B,*COLOR=C_F08F," 8-xxxx ":
+                      *P65:1,*BGCOLOR=C_F09B,*COLOR=C_F09F," 9-Quit ":
+                      *P73:1,*BGCOLOR=C_F10B,*COLOR=C_F10F,"10-xxxx ":
+                      *BGCOLOR=C_BOTB,*COLOR=C_BOTL,*+:
+                      *P1:C_WIND25,*RPTCHAR *HLN:80
+         ENDIF
+.
+. ----------------------------------
+.  Initialize traps
+. ----------------------------------
+         TRAPCLR   ALL
++        TRAP      HELP  NORESET IF F1
++        TRAP      SRCH  NORESET IF F2
++        TRAP      PREV  NORESET IF F3
++        TRAP      NEXT  NORESET IF F4
++        TRAP      NEW   NORESET IF F5
++        TRAP      EXPD  NORESET IF F6
++        TRAP      CODE  NORESET IF F7
++        TRAP      NOTE  NORESET IF F8
+         TRAP      QUIT  NORESET IF F9
++        TRAP      MORE  NORESET IF F10
+
+
+ASK_FILE
+         IF (C_RMODE = "I")
+            MOVE      BLANKS TO WCHAR
+            dialog    horz="23",vert="10":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text="This program applies Client":
+                      text="Security to Members.":
+                      text="Ready to go ? ":
+                      field=WCHAR
+         ELSE
+            MOVE      "Y" TO WCHAR
+         ENDIF
+
+         GOTO      QUIT IF (SQUEEZE WCHAR != "Y")
+
+. Get scheduling information                        (from here.........)
+         IF (C_RMODE = "I")
+             CALL      SCHED_PICK
+         ELSE
+             MOVE      "N" TO RUN_MODE
+         ENDIF
+
+. If the scheduler says to run it now, do it.
+         IF (RUN_MODE = "N")
+             CALL      RUN_NOW
+         ENDIF
+
+         GOTO      QUIT
+
+         INC       SCHED_NP.SR     (w/o printer)
+
+RUN_NOW
+.                                                   (thru here.........)
+
+         CLEAR MEMSOV  (USE MEM SECURITY OVERRIDE)?           OGB
+         PACK  VAL_KEY1 WITH "101MEMSOV",BLANKS
+         CALL  VAL_READ1
+         IF (RESULT = 1)
+            SCAN      "YES" IN VAL_OPT
+            IF EQUAL
+               SET  MEMSOV
+            ENDIF
+         ENDIF
+
+         CLEAR MEMSAS       (USE MEM SHARED ACCUMS SECURITY)   OGB
+         PACK  VAL_KEY1 WITH "101MEMSAS",BLANKS
+         CALL  VAL_READ1
+         IF (RESULT = 1)
+            SCAN      "YES" IN VAL_OPT
+            IF EQUAL
+               SET  MEMSAS
+            ENDIF
+         ENDIF
+
+
+. Open all the files
+         IF (C_RMODE = "I")
+            message   horz="23",vert="05":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text="MEMBER SECURITY UPDATE PROGRAM ":
+                      text="------------------------------ ":
+                      text="   PROGRESS MONITOR     TOTAL  ":
+                      text="------------------------------ ":
+                      text="MEM's read.........            ":
+                      text="MEM's chgd.........            ":
+                      text="CLM's read.........            ":
+                      text="CLM's chgd.........            ":
+                      text="EVE's read.........            ":
+                      text="EVE's chgd.........            "
+         ENDIF
+
+         message   horz="25",vert="25":
+                   bgcol=C_DLGB,fgcol=C_DLGF:
+                   lncol=C_DLGL,shade="Y":
+                   text="Creating sort file...."
+
+. Sort the CLI records that contain a security code
+         SORT      "cli.dbf cli.tmp 1-8 -P556ne#" #" -j -c"
+
+         TRAP      BAD_OPEN IF IO
+         OPEN      INF_CLI,"cli.tmp"
+         PREP      TMP_FILE,TMP_NAME
+
+         CLOCK     TIMESTAMP TO THIS_DATE
+         TRAPCLR   IO
+         CLEAR FINAL
+
+         messageerase
+         message    horz="25",vert="25":
+                    bgcol=C_DLGB,fgcol=C_DLGF:
+                    lncol=C_DLGL,shade="Y":
+                    text="Processing file...."
+
+. Read the sorted client file
+         LOOP
+            READ      INF_CLI,SEQ;CLI_LIST
+            BREAK     IF OVER
+            CLEAR     CUR_RMEM
+            CLEAR     CUR_CMEM
+            CLEAR     CUR_RCLM
+            CLEAR     CUR_CCLM
+            CLEAR     CUR_REVE
+            CLEAR     CUR_CEVE
+            MOVE      BLANKS TO LAST_ID1
+
+.First write file of all mems that ever pointed to this secured client
+            PACK      MEME_FK12 WITH CLI_ID1,BLANKS
+            CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                                MEME_FN:          ...File name list
+                                MEME_FC:          ...(I)ndex or (A)imdex
+                                MEME_FV:          ...File key varlists
+                                MEME_FK:          ...File key sizes
+                                MEME_LIST:        ...File record (field list)
+                                MEME_REC:         ...File record (packed)
+                                MEME_OLD:         ...File saved when read
+                                MEME_QTY:         ...Number of files
+                                2                 ...File number for this read
+
+            LOOP
+               CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                                   MEME_FN:          ...File name list
+                                   MEME_FC:          ...(I)ndex or (A)imdex
+                                   MEME_FV:          ...File key varlists
+                                   MEME_FK:          ...File key sizes
+                                   MEME_LIST:        ...File record (field list)
+                                   MEME_REC:         ...File record (packed)
+                                   MEME_OLD:         ...File saved when read
+                                   MEME_QTY:         ...Number of files
+                                   2                 ...File number for this read
+               BREAK IF (RESULT <> 1)
+               BREAK IF (MEME_CLIR <> CLI_ID1)
+
+               WRITE TMP_FILE,SEQ;MEME_ID1
+
+               PACK MEME_FK12 WITH CLI_ID1,MEME_ID1,"ZZZZ"
+               CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                                   MEME_FN:          ...File name list
+                                   MEME_FC:          ...(I)ndex or (A)imdex
+                                   MEME_FV:          ...File key varlists
+                                   MEME_FK:          ...File key sizes
+                                   MEME_LIST:        ...File record (field list)
+                                   MEME_REC:         ...File record (packed)
+                                   MEME_OLD:         ...File saved when read
+                                   MEME_QTY:         ...Number of files
+                                   2                 ...File number for this read
+            REPEAT
+         REPEAT
+         CLOSE TMP_FILE
+.Now find all MEM records that have a secure code right now.
+         PACK SCRATCH WITH (CHOP MEM_FNS)," secure.jnk 1-8 -c -p392ne#" #" -j"
+         REFORMAT SCRATCH
+.append the two files together
+         PACK SCRATCH WITH "secure.jnk ",TMP_NAME," -c -a"
+         REFORMAT SCRATCH
+.now create unique list of these members
+         PACK SCRATCH WITH TMP_NAME," ",TMP_NAME," 1-8 -c -u"
+         SORT SCRATCH
+
+         messageerase
+
+.read file and process each of these members
+         OPEN TMP_FILE,TMP_NAME
+         READ TMP_FILE,SEQ3;DIM8
+         LOOP
+            READ  TMP_FILE,SEQ4;DIM8
+            BREAK IF OVER
+            PACK  MEM_FK11 WITH DIM8
+            CALL  FILE_READ USING MEM_FD:    ...File declaration list
+                            MEM_FN:          ...File name list
+                            MEM_FC:          ...(I)ndex or (A)imdex
+                            MEM_FV:          ...File key varlists
+                            MEM_FK:          ...File key sizes
+                            MEM_LIST:        ...File record (field list)
+                            MEM_REC:         ...File record (packed)
+                            MEM_OLD:         ...File saved when read
+                            MEM_QTY:         ...Number of files
+                            1                ...File number for this read
+            CALL  DO_MEM
+         REPEAT
+         CLOSE TMP_FILE
+
+
+
+         IF (MEMSAS)         .Member shared accum Security
+.            get all members with shared accums and a mem security flag set
+             PACK TMP_NAME WITH "secure_memsas.tmp"
+             REFORMAT  MEM_FNS," ",TMP_NAME," 1-8 -P548ne#" #" -p392ne#" #" -j -c"
+             TRAP      BAD_OPEN IF IO
+             OPEN      TMP_FILE,TMP_NAME
+             TRAPCLR   IO
+. Read the recs
+             LOOP
+                READ   TMP_FILE,SEQ;DIM8
+                BREAK IF OVER
+                FILL " " IN FORCE_OVER
+DO_ACCU_OVER
+                IF (DIM8 = "00158926")
+                ENDIF
+
+                PACK  MEM_FK11 WITH DIM8
+                CALL  FILE_READ USING MEM_FD:    ...File declaration list
+                                MEM_FN:          ...File name list
+                                MEM_FC:          ...(I)ndex or (A)imdex
+                                MEM_FV:          ...File key varlists
+                                MEM_FK:          ...File key sizes
+                                MEM_LIST:        ...File record (field list)
+                                MEM_REC:         ...File record (packed)
+                                MEM_OLD:         ...File saved when read
+                                MEM_QTY:         ...Number of files
+                                1                ...File number for this read
+                CONTINUE IF (RESULT <> 1)
+                IF (DO_OVER)
+                   CLEAR DO_OVER
+.                  keep the value in force_over, should be higher than mem_secu
+                ELSE
+                   PACK FORCE_OVER WITH MEM_SECU,BLANKS
+                ENDIF
+
+                PACK PREV_ACCU  WITH MEM_ID1,BLANKS
+
+                CLEAR LOOP_PREV
+DO_ACCU
+                ADD 1 TO LOOP_PREV
+                IF (LOOP_PREV > 20)    .HAVE LOOPED THRU THE MEM CHAIN - HAVE TO BE DONE
+                   CONTINUE
+                ENDIF
+                PACK  MEM_FK11 WITH MEM_ACCU,BLANKS
+                CALL  FILE_READ USING MEM_FD:    ...File declaration list
+                                MEM_FN:          ...File name list
+                                MEM_FC:          ...(I)ndex or (A)imdex
+                                MEM_FV:          ...File key varlists
+                                MEM_FK:          ...File key sizes
+                                MEM_LIST:        ...File record (field list)
+                                MEM_REC:         ...File record (packed)
+                                MEM_OLD:         ...File saved when read
+                                MEM_QTY:         ...Number of files
+                                1                ...File number for this read
+
+                CONTINUE IF (RESULT <> 1)
+                IF (FORCE_OVER > MEM_SECU)   Apply security if >  already assigned
+                   CALL  DO_MEM
+                ENDIF
+                IF (MEM_SECU > FORCE_OVER)
+                    MOVE MEM_SECU TO FORCE_OVER
+                    SET  DO_OVER
+                    GOTO DO_ACCU_OVER     .start from top with new, higher sec code
+                ENDIF
+                IF (SQUEEZE MEM_ACCU > "" AND MEM_ACCU <> PREV_ACCU)
+                    PACK PREV_ACCU WITH MEM_ID1,BLANKS
+                    GOTO DO_ACCU   .Handle the pointed to mem
+                ENDIF
+             REPEAT  .get another mem with shared accums and sec set
+
+             CLOSE TMP_FILE
+         ENDIF
+
+
+         IF (MEMSOV)
+. Sort the MEM records that contain a security Override Codes
+             PACK TMP_NAME WITH "secure_memsov.tmp"
+             REFORMAT  MEM_FNS," ",TMP_NAME," 1-8 -p929ne#" #" -j -c"
+             TRAP      BAD_OPEN IF IO
+             OPEN      TMP_FILE,TMP_NAME
+             TRAPCLR   IO
+             FILL " " IN FORCE_OVER
+. Read the recs
+             LOOP
+                READ   TMP_FILE,SEQ;DIM8
+                BREAK IF OVER
+                PACK  MEM_FK11 WITH DIM8
+                CALL  FILE_READ USING MEM_FD:    ...File declaration list
+                                MEM_FN:          ...File name list
+                                MEM_FC:          ...(I)ndex or (A)imdex
+                                MEM_FV:          ...File key varlists
+                                MEM_FK:          ...File key sizes
+                                MEM_LIST:        ...File record (field list)
+                                MEM_REC:         ...File record (packed)
+                                MEM_OLD:         ...File saved when read
+                                MEM_QTY:         ...Number of files
+                                1                ...File number for this read
+                CONTINUE IF (RESULT <> 1)
+                IF (MEM_SECU <> MEM_SECOV)   .Only need to change if different
+                    MOVE MEM_SECOV TO FORCE_OVER
+                ENDIF
+                CALL  DO_MEM
+             REPEAT
+             CLOSE TMP_FILE
+         ENDIF
+
+         SET   FINAL
+         CALL  DISPLAY_TOTALS
+         GOTO  QUIT
+
+. -----------------------------------------------------------------------
+.  Read all MEME's for the last MEM and use the latest one to set MEM_SECU
+. -----------------------------------------------------------------------
+DO_MEM
+         ADD       1 TO CUR_RMEM
+         ADD       1 TO TOT_RMEM
+         CALL      DISPLAY_TOTALS
+         IF (SQUEEZE FORCE_OVER > "")
+            MOVE FORCE_OVER TO FORCE
+            GOTO GOT_FORCE
+         ENDIF
+. Now read all the MEME's for that MEM by index 1
+         PACK      MEME_FK11 WITH MEM_ID1,BLANKS
+         CALL      FILE_READ USING MEME_FD:    ...File declaration list
+                             MEME_FN:          ...File name list
+                             MEME_FC:          ...(I)ndex or (A)imdex
+                             MEME_FV:          ...File key varlists
+                             MEME_FK:          ...File key sizes
+                             MEME_LIST:        ...File record (field list)
+                             MEME_REC:         ...File record (packed)
+                             MEME_OLD:         ...File saved when read
+                             MEME_QTY:         ...Number of files
+                             1                 ...File number for this read
+
+         MOVE      BLANKS TO FORCE
+         LOOP
+            CALL      FILE_NEXT USING MEME_FD:    ...File declaration list
+                                MEME_FN:          ...File name list
+                                MEME_FC:          ...(I)ndex or (A)imdex
+                                MEME_FV:          ...File key varlists
+                                MEME_FK:          ...File key sizes
+                                MEME_LIST:        ...File record (field list)
+                                MEME_REC:         ...File record (packed)
+                                MEME_OLD:         ...File saved when read
+                                MEME_QTY:         ...Number of files
+                                1                 ...File number for this read
+
+            BREAK IF (RESULT <> 1 OR MEM_ID1 <> MEME_ID1)             ...EOF
+
+            IF (CLI_ID1 <> MEME_CLIR)
+                PACK      CLI_FK11  WITH MEME_CLIR
+                CALL      FILE_READ USING CLI_FD:    ...File declaration list
+                                    CLI_FN:          ...File name list
+                                    CLI_FC:          ...(I)ndex or (A)imdex
+                                    CLI_FV:          ...File key varlists
+                                    CLI_FK:          ...File key sizes
+                                    CLI_LIST:        ...File record (field list)
+                                    CLI_REC:         ...File record (packed)
+                                    CLI_OLD:         ...File saved when read
+                                    CLI_QTY:         ...Number of files
+                                    1                ...File idx used (*custom*)
+            ENDIF
+            PACK  FORCE WITH CLI_SECU,BLANKS
+            BREAK IF (SQUEEZE FORCE > "")
+         REPEAT
+GOT_FORCE
+. ----------------------------------------------------------------
+.  Update the MEM, CLM & EVE records
+. ----------------------------------------------------------------
+
+         PACK      MEM_SAV WITH MEM_LIST
+         MOVE      FORCE     TO MEM_SECU
+         PACK      MEM_REC WITH MEM_LIST
+
+         IF (MEM_SAV <> MEM_REC)
+. This MEM needs changing, update the MEM record
+            CALL UPD_META USING MEM_CHGBY,MEM_CHGDT
+            CALL    FILE_WRITE  USING MEM_FD:    ...File declaration list
+                                MEM_FN:          ...File name list
+                                MEM_FC:          ...(I)ndex or (A)imdex
+                                MEM_FV:          ...File key varlists
+                                MEM_FK:          ...File key sizes
+                                MEM_LIST:        ...File record (field list)
+                                MEM_REC:         ...File record (packed)
+                                MEM_OLD:         ...File saved when read
+                                MEM_QTY:         ...Number of files
+                                1                ...File number for this read
+
+            ADD       1 TO CUR_CMEM
+            ADD       1 TO TOT_CMEM
+         ENDIF
+
+. Fix all claim records
+. Read by member in IX2
+         PACK      CLM_FK12 WITH MEM_ID1,BLANKS
+         CALL      FILE_READ USING CLM_FD:    ...File declaration list
+                             CLM_FN:          ...File name list
+                             CLM_FC:          ...(I)ndex or (A)imdex
+                             CLM_FV:          ...File key varlists
+                             CLM_FK:          ...File key sizes
+                             CLM_LIST:        ...File record (field list)
+                             CLM_REC:         ...File record (packed)
+                             CLM_OLD:         ...File saved when read
+                             CLM_QTY:         ...Number of files
+                             2                ...File number for this read
+
+         LOOP
+
+            CALL      FILE_NEXT USING CLM_FD:    ...File declaration list
+                                CLM_FN:          ...File name list
+                                CLM_FC:          ...(I)ndex or (A)imdex
+                                CLM_FV:          ...File key varlists
+                                CLM_FK:          ...File key sizes
+                                CLM_LIST:        ...File record (field list)
+                                CLM_REC:         ...File record (packed)
+                                CLM_OLD:         ...File saved when read
+                                CLM_QTY:         ...Number of files
+                                2                ...File number for this read
+
+            WHILE     (RESULT = 1)
+            WHILE     (MEM_ID1 = CLM_12)
+            CONTINUE  IF (CLM_STAT = "E")
+            PACK      LAST_KEY WITH CLM_12,CLM_6B,CLM_ID1
+
+            ADD       1 TO CUR_RCLM
+            ADD       1 TO TOT_RCLM
+            IF (FORCE <> CLM_FILL1)
+               ADD    1 TO CUR_CCLM
+               ADD    1 TO TOT_CCLM
+               MOVE   FORCE TO CLM_FILL1
+               CALL UPD_META USING CLM_CHGBY,CLM_CHGDT
+               CALL   FILE_WRITE  USING CLM_FD:    ...File declaration list
+                                   CLM_FN:          ...File name list
+                                   CLM_FC:          ...(I)ndex or (A)imdex
+                                   CLM_FV:          ...File key varlists
+                                   CLM_FK:          ...File key sizes
+                                   CLM_LIST:        ...File record (field list)
+                                   CLM_REC:         ...File record (packed)
+                                   CLM_OLD:         ...File saved when read
+                                   CLM_QTY:         ...Number of files
+                                   1                ...File number for this read
+            ENDIF
+
+. Set up next claim read
+            PACK      CLM_FK12 WITH LAST_KEY,BLANKS
+            CALL      FILE_READ USING CLM_FD:    ...File declaration list
+                                CLM_FN:          ...File name list
+                                CLM_FC:          ...(I)ndex or (A)imdex
+                                CLM_FV:          ...File key varlists
+                                CLM_FK:          ...File key sizes
+                                CLM_LIST:        ...File record (field list)
+                                CLM_REC:         ...File record (packed)
+                                CLM_OLD:         ...File saved when read
+                                CLM_QTY:         ...Number of files
+                                2                ...File number for this read
+         REPEAT
+
+. Fix all eve records
+         CLEAR     EVE_AIM
+         PACK      EVE_AIM1 WITH "01X",MEM_ID1
+         CALL      FILE_READ USING EVE_FD:    ...File declaration list
+                             EVE_FN:          ...File name list
+                             EVE_FC:          ...(I)ndex or (A)imdex
+                             EVE_FV:          ...File key varlists
+                             EVE_AIM:         ...File key sizes
+                             EVE_LIST:        ...File record (field list)
+                             EVE_REC:         ...File record (packed)
+                             EVE_OLD:         ...File saved when read
+                             EVE_QTY:         ...Number of files
+                             2                ...File idx used (*custom*)
+GET_EVE
+         IF (RESULT = 1)
+            MATCH     "PCS Provider Rec ID" TO EVE_MLNAME
+            GOTO      NEXT_EVE IF EQUAL
+            ADD       1 TO CUR_REVE
+            ADD       1 TO TOT_REVE
+            IF (FORCE    <> EVE_MEXEC)
+               ADD       1 TO CUR_CEVE
+               ADD       1 TO TOT_CEVE
+               MOVE    FORCE    TO EVE_MEXEC
+.               CLOCK   TIMESTAMP TO EVE_CHGDT
+.               MOVE    (C_USER + BLANKS) TO EVE_CHGBY
+               CALL UPD_META USING EVE_CHGBY,EVE_CHGDT
+               CALL    FILE_WRITE  USING EVE_FD:    ...File declaration list
+                                   EVE_FN:          ...File name list
+                                   EVE_FC:          ...(I)ndex or (A)imdex
+                                   EVE_FV:          ...File key varlists
+                                   EVE_FK:          ...File key sizes
+                                   EVE_LIST:        ...File record (field list)
+                                   EVE_REC:         ...File record (packed)
+                                   EVE_OLD:         ...File saved when read
+                                   EVE_QTY:         ...Number of files
+                                   1                ...File number for this read
+            ENDIF
+NEXT_EVE
+            CALL      FILE_NEXT USING EVE_FD:    ...File declaration list
+                                EVE_FN:          ...File name list
+                                EVE_FC:          ...(I)ndex or (A)imdex
+                                EVE_FV:          ...File key varlists
+                                EVE_AIM:         ...File key sizes
+                                EVE_LIST:        ...File record (field list)
+                                EVE_REC:         ...File record (packed)
+                                EVE_OLD:         ...File saved when read
+                                EVE_QTY:         ...Number of files
+                                2                ...File idx used (*custom*)
+            GOTO      GET_EVE
+         ENDIF
+         RETURN
+
+DISPLAY_TOTALS
+         IF (C_RMODE = "I")
+            CLEAR        FORM2
+            MOVE         CUR_RMEM TO FORM2
+.            IF ((FORM2 = 0 AND CUR_RMEM > 0) OR FINAL)
+                DISPLAY      *BGCOLOR=C_ERRB,*COLOR=C_ERRF:
+                             *P47:10,TOT_RMEM:
+                             *P47:11,TOT_CMEM:
+                             *P47:12,TOT_RCLM:
+                             *P47:13,TOT_CCLM:
+                             *P47:14,TOT_REVE:
+                             *P47:15,TOT_CEVE
+.            ENDIF
+         ENDIF
+         RETURN
+
+
+UPD_META LROUTINE CHGBY@,CHGDT@
+CHGBY@      CHAR    @
+CHGDT@      CHAR    @
+...
+    PACK CHGBY@ WITH PROG_NAME,BLANKS
+    CLOCK TIMESTAMP INTO CHGDT@
+
+    CLEARADR CHGBY@,CHGDT@
+    RETURN
+    ENDROUTINE
+
+. ----------------------
+.  Operator pressed F9
+. ----------------------
+QUIT
+         IF (C_CMDPAR)
+             CALL CMD_END
+             STOP
+         ENDIF
+
+         MOVE   SCH_RTSUCC TO SCH@RTCODE
+         RETURN IF (C_SMODE = "G")  .running via sched
+
+.ISC 00048915
+.        IF (C_RMODE = "I" AND C_CUSTNO <> "OGB")
+         IF (C_RMODE = "I")
+            error     horz="23",vert="20":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text="Program complete or terminated."
+            messageerase
+            CLEAR     C_NOHIST
+            CHAIN     C_NEXT
+         ENDIF
+
+         STOP
+
+. ---------------------------
+.  File could not be opened
+. ---------------------------
+BAD_OPEN
+        debug
+         IF (C_RMODE = "I")
+            error     horz="20",vert="18":
+                      bgcol=C_ERRB,fgcol=C_ERRF:
+                      lncol=C_ERRL,shade="Y":
+                      text="One of the input files":
+                      text="cannot be opened.":
+                      text="-----------------------"
+            CLEAR     C_NOHIST
+            CHAIN     C_NEXT
+         ENDIF
+
+         STOP
+
+. ----------------------------------
+.   Subroutines and other includes
+. ----------------------------------
+         INC       FILE.IO
+         INC       UTIL.SR
+         INC       VALID.IO
+         INC       CMDPARAM.SR
+.

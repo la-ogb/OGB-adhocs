@@ -1,0 +1,281 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2301241.ps
++
++ DESCRIPTION:
++   Fix id mismatch on the Optum FSA change tracker (fixed in commit:
++   https://git.la.gov/OGB/OGB-interface-Optum/commit/655c3f5bfd231691554276df4b84d861c037e449)
++
++ CREATED BY:
++   apjwh - 2023-01-24
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC OPTUM_FSA_SHARED.CB
+    INC MEM.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     100
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+.TODO: add configuration settings here
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    VAR=FSA_CHG_SIZE,TEXT
+WORK_FILE           CHAR    100
+BASE_FILE           CHAR    100
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+.TODO: add file lists
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2301241" TO C_PROG        ...Program name
+    MOVE "OTM CHG FIX" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIX_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Lines Read":
+                                  "EN Lines Found":
+                                  "Records Fixed":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+NUM10       NUM     10
+...
+    CALL INIT_SHARED_DIR
+    CALL SET_FILENAME USING FSA_CHG_FILE,"txt",FSA_CHG_TRK_PREFIX
+
+    PACK BASE_FILE WITH FSA_CHG_FILE,".saved"
+    PACK WORK_FILE WITH BASE_FILE,".tmp"
+
+    MOVE FSA_CHG_SIZE TO NUM10
+    PACK SCRATCH WITH BASE_FILE," ",WORK_FILE," -t -l=",(SQUEEZE CHAR NUM10)
+    REFORMAT SCRATCH
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "reformat failed",""
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_FILE LROUTINE
+FULLREC     CHAR    FSA_CHG_SIZE
+...
+    CALL UTIL_XMESSAGE USING "Looking for issues...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,FSA_CHG_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        PACK FULLREC WITH FSA_CHG_LIST
+        IF (SIZE FULLREC != FSA_CHG_SIZE)
+            debug
+            PACKLEN FULLREC WITH FSA_CHG_LIST
+            UNPACK FULLREC INTO FSA_CHG_LIST
+
+            CALL UPDATE_OGBREC USING WORK_FD,FSA_CHG_LIST
+            CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+        ENDIF
+
+        CONTINUE IF (FSA_CHG_FILETYPE != "EN")
+
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+        UNPACK FSA_CHG_DATA INTO OTM_EN_LIST
+
+        IF (CHOP OTM_EN_PART_EMP_ID = "")
+            debug
+            CONTINUE
+        ENDIF
+
+        IF (CHOP FSA_CHG_ID != CHOP OTM_EN_PART_EMP_ID)
+            PACK FSA_CHG_ID WITH (SQUEEZE OTM_EN_PART_EMP_ID),BLANKS
+            CALL UPDATE_OGBREC USING WORK_FD,FSA_CHG_LIST
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        ENDIF
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_DELETE_FILE USING BASE_FILE
+    RENAME WORK_FILE,BASE_FILE
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "rename failed",""
+    ENDIF
+
+    SORT BASE_FILE,BASE_FILE,FSA_CHG_SORT_KEY
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "sort failed",""
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC OPTUM_FSA_SHARED.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
