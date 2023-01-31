@@ -129,8 +129,8 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "DEV" TO C_PROG        ...Program name
-    MOVE "TODO:" TO C_OPER  ...Program description
+    MOVE "a2301301" TO C_PROG        ...Program name
+    MOVE "TRR/MEME LOOKUP" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -208,7 +208,7 @@ BUILD_REPORT LROUTINE
     CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
 
-
+    debug
     LOOP
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, WORK_LIST
         WHILE (RESULT = 1)
@@ -265,10 +265,10 @@ BUILD_REPORT LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 GET_MEMBER_ID LROUTINE
-.Get Medicare ID
-    debug
++ Lookup member by Medicare ID
     CLEAR MEMI_REC,MEMBER_ID
     LOOP
         IF (CHOP MEMI_ID = "")
@@ -290,10 +290,11 @@ GET_MEMBER_ID LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 GET_ACTIVE_ENROLLMENT LROUTINE ASOF@
 ASOF@           CHAR    @
-
+...
     CLEAR MEME_LIST
     LOOP
         IF (CHOP MEME_ID2 = "")
@@ -329,15 +330,14 @@ ASOF@           CHAR    @
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
+    debug
 
-.final clean up
-. trim trailing whitespace off report
     CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
-.Email report
     CALL SEND_EMAIL
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 SEND_EMAIL LROUTINE
