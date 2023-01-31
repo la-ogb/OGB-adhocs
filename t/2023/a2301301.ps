@@ -192,8 +192,6 @@ INITIALIZE LROUTINE
                                   "":
                                   ""
 
-    CALL SET_RUN_CONFIG
-
     RETURN
     ENDROUTINE
 
@@ -348,13 +346,12 @@ SUBJECT         CHAR    100
 BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
-    PACK SCRATCH WITH "Esi_Trr files for review :"
-                      "with BLUE network and no term date"
+    PACK SCRATCH WITH "Esi_Trr files with BLUE network and no term date"
 
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
     PACK BODY_BASE WITH "":
-        "Contains a report of members from the esi_trr file with Blue :"
+        "Contains a report of members from the esi_trr file with Blue ":
         "Cross as the network and blank or passed term dates"
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
