@@ -1,0 +1,387 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2301301.ps
++
++ DESCRIPTION:
++   Goes through esi_trr files to search for members with a BLUE network
++   and a blank term date or a term date that is after the transaction
++   date
++
++ CREATED BY:
++   apvwn - 2023-01-30
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC MEME.RL
+    INC MEM.RL
+    INC MEMI.RL
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "$CURRENT_USER_EMAIL"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    VAR=2500,TEXT
+WORK_FILE           INIT    "/w/tmp/trr.csv"
+
+REPORT_FD           FILE    VAR=1000,TEXT
+REPORT_FILE         INIT    "/w/tmp/a2301301.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+REPORT_LIST        LIST
+REPORT_REC         CHAR    1000
+                              LISTEND
+
+WORK_LIST           LIST
+WORK_REC            CHAR    2500
+                    LISTEND
+
+REPORT_HEADER       VARLIST "BENEFICIARY_ID,":
+                            "SURNAME,":
+                            "FIRST_NAME,":
+                            "MI,":
+                            "GENDER,":
+                            "DOB"
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+INPUT_REC           CHAR    24
+MEDICARE_ID         CHAR    24
+MEMBER_ID           CHAR    8
+SURNAME             CHAR    24
+FIRST_NAME          CHAR    24
+MI                  CHAR    1
+GENDER              CHAR    1
+DOB                 CHAR    8
+MEMI_LIST           CHAR    24
+SOURCE_ID           CHAR    5
+TRC_SHORT_NAME      CHAR    24
+TRANSACTION_DATE    CHAR    8
+LOCAL_DIR           CHAR    7
+REMOTE_DIR          CHAR    38
+INPUT_FILE          CHAR    7
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2301301" TO C_PROG        ...Program name
+    MOVE "TRR/MEME LOOKUP" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL BUILD_REPORT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+.set counter desc
+    CALL UTIL_INIT_COUNTERS USING "Records reviewed":
+                                  "":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+.Read into a list that has a string variable long enough to hold record
+BUILD_REPORT LROUTINE
+...
+    CALL UTIL_FTP_GET_FILE USING LOCAL_DIR,REMOTE_DIR,INPUT_FILE,"ascii"
+
+    CALL OPEN_OGBFILE USING WORK_FD, WORK_FILE
+    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
+
+    debug
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, WORK_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1, 1000
+        IF (X_CNT1 = 1)
+            CONTINUE
+        ENDIF
+
+.Split that single record into its fields
+        debug
+        CALL DELIMIT_STRING USING WORK_REC,0,MEDICARE_ID,","
+        CALL DELIMIT_STRING USING WORK_REC,1,SURNAME,","
+        CALL DELIMIT_STRING USING WORK_REC,2,FIRST_NAME,","
+        CALL DELIMIT_STRING USING WORK_REC,3,MI,","
+        CALL DELIMIT_STRING USING WORK_REC,4,GENDER,","
+        CALL DELIMIT_STRING USING WORK_REC,5,DOB,","
+        CALL DELIMIT_STRING USING WORK_REC,21,TRANSACTION_DATE, ","
+        CALL DELIMIT_STRING USING WORK_REC,28,SOURCE_ID, ","
+        SWITCH SOURCE_ID
+            CASE "S5601"
+                CONTINUE
+            ENDSWITCH
+        CALL DELIMIT_STRING USING WORK_REC,72,TRC_SHORT_NAME, ","
+        SCAN "DIS" IN TRC_SHORT_NAME
+        IF NOT EQUAL
+            CONTINUE
+        ENDIF
+
+        CALL GET_MEMBER_ID
+
+.Use Impact ID to lookup MEM & loop through MEME to check for BLUE
+        CALL UTIL_MEM_FIND USING MEMBER_ID
+        IF NOT EQUAL
+            CONTINUE
+        ENDIF
+
+        CALL GET_ACTIVE_ENROLLMENT USING TRANSACTION_DATE
+
+.Write findings to report
+        PACK REPORT_REC WITH (MEDICARE_ID),COMMA:
+                            (CHOP SURNAME),COMMA:
+                            (CHOP FIRST_NAME),COMMA:
+                            (CHOP MI),COMMA:
+                            (CHOP GENDER),COMMA:
+                            (CHOP DOB)
+        CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD, WORK_FILE
+    CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_MEMBER_ID LROUTINE
++ Lookup member by Medicare ID
+    CLEAR MEMI_REC,MEMBER_ID
+    LOOP
+        IF (CHOP MEMI_ID = "")
+            CALL UTIL_MEMI_FIND_ALTID USING "CMS", MEDICARE_ID
+        ELSE
+            CALL UTIL_MEMI_NEXT_ALTID
+        ENDIF
+        WHILE EQUAL
+
+.Get the Member ID (ie MEM_ID1, MEME_ID1, etc) from the MEMI field
+        IF (CHOP MEMI_EFF = "" | MEMI_EFF < CURRDATE)
+            IF (CHOP MEMI_TRM = "" | CHOP MEMI_TRM > CURRDATE)
+                PACK MEMBER_ID WITH MEMI_ID
+                BREAK
+            ENDIF
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_ACTIVE_ENROLLMENT LROUTINE ASOF@
+ASOF@           CHAR    @
+...
+    CLEAR MEME_LIST
+    LOOP
+        IF (CHOP MEME_ID2 = "")
+            CALL UTIL_MEME_FIND USING MEMBER_ID
+        ELSE
+            CALL UTIL_MEME_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH "99999999"
+        ENDIF
+
+        IF (MEME_EFF > MEME_TRM)
+            CONTINUE
+        ENDIF
+
+        IF NOT (ASOF@ >= MEME_EFF AND ASOF@ <= MEME_TRM)
+            CONTINUE
+        ENDIF
+
+        IF NOT (MEME_NET = "BLUE" AND MEME_TRM = "9")
+            CONTINUE
+        ENDIF
+
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+    debug
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+    CALL SEND_EMAIL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "Esi_Trr files with BLUE network and no term date"
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Contains a report of members from the esi_trr file with Blue ":
+        "Cross as the network and blank or passed term dates"
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_FTP.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
