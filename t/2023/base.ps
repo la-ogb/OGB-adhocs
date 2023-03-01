@@ -1,0 +1,296 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2303011.ps
++
++ DESCRIPTION:
++   Find members with enrollment that may have been affected by the
++   CLIP consolidated id fix ("FX0026")
++
++ CREATED BY:
++   apjwh - 2023-03-01
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC CLIP.RL
+    INC MEME.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+.TODO: add configuration settings here
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+.TODO: add files
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+CLIP_REC_FD         FILE    FIXED=X_CLIP_SIZE,TEXT
+CLIP_REC_FILE       INIT    "/w/tmp/a2303011.clip.wrk"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2303011" TO C_PROG        ...Program name
+    MOVE "FIX CLIP FIX MEM" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+CLIR        CHAR    8
+ID          CHAR    8
+ID2         CHAR    4
+    debug
+    PACK CLIR WITH "00008387"
+    CALL UTIL_MEME_FIND_2 USING CLIR
+    IF NOT EQUAL
+        debug
+    ENDIF
+
+    PACK ID WITH "01013599"
+    CALL UTIL_MEME_FIND_2 USING CLIR,ID
+    IF NOT EQUAL
+        debug
+    ENDIF
+
+    PACK ID2 WITH "0007"
+    CALL UTIL_MEME_FIND_2 USING CLIR,ID,ID2
+    IF NOT EQUAL
+        debug
+    ENDIF
+
+.Works with no clir? I expect no
+    FILL " " IN CLIR
+    CALL UTIL_MEME_FIND_2 USING CLIR,ID,ID2
+    IF NOT EQUAL
+        debug
+    ENDIF
+
+
+    CALL INITIALIZE
+    CALL FIND_CLIPS
+    CALL FIND_MATCHES
+.Find CLIP records fixed by FX0026
+.For each CLIP, find any MEME records that may match up with the
+.   CLIR
+.   NET,PRD,PLAN
+.   RT
+
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "CLIP Proc'd":
+                                  "MEME Matched":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_CLIPS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Searching for modified CLIP records...",MSG_HEIGHT
+
+    PACK SCRATCH WITH CLIP_FNS," ",CLIP_REC_FILE," -t ":
+        "-p0132-0137eqRX0026"
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"CLIP lookup"
+
+    PACK SCRATCH WITH CLIP_REC_FILE," ",CLIP_REC_FILE," 1-12 -t"
+
+    CALL UTIL_DO_SORT USING SCRATCH,"Sorting CLIP"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+FIND_MATCHES LROUTINE
+
+    CALL OPEN_OGBFILE USING CLIP_REC_FD,CLIP_REC_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING CLIP_REC_FD,CLIP_REC_FILE,CLIP_LIST
+        WHILE (RESULT = 1)
+
+        debug
+        CALL FIND_MATCHING_MEME
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING CLIP_REC_FD,CLIP_REC_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_MATCHING_MEME LROUTINE
+    debug
+    CLEAR MEME_LIST
+    LOOP
+        CALL UTIL_MEME_FIND_2 USING CLIP_ID1,"",""
+        WHILE EQUAL
+
+
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+.TODO: final clean up
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
