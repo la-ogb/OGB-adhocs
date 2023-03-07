@@ -15,6 +15,7 @@
 .# =================================================================== #
     INC VALID.RL
     INC UTIL_COMMON.CB
+    INC CLI.RL
     INC CLIP.RL
     INC MEME.RL
 
@@ -39,7 +40,7 @@ REFRESH_RATE        EQU     1000
 .# Configuration
 .# =================================================================== #
 
-.TODO: add configuration settings here
+REMOTE_DIR          INIT    "/i/groups/it/apps/staging/"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -47,21 +48,23 @@ REFRESH_RATE        EQU     1000
 
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
-.TODO: add test settings
                     LISTEND
 
 .# =================================================================== #
 .# File Declarations
 .# =================================================================== #
 
-.TODO: add files
+CLIP_REC_FD         FILE    FIXED=X_CLIP_SIZE,TEXT
+CLIP_REC_FILE       INIT    "/w/tmp/a2303011.clip.wrk"
+
+OUT_FD              FILE    FIXED=8,TEXT
+OUT_FILE            INIT    "/w/tmp/bill_summary.in"
 
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
-CLIP_REC_FD         FILE    FIXED=X_CLIP_SIZE,TEXT
-CLIP_REC_FILE       INIT    "/w/tmp/a2303011.clip.wrk"
+OUT_LIST            VARLIST MEME_ID1
 
 .# =================================================================== #
 .# Program Variables
@@ -134,45 +137,10 @@ RUN_NOW ROUTINE
 .#######################################################################
 MAIN_PROCESS LROUTINE
 + Core logic
-CLIR        CHAR    8
-ID          CHAR    8
-ID2         CHAR    4
     debug
-    PACK CLIR WITH "00008387"
-    CALL UTIL_MEME_FIND_2 USING CLIR
-    IF NOT EQUAL
-        debug
-    ENDIF
-
-    PACK ID WITH "01013599"
-    CALL UTIL_MEME_FIND_2 USING CLIR,ID
-    IF NOT EQUAL
-        debug
-    ENDIF
-
-    PACK ID2 WITH "0007"
-    CALL UTIL_MEME_FIND_2 USING CLIR,ID,ID2
-    IF NOT EQUAL
-        debug
-    ENDIF
-
-.Works with no clir? I expect no
-    FILL " " IN CLIR
-    CALL UTIL_MEME_FIND_2 USING CLIR,ID,ID2
-    IF NOT EQUAL
-        debug
-    ENDIF
-
-
     CALL INITIALIZE
     CALL FIND_CLIPS
     CALL FIND_MATCHES
-.Find CLIP records fixed by FX0026
-.For each CLIP, find any MEME records that may match up with the
-.   CLIR
-.   NET,PRD,PLAN
-.   RT
-
     CALL CLEAN_UP
 
     RETURN
@@ -189,8 +157,8 @@ INITIALIZE LROUTINE
     CALL UTIL_GET_SYS_DIRS_COMMON
 
     CALL UTIL_INIT_COUNTERS USING "CLIP Proc'd":
+                                  "MEME Read":
                                   "MEME Matched":
-                                  "":
                                   "":
                                   "":
                                   ""
@@ -205,8 +173,6 @@ INITIALIZE LROUTINE
 SET_RUN_CONFIG LROUTINE
 + Configure any runtime settings here
 
-.TODO: delete if not needed
-
     RETURN
     ENDROUTINE
 
@@ -217,7 +183,7 @@ FIND_CLIPS LROUTINE
     CALL UTIL_XMESSAGE USING "Searching for modified CLIP records...",MSG_HEIGHT
 
     PACK SCRATCH WITH CLIP_FNS," ",CLIP_REC_FILE," -t ":
-        "-p0132-0137eqRX0026"
+        "-p0132-0137eqFX0026"
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"CLIP lookup"
 
@@ -234,19 +200,32 @@ FIND_CLIPS LROUTINE
 
 .#######################################################################
 FIND_MATCHES LROUTINE
-
     CALL OPEN_OGBFILE USING CLIP_REC_FD,CLIP_REC_FILE
+    CALL PREP_OGBFILE USING OUT_FD,OUT_FILE
 
     LOOP
         CALL READ_OGBFILE_SEQ USING CLIP_REC_FD,CLIP_REC_FILE,CLIP_LIST
         WHILE (RESULT = 1)
 
-        debug
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_CLI_FIND USING CLIP_ID1
+
+.Normalize the CLIP data a bit
+        IF (CHOP CLIP_EFF = "")
+            debug
+            PACK CLIP_EFF WITH "20000101"
+        ENDIF
+        IF (CHOP CLIP_TRM = "")
+            PACK CLIP_TRM WITH LAST_DATE
+        ENDIF
+
         CALL FIND_MATCHING_MEME
 
     REPEAT
 
     CALL CLOSE_OGBFILE USING CLIP_REC_FD,CLIP_REC_FILE
+    CALL CLOSE_OGBFILE USING OUT_FD,OUT_FILE
 
     RETURN
     ENDROUTINE
@@ -254,13 +233,26 @@ FIND_MATCHES LROUTINE
 
 .#######################################################################
 FIND_MATCHING_MEME LROUTINE
-    debug
     CLEAR MEME_LIST
     LOOP
-        CALL UTIL_MEME_FIND_2 USING CLIP_ID1,"",""
+        CALL UTIL_READ_THRU_MEME_2 USING CLIP_ID1,"",""
         WHILE EQUAL
 
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
+        CONTINUE IF (MEME_NET != CLIP_NET)
+        CONTINUE IF (MEME_PRD != CLIP_PRD)
+        CONTINUE IF (MEME_PLAN != CLIP_PLAN)
+        CONTINUE IF (MEME_RT != CLIP_RT)
+        CONTINUE IF (MEME_EFF > CLIP_TRM)
+        IF (CHOP MEME_TRM > "")
+            CONTINUE IF (MEME_TRM < MEME_EFF)   .voids
+            CONTINUE IF (MEME_TRM < CLIP_EFF)   .diff clip
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+        CALL WRITE_OGBREC_SEQ USING OUT_FD,OUT_FILE,OUT_LIST
     REPEAT
 
     RETURN
@@ -271,8 +263,17 @@ FIND_MATCHING_MEME LROUTINE
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
+    debug
 
-.TODO: final clean up
+    SORT OUT_FILE,OUT_FILE,"1-8 -u -t"
+    IF OVER
+        debug
+        CALL UTIL_ERRORMSG USING "sort failed"
+    ENDIF
+
+    CALL UTIL_FTP_SEND_FILE USING "/w/tmp",REMOTE_DIR,OUT_FILE,"ascii"
+    CALL UTIL_DELETE_FILE USING OUT_FILE
+    CALL UTIL_DELETE_FILE USING CLIP_REC_FILE
 
     RETURN
     ENDROUTINE
@@ -290,6 +291,8 @@ CLEAN_UP LROUTINE
     INC UTIL_EMAIL.SR
     INC UTIL_MEMBERS.SR
     INC UTIL_BILLING.SR
+    INC UTIL_CLIENTS.SR
+    INC UTIL_FTP.SR
 
 .# =================================================================== #
 .# End of Program
