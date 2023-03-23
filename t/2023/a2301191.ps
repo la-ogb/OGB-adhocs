@@ -1,0 +1,362 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2301191.ps
++
++ DESCRIPTION:
++   Fix HSA STAT terms changed by the HEQ file load
++
++ CREATED BY:
++   apjwh - 2023-01-19
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+    INC CLI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     25
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_NAME           INIT    "HSATFX"
+EMAIL_GROUP         INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+WORK_FD             FILE    FIXED=12,TEXT
+WORK_FILE           INIT    "/w/tmp/a2301191.tmp"
+WORK_LIST           LIST
+WORK_ID1            CHAR    8
+WORK_ID2            CHAR    4
+                    LISTEND
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2301191.inm"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+STAT_MEME           CHAR    X_MEME_SIZE
+HSA_TRM             CHAR    8
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2301191" TO C_PROG        ...Program name
+    MOVE "FIX HSA TRMS" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL BUILD_WORK_FILE
+    CALL FIX_RECORDS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Work Recs":
+                                  "Fixed Recs":
+                                  "Voids":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_WORK_FILE LROUTINE
+    CALL UTIL_XMESSAGE USING "Building work file",MSG_HEIGHT
+
+    PACK SCRATCH WITH MEME_FNS," ",WORK_FILE," -t -j ":
+        " 1-12 ":
+        " -p0234-0239eqHSAACC ":
+        " -p0226-0233eq20230118 ":
+        " -p0126-0129eqSTAT "
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding files to fix"
+
+    MESSAGEERASE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_RECORDS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Fixing records...",MSG_HEIGHT
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    debug
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,WORK_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEME_FIND USING WORK_ID1,WORK_ID2
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+        SCAN "2023" IN MEME_EFF
+        CONTINUE IF NOT EQUAL
+        RESET MEME_EFF
+
+        PACK STAT_MEME WITH MEME_LIST
+
+        CALL UTIL_MEM_FIND USING MEME_ID1
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+
+        IF (CHOP MEME_TRM = "")
+            debug
+            CONTINUE
+        ENDIF
+
+        IF (CHOP MEME_TRM = "20231231")
+            CONTINUE
+        ENDIF
+
+        CALL FIND_HSA_PLAN_TERM USING HSA_TRM
+        IF (CHOP HSA_TRM = "")
+            debug
+            CONTINUE
+        ENDIF
+
+        UNPACK STAT_MEME INTO MEME_LIST
+        IF (MEME_TRM = HSA_TRM)
+.            debug
+            CONTINUE
+        ENDIF
+
+        CALL FIX_THIS_RECORD
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_HSA_PLAN_TERM LROUTINE TRM@
+TRM@        CHAR    @
+...
+    CLEAR MEME_LIST,TRM@
+    LOOP
+        CALL UTIL_READ_THRU_MEME USING MEM_ID1
+        WHILE EQUAL
+
+        CONTINUE IF (CHOP MEME_PLAN != "HSA")
+        IF (CHOP MEME_TRM = "")
+            PACK MEME_TRM WITH LAST_DATE
+        ENDIF
+        CONTINUE IF (MEME_TRM < MEME_EFF)
+
+        IF (MEME_TRM > TRM@)
+            PACK TRM@ WITH MEME_TRM
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_THIS_RECORD LROUTINE
+    FILL " " IN INM_REC
+    PACK INM_REC WITH MEM_LIST,MEME_LIST
+    UNPACK INM_REC INTO INM_LIST
+
+    IF (HSA_TRM < "20230101")
+        debug
+        CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        CALL UTIL_CALC_DAY_BEFORE USING INME_EFF,INME_TRM
+        PACK INME_TLET WITH "V"
+    ELSE IF (HSA_TRM > "20231231")
+        PACK INME_TRM WITH "20231231",BLANKS
+    ELSE
+        PACK INME_TRM WITH HSA_TRM,BLANKS
+    ENDIF
+
+    CALL UTIL_FORMAT_INME USING PROG_NAME
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL SEND_EMAIL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the log
+SUBJECT     CHAR    100
+BODY        CHAR    5000
+RECIPIENTS  CHAR    100
+...
+    CALL UTIL_SET_SUBJECT USING (C_PROG+" FIX WEIRD HSA TERMS"),ENABLE_TEST,SUBJECT
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL
+    PACK SCRATCH WITH "Fixed terms of HSA deductions from bad HEQ load."
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME
+    RETURN
+    ENDROUTINE
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_VALID.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR
+    INC UTIL_BILLING.SR
+    INC UTIL_CLI.SR
+    INC UTIL_DATES.SR
+    INC UTIL_FORMAT_UPDATES.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
