@@ -45,6 +45,7 @@ NEW_EFF_DATE        INIT    "20240101"
 NEW_NETWORK         INIT    "BLUE"
 NEW_PRODUCT         INIT    "MAGNO"
 NEW_PLAN            INIT    "PLUS"
+
 .# =================================================================== #
 .# Debugging Configuration
 .# =================================================================== #
@@ -97,6 +98,8 @@ START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 FOUND_INSTANCE      NUM     1
 ORIG_TRM            CHAR    8
+ORIG_TLET           CHAR    1
+ORIG_TRUN           CHAR    8
 
 .# =================================================================== #
 .# Begin Program
@@ -107,7 +110,6 @@ ORIG_TRM            CHAR    8
 
 .Impact Scheduler Hook
     INC SCHED_NP.SR     ...for jobs that don't use the print system
-.    INC SCHED_WP.SR  ...for jobs requiring the print system
 
 
 .#######################################################################
@@ -126,7 +128,7 @@ RUN_NOW ROUTINE
     CLOCK TIMESTAMP INTO CURRDATE
 
     MOVE "a2305311" TO C_PROG        ...Program name
-    MOVE "Default Vantage to Local Plus" TO C_OPER  ...Program description
+    MOVE "VANTA MHHP TO MLP" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -167,8 +169,7 @@ MAIN_PROCESS LROUTINE
     debug
     CALL INITIALIZE
     CALL MEME_REFORMAT
-    CALL VALIDATE_PLAN
-
+    CALL CONVERT_PLAN
     CALL CLEAN_UP
 
     RETURN
@@ -191,19 +192,9 @@ INITIALIZE LROUTINE
                                   "":
                                   ""
 
-    CALL SET_RUN_CONFIG
-
     RETURN
     ENDROUTINE
 
-
-.#######################################################################
-SET_RUN_CONFIG LROUTINE
-+ Configure any runtime settings here
-
-
-    RETURN
-    ENDROUTINE
 
 .#######################################################################
 MEME_REFORMAT LROUTINE
@@ -238,7 +229,7 @@ MEME_REFORMAT LROUTINE
     ENDROUTINE
 
 .#######################################################################
-VALIDATE_PLAN LROUTINE
+CONVERT_PLAN LROUTINE
 + Open and Prepare Files for Program
     debug
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
@@ -251,9 +242,9 @@ VALIDATE_PLAN LROUTINE
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, MEME_LIST
         WHILE (RESULT = 1)
 
-.Skip fake
-        CALL UTIL_MEM_FIND_REAL USING MEME_ID1
+        CALL UTIL_MEM_FIND USING MEME_ID1
         CONTINUE IF NOT EQUAL
+
 .skip voids
         IF (CHOP MEME_TRM > " ")
             IF (CHOP MEME_TRM < MEME_EFF)
@@ -300,17 +291,46 @@ LOG_UPDATES LROUTINE
 UPDATE_PLAN LROUTINE
 + Term Vantage and create new Blue Local Plus
 
+.If eff date is after swap date...
+    IF (MEME_EFF > "20231231")
+
+.TODO: in this case we void current plan, and make a new record using the
+.*same* eff as the base plan being voided, rather than terming for
+.12/31/23 and new eff of 1/1/24
+        debug
+    ENDIF
+
 .TERM OLD
+    FILL " " IN ORIG_TRM:
+                ORIG_TLET:
+                ORIG_TRUN
+
+    IF (CHOP MEME_TLET > "")
+        PACK ORIG_TLET WITH MEME_TLET
+    ENDIF
+    IF (CHOP MEME_TRUN > "")
+        PACK ORIG_TRUN WITH MEME_TRUN
+    ENDIF
+
     PACK ORIG_TRM WITH MEME_TRM
     PACK MEME_TRM WITH NEW_TERM_DATE
+    FILL "~" IN MEME_TLET:
+                MEME_TRUN
+
     CALL WRITE_UPDATE
 
 .CREATE NEW
-    debug
     FILL " " IN MEME_ID2
 
-    PACK MEME_EFF WITH NEW_EFF_DATE
-    PACK MEME_TRM WITH ORIG_TRM
+    PACK MEME_EFF WITH NEW_EFF_DATE,BLANKS
+    PACK MEME_TRM WITH ORIG_TRM,BLANKS
+    PACK MEME_TLET WITH ORIG_TLET,BLANKS
+    PACK MEME_TRUN WITH ORIG_TRUN,BLANKS
+
+    IF (CHOP MEME_TRM > "" & MEME_TRM < MEME_EFF)
+        debug .how?
+    ENDIF
+
     PACK MEME_NET WITH NEW_NETWORK,BLANKS
     PACK MEME_PRD WITH NEW_PRODUCT,BLANKS
     PACK MEME_PLAN WITH NEW_PLAN,BLANKS
@@ -320,13 +340,14 @@ UPDATE_PLAN LROUTINE
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
 WRITE_UPDATE LROUTINE
 + Write update record
-    debug
+.    debug
     PACK MEME_REC WITH MEME_LIST
     FILL " " IN INM_LIST
-    PACK INM_REC WITH MEM_LIST,MEME_LIST
+    PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
     UNPACK INM_REC INTO INM_LIST
 
     CALL UTIL_FORMAT_INME USING PROG_ID
