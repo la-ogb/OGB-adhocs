@@ -14,6 +14,7 @@
 .# =================================================================== #
     INC VALID.RL
     INC CLIP.RL
+    INC CLI.RL
     INC UTIL_COMMON.CB
 
 .# =================================================================== #
@@ -40,7 +41,7 @@ REFRESH_RATE        EQU     1000
 PROG_ID             INIT    "TRMCLI"
 EMAIL_TO_NOERROR    INIT    "$ITAPPS"
 EMAIL_TO_ERROR      INIT    "$ITAPPS"
-CLIP_TRM            INIT    "20231231"
+NEW_CLIP_TRM        INIT    "20231231"
 .# =================================================================== #
 .# Debugging Configuration
 .# =================================================================== #
@@ -71,8 +72,8 @@ REPORT_LIST         LIST
 REPORT_REC          CHAR    200
                     LISTEND
 
-REPORT_HEADER       VARLIST "CLIP EFF,":
-                            "CLIP TRM,":
+REPORT_HEADER       VARLIST "CLIP EFFECTIVE,":
+                            "CLIP TERM,":
                             "NETWORK,":
                             "PRODUCT"
 
@@ -84,6 +85,7 @@ REPORT_HEADER       VARLIST "CLIP EFF,":
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
+FOUND_INSTANCE      NUM     1
 
 .# =================================================================== #
 .# Begin Program
@@ -156,7 +158,7 @@ MAIN_PROCESS LROUTINE
     debug
     CALL INITIALIZE
     CALL CLIP_REFORMAT
-    CALL BUILD_WORK_FILE
+    CALL PROCESS_WORK_FILE
 
     CALL CLEAN_UP
 
@@ -173,7 +175,6 @@ INITIALIZE LROUTINE
 .Get the files and EDI locations from valid 101
     CALL UTIL_GET_SYS_DIRS_COMMON
 
-.TODO: set counter desc
     CALL UTIL_INIT_COUNTERS USING "Building Work File":
                                   "":
                                   "":
@@ -195,12 +196,8 @@ CLIP_REFORMAT LROUTINE
 .Find current life cov with term
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
                         " -p0013 0017eq#"VANTA#"":
-                        " -p0018 0022eq#"MHHP#"":
+                        " -p0018 0022ne#"MHHP#"":
                         " -p0041 0048gt#"20231231#""
-
-    IF (CHOP TEST_THIS_ID > "")
-        PACK SCRATCH WITH SCRATCH," -p1-8eq",TEST_THIS_ID
-    ENDIF
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
@@ -208,13 +205,8 @@ CLIP_REFORMAT LROUTINE
     PACK DATE_CCYYMMDD WITH BLANKS
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t -a":
                         " -p0013 0017eq#"VANTA#"":
-                        " -p0018 0022eq#"MHHP#"":
+                        " -p0018 0022ne#"MHHP#"":
                         " -p0041 0048eq#"",DATE_CCYYMMDD,"#""
-
-    IF (CHOP TEST_THIS_ID > "")
-        PACK SCRATCH WITH SCRATCH," -p1-8eq",TEST_THIS_ID
-    ENDIF
-
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
@@ -229,22 +221,35 @@ CLIP_REFORMAT LROUTINE
 
 
 .#######################################################################
-BUILD_WORK_FILE LROUTINE
+PROCESS_WORK_FILE LROUTINE
 + Open and Prepare Files for Program
+CURRENT_CLI     CHAR    8
     debug
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CLEAR CURRENT_CLI
 
     CALL PREP_OGBFILE USING REPORT_FD, REPORT_FILE
     CALL WRITE_OGBREC_SEQ USING REPORT_FD, REPORT_FILE, REPORT_HEADER
-
-    CLEAR CLIP_LIST
 
     LOOP
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIP_LIST
         WHILE (RESULT = 1)
 
+        CLEAR CLI_LIST,CLI_REC
+        PACK CLIP_REC WITH CLIP_LIST
+
+        IF (CHOP CURRENT_CLI = "" | CHOP CLIP_ID1 != CURRENT_CLI)
+            PACK CURRENT_CLI WITH CLIP_ID1
+
+            CALL UTIL_CLI_FIND USING CLIP_ID1
+            CONTINUE IF (NOT EQUAL)
+
+            PACK CLI_REC WITH CLI_LIST,BLANKS
+        ENDIF
+
         CALL UTIL_XCOUNTER USING X_CNT1,1000
 
+        CALL LOG_TERM
     REPEAT
 
     CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
@@ -255,7 +260,7 @@ BUILD_WORK_FILE LROUTINE
 
 
 .#######################################################################
-LOG_UPDATES LROUTINE
+LOG_TERM LROUTINE
 + Log coverage update
 
     SET FOUND_INSTANCE
