@@ -87,6 +87,8 @@ REPORT_HEADER       VARLIST "MEME_ID,":
                             "LAST NAME,":
                             "FIRST NAME,":
                             "RELATION,":
+                            "LEV1,":
+                            "LEV2,":
                             "MEME EFF,":
                             "MEME TRM,":
                             "NETWORK,":
@@ -261,6 +263,8 @@ CONVERT_PLAN LROUTINE
             IF (CHOP MEME_TRM < MEME_EFF)
                 CONTINUE
             ENDIF
+        ELSE
+            FILL "~" IN MEME_TLET
         ENDIF
 
         CALL UTIL_XCOUNTER USING X_CNT1,1000
@@ -426,6 +430,8 @@ UPDATE_MSG@     DIM     @
                         (CHOP MEM_LNAME),COMMA:
                         (CHOP MEM_FNAME),COMMA:
                         (CHOP MEM_REL),COMMA:
+                        (CHOP MEME_LEV1),COMMA:
+                        (CHOP MEME_LEV2),COMMA:
                         (CHOP MEME_EFF),COMMA:
                         (CHOP MEME_TRM),COMMA:
                         (CHOP MEME_NET),COMMA:
