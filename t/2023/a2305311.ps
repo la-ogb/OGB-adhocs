@@ -263,6 +263,8 @@ CONVERT_PLAN LROUTINE
             IF (CHOP MEME_TRM < MEME_EFF)
                 CONTINUE
             ENDIF
+        ELSE
+            FILL "~" IN MEME_TLET
         ENDIF
 
         CALL UTIL_XCOUNTER USING X_CNT1,1000
