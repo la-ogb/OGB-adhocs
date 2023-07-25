@@ -3,7 +3,7 @@
 +   a2306231.ps
 +
 + DESCRIPTION:
-+   Term all VANTA-MHHP-REGN-CLIP records
++   Term all VANTA-CLIP records
 +
 + CREATED BY:
 +   aphas - 2023-06-23
@@ -55,7 +55,7 @@ TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
 .# File Declarations
 .# =================================================================== #
 
-WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
 WORK_FILE           INIT    "/w/tmp/a2306231.id.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
@@ -72,10 +72,16 @@ REPORT_LIST         LIST
 REPORT_REC          CHAR    200
                     LISTEND
 
-REPORT_HEADER       VARLIST "CLIP EFFECTIVE,":
+REPORT_HEADER       VARLIST "CLIP ID,":
+                            "CLIP EFFECTIVE,":
                             "CLIP TERM,":
                             "NETWORK,":
-                            "PRODUCT"
+                            "PRODUCT,":
+                            "CARRIER,":
+                            "PLAN,":
+                            "CHANGE DATE,":
+                            "CHANGED BY,":
+                            "UPDATE STATUS"
 
 
 .# =================================================================== #
@@ -133,9 +139,7 @@ RUN_NOW ROUTINE
                                  ENABLE_TEST:  ...test toggle
                                  TEST_CONFIG  ...test settings list
 
-.TODO: make sure any parameter that can be called from the CMD line are
-. filled with spaces or value and space before the SCHED_PICK for them
-. to be populated in an automatically generated Impact Scheduler record
+
 
 .Set up run mode or build SCH record
     CALL SCHED_PICK
@@ -176,8 +180,8 @@ INITIALIZE LROUTINE
     CALL UTIL_GET_SYS_DIRS_COMMON
 
     CALL UTIL_INIT_COUNTERS USING "Building Work File":
-                                  "":
-                                  "":
+                                  "Term CLIP":
+                                  "Log Update":
                                   "":
                                   "":
                                   ""
@@ -189,24 +193,22 @@ INITIALIZE LROUTINE
 
 .#######################################################################
 CLIP_REFORMAT LROUTINE
-+ Sort MEME records for VANTA MHHP plan
++ Sort CLIP records for VANTA
 
-    CALL UTIL_XMESSAGE USING "Building work files...",MSG_HEIGHT
+    CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
 
 .Find current life cov with term
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
-                        " -p0013 0017eq#"VANTA#"":
-                        " -p0018 0022ne#"MHHP#"":
-                        " -p0041 0048gt#"20231231#""
+                        " -p0013-0017eq#"VANTA#"":
+                        " -p0041-0048gt#"20231231#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
 .Find open ended life cov
     PACK DATE_CCYYMMDD WITH BLANKS
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t -a":
-                        " -p0013 0017eq#"VANTA#"":
-                        " -p0018 0022ne#"MHHP#"":
-                        " -p0041 0048eq#"",DATE_CCYYMMDD,"#""
+                        " -p0013-0017eq#"VANTA#"":
+                        " -p0041-0048eq#"",DATE_CCYYMMDD,"#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
@@ -225,6 +227,7 @@ PROCESS_WORK_FILE LROUTINE
 + Open and Prepare Files for Program
 CURRENT_CLI     CHAR    8
     debug
+
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
     CLEAR CURRENT_CLI
 
@@ -247,9 +250,15 @@ CURRENT_CLI     CHAR    8
             PACK CLI_REC WITH CLI_LIST,BLANKS
         ENDIF
 
-        CALL UTIL_XCOUNTER USING X_CNT1,1000
+        IF (CHOP CLIP_EFF < CLIP_TRM)
+            CALL LOG_TERM USING "Voided CLIP"
+            CONTINUE
+        ENDIF
 
-        CALL LOG_TERM
+        CALL UTIL_XCOUNTER USING X_CNT1,1000
+        CALL TERM_CLIP
+        CALL LOG_TERM USING "CLIP Termed"
+
     REPEAT
 
     CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
@@ -260,17 +269,41 @@ CURRENT_CLI     CHAR    8
 
 
 .#######################################################################
-LOG_TERM LROUTINE
-+ Log coverage update
+TERM_CLIP LROUTINE
++ Prepare for update
+
+    PACK CLIP_TRM WITH NEW_CLIP_TRM
+    PACK CLIP_CHGBY WITH PROG_ID
+    PACK CLIP_CHGDT WITH CURRDATE
+
+.TODO: ADD UPDATE PROCESS
+
+    CALL UTIL_XCOUNTER USING X_CNT2,50
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_TERM LROUTINE UPDATE_MSG@
+UPDATE_MSG@     DIM     @
++ Log CLIP update
 
     SET FOUND_INSTANCE
-    PACK REPORT_REC WITH (CHOP CLIP_EFF),COMMA:
+    PACK REPORT_REC WITH (CHOP CLIP_ID1),COMMA:
+                        (CHOP CLIP_EFF),COMMA:
                         (CHOP CLIP_TRM),COMMA:
                         (CHOP CLIP_NET),COMMA:
-                        (CHOP CLIP_PRD)
+                        (CHOP CLIP_PRD),COMMA:
+                        (CHOP CLIP_CARR),COMMA:
+                        (CHOP CLIP_PLAN),COMMA:
+                        (CHOP CLIP_CHGDT),COMMA:
+                        (CHOP CLIP_CHGBY),COMMA:
+                        (CHOP UPDATE_MSG@)
+
 
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-    CALL UTIL_XCOUNTER USING X_CNT2,50
+    CALL UTIL_XCOUNTER USING X_CNT3,50
 
     RETURN
     ENDROUTINE
@@ -307,7 +340,7 @@ BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
 
-    PACK SCRATCH WITH "Vantage Term"
+    PACK SCRATCH WITH "Vantage CLIPs Termed"
     IF (FOUND_INSTANCE)
         PACK SCRATCH WITH SCRATCH," *UPDATED*"
     ELSE
@@ -317,7 +350,7 @@ BODY_BASE       CHAR    1000
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
     PACK BODY_BASE WITH "":
-        "Checking for members with Vantage to term and update. "
+        "Checking for CLIPs with Vantage to Term. "
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
