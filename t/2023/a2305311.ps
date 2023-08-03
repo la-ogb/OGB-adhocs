@@ -3,7 +3,8 @@
 +   a2305311.ps
 +
 + DESCRIPTION:
-+   Vantage Plan Ending (MHHP only)- default to Local Plus
++   Vantage Plan Ending (MHHP only) - default to BCBS Magnolia Local
++   Plus for 1/1/24
 +
 + CREATED BY:
 +   aphas - 2023-05-31
@@ -31,7 +32,7 @@ PARAM_TEST          CHAR    4
 V_FLAG              EQU     1   ...0 or 1
 V_DATE              EQU     8   ...YYYYMMDD
 MSG_HEIGHT          EQU     24
-REFRESH_RATE        EQU     1000
+REFRESH_RATE        EQU     100
 
 .# =================================================================== #
 .# Configuration
@@ -53,7 +54,7 @@ NEW_PLAN            INIT    "PLUS"
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
 TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
-TEST_THIS_ID        INIT    "00000964"
+TEST_THIS_ID        INIT    "        "
                     LISTEND
 
 .# =================================================================== #
@@ -82,6 +83,7 @@ REPORT_REC          CHAR    200
                     LISTEND
 
 REPORT_HEADER       VARLIST "MEME_ID,":
+                            "LOG MESSAGE,":
                             "LAST NAME,":
                             "FIRST NAME,":
                             "RELATION,":
@@ -97,7 +99,7 @@ REPORT_HEADER       VARLIST "MEME_ID,":
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
-FOUND_INSTANCE      NUM     1
+UPDATE_DONE         NUM     1
 ORIG_EFF            CHAR    8
 ORIG_TRM            CHAR    8
 ORIG_TLET           CHAR    1
@@ -167,9 +169,6 @@ RUN_NOW ROUTINE
 
 .#######################################################################
 MAIN_PROCESS LROUTINE
-+ MEME reformat of all members with VANTA MHHP
-+ Term the active VANTA MHHP coverage for 12/31/23
-+ Create new BLUE-LOCL-PLUS record eff 1/1/24
     debug
     CALL INITIALIZE
     CALL MEME_REFORMAT
@@ -229,7 +228,6 @@ MEME_REFORMAT LROUTINE
         PACK SCRATCH WITH SCRATCH," -p1-8eq",TEST_THIS_ID
     ENDIF
 
-
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding MEME Data"
 
 .Sort file
@@ -240,6 +238,7 @@ MEME_REFORMAT LROUTINE
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 CONVERT_PLAN LROUTINE
@@ -259,17 +258,12 @@ CONVERT_PLAN LROUTINE
         CONTINUE IF NOT EQUAL
 
 .skip voids
-        IF (CHOP MEME_TRM > " ")
-            IF (CHOP MEME_TRM < MEME_EFF)
-                CONTINUE
-            ENDIF
-        ELSE
-            FILL "~" IN MEME_TLET
+        IF (CHOP MEME_TRM > "")
+            CONTINUE IF (CHOP MEME_TRM < MEME_EFF)
         ENDIF
 
-        CALL UTIL_XCOUNTER USING X_CNT1,1000
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
 
-        CALL LOG_UPDATES
         CALL UPDATE_PLAN
     REPEAT
 
@@ -282,21 +276,27 @@ CONVERT_PLAN LROUTINE
 
 
 .#######################################################################
-LOG_UPDATES LROUTINE
+LOG_UPDATES LROUTINE MSG@
 + Log coverage update
+MSG@        CHAR    @
+...
 
-    SET FOUND_INSTANCE
-    PACK REPORT_REC WITH (CHOP MEME_ID1),COMMA:
-                        (CHOP MEM_LNAME),COMMA:
-                        (CHOP MEM_FNAME),COMMA:
-                        (CHOP MEM_REL),COMMA:
-                        (CHOP MEME_EFF),COMMA:
-                        (CHOP MEME_TRM),COMMA:
-                        (CHOP MEME_NET),COMMA:
-                        (CHOP MEME_PRD)
+    SET UPDATE_DONE
+    PACK REPORT_REC WITH    (CHOP MEME_ID1),PIPE:
+                            (CHOP MSG@),PIPE:
+                            (CHOP MEM_LNAME),PIPE:
+                            (CHOP MEM_FNAME),PIPE:
+                            (CHOP MEM_REL),PIPE:
+                            (CHOP MEME_EFF),PIPE:
+                            (CHOP MEME_TRM),PIPE:
+                            (CHOP MEME_NET),PIPE:
+                            (CHOP MEME_PRD)
+
+    REPLACE ",;" IN REPORT_REC
+    REPLACE "|," IN REPORT_REC
 
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-    CALL UTIL_XCOUNTER USING X_CNT2,50
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
     RETURN
     ENDROUTINE
@@ -318,39 +318,46 @@ UPDATE_PLAN LROUTINE
         PACK ORIG_TRUN WITH MEME_TRUN
     ENDIF
 
-.If eff date is after void and replace
-    IF (MEME_EFF > "20231231")
+.For future plans, void and replace
+    IF (MEME_EFF > NEW_TERM_DATE)
         debug
-        CALL UTIL_CALC_DAY_BEFORE USING MEME_EFF,VOID_DATE
-.VOID PLAN
+        CALL LOG_UPDATES USING "VOID FUTURE & REPLACE"
+
         PACK ORIG_TRM WITH MEME_TRM
         PACK ORIG_EFF WITH MEME_EFF
-        PACK MEME_TRM WITH VOID_DATE
-        PACK MEME_TLET WITH "V"
+
+        CALL UTIL_CALC_DAY_BEFORE USING MEME_EFF,MEME_TRM
+        PACK MEME_TLET WITH "V",BLANKS
+
         CALL WRITE_UPDATE
         CALL CREATE_NEW USING ORIG_EFF
 
+.For active plans as of transistion date, split the plan
     ELSE
+        CALL LOG_UPDATES USING "SPLIT PLAN"
 
         PACK ORIG_TRM WITH MEME_TRM
+
         PACK MEME_TRM WITH NEW_TERM_DATE
         FILL "~" IN MEME_TLET:
                     MEME_TRUN
-
         CALL WRITE_UPDATE
+
         CALL CREATE_NEW USING NEW_EFF_DATE
     ENDIF
 
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
-CREATE_NEW LROUTINE DATE@
+CREATE_NEW LROUTINE EFF@
 +Create new Blue Cross record
-DATE@           CHAR    @
+EFF@        CHAR    @
+...
     FILL " " IN MEME_ID2
 
-    PACK MEME_EFF WITH DATE@,BLANKS
+    PACK MEME_EFF WITH EFF@,BLANKS
     PACK MEME_TRM WITH ORIG_TRM,BLANKS
     PACK MEME_TLET WITH ORIG_TLET,BLANKS
     PACK MEME_TRUN WITH ORIG_TRUN,BLANKS
@@ -372,7 +379,12 @@ DATE@           CHAR    @
 .#######################################################################
 WRITE_UPDATE LROUTINE
 + Write update record
-    PACK MEME_REC WITH MEME_LIST
+HOLD_MEM    CHAR    X_MEM_SIZE
+...
+    PACK HOLD_MEM WITH MEM_LIST
+    FILL " " IN MEM_LIST
+    PACK MEM_ID1 WITH MEME_ID1,BLANKS
+
     FILL " " IN INM_LIST
     PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
     UNPACK INM_REC INTO INM_LIST
@@ -380,7 +392,9 @@ WRITE_UPDATE LROUTINE
     CALL UTIL_FORMAT_INME USING PROG_ID
 
     CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
-    CALL UTIL_XCOUNTER USING X_CNT3,50
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    UNPACK HOLD_MEM INTO MEM_LIST
 
     RETURN
     ENDROUTINE
@@ -390,6 +404,7 @@ WRITE_UPDATE LROUTINE
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
+
     CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
     CALL UTIL_PENDING_BACKUP USING "/w/tmp/",REPORT_FILE,""
     CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
@@ -410,21 +425,22 @@ BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
 
-    PACK SCRATCH WITH "Vantage default to Blue Local Plus"
-    IF (FOUND_INSTANCE)
-        PACK SCRATCH WITH SCRATCH," *UPDATED*"
+    PACK SCRATCH WITH "Vantage MHHP Default to BCBS Local Plus for 2024"
+    IF (UPDATE_DONE)
+        PACK SCRATCH WITH SCRATCH," *UPDATES DONE*"
     ELSE
-        PACK SCRATCH WITH SCRATCH," *NO UPDATE REQUIRED*"
+        PACK SCRATCH WITH SCRATCH," *NO UPDATES REQUIRED*"
     ENDIF
 
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
     PACK BODY_BASE WITH "":
-        "Checking for members with Vantage to term and update. "
+        "Checking for members with Vantage MHHP to default to ":
+        "BLUE-MAGNO-PLUS and update."
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
-    IF (FOUND_INSTANCE)
+    IF (UPDATE_DONE)
         CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
         CALL UTIL_EMAIL_NEOJ USING  C_PROG:
                                     RECIPIENTS:
@@ -445,6 +461,7 @@ BODY_BASE       CHAR    1000
 
     RETURN
     ENDROUTINE
+
 .# =================================================================== #
 .# Subroutines Includes
 .# =================================================================== #
