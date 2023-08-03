@@ -42,6 +42,7 @@ PROG_ID             INIT    "TRMCLI"
 EMAIL_TO_NOERROR    INIT    "$ITAPPS"
 EMAIL_TO_ERROR      INIT    "$ITAPPS"
 NEW_CLIP_TRM        INIT    "20231231"
+
 .# =================================================================== #
 .# Debugging Configuration
 .# =================================================================== #
@@ -60,6 +61,7 @@ WORK_FILE           INIT    "/w/tmp/a2306231.id.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
 REPORT_FILE         INIT    "/w/tmp/a2306231.csv"
+
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
@@ -72,17 +74,15 @@ REPORT_LIST         LIST
 REPORT_REC          CHAR    200
                     LISTEND
 
-REPORT_HEADER       VARLIST "CLIP ID,":
-                            "CLIP EFFECTIVE,":
-                            "CLIP TERM,":
+REPORT_HEADER       VARLIST "CLI ID,":
+                            "CLIP ID2,":
+                            "LOG MESSAGE,":
                             "NETWORK,":
                             "PRODUCT,":
-                            "CARRIER,":
                             "PLAN,":
-                            "CHANGE DATE,":
-                            "CHANGED BY,":
-                            "UPDATE STATUS"
-
+                            "EFFECTIVE,":
+                            "CURRENT TERM,":
+                            "RATE"
 
 .# =================================================================== #
 .# Program Variables
@@ -102,7 +102,6 @@ FOUND_INSTANCE      NUM     1
 
 .Impact Scheduler Hook
     INC SCHED_NP.SR     ...for jobs that don't use the print system
-.    INC SCHED_WP.SR  ...for jobs requiring the print system
 
 
 .#######################################################################
@@ -121,7 +120,7 @@ RUN_NOW ROUTINE
     CLOCK TIMESTAMP INTO CURRDATE
 
     MOVE "a2306231" TO C_PROG        ...Program name
-    MOVE "TERM CLIP" TO C_OPER  ...Program description
+    MOVE "TERM VANTA CLIP" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -179,9 +178,9 @@ INITIALIZE LROUTINE
 .Get the files and EDI locations from valid 101
     CALL UTIL_GET_SYS_DIRS_COMMON
 
-    CALL UTIL_INIT_COUNTERS USING "Building Work File":
-                                  "Term CLIP":
-                                  "Log Update":
+    CALL UTIL_INIT_COUNTERS USING "CLIPs Proc'd":
+                                  "Termed":
+                                  "Voided":
                                   "":
                                   "":
                                   ""
@@ -197,14 +196,14 @@ CLIP_REFORMAT LROUTINE
 
     CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
 
-.Find current life cov with term
+.Find current vantage clips with term
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
                         " -p0013-0017eq#"VANTA#"":
                         " -p0041-0048gt#"20231231#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
-.Find open ended life cov
+.Find open-ended vantage clips
     PACK DATE_CCYYMMDD WITH BLANKS
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t -a":
                         " -p0013-0017eq#"VANTA#"":
@@ -224,16 +223,16 @@ CLIP_REFORMAT LROUTINE
 
 .#######################################################################
 PROCESS_WORK_FILE LROUTINE
-+ Open and Prepare Files for Program
 CURRENT_CLI     CHAR    8
-    debug
+...
+    CLEAR CURRENT_CLI
 
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
-    CLEAR CURRENT_CLI
 
     CALL PREP_OGBFILE USING REPORT_FD, REPORT_FILE
     CALL WRITE_OGBREC_SEQ USING REPORT_FD, REPORT_FILE, REPORT_HEADER
 
+    debug
     LOOP
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIP_LIST
         WHILE (RESULT = 1)
@@ -250,15 +249,18 @@ CURRENT_CLI     CHAR    8
             PACK CLI_REC WITH CLI_LIST,BLANKS
         ENDIF
 
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
         IF (CHOP CLIP_EFF < CLIP_TRM)
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
             CALL LOG_TERM USING "Voided CLIP"
-            CONTINUE
+.TODO: void clip
+        ELSE
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+            CALL LOG_TERM USING "CLIP Termed"
+            CALL TERM_CLIP
         ENDIF
-
-        CALL UTIL_XCOUNTER USING X_CNT1,1000
-        CALL TERM_CLIP
-        CALL LOG_TERM USING "CLIP Termed"
-
     REPEAT
 
     CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
@@ -273,37 +275,31 @@ TERM_CLIP LROUTINE
 + Prepare for update
 
     PACK CLIP_TRM WITH NEW_CLIP_TRM
-    PACK CLIP_CHGBY WITH PROG_ID
+    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
     PACK CLIP_CHGDT WITH CURRDATE
 
 .TODO: ADD UPDATE PROCESS
-
-    CALL UTIL_XCOUNTER USING X_CNT2,50
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-LOG_TERM LROUTINE UPDATE_MSG@
-UPDATE_MSG@     DIM     @
-+ Log CLIP update
-
+LOG_TERM LROUTINE MSG@
+MSG@        DIM     @
+...
     SET FOUND_INSTANCE
-    PACK REPORT_REC WITH (CHOP CLIP_ID1),COMMA:
-                        (CHOP CLIP_EFF),COMMA:
-                        (CHOP CLIP_TRM),COMMA:
-                        (CHOP CLIP_NET),COMMA:
-                        (CHOP CLIP_PRD),COMMA:
-                        (CHOP CLIP_CARR),COMMA:
-                        (CHOP CLIP_PLAN),COMMA:
-                        (CHOP CLIP_CHGDT),COMMA:
-                        (CHOP CLIP_CHGBY),COMMA:
-                        (CHOP UPDATE_MSG@)
-
+    PACK REPORT_REC WITH    (CHOP CLIP_ID1),COMMA:
+                            (CHOP CLIP_ID2),COMMA:
+                            (CHOP MSG@),COMMA:
+                            (CHOP CLIP_NET),COMMA:
+                            (CHOP CLIP_PRD),COMMA:
+                            (CHOP CLIP_PLAN),COMMA:
+                            (CHOP CLIP_EFF),COMMA:
+                            (CHOP CLIP_TRM),COMMA:
+                            (CHOP CLIP_RT)
 
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-    CALL UTIL_XCOUNTER USING X_CNT3,50
 
     RETURN
     ENDROUTINE
@@ -325,10 +321,12 @@ CLEAN_UP LROUTINE
     CLOCK CALENDAR INTO END_DATETIME
 
     CALL SEND_EMAIL
+
     CALL UTIL_DELETE_FILE USING REPORT_FILE
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 SEND_EMAIL LROUTINE
@@ -375,6 +373,8 @@ BODY_BASE       CHAR    1000
 
     RETURN
     ENDROUTINE
+
+
 .# =================================================================== #
 .# Subroutines Includes
 .# =================================================================== #
