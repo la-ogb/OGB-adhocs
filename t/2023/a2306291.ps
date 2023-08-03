@@ -3,8 +3,9 @@
 +   a2306291.ps
 +
 + DESCRIPTION:
-+ Vantage Plan Ending (all except MHHP)- default to BLUE CROSS
-+ BLUE CROSS plan effective 01012024
++   Vantage Medicare Advantage plans - default to region-based
++   BCBS HMO65 plan effective 1/1/24
++
 + CREATED BY:
 +   aphas - 2023-06-29
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -18,6 +19,7 @@
     INC MEMU.RL
     INC CLI.RL
     INC XALID.RL
+
 .# =================================================================== #
 .# Scheduler Parameters
 .# =================================================================== #
@@ -33,7 +35,7 @@ PARAM_TEST          CHAR    4
 V_FLAG              EQU     1   ...0 or 1
 V_DATE              EQU     8   ...YYYYMMDD
 MSG_HEIGHT          EQU     24
-REFRESH_RATE        EQU     1000
+REFRESH_RATE        EQU     50
 
 .# =================================================================== #
 .# Configuration
@@ -47,7 +49,6 @@ NEW_EFF_DATE        INIT    "20240101"
 NEW_NETWORK         INIT    "BLU65"
 NEW_PRODUCT         INIT    "HMO65"
 
-
 .# =================================================================== #
 .# Debugging Configuration
 .# =================================================================== #
@@ -55,7 +56,6 @@ NEW_PRODUCT         INIT    "HMO65"
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
 TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
-.TEST_THIS_ID        INIT    "00000964"
                     LISTEND
 
 .# =================================================================== #
@@ -83,18 +83,20 @@ REPORT_LIST         LIST
 REPORT_REC          CHAR    200
                     LISTEND
 
-REPORT_HEADER       VARLIST "MEME_ID,":
-                            "LAST NAME,":
+REPORT_HEADER       VARLIST "MEMBER ID,":
+                            "LOG MESSAGE,":
                             "FIRST NAME,":
+                            "LAST NAME,":
                             "RELATION,":
                             "LEV1,":
                             "LEV2,":
                             "MEME EFF,":
                             "MEME TRM,":
-                            "NETWORK,":
-                            "PRODUCT,":
+                            "OLD PLAN,":
+                            "NEW PLAN,":
+                            "ZIP TYPE,":
                             "ZIP CODE,":
-                            "UPDATE STATUS"
+                            "STATE"
 
 .# =================================================================== #
 .# Program Variables
@@ -103,16 +105,16 @@ REPORT_HEADER       VARLIST "MEME_ID,":
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
-FOUND_INSTANCE      NUM     1
+
+SOMETHING_IN_LOG    NUM     1
 ORIG_EFF            CHAR    8
 ORIG_TRM            CHAR    8
 ORIG_TLET           CHAR    1
 ORIG_TRUN           CHAR    8
-VOID_DATE           CHAR    8
-DIM5A               DIM     5
 ZIP_FAIL            NUM     1
-NEW_PLAN            CHAR    5
-
+ZIP_TYPE            CHAR    20
+ZIPCODE             CHAR    5
+ZIPSTATE            CHAR    2
 
 .# =================================================================== #
 .# Begin Program
@@ -176,9 +178,6 @@ RUN_NOW ROUTINE
 
 .#######################################################################
 MAIN_PROCESS LROUTINE
-+ MEME reformat of all members with out VANTA MHHP
-+ Term the active VANTA MHHP coverage for 12/31/23
-+ Create new BLUE-LOCL-PLUS record eff 1/1/24
     debug
     CALL INITIALIZE
     CALL MEME_REFORMAT
@@ -198,10 +197,10 @@ INITIALIZE LROUTINE
 .Get the files and EDI locations from valid 101
     CALL UTIL_GET_SYS_DIRS_COMMON
 
-    CALL UTIL_INIT_COUNTERS USING "Building Work File":
-                                  "Find Plan based on Zip":
-                                  "Log Updates":
-                                  "Write Update":
+    CALL UTIL_INIT_COUNTERS USING "Enrollments Proc'd":
+                                  "Errors":
+                                  "Updates":
+                                  "":
                                   "":
                                   ""
 
@@ -215,7 +214,7 @@ MEME_REFORMAT LROUTINE
 
     CALL UTIL_XMESSAGE USING "Building work files...",MSG_HEIGHT
 
-.Find current cov before new term
+.Find future termed coverage
     PACK SCRATCH USING MEME_FNS," ",WORK_FILE," -t":
                         " -p0112-0116eq#"VANTA#"":
                         " -p0117-0121ne#"MHHP#"":
@@ -223,7 +222,7 @@ MEME_REFORMAT LROUTINE
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding MEME Data"
 
-.Find cov before today
+.Find open coverage
     PACK DATE_CCYYMMDD WITH BLANKS
     PACK SCRATCH USING MEME_FNS," ",WORK_FILE," -t -a":
                         " -p0112-0116eq#"VANTA#"":
@@ -243,14 +242,13 @@ MEME_REFORMAT LROUTINE
 
 .#######################################################################
 CONVERT_PLAN LROUTINE
-+ Open and Prepare Files for Program
-    debug
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
     CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
 
     CALL PREP_OGBFILE USING REPORT_FD, REPORT_FILE
     CALL WRITE_OGBREC_SEQ USING REPORT_FD, REPORT_FILE, REPORT_HEADER
 
+    debug
     LOOP
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, MEME_LIST
         WHILE (RESULT = 1)
@@ -259,24 +257,25 @@ CONVERT_PLAN LROUTINE
         CONTINUE IF NOT EQUAL
 
 .skip voids
-        IF (CHOP MEME_TRM > " ")
-            IF (CHOP MEME_TRM < MEME_EFF)
-                CONTINUE
-            ENDIF
-        ELSE
-            FILL "~" IN MEME_TLET
+        IF (CHOP MEME_TRM > "")
+            CONTINUE IF (CHOP MEME_TRM < MEME_EFF)
         ENDIF
 
-        CALL UTIL_XCOUNTER USING X_CNT1,1000
-.Find Reigon using Physical address or Mailing address
-        CALL UTIL_GET_ACTIVE_MEMU USING MEME_ID1,CURRDATE
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+.Find Region using Physical address or Mailing address
+        FILL " " IN ZIP_TYPE,ZIPCODE
+
+        CALL UTIL_GET_ACTIVE_MEMU USING MEME_ID1,NEW_EFF_DATE
         IF EQUAL
-            debug
-            CONTINUE IF (MEM_ID1 <> MEMU_ID1)
-            CALL FIND_RGN USING MEMU_P
+            IF (MEM_ID1 <> MEMU_ID1)
+                debug .is this possible?
+                CONTINUE
+            ENDIF
+
+            CALL DEFAULT_PLAN USING MEMU_P,MEMU_O,"Physical"
         ELSE
-            debug
-            CALL FIND_RGN USING MEM_ZIP
+            CALL DEFAULT_PLAN USING MEM_ZIP,MEM_STATE,"MEM"
         ENDIF
 
     REPEAT
@@ -290,108 +289,96 @@ CONVERT_PLAN LROUTINE
 
 
 .#######################################################################
-FIND_RGN LROUTINE VAL@ZIP
+DEFAULT_PLAN LROUTINE ZIP@,STATE@,ZIPTYPE@
 +Find what Reigon member's zip is in
-VAL@ZIP     DIM     @
-    debug
-    CLEAR NEW_PLAN
+ZIP@        CHAR    @
+STATE@      CHAR    @
+ZIPTYPE@    CHAR    @
+...
+    PACK ZIPCODE WITH ZIP@
+    PACK ZIP_TYPE WITH ZIPTYPE@
+    PACK ZIPSTATE WITH STATE@
 
-    CALL ZIP_TEST USING "RG1",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN1"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG2",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN2"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG3",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN3"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG4",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN4"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG5",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN5"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG6",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN6"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG7",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN7"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG8",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN8"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-
-    CALL ZIP_TEST USING "RG9",VAL@ZIP
-        IF NOT (ZIP_FAIL)
-            PACK NEW_PLAN WITH "RGN9"
-            CALL LOG_UPDATES USING VAL@ZIP,"Updated"
-            CALL UPDATE_PLAN
-            RETURN
-        ENDIF
-.If ZIP is not found
-    debug
-    IF (MEM_STATE = "LA")
-        CALL LOG_UPDATES USING VAL@ZIP,"ZIP is not in region"
-    ELSE
-        CALL LOG_UPDATES USING VAL@ZIP,"ZIP is out of state"
+    IF (CHOP ZIPCODE = "")
+        debug
+        CALL LOG_ERROR USING "No zipcode found"
+        RETURN
     ENDIF
 
-    CALL UTIL_XCOUNTER USING X_CNT2,50
+    CALL CHECK_IS_IN_REGION USING "RG1"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN1"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG2"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN2"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG3"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN3"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG4"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN4"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG5"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN5"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG6"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN6"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG7"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN7"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG8"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN8"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG9"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN9"
+        RETURN
+    ENDIF
+
+.If ZIP is not found in any regions
+    IF (ZIPSTATE = "LA")
+        CALL LOG_ERROR USING "ERROR: ZIP is not in region"
+    ELSE
+        CALL LOG_ERROR USING "ERROR: ZIP is out of state"
+    ENDIF
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-ZIP_TEST LROUTINE ZIP@XAL,ZIP@
+CHECK_IS_IN_REGION LROUTINE RGNXAL@
 +find zip code in table
-ZIP@XAL     DIM @
-ZIP@        DIM @
-
+RGNXAL@     CHAR    @
+...
     SET ZIP_FAIL
 
-    PACK DIM5A WITH ZIP@
-    RETURN IF (SQUEEZE DIM5A = "")
-    PACK XAL_KEY1 WITH ZIP@XAL,DIM5A,BLANKS
+    RETURN IF (SQUEEZE ZIPCODE = "")
+    PACK XAL_KEY1 WITH RGNXAL@,ZIPCODE,BLANKS
     CALL XAL_READ1
 
     IF (RESULT = 1)
@@ -402,9 +389,9 @@ ZIP@        DIM @
     LOOP
         CALL XAL_NEXT1
         BREAK IF (RESULT <> 1)
-        BREAK IF (XAL_TYPE <> ZIP@XAL)
+        BREAK IF (XAL_TYPE <> RGNXAL@)
 
-        MATCH DIM5A WITH XAL_CODE
+        MATCH ZIPCODE WITH XAL_CODE
         BREAK IF NOT EQUAL
 
         CONTINUE IF (NEW_EFF_DATE < XAL_EFF)
@@ -420,37 +407,53 @@ ZIP@        DIM @
 
 
 .#######################################################################
-LOG_UPDATES LROUTINE ZIP_USED@,UPDATE_MSG@
-ZIP_USED@       DIM     @
-UPDATE_MSG@     DIM     @
+LOG_UPDATES LROUTINE MSG@,NEWPLAN@
+MSG@        CHAR    @
+NEWPLAN@    CHAR    @
+...
 + Log coverage update
 
-    SET FOUND_INSTANCE
-    PACK REPORT_REC WITH (CHOP MEME_ID1),COMMA:
-                        (CHOP MEM_LNAME),COMMA:
-                        (CHOP MEM_FNAME),COMMA:
-                        (CHOP MEM_REL),COMMA:
-                        (CHOP MEME_LEV1),COMMA:
-                        (CHOP MEME_LEV2),COMMA:
-                        (CHOP MEME_EFF),COMMA:
-                        (CHOP MEME_TRM),COMMA:
-                        (CHOP MEME_NET),COMMA:
-                        (CHOP MEME_PRD),COMMA:
-                        (CHOP ZIP_USED@),COMMA:
-                        (CHOP UPDATE_MSG@)
+    SET SOMETHING_IN_LOG
+    PACK REPORT_REC WITH    (CHOP MEME_ID1),PIPE:
+                            (CHOP MSG@),PIPE:
+                            (CHOP MEM_FNAME),PIPE:
+                            (CHOP MEM_LNAME),PIPE:
+                            (CHOP MEM_REL),PIPE:
+                            (CHOP MEME_LEV1),PIPE:
+                            (CHOP MEME_LEV2),PIPE:
+                            (CHOP MEME_EFF),PIPE:
+                            (CHOP MEME_TRM),PIPE:
+                            (CHOP MEME_PLAN),PIPE:
+                            (CHOP NEWPLAN@),PIPE:
+                            (CHOP ZIP_TYPE),PIPE:
+                            (CHOP ZIPCODE),PIPE:
+                            (CHOP ZIPSTATE)
+
+    REPLACE ",;" IN REPORT_REC
+    REPLACE "|," IN REPORT_REC
 
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-    CALL UTIL_XCOUNTER USING X_CNT3,50
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-UPDATE_PLAN LROUTINE
-+ Term Vantage and create new Blue Local Plus
+LOG_ERROR LROUTINE MSG@
+MSG@        CHAR    @
+...
+    CALL LOG_UPDATES USING MSG@,""
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
-.TERM OLD
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_PLAN LROUTINE PLAN@
++ Term Vantage and create new Blue Local Plus
+PLAN@       CHAR    @
+...
     FILL " " IN ORIG_TRM:
                 ORIG_TLET:
                 ORIG_TRUN
@@ -458,42 +461,50 @@ UPDATE_PLAN LROUTINE
     IF (CHOP MEME_TLET > "")
         PACK ORIG_TLET WITH MEME_TLET
     ENDIF
+
     IF (CHOP MEME_TRUN > "")
         PACK ORIG_TRUN WITH MEME_TRUN
     ENDIF
 
-.If eff date is after void and replace
-    IF (MEME_EFF > "20231231")
-        debug
-        CALL UTIL_CALC_DAY_BEFORE USING MEME_EFF,VOID_DATE
-.VOID PLAN
-        PACK ORIG_TRM WITH MEME_TRM
+.For future plans, void & replace
+    IF (MEME_EFF > NEW_TERM_DATE)
+        CALL LOG_UPDATES USING "FUTURE PLAN VOIDED & REPLACED",PLAN@
+
         PACK ORIG_EFF WITH MEME_EFF
-        PACK MEME_TRM WITH VOID_DATE
+        PACK ORIG_TRM WITH MEME_TRM
+
+        CALL UTIL_CALC_DAY_BEFORE USING MEME_EFF,MEME_TRM
         PACK MEME_TLET WITH "V"
         CALL WRITE_UPDATE
-        CALL CREATE_NEW USING ORIG_EFF
 
+        CALL CREATE_NEW USING ORIG_EFF,PLAN@
+
+.For active plans, default to replacement for 1/1
     ELSE
+        CALL LOG_UPDATES USING "CURRENT PLAN DEFAULTED",PLAN@
 
         PACK ORIG_TRM WITH MEME_TRM
+
         PACK MEME_TRM WITH NEW_TERM_DATE
         FILL "~" IN MEME_TLET:
                     MEME_TRUN
-
         CALL WRITE_UPDATE
-        CALL CREATE_NEW USING NEW_EFF_DATE
+
+        CALL CREATE_NEW USING NEW_EFF_DATE,PLAN@
     ENDIF
 
     RETURN
     ENDROUTINE
 
+
 .#######################################################################
-CREATE_NEW LROUTINE DATE@
-+Create new Blue Cross record
-DATE@           CHAR    @
+CREATE_NEW LROUTINE EFF@,PLAN@
++ Create new Blue Cross record
+EFF@        CHAR    @
+PLAN@       CHAR    @
+...
     FILL " " IN MEME_ID2
-    PACK MEME_EFF WITH DATE@,BLANKS
+    PACK MEME_EFF WITH EFF@,BLANKS
     PACK MEME_TRM WITH ORIG_TRM,BLANKS
     PACK MEME_TLET WITH ORIG_TLET,BLANKS
     PACK MEME_TRUN WITH ORIG_TRUN,BLANKS
@@ -504,7 +515,7 @@ DATE@           CHAR    @
 
     PACK MEME_NET WITH NEW_NETWORK,BLANKS
     PACK MEME_PRD WITH NEW_PRODUCT,BLANKS
-    PACK MEME_PLAN WITH NEW_PLAN,BLANKS
+    PACK MEME_PLAN WITH PLAN@,BLANKS
 
     CALL WRITE_UPDATE
 
@@ -515,7 +526,12 @@ DATE@           CHAR    @
 .#######################################################################
 WRITE_UPDATE LROUTINE
 + Write update record
-    PACK MEME_REC WITH MEME_LIST
+HOLD_MEM    CHAR    X_MEM_SIZE
+...
+    PACK HOLD_MEM WITH MEM_LIST
+    FILL " " IN MEM_LIST
+    PACK MEM_ID1 WITH MEME_ID1,BLANKS
+
     FILL " " IN INM_LIST
     PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
     UNPACK INM_REC INTO INM_LIST
@@ -523,7 +539,10 @@ WRITE_UPDATE LROUTINE
     CALL UTIL_FORMAT_INME USING PROG_ID
 
     CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
-    CALL UTIL_XCOUNTER USING X_CNT4,50
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    UNPACK HOLD_MEM INTO MEM_LIST
+
     RETURN
     ENDROUTINE
 
@@ -532,11 +551,15 @@ WRITE_UPDATE LROUTINE
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
+
+    debug
+
     CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
     CALL UTIL_PENDING_BACKUP USING "/w/tmp/",REPORT_FILE,""
     CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
     CALL SEND_EMAIL
     CALL UTIL_DELETE_FILE USING REPORT_FILE
+
     RETURN
     ENDROUTINE
 
@@ -551,8 +574,8 @@ BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
 
-    PACK SCRATCH WITH "Vantage default to BLU65 HMO65"
-    IF (FOUND_INSTANCE)
+    PACK SCRATCH WITH "Vantage Medicare Advantage Default to BLU65 HMO65 for 2024"
+    IF (SOMETHING_IN_LOG)
         PACK SCRATCH WITH SCRATCH," *UPDATED*"
     ELSE
         PACK SCRATCH WITH SCRATCH," *NO UPDATE REQUIRED*"
@@ -565,7 +588,7 @@ BODY_BASE       CHAR    1000
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
-    IF (FOUND_INSTANCE)
+    IF (SOMETHING_IN_LOG)
         CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
         CALL UTIL_EMAIL_NEOJ USING  C_PROG:
                                     RECIPIENTS:
@@ -586,6 +609,8 @@ BODY_BASE       CHAR    1000
 
     RETURN
     ENDROUTINE
+
+
 .# =================================================================== #
 .# Subroutines Includes
 .# =================================================================== #
