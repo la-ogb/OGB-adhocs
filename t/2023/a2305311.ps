@@ -188,9 +188,9 @@ INITIALIZE LROUTINE
 .Get the files and EDI locations from valid 101
     CALL UTIL_GET_SYS_DIRS_COMMON
 
-    CALL UTIL_INIT_COUNTERS USING "Building Work File":
-                                  "Log Updates":
-                                  "Write Update":
+    CALL UTIL_INIT_COUNTERS USING "MEME Recs Proc'd":
+                                  "Updates":
+                                  "":
                                   "":
                                   "":
                                   ""
@@ -296,7 +296,6 @@ MSG@        CHAR    @
     REPLACE "|," IN REPORT_REC
 
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
     RETURN
     ENDROUTINE
@@ -392,7 +391,7 @@ HOLD_MEM    CHAR    X_MEM_SIZE
     CALL UTIL_FORMAT_INME USING PROG_ID
 
     CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
-    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
     UNPACK HOLD_MEM INTO MEM_LIST
 
