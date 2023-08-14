@@ -1,0 +1,543 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   ???.ps
++
++ DESCRIPTION:
++   Clean up life rates effective 1/1/24 to remove unecessary riders
++
++ CREATED BY:
++   apjwh - 2023-08-14
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC ART.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_SKIP_RF        NUM     "0"
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+IN_FD               FILE    FIXED=8,TEXT
+IN_FILE             INIT    "/w/tmp/life_rate_cleanup.in"
+
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/tmp/life_rate_cleanup_log.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+IN_LIST             LIST
+IN_ID               CHAR    8
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    200
+                    LISTEND
+
+LOG_HEADER          VARLIST "Rate_Id,Message"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+RIDER_MAX           EQU     20
+RIDER_DATA          CHAR    18[RIDER_MAX]
+RIDER_CNT           NUM     7
+
+RIDER_DETAILS       LIST
+RIDER_AMT           CHAR    10
+RIDER_TYPE          CHAR    4
+RIDER_WHO           CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "???" TO C_PROG        ...Program name
+    MOVE "CLEAN LIFE RATES" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL CLEAN_RATES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Active Life Rates":
+                                  "Updated Rates":
+                                  "Errors":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    IF (TEST_SKIP_RF)
+        CALL UTIL_EXISTS USING IN_FILE,"FILE"
+        IF NOT EQUAL
+            CLEAR TEST_SKIP_RF
+        ENDIF
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_RATES LROUTINE
+
+.Find all active LIFE ART as of 1/1/24
+    CALL FIND_ACTIVE_ART
+
+    CALL OPEN_OGBFILE USING IN_FD,IN_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    CALL UTIL_XMESSAGE USING "Processing rates...",MSG_HEIGHT
+
+    debug
+    LOOP
+        CALL WRITE_OGBREC_SEQ USING IN_FD,IN_FILE,IN_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_RATE_FIND USING IN_ID
+        IF NOT EQUAL
+            debug
+            CONTINUE
+        ENDIF
+        CONTINUE IF (CHOP ART_TRM > "" & ART_TRM < "20231231")
+
+        IF (CHOP ART_TRM = "20231231")
+            debug
+            CALL WRITE_LOG USING "SKIPPED","Rate already termed for 12/31/23"
+            CONTINUE
+        ENDIF
+
+        debug .process this rate
+
+        CALL CLEAN_RATE
+.For each CLIP, create a clean version for 1/1/24
+.   Check for a rate that matches the same net/prd/plan/dates/age range
+.   skip if found
+.   write update
+.   term the original record
+
+    REPEAT
+
+    MESSAGEERASE
+
+    CALL CLOSE_OGBFILE USING IN_FD,IN_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_ACTIVE_ART LROUTINE
+
+    RETURN IF (TEST_SKIP_RF)
+
+    CALL UTIL_XMESSAGE USING "Searching for active rates...",MSG_HEIGHT
+
+    PACK SCRATCH WITH "art.dbf ",IN_FILE," 1-8 -t ":
+        " -p9-13eq#"LIFE #" -p38-45lt20240101 -p46-53eq#"        #" ":
+        " or ":
+        " -p9-13eq#"LIFE #" -p38-45lt20240101 -p46-53ge20240101"
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Searching for active rates"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_RATE LROUTINE
+
+    FILL " " IN CLEANED_RATE
+    PACK BASE_RATE WITH ART_LIST
+
+    CALL REMOVE_BAD_RIDERS
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REMOVE_BAD_RIDERS LROUTINE
+    CLEAR RIDER_DATA,RIDER_CNT
+
+    CALL LOAD_RIDERS
+    CALL FILTER_RIDERS
+    CALL REPLACE_RIDERS
+    CALL UPDATE_RIDER
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOAD_RIDERS LROUTINE
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT1,ART_TYP1,ART_WHO1
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT2,ART_TYP2,ART_WHO2
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT3,ART_TYP3,ART_WHO3
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT4,ART_TYP4,ART_WHO4
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT5,ART_TYP5,ART_WHO5
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT6,ART_TYP6,ART_WHO6
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT7,ART_TYP7,ART_WHO7
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT8,ART_TYP8,ART_WHO8
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT9,ART_TYP9,ART_WHO9
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT10,ART_TYP10,ART_WHO10
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT11,ART_TYP11,ART_WHO11
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT12,ART_TYP12,ART_WHO12
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT13,ART_TYP13,ART_WHO13
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT14,ART_TYP14,ART_WHO14
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT15,ART_TYP15,ART_WHO15
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT16,ART_TYP16,ART_WHO16
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT17,ART_TYP17,ART_WHO17
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT18,ART_TYP18,ART_WHO18
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT19,ART_TYP19,ART_WHO19
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT20,ART_TYP20,ART_WHO10
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FILTER_RIDERS LROUTINE
++ Go through the 20 riders/rate types and clear any from the array we
++ do not want on the clean rate
+IDX         NUM     7
+...
+    UNPACK BASE_RATE INTO ART_LIST
+
+    FOR IDX FROM 1 TO RIDER_MAX
+        UNPACK RIDER_DATA[IDX] INTO RIDER_DETAILS
+
+        SWITCH RIDER_TYPE
+
+.Base Life billing types
+            CASE "PRLI" | "PRAD"
+                CONTINUE
+
+.Basic Life Riders
+            CASE "DLBL" | "DLBH"
+                SWITCH ART_PLAN
+                    CASE "BASI" | "GBAS"
+                    CASE "SUPP" | "GSUP"
+                        debug
+                        CLEAR RIDER_DATA[IDX]
+                    DEFAULT
+                        debug .what is this?
+                        CONTINUE
+                ENDSWITCH
+
+.Supplemental Life Riders
+            CASE "DLSL" | "DLSH"
+                SWITCH ART_PLAN
+                    CASE "BASI" | "GBAS"
+                        debug
+                        CLEAR RIDER_DATA[IDX]
+                    CASE "SUPP" | "GSUP"
+                    DEFAULT
+                        debug .what is this?
+                        CONTINUE
+                ENDSWITCH
+
+.Grandfathered life riders
+            CASE "DLG1" | "DLG2" | "DLG3" | "DLG4" | "DLG5"
+
+.TODO: SUPP only?
+
+.Clear these from all rates
+            CASE "OLE?" | "OLS?" | "OLC?" | "PE??" | "PF??"
+                CLEAR RIDER_DATA[IDX]
+            DEFAULT
+                debug .what is this?
+                CONTINUE
+        ENDSWITCH
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+REPLACE_RIDERS LROUTINE
+IDX         NUM     6
+...
+    UNPACK BASE_RATE INTO ART_LIST
+
+    FILL " " IN ART_AMT1,ART_TYP1,ART_WHO1:
+                ART_AMT2,ART_TYP2,ART_WHO2:
+                ART_AMT3,ART_TYP3,ART_WHO3:
+                ART_AMT4,ART_TYP4,ART_WHO4:
+                ART_AMT5,ART_TYP5,ART_WHO5:
+                ART_AMT6,ART_TYP6,ART_WHO6:
+                ART_AMT7,ART_TYP7,ART_WHO7:
+                ART_AMT8,ART_TYP8,ART_WHO8:
+                ART_AMT9,ART_TYP9,ART_WHO9:
+                ART_AMT10,ART_TYP10,ART_WHO10:
+                ART_AMT11,ART_TYP11,ART_WHO11:
+                ART_AMT12,ART_TYP12,ART_WHO12:
+                ART_AMT13,ART_TYP13,ART_WHO13:
+                ART_AMT14,ART_TYP14,ART_WHO14:
+                ART_AMT15,ART_TYP15,ART_WHO15:
+                ART_AMT16,ART_TYP16,ART_WHO16:
+                ART_AMT17,ART_TYP17,ART_WHO17:
+                ART_AMT18,ART_TYP18,ART_WHO18:
+                ART_AMT19,ART_TYP19,ART_WHO19:
+                ART_AMT20,ART_TYP20,ART_WHO10
+
+    debug
+    MOVE 0 TO WHICH_RIDER
+    FOR IDX FROM 1 TO RIDER_MAX
+        CONTINUE IF (CHOP RIDER_DATA[IDX] = "")
+        ADD 1 TO WHICH_RIDER
+        SWITCH WHICH_RIDER
+            CASE 1
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT1,ART_TYP1,ART_WHO1
+            CASE 2
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT2,ART_TYP2,ART_WHO2
+            CASE 3
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT3,ART_TYP3,ART_WHO3
+            CASE 4
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT4,ART_TYP4,ART_WHO4
+            CASE 5
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT5,ART_TYP5,ART_WHO5
+            CASE 6
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT6,ART_TYP6,ART_WHO6
+            CASE 7
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT7,ART_TYP7,ART_WHO7
+            CASE 8
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT8,ART_TYP8,ART_WHO8
+            CASE 9
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT9,ART_TYP9,ART_WHO9
+            CASE 10
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT10,ART_TYP10,ART_WHO10
+            CASE 11
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT11,ART_TYP11,ART_WHO11
+            CASE 12
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT12,ART_TYP12,ART_WHO12
+            CASE 13
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT13,ART_TYP13,ART_WHO13
+            CASE 14
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT14,ART_TYP14,ART_WHO14
+            CASE 15
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT15,ART_TYP15,ART_WHO15
+            CASE 16
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT16,ART_TYP16,ART_WHO16
+            CASE 17
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT17,ART_TYP17,ART_WHO17
+            CASE 18
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT18,ART_TYP18,ART_WHO18
+            CASE 19
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT19,ART_TYP19,ART_WHO19
+            CASE 20
+                UNPACK RIDER_DATA[IDX] INTO ART_AMT20,ART_TYP20,ART_WHO20
+        ENDSWITCH
+    REPEAT
+
+    PACK CLEANED_RATE WITH ART_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_RIDER_TO_ARRAY LROUTINE AMT@,TYPE@,WHO@
+AMT@        CHAR    @
+TYPE@       CHAR    @
+WHO@        CHAR    @
+...
+    FILL " " IN RIDER_DETAILS
+    PACK RIDER_AMT WITH AMT@,BLANKS
+    PACK RIDER_TYPE WITH TYPE@,BLANKS
+    PACK RIDER_WHO WITH WHO@,BLANKS
+
+    CALL UTIL_SAFE_PACK_ARRAY_LIST USING RIDER_DETAILS,RIDER_DATA,RIDER_CNT,RIDER_MAX
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL EMAIL_NEOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_NEOJ LROUTINE
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "Life Rate Cleanup 2024"
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Attached is a report of rate modifications made to Life ":
+        "enrollments effective 1/1/24 to remove unbillable riders."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+    INC UTIL_ART.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
