@@ -38,6 +38,12 @@ REFRESH_RATE        EQU     10
 .# =================================================================== #
 
 EMAIL_TO            INIT    "$ITAPPS"
+NEW_EFF             INIT    "20240101"
+NEW_TRM             INIT    "20231231"
+PROG_ID             INIT    "FXLFRT"
+
+CFG_IGNORE_WAIV     NUM     "1"
+CFG_IGNORE_FROZ     NUM     "1"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -56,7 +62,7 @@ TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
 IN_FD               FILE    FIXED=8,TEXT
 IN_FILE             INIT    "/w/tmp/life_rate_cleanup.in"
 
-LOG_FD              FILE    VAR=200,TEXT
+LOG_FD              FILE    VAR=1000,TEXT
 LOG_FILE            INIT    "/w/tmp/life_rate_cleanup_log.csv"
 
 .# =================================================================== #
@@ -68,10 +74,42 @@ IN_ID               CHAR    8
                     LISTEND
 
 LOG_LIST            LIST
-LOG_REC             CHAR    200
+LOG_REC             CHAR    1000
                     LISTEND
 
-LOG_HEADER          VARLIST "Rate_Id,Message"
+LOG_HEADER          VARLIST "BASE_RATE_ID,":
+                            "LOG_TYPE,":
+                            "LOG_MESSAGE,":
+                            "UPDATE_ID,":
+                            "EFF,":
+                            "TRM,":
+                            "NET,":
+                            "PRD,":
+                            "PLAN,":
+                            "RATE,":
+                            "COVLVL,":
+                            "AGE_FROM,":
+                            "AGE_TO,":
+                            "RD1-AMT,RD1-TYPE,RD1-WHO,":
+                            "RD2-AMT,RD2-TYPE,RD2-WHO,":
+                            "RD3-AMT,RD3-TYPE,RD3-WHO,":
+                            "RD4-AMT,RD4-TYPE,RD4-WHO,":
+                            "RD5-AMT,RD5-TYPE,RD5-WHO,":
+                            "RD6-AMT,RD6-TYPE,RD6-WHO,":
+                            "RD7-AMT,RD7-TYPE,RD7-WHO,":
+                            "RD8-AMT,RD8-TYPE,RD8-WHO,":
+                            "RD9-AMT,RD9-TYPE,RD9-WHO,":
+                            "RD10-AMT,RD10-TYPE,RD10-WHO,":
+                            "RD11-AMT,RD11-TYPE,RD11-WHO,":
+                            "RD12-AMT,RD12-TYPE,RD12-WHO,":
+                            "RD13-AMT,RD13-TYPE,RD13-WHO,":
+                            "RD14-AMT,RD14-TYPE,RD14-WHO,":
+                            "RD15-AMT,RD15-TYPE,RD15-WHO,":
+                            "RD16-AMT,RD16-TYPE,RD16-WHO,":
+                            "RD17-AMT,RD17-TYPE,RD17-WHO,":
+                            "RD18-AMT,RD18-TYPE,RD18-WHO,":
+                            "RD19-AMT,RD19-TYPE,RD19-WHO,":
+                            "RD20-AMT,RD20-TYPE,RD20-WHO"
 
 .# =================================================================== #
 .# Program Variables
@@ -90,6 +128,9 @@ RIDER_AMT           CHAR    10
 RIDER_TYPE          CHAR    4
 RIDER_WHO           CHAR    4
                     LISTEND
+
+CLEANED_RATE        CHAR    X_ART_SIZE
+BASE_RATE           CHAR    X_ART_SIZE
 
 .# =================================================================== #
 .# Begin Program
@@ -173,10 +214,10 @@ INITIALIZE LROUTINE
     CALL UTIL_GET_SYS_DIRS_COMMON
 
     CALL UTIL_INIT_COUNTERS USING "Active Life Rates":
-                                  "Updated Rates":
-                                  "Errors":
-                                  "":
-                                  "":
+                                  "Creates":
+                                  "Updates":
+                                  "Skipped":
+                                  "Issues":
                                   ""
 
     CALL SET_RUN_CONFIG
@@ -213,8 +254,13 @@ CLEAN_RATES LROUTINE
     CALL UTIL_XMESSAGE USING "Processing rates...",MSG_HEIGHT
 
     debug
+.Questions:
+.   TODO: What riders are allowed on WAIV life?
+.   TODO: What riders are allowed on FROZ life?
     LOOP
-        CALL WRITE_OGBREC_SEQ USING IN_FD,IN_FILE,IN_LIST
+        CLEAR BASE_RATE,CLEANED_RATE
+
+        CALL READ_OGBFILE_SEQ USING IN_FD,IN_FILE,IN_LIST
         WHILE (RESULT = 1)
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
@@ -224,11 +270,26 @@ CLEAN_RATES LROUTINE
             debug
             CONTINUE
         ENDIF
-        CONTINUE IF (CHOP ART_TRM > "" & ART_TRM < "20231231")
 
-        IF (CHOP ART_TRM = "20231231")
+        IF (CFG_IGNORE_WAIV)
+            IF (CHOP ART_PLAN = "WAIV")
+                CALL WRITE_LOG USING "SKIP","Config set to ignore Waived Life"
+                CONTINUE
+            ENDIF
+        ENDIF
+
+        IF (CFG_IGNORE_FROZ)
+            IF (CHOP ART_PLAN = "FROZ")
+                CALL WRITE_LOG USING "SKIP","Config set to ignore Frozen Life"
+                CONTINUE
+            ENDIF
+        ENDIF
+
+        CONTINUE IF (CHOP ART_TRM > "" & ART_TRM < NEW_TRM)
+
+        IF (CHOP ART_TRM = NEW_TRM)
             debug
-            CALL WRITE_LOG USING "SKIPPED","Rate already termed for 12/31/23"
+            CALL WRITE_LOG USING "SKIP",("Rate already termed for "+NEW_TRM)
             CONTINUE
         ENDIF
 
@@ -260,9 +321,9 @@ FIND_ACTIVE_ART LROUTINE
     CALL UTIL_XMESSAGE USING "Searching for active rates...",MSG_HEIGHT
 
     PACK SCRATCH WITH "art.dbf ",IN_FILE," 1-8 -t ":
-        " -p9-13eq#"LIFE #" -p38-45lt20240101 -p46-53eq#"        #" ":
+        " -p9-13eq#"LIFE #" -p38-45lt",NEW_EFF," -p46-53eq#"        #" ":
         " or ":
-        " -p9-13eq#"LIFE #" -p38-45lt20240101 -p46-53ge20240101"
+        " -p9-13eq#"LIFE #" -p38-45lt",NEW_EFF," -p46-53ge",NEW_EFF
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Searching for active rates"
 
@@ -291,7 +352,7 @@ REMOVE_BAD_RIDERS LROUTINE
     CALL LOAD_RIDERS
     CALL FILTER_RIDERS
     CALL REPLACE_RIDERS
-    CALL UPDATE_RIDER
+    CALL UPDATE_RATE
 
     RETURN
     ENDROUTINE
@@ -318,7 +379,24 @@ LOAD_RIDERS LROUTINE
     CALL ADD_RIDER_TO_ARRAY USING ART_AMT17,ART_TYP17,ART_WHO17
     CALL ADD_RIDER_TO_ARRAY USING ART_AMT18,ART_TYP18,ART_WHO18
     CALL ADD_RIDER_TO_ARRAY USING ART_AMT19,ART_TYP19,ART_WHO19
-    CALL ADD_RIDER_TO_ARRAY USING ART_AMT20,ART_TYP20,ART_WHO10
+    CALL ADD_RIDER_TO_ARRAY USING ART_AMT20,ART_TYP20,ART_WHO20
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_RIDER_TO_ARRAY LROUTINE AMT@,TYPE@,WHO@
+AMT@        CHAR    @
+TYPE@       CHAR    @
+WHO@        CHAR    @
+...
+    FILL " " IN RIDER_DETAILS
+    PACK RIDER_AMT WITH AMT@,BLANKS
+    PACK RIDER_TYPE WITH TYPE@,BLANKS
+    PACK RIDER_WHO WITH WHO@,BLANKS
+
+    CALL UTIL_SAFE_PACK_ARRAY_LIST USING RIDER_DETAILS,RIDER_DATA,RIDER_CNT,RIDER_MAX
 
     RETURN
     ENDROUTINE
@@ -346,7 +424,6 @@ IDX         NUM     7
                 SWITCH ART_PLAN
                     CASE "BASI" | "GBAS"
                     CASE "SUPP" | "GSUP"
-                        debug
                         CLEAR RIDER_DATA[IDX]
                     DEFAULT
                         debug .what is this?
@@ -357,7 +434,6 @@ IDX         NUM     7
             CASE "DLSL" | "DLSH"
                 SWITCH ART_PLAN
                     CASE "BASI" | "GBAS"
-                        debug
                         CLEAR RIDER_DATA[IDX]
                     CASE "SUPP" | "GSUP"
                     DEFAULT
@@ -373,7 +449,17 @@ IDX         NUM     7
 .Clear these from all rates
             CASE "OLE?" | "OLS?" | "OLC?" | "PE??" | "PF??"
                 CLEAR RIDER_DATA[IDX]
+            CASE "WAIV"
+                IF (CFG_IGNORE_WAIV)
+                    debug
+                    CALL UTIL_ERRORMSG USING "WAIV bill type on non-WAIV plan"
+                ENDIF
             DEFAULT
+                IF (CHOP RIDER_TYPE = "")
+                    CLEAR RIDER_DATA[IDX]
+                    CONTINUE
+                ENDIF
+
                 debug .what is this?
                 CONTINUE
         ENDSWITCH
@@ -385,7 +471,8 @@ IDX         NUM     7
 
 .#######################################################################
 REPLACE_RIDERS LROUTINE
-IDX         NUM     6
+IDX             NUM     6
+WHICH_RIDER     NUM     3
 ...
     UNPACK BASE_RATE INTO ART_LIST
 
@@ -410,11 +497,17 @@ IDX         NUM     6
                 ART_AMT19,ART_TYP19,ART_WHO19:
                 ART_AMT20,ART_TYP20,ART_WHO10
 
-    debug
     MOVE 0 TO WHICH_RIDER
+
     FOR IDX FROM 1 TO RIDER_MAX
         CONTINUE IF (CHOP RIDER_DATA[IDX] = "")
+
         ADD 1 TO WHICH_RIDER
+        IF (WHICH_RIDER > RIDER_MAX)
+            debug
+            CALL UTIL_ERRORMSG USING "Impossible number of riders"
+        ENDIF
+
         SWITCH WHICH_RIDER
             CASE 1
                 UNPACK RIDER_DATA[IDX] INTO ART_AMT1,ART_TYP1,ART_WHO1
@@ -466,17 +559,231 @@ IDX         NUM     6
 
 
 .#######################################################################
-ADD_RIDER_TO_ARRAY LROUTINE AMT@,TYPE@,WHO@
-AMT@        CHAR    @
-TYPE@       CHAR    @
-WHO@        CHAR    @
-...
-    FILL " " IN RIDER_DETAILS
-    PACK RIDER_AMT WITH AMT@,BLANKS
-    PACK RIDER_TYPE WITH TYPE@,BLANKS
-    PACK RIDER_WHO WITH WHO@,BLANKS
+UPDATE_RATE LROUTINE
 
-    CALL UTIL_SAFE_PACK_ARRAY_LIST USING RIDER_DETAILS,RIDER_DATA,RIDER_CNT,RIDER_MAX
+    UNPACK CLEANED_RATE INTO ART_LIST
+
+    PACK ART_EFF WITH NEW_EFF
+    FILL " " IN ART_ID1
+
+    PACK CLEANED_RATE WITH ART_LIST
+
+    IF (CHOP ART_TRM > "" & ART_EFF > ART_TRM)
+        debug
+        CALL UTIL_ERRORMSG USING "Trying to create a voided ART - how?"
+    ENDIF
+
+.Check if the cleaned rate matches a ART record in Impact -> error
+    CALL CHECK_IF_NEW_RATE_EXISTS
+    RETURN IF (CHOP CLEANED_RATE = "")
+
+.Create the new rider
+    UNPACK CLEANED_RATE INTO ART_LIST
+    IF (CHOP ART_ID1 = "")
+        debug .untested - new
+        CALL WRITE_TO_ART USING "CREATE",("Creating new rate for "+NEW_EFF)
+    ELSE
+        debug .untested
+        CALL WRITE_TO_ART USING "UPDATE",("Updated 2024 rate with new riders")
+    ENDIF
+
+.Update the base rider with a term
+    UNPACK BASE_RATE INTO ART_LIST
+    PACK ART_TRM WITH NEW_TRM,BLANKS
+
+    CALL WRITE_TO_ART USING "UPDATE",("Termed current rate for "+NEW_TRM)
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_IF_NEW_RATE_EXISTS LROUTINE
++ See if a rate exists that matches
+FOUND_MATCH     NUM     1
+RIDERS_MATCH    NUM     1
+MATCH_RIDERS    CHAR    500
+TEST_RIDERS     CHAR    500
+RIDER_LIST      VARLIST ART_TYP1,ART_TYP2,ART_TYP3,ART_TYP4,ART_TYP5:
+                        ART_TYP6,ART_TYP7,ART_TYP8,ART_TYP9,ART_TYP10:
+                        ART_TYP11,ART_TYP12,ART_TYP13,ART_TYP14,ART_TYP15:
+                        ART_TYP16,ART_TYP17,ART_TYP18,ART_TYP19,ART_TYP20
+...
+    UNPACK CLEANED_RATE INTO ART_LIST
+    PACK MATCH_RIDERS WITH RIDER_LIST
+
+    CLEAR ART_AIM
+
+    PACK ART_AIM1 WITH "01X",ART_NET,BLANKS
+    PACK ART_AIM2 WITH "02X",ART_PRD,BLANKS
+    PACK ART_AIM4 WITH "04X",ART_PLAN,BLANKS
+    PACK ART_AIM5 WITH "05X",ART_RT,BLANKS
+    PACK ART_AIM6 WITH "06X",ART_DEPC,BLANKS
+    PACK ART_AIM8 WITH "08X",ART_LAGE,BLANKS
+    PACK ART_AIM9 WITH "09X",ART_CLIR,BLANKS
+
+    CLEAR ART_LIST:
+          FOUND_MATCH:
+          RIDERS_MATCH
+    LOOP
+        IF (CHOP ART_ID1 = "")
+            CALL UTIL_RATE_AIMFIND
+        ELSE
+            CALL UTIL_RATE_AIMNEXT
+        ENDIF
+        WHILE EQUAL
+
+        CONTINUE IF (ART_EFF != NEW_EFF)
+
+        debug .untested
+
+        SET FOUND_MATCH
+
+        PACK TEST_RIDERS WITH RIDER_LIST
+        IF (TEST_RIDERS = MATCH_RIDERS)
+            CALL WRITE_LOG USING "LOG","Found new rate in Impact. Riders match (current art data)"
+            SET RIDERS_MATCH
+        ELSE
+            CALL WRITE_LOG USING "LOG","Found new rate in Impact. Riders do not match (current art data)"
+        ENDIF
+        BREAK
+    REPEAT
+
+    IF (RIDERS_MATCH)
+        debug .untested
+        CALL WRITE_LOG USING "SKIP","New rate already exists & riders match"
+        CLEAR CLEANED_RATE
+        RETURN
+    ENDIF
+
+    IF (FOUND_MATCH)
+        debug .untested
+        CALL WRITE_LOG USING "LOG","New rate already exists & riders do not match - will update"
+        PACK SCRATCH WITH ART_ID1
+        UNPACK CLEANED_RATE INTO ART_LIST
+        PACK ART_ID1 WITH SCRATCH
+        PACK CLEANED_RATE WITH ART_LIST
+        RETURN
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_TO_ART LROUTINE LOGTYPE@,LOGMSG@
+LOGTYPE@        CHAR    @
+LOGMSG@         CHAR    @
+...
+    PACK ART_CHGBY WITH PROG_ID,BLANKS
+    PACK ART_CHGDT WITH CURRDATE
+    IF (CHOP ART_ID1 = "")
+        debug .untested
+        PACK ART_NEWBY WITH ART_CHGBY
+        PACK ART_NEWDT WITH ART_CHGDT
+    ELSE
+        debug .untested
+    ENDIF
+
+    CALL FORMAT_RATE_AMOUNTS
+
+    CALL WRITE_LOG USING LOGTYPE@,LOGMSG@
+
+.TODO: add write io routine
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FORMAT_RATE_AMOUNTS LROUTINE
+    CALL FORMAT_AMT USING ART_AMT1
+    CALL FORMAT_AMT USING ART_AMT2
+    CALL FORMAT_AMT USING ART_AMT3
+    CALL FORMAT_AMT USING ART_AMT4
+    CALL FORMAT_AMT USING ART_AMT5
+    CALL FORMAT_AMT USING ART_AMT6
+    CALL FORMAT_AMT USING ART_AMT7
+    CALL FORMAT_AMT USING ART_AMT8
+    CALL FORMAT_AMT USING ART_AMT9
+    CALL FORMAT_AMT USING ART_AMT10
+    CALL FORMAT_AMT USING ART_AMT11
+    CALL FORMAT_AMT USING ART_AMT12
+    CALL FORMAT_AMT USING ART_AMT13
+    CALL FORMAT_AMT USING ART_AMT14
+    CALL FORMAT_AMT USING ART_AMT15
+    CALL FORMAT_AMT USING ART_AMT16
+    CALL FORMAT_AMT USING ART_AMT17
+    CALL FORMAT_AMT USING ART_AMT18
+    CALL FORMAT_AMT USING ART_AMT19
+    CALL FORMAT_AMT USING ART_AMT20
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FORMAT_AMT LROUTINE AMT@
+AMT@        CHAR    @
+FORM7.2     NUM     7.2
+...
+    CLEAR FORM7.2
+    MOVE (SQUEEZE AMT@) TO FORM7.2
+    MOVE FORM7.2 TO AMT@
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE LOGTYPE@,LOGMSG@
+LOGTYPE@        CHAR    @
+LOGMSG@         CHAR    @
+...
+    SWITCH LOGTYPE@
+        CASE "CREATE"
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+        CASE "UPDATE"
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+        CASE "SKIP"
+            CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+        CASE "LOG"
+            CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+    ENDSWITCH
+
+    PACK LOG_REC WITH   IN_ID,COMMA:
+                        LOGTYPE@,COMMA:
+                        LOGMSG@,COMMA:
+                        (CHOP ART_ID1),COMMA:
+                        (CHOP ART_EFF),COMMA:
+                        (CHOP ART_TRM),COMMA:
+                        (CHOP ART_NET),COMMA:
+                        (CHOP ART_PRD),COMMA:
+                        (CHOP ART_PLAN),COMMA:
+                        (CHOP ART_RT),COMMA:
+                        (CHOP ART_DEPC),COMMA:
+                        (SQUEEZE ART_LAGE),COMMA:
+                        (SQUEEZE ART_HAGE),COMMA:
+                        (SQUEEZE ART_AMT1),COMMA,(SQUEEZE ART_TYP1),COMMA,(SQUEEZE ART_WHO1),COMMA:
+                        (SQUEEZE ART_AMT2),COMMA,(SQUEEZE ART_TYP2),COMMA,(SQUEEZE ART_WHO2),COMMA:
+                        (SQUEEZE ART_AMT3),COMMA,(SQUEEZE ART_TYP3),COMMA,(SQUEEZE ART_WHO3),COMMA:
+                        (SQUEEZE ART_AMT4),COMMA,(SQUEEZE ART_TYP4),COMMA,(SQUEEZE ART_WHO4),COMMA:
+                        (SQUEEZE ART_AMT5),COMMA,(SQUEEZE ART_TYP5),COMMA,(SQUEEZE ART_WHO5),COMMA:
+                        (SQUEEZE ART_AMT6),COMMA,(SQUEEZE ART_TYP6),COMMA,(SQUEEZE ART_WHO6),COMMA:
+                        (SQUEEZE ART_AMT7),COMMA,(SQUEEZE ART_TYP7),COMMA,(SQUEEZE ART_WHO7),COMMA:
+                        (SQUEEZE ART_AMT8),COMMA,(SQUEEZE ART_TYP8),COMMA,(SQUEEZE ART_WHO8),COMMA:
+                        (SQUEEZE ART_AMT9),COMMA,(SQUEEZE ART_TYP9),COMMA,(SQUEEZE ART_WHO9),COMMA:
+                        (SQUEEZE ART_AMT10),COMMA,(SQUEEZE ART_TYP10),COMMA,(SQUEEZE ART_WHO10),COMMA:
+                        (SQUEEZE ART_AMT11),COMMA,(SQUEEZE ART_TYP11),COMMA,(SQUEEZE ART_WHO11),COMMA:
+                        (SQUEEZE ART_AMT12),COMMA,(SQUEEZE ART_TYP12),COMMA,(SQUEEZE ART_WHO12),COMMA:
+                        (SQUEEZE ART_AMT13),COMMA,(SQUEEZE ART_TYP13),COMMA,(SQUEEZE ART_WHO13),COMMA:
+                        (SQUEEZE ART_AMT14),COMMA,(SQUEEZE ART_TYP14),COMMA,(SQUEEZE ART_WHO14),COMMA:
+                        (SQUEEZE ART_AMT15),COMMA,(SQUEEZE ART_TYP15),COMMA,(SQUEEZE ART_WHO15),COMMA:
+                        (SQUEEZE ART_AMT16),COMMA,(SQUEEZE ART_TYP16),COMMA,(SQUEEZE ART_WHO16),COMMA:
+                        (SQUEEZE ART_AMT17),COMMA,(SQUEEZE ART_TYP17),COMMA,(SQUEEZE ART_WHO17),COMMA:
+                        (SQUEEZE ART_AMT18),COMMA,(SQUEEZE ART_TYP18),COMMA,(SQUEEZE ART_WHO18),COMMA:
+                        (SQUEEZE ART_AMT19),COMMA,(SQUEEZE ART_TYP19),COMMA,(SQUEEZE ART_WHO19),COMMA:
+                        (SQUEEZE ART_AMT20),COMMA,(SQUEEZE ART_TYP20),COMMA,(SQUEEZE ART_WHO20)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
 
     RETURN
     ENDROUTINE
@@ -487,6 +794,8 @@ CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     debug
     CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
 
     CALL EMAIL_NEOJ
 
@@ -508,7 +817,7 @@ BODY_BASE       CHAR    1000
 
     PACK BODY_BASE WITH "":
         "Attached is a report of rate modifications made to Life ":
-        "enrollments effective 1/1/24 to remove unbillable riders."
+        "enrollments effective ",NEW_TRM," to remove unbillable riders."
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
