@@ -248,18 +248,27 @@ CURRENT_CLI     CHAR    8
 
             PACK CLI_REC WITH CLI_LIST,BLANKS
         ENDIF
+.skip voids
+        IF (CHOP CLIP_TRM > "")
+            CONTINUE IF (CLIP_TRM < CLIP_EFF)
+        ENDIF
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
-
-        IF (CHOP CLIP_EFF < CLIP_TRM)
+.clip eff > end of year (void)
+.clip eff < end of year no term date
+.clip eff < end of year and clip trm is after end of year (new trm date)
+        IF (CHOP CLIP_EFF > NEW_CLIP_TRM)
             debug
             CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+.void clip
             CALL LOG_TERM USING "Voided CLIP"
-.TODO: void clip
+            CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
+            CALL TERM_CLIP USING CLIP_TRM
         ELSE
+.term clip
             CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
             CALL LOG_TERM USING "CLIP Termed"
-            CALL TERM_CLIP
+            CALL TERM_CLIP USING NEW_CLIP_TRM
         ENDIF
     REPEAT
 
@@ -271,10 +280,11 @@ CURRENT_CLI     CHAR    8
 
 
 .#######################################################################
-TERM_CLIP LROUTINE
+TERM_CLIP LROUTINE TRM@
 + Prepare for update
+TRM@        CHAR    @
 
-    PACK CLIP_TRM WITH NEW_CLIP_TRM
+    PACK CLIP_TRM WITH TRM@,BLANKS
     PACK CLIP_CHGBY WITH PROG_ID,BLANKS
     PACK CLIP_CHGDT WITH CURRDATE
 
@@ -320,8 +330,9 @@ CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
 
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",REPORT_FILE,""
     CALL SEND_EMAIL
-
     CALL UTIL_DELETE_FILE USING REPORT_FILE
 
     RETURN
@@ -384,6 +395,7 @@ BODY_BASE       CHAR    1000
     INC UTIL_SYSTEM.SR
     INC UTIL_DATA.SR
     INC UTIL_EMAIL.SR
+    INC UTIL_DATES.SR
     INC UTIL_MEMBERS.SR     .MEM* io routines
     INC UTIL_BILLING.SR     .BIL* io routines
     INC UTIL_CLIENTS.SR     .CLI* io routines
