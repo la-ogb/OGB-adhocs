@@ -1,6 +1,6 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   ???.ps
++   a2308151.ps
 +
 + DESCRIPTION:
 +   Clean up life rates effective 1/1/24 to remove unecessary riders
@@ -45,6 +45,8 @@ PROG_ID             INIT    "FXLFRT"
 CFG_IGNORE_WAIV     NUM     "1"
 CFG_IGNORE_FROZ     NUM     "1"
 
+CFG_ALLOW_UPDATE    NUM     "1"
+
 .# =================================================================== #
 .# Debugging Configuration
 .# =================================================================== #
@@ -53,6 +55,7 @@ ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
 TEST_SKIP_RF        NUM     "0"
 TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_UPDATE    NUM     "0"
                     LISTEND
 
 .# =================================================================== #
@@ -158,7 +161,7 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "???" TO C_PROG        ...Program name
+    MOVE "A2308151" TO C_PROG        ...Program name
     MOVE "CLEAN LIFE RATES" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
@@ -293,15 +296,7 @@ CLEAN_RATES LROUTINE
             CONTINUE
         ENDIF
 
-        debug .process this rate
-
         CALL CLEAN_RATE
-.For each CLIP, create a clean version for 1/1/24
-.   Check for a rate that matches the same net/prd/plan/dates/age range
-.   skip if found
-.   write update
-.   term the original record
-
     REPEAT
 
     MESSAGEERASE
@@ -580,15 +575,18 @@ UPDATE_RATE LROUTINE
 .Create the new rider
     UNPACK CLEANED_RATE INTO ART_LIST
     IF (CHOP ART_ID1 = "")
-        debug .untested - new
         CALL WRITE_TO_ART USING "CREATE",("Creating new rate for "+NEW_EFF)
     ELSE
-        debug .untested
         CALL WRITE_TO_ART USING "UPDATE",("Updated 2024 rate with new riders")
     ENDIF
 
 .Update the base rider with a term
     UNPACK BASE_RATE INTO ART_LIST
+    IF (ART_TRM = NEW_TRM)
+        CALL WRITE_TO_ART USING "SKIP",("Old rate already termed for "+NEW_TRM)
+        RETURN
+    ENDIF
+
     PACK ART_TRM WITH NEW_TRM,BLANKS
 
     CALL WRITE_TO_ART USING "UPDATE",("Termed current rate for "+NEW_TRM)
@@ -635,8 +633,6 @@ RIDER_LIST      VARLIST ART_TYP1,ART_TYP2,ART_TYP3,ART_TYP4,ART_TYP5:
 
         CONTINUE IF (ART_EFF != NEW_EFF)
 
-        debug .untested
-
         SET FOUND_MATCH
 
         PACK TEST_RIDERS WITH RIDER_LIST
@@ -650,14 +646,12 @@ RIDER_LIST      VARLIST ART_TYP1,ART_TYP2,ART_TYP3,ART_TYP4,ART_TYP5:
     REPEAT
 
     IF (RIDERS_MATCH)
-        debug .untested
         CALL WRITE_LOG USING "SKIP","New rate already exists & riders match"
         CLEAR CLEANED_RATE
         RETURN
     ENDIF
 
     IF (FOUND_MATCH)
-        debug .untested
         CALL WRITE_LOG USING "LOG","New rate already exists & riders do not match - will update"
         PACK SCRATCH WITH ART_ID1
         UNPACK CLEANED_RATE INTO ART_LIST
@@ -678,19 +672,32 @@ LOGMSG@         CHAR    @
     PACK ART_CHGBY WITH PROG_ID,BLANKS
     PACK ART_CHGDT WITH CURRDATE
     IF (CHOP ART_ID1 = "")
-        debug .untested
         PACK ART_NEWBY WITH ART_CHGBY
         PACK ART_NEWDT WITH ART_CHGDT
-    ELSE
-        debug .untested
     ENDIF
 
     CALL FORMAT_RATE_AMOUNTS
 
     CALL WRITE_LOG USING LOGTYPE@,LOGMSG@
 
-.TODO: add write io routine
+.No spouse rates - skip ARTS copy
+.No fees - ignore ARTF
 
+    RETURN IF NOT (CFG_ALLOW_UPDATE)
+    RETURN IF (TEST_SKIP_UPDATE)
+
+    debug .last stop before write
+
+    CALL FILE_WRITE USING   ART_FD:     ...File declaration list
+                            ART_FN:     ...File name list
+                            ART_FC:     ...(I)ndex or (A)imdex
+                            ART_FV:     ...File key varlists
+                            ART_FK:     ...File key sizes
+                            ART_LIST:   ...File record (field list)
+                            ART_REC:    ...File record (packed)
+                            ART_OLD:    ...File saved when read
+                            ART_QTY:    ...Number of files
+                            1           ...File number for this read
     RETURN
     ENDROUTINE
 
