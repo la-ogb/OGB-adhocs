@@ -43,6 +43,8 @@ EMAIL_TO_NOERROR    INIT    "$ITAPPS"
 EMAIL_TO_ERROR      INIT    "$ITAPPS"
 NEW_CLIP_TRM        INIT    "20231231"
 
+CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
+
 .# =================================================================== #
 .# Debugging Configuration
 .# =================================================================== #
@@ -248,26 +250,27 @@ CURRENT_CLI     CHAR    8
 
             PACK CLI_REC WITH CLI_LIST,BLANKS
         ENDIF
+
 .skip voids
         IF (CHOP CLIP_TRM > "")
             CONTINUE IF (CLIP_TRM < CLIP_EFF)
+            CONTINUE IF (CLIP_TRM <= NEW_CLIP_TRM)  .just in case
         ENDIF
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
-.clip eff > end of year (void)
-.clip eff < end of year no term date
-.clip eff < end of year and clip trm is after end of year (new trm date)
+
+.Future CLIP? Void
         IF (CHOP CLIP_EFF > NEW_CLIP_TRM)
             debug
             CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-.void clip
             CALL LOG_TERM USING "Voided CLIP"
             CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
+
             CALL TERM_CLIP USING CLIP_TRM
         ELSE
-.term clip
             CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
             CALL LOG_TERM USING "CLIP Termed"
+
             CALL TERM_CLIP USING NEW_CLIP_TRM
         ENDIF
     REPEAT
@@ -288,7 +291,20 @@ TRM@        CHAR    @
     PACK CLIP_CHGBY WITH PROG_ID,BLANKS
     PACK CLIP_CHGDT WITH CURRDATE
 
-.TODO: ADD UPDATE PROCESS
+    RETURN IF NOT (CFG_DO_CLIP_WRITE)
+
+    debug .untested
+
+    CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
+                            CLIP_FN:        ...File name list
+                            CLIP_FC:        ...(I)ndex or (A)imdex
+                            CLIP_FV:        ...File key varlists
+                            CLIP_FK:        ...File key sizes
+                            CLIP_LIST:      ...File record (field list)
+                            CLIP_REC:       ...File record (packed)
+                            CLIP_OLD:       ...File saved when read
+                            CLIP_QTY:       ...Number of files
+                            1               ...File number for this read
 
     RETURN
     ENDROUTINE
