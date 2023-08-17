@@ -42,8 +42,8 @@ NEW_EFF             INIT    "20240101"
 NEW_TRM             INIT    "20231231"
 PROG_ID             INIT    "FXLFRT"
 
-CFG_IGNORE_WAIV     NUM     "1"
-CFG_IGNORE_FROZ     NUM     "1"
+CFG_IGNORE_WAIV     NUM     "0"
+CFG_IGNORE_FROZ     NUM     "0"
 
 CFG_ALLOW_UPDATE    NUM     "1"
 
@@ -417,12 +417,14 @@ IDX         NUM     7
 .Basic Life Riders
             CASE "DLBL" | "DLBH"
                 SWITCH ART_PLAN
-                    CASE "BASI" | "GBAS"
-                    CASE "SUPP" | "GSUP"
+.   types we know should not have it
+                    CASE "SUPP"
                         CLEAR RIDER_DATA[IDX]
+.   types we know should have it
+                    CASE "BASI" | "GBAS" | "FROZ" | "GSUP" | "WAIV"
                     DEFAULT
                         debug .what is this?
-                        CONTINUE
+                        CALL UTIL_ERRORMSG USING "Unhandled situation 1"
                 ENDSWITCH
 
 .Supplemental Life Riders
@@ -430,25 +432,25 @@ IDX         NUM     7
                 SWITCH ART_PLAN
                     CASE "BASI" | "GBAS"
                         CLEAR RIDER_DATA[IDX]
-                    CASE "SUPP" | "GSUP"
+                    CASE "SUPP" | "GSUP" | "FROZ" | "WAIV"
                     DEFAULT
                         debug .what is this?
-                        CONTINUE
+                        CALL UTIL_ERRORMSG USING "Unhandled situation 2"
                 ENDSWITCH
 
-.Grandfathered life riders
-            CASE "DLG1" | "DLG2" | "DLG3" | "DLG4" | "DLG5"
-
-.TODO: SUPP only?
-
 .Clear these from all rates
-            CASE "OLE?" | "OLS?" | "OLC?" | "PE??" | "PF??"
+            CASE "OLE?" | "OLS?" | "OLC?" | "PE??" | "PF??" |:
+                 "DLG1" | "DLG2" | "DLG3" | "DLG4" | "DLG5"
                 CLEAR RIDER_DATA[IDX]
+
             CASE "WAIV"
-                IF (CFG_IGNORE_WAIV)
-                    debug
-                    CALL UTIL_ERRORMSG USING "WAIV bill type on non-WAIV plan"
-                ENDIF
+                SWITCH ART_PLAN
+                    CASE "WAIV"
+                    DEFAULT
+                        debug .what is this?
+                        CLEAR RIDER_DATA[IDX]
+                ENDSWITCH
+
             DEFAULT
                 IF (CHOP RIDER_TYPE = "")
                     CLEAR RIDER_DATA[IDX]
