@@ -83,7 +83,7 @@ REPORT_HEADER       VARLIST "CLI ID,":
                             "PRODUCT,":
                             "PLAN,":
                             "EFFECTIVE,":
-                            "CURRENT TERM,":
+                            "UPDATED TERM,":
                             "RATE"
 
 .# =================================================================== #
@@ -263,15 +263,15 @@ CURRENT_CLI     CHAR    8
         IF (CHOP CLIP_EFF > NEW_CLIP_TRM)
             debug
             CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-            CALL LOG_TERM USING "Voided CLIP"
             CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
 
             CALL TERM_CLIP USING CLIP_TRM
+            CALL LOG_TERM USING "Voided CLIP"
         ELSE
             CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
-            CALL LOG_TERM USING "CLIP Termed"
-
             CALL TERM_CLIP USING NEW_CLIP_TRM
+
+            CALL LOG_TERM USING "CLIP Termed"
         ENDIF
     REPEAT
 
@@ -285,7 +285,7 @@ CURRENT_CLI     CHAR    8
 .#######################################################################
 TERM_CLIP LROUTINE TRM@
 + Prepare for update
-TRM@        CHAR    @
+TRM@                CHAR    @
 
     PACK CLIP_TRM WITH TRM@,BLANKS
     PACK CLIP_CHGBY WITH PROG_ID,BLANKS
