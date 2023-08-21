@@ -90,7 +90,8 @@ REPORT_HEADER       VARLIST "MEME_ID,":
                             "MEME EFF,":
                             "MEME TRM,":
                             "NETWORK,":
-                            "PRODUCT"
+                            "PRODUCT,":
+                            "PLAN"
 
 .# =================================================================== #
 .# Program Variables
@@ -105,6 +106,10 @@ ORIG_TRM            CHAR    8
 ORIG_TLET           CHAR    1
 ORIG_TRUN           CHAR    8
 VOID_DATE           CHAR    8
+UPDATE_EFF          CHAR    8
+UPDATE_NET          CHAR    5
+UPDATE_PRD          CHAR    5
+UPDATE_PLAN         CHAR    5
 
 
 .# =================================================================== #
@@ -290,7 +295,8 @@ MSG@        CHAR    @
                             (CHOP MEME_EFF),PIPE:
                             (CHOP MEME_TRM),PIPE:
                             (CHOP MEME_NET),PIPE:
-                            (CHOP MEME_PRD)
+                            (CHOP MEME_PRD),PIPE:
+                            (CHOP MEME_PLAN)
 
     REPLACE ",;" IN REPORT_REC
     REPLACE "|," IN REPORT_REC
@@ -320,7 +326,6 @@ UPDATE_PLAN LROUTINE
 .For future plans, void and replace
     IF (MEME_EFF > NEW_TERM_DATE)
         debug
-        CALL LOG_UPDATES USING "VOID FUTURE & REPLACE"
 
         PACK ORIG_TRM WITH MEME_TRM
         PACK ORIG_EFF WITH MEME_EFF
@@ -329,11 +334,11 @@ UPDATE_PLAN LROUTINE
         PACK MEME_TLET WITH "V",BLANKS
 
         CALL WRITE_UPDATE
+        CALL LOG_UPDATES USING "VOID FUTURE & REPLACE"
         CALL CREATE_NEW USING ORIG_EFF
 
 .For active plans as of transistion date, split the plan
     ELSE
-        CALL LOG_UPDATES USING "SPLIT PLAN"
 
         PACK ORIG_TRM WITH MEME_TRM
 
@@ -341,7 +346,7 @@ UPDATE_PLAN LROUTINE
         FILL "~" IN MEME_TLET:
                     MEME_TRUN
         CALL WRITE_UPDATE
-
+        CALL LOG_UPDATES USING "OLD PLAN"
         CALL CREATE_NEW USING NEW_EFF_DATE
     ENDIF
 
@@ -353,7 +358,6 @@ UPDATE_PLAN LROUTINE
 CREATE_NEW LROUTINE EFF@
 +Create new Blue Cross record
 EFF@        CHAR    @
-...
     FILL " " IN MEME_ID2
 
     PACK MEME_EFF WITH EFF@,BLANKS
@@ -368,6 +372,8 @@ EFF@        CHAR    @
     PACK MEME_NET WITH NEW_NETWORK,BLANKS
     PACK MEME_PRD WITH NEW_PRODUCT,BLANKS
     PACK MEME_PLAN WITH NEW_PLAN,BLANKS
+
+    CALL LOG_UPDATES USING "NEW PLAN"
 
     CALL WRITE_UPDATE
 
