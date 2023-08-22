@@ -87,6 +87,7 @@ REPORT_HEADER       VARLIST "MEME_ID,":
                             "LAST NAME,":
                             "FIRST NAME,":
                             "RELATION,":
+                            "INDIVIDUALLY BILLED,":
                             "MEME EFF,":
                             "MEME TRM,":
                             "NETWORK,":
@@ -292,6 +293,7 @@ MSG@        CHAR    @
                             (CHOP MEM_LNAME),PIPE:
                             (CHOP MEM_FNAME),PIPE:
                             (CHOP MEM_REL),PIPE:
+                            (CHOP MEME_MODE),PIPE:
                             (CHOP MEME_EFF),PIPE:
                             (CHOP MEME_TRM),PIPE:
                             (CHOP MEME_NET),PIPE:
