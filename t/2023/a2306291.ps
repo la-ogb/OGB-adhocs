@@ -90,10 +90,12 @@ REPORT_HEADER       VARLIST "MEMBER ID,":
                             "RELATION,":
                             "LEV1,":
                             "LEV2,":
+                            "INDIVIDUALLY BILLED,":
                             "MEME EFF,":
                             "MEME TRM,":
-                            "OLD PLAN,":
-                            "NEW PLAN,":
+                            "NETWORK,":
+                            "PRODUCT,":
+                            "PLAN,":
                             "ZIP TYPE,":
                             "ZIP CODE,":
                             "STATE"
@@ -421,10 +423,12 @@ NEWPLAN@    CHAR    @
                             (CHOP MEM_REL),PIPE:
                             (CHOP MEME_LEV1),PIPE:
                             (CHOP MEME_LEV2),PIPE:
+                            (CHOP MEME_MODE),PIPE:
                             (CHOP MEME_EFF),PIPE:
                             (CHOP MEME_TRM),PIPE:
+                            (CHOP MEME_NET),PIPE:
+                            (CHOP MEME_PRD),PIPE:
                             (CHOP MEME_PLAN),PIPE:
-                            (CHOP NEWPLAN@),PIPE:
                             (CHOP ZIP_TYPE),PIPE:
                             (CHOP ZIPCODE),PIPE:
                             (CHOP ZIPSTATE)
@@ -490,7 +494,7 @@ PLAN@       CHAR    @
                     MEME_TRUN
         CALL WRITE_UPDATE
 
-        CALL LOG_UPDATES USING "CURRENT PLAN DEFAULTED",PLAN@
+        CALL LOG_UPDATES USING "OLD PLAN",PLAN@
 
         CALL CREATE_NEW USING NEW_EFF_DATE,PLAN@
     ENDIF
@@ -518,6 +522,8 @@ PLAN@       CHAR    @
     PACK MEME_NET WITH NEW_NETWORK,BLANKS
     PACK MEME_PRD WITH NEW_PRODUCT,BLANKS
     PACK MEME_PLAN WITH PLAN@,BLANKS
+
+    CALL LOG_UPDATES USING "NEW PLAN",PLAN@
 
     CALL WRITE_UPDATE
 
