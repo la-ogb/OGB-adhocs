@@ -257,9 +257,6 @@ CLEAN_RATES LROUTINE
     CALL UTIL_XMESSAGE USING "Processing rates...",MSG_HEIGHT
 
     debug
-.Questions:
-.   TODO: What riders are allowed on WAIV life?
-.   TODO: What riders are allowed on FROZ life?
     LOOP
         CLEAR BASE_RATE,CLEANED_RATE
 
@@ -333,6 +330,10 @@ CLEAN_RATE LROUTINE
 
     FILL " " IN CLEANED_RATE
     PACK BASE_RATE WITH ART_LIST
+
+    IF (CHOP ART_PLAN = "GBAS")
+        debug .TODO: term this rate only?
+    ENDIF
 
     CALL REMOVE_BAD_RIDERS
 
