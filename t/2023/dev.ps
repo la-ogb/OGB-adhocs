@@ -1,0 +1,381 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2309061.ps
++
++ DESCRIPTION:
++   Convert the USER file into PAS load records
++
++ CREATED BY:
++   apjwh - 2023-09-06
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC USER.RL
+    INC PAS.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+IN_FD               FILE    FIXED=X_USR_SIZE,TEXT
+IN_FILE             INIT    "/w/tmp/a2309061.in"
+
+UPD_FD              FILE    VAR=1000,TEXT
+UPD_FILE            INIT    "/w/tmp/feed_pas.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+IN_LIST             LIST
+IN_ID               CHAR    8
+                    LISTEND
+
+UPD_LIST            LIST
+UPD_REC             CHAR    1000
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A23009061" TO C_PROG        ...Program name
+    MOVE "USER->FEED_PAS" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL CLEAN_RATES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "USER Recs Read":
+                                  "FEED_PAS Recs":
+                                  "Skipped - Exists":
+                                  "Errors":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_RATES LROUTINE
+
+    CALL FIND_USERS
+
+    CALL OPEN_OGBFILE USING IN_FD,IN_FILE
+    CALL PREP_OGBFILE USING UPD_FD,UPD_FILE
+
+    CALL UTIL_XMESSAGE USING "Processing users...",MSG_HEIGHT
+
+    debug
+    LOOP
+        CALL READ_OGBFILE_SEQ USING IN_FD,IN_FILE,USR_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CLEAR PAS_AIM,PAS_LIST
+
+.Some validations
+        IF (CHOP USR_DEPT)
+            CALL LOG_ERROR USING "No department"
+            CONTINUE
+        ENDIF
+        IF (CHOP USR_MENU)
+            CALL LOG_ERROR USING "No menu"
+            CONTINUE
+        ENDIF
+        IF (CHOP USR_SECURE)
+            CALL LOG_ERROR USING "No security"
+            CONTINUE
+        ENDIF
+
+.Rec id & USR type
+        PACK PAS_AIM2 WITH "02X",USR_ID1,BLANKS
+        PACK PAS_AIM1 WITH "01X","USR",BLANKS
+
+        CALL UTIL_PAS_AIMFIND
+        IF EQUAL
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+            CONTINUE
+        ENDIF
+
+        CALL BUILD_FEED_PAS
+    REPEAT
+
+    MESSAGEERASE
+
+    CALL CLOSE_OGBFILE USING IN_FD,IN_FILE
+    CALL CLOSE_OGBFILE USING UPD_FD,UPD_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_USERS LROUTINE
+
+    PACK SCRATCH WITH "user.dbf ",IN_FILE," -t"
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Searching for users"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_ERROR LROUTINE MSG@
+MSG@        CHAR    @
+...
+    debug .TODO:
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+BUILD_FEED_PAS LROUTINE
+EMAIL       CHAR    60
+NAME        CHAR    50
+...
+    IF (X_CNT2 = 0)
+        PACK UPD_REC WITH "PAS_RECTYP",COMMA:   .1 User Role Type
+                          "PAS_USERID",COMMA:   .2 User ID
+                          "PAS_LNAME",COMMA:    .3 Last Name
+                          "PAS_FNAME",COMMA:    .4 First Name
+                          "PAS_EMAIL",COMMA:    .5 Email
+                          "PAS_RECID1",COMMA:   .6 Record ID
+                          "PAS_DESC",COMMA:     .7 Description
+                          "PAS_REFQ",COMMA:     .8 Reference Qual
+                          "PAS_REFID",COMMA:    .9 Reference ID
+                          "PAS_ROLE",COMMA:     .10 Web Filter
+                          "PAS_DEPT",COMMA:     .11 User Department
+                          "PAS_SECURE",COMMA:   .12 Security
+                          "PAS_MENU",COMMA:     .13 User Menu
+                          "PAS_WORD":           .14 Default Password
+                          ""    .TODO: more fields needed?
+
+
+        CALL WRITE_OGBREC_SEQ USING UPD_FD,UPD_FILE,UPD_LIST
+    ENDIF
+
+    PACK SCRATCH WITH (SQUEEZE USR_FIRST),".",(SQUEEZE USR_LAST),"@la.gov"
+    REPLACE ", " IN SCRATCH
+    SQUEEZE SCRATCH INTO EMAIL
+    REPLACE MAKELOWER IN EMAIL
+
+    PACK NAME WITH (SQUEEZE USR_FIRST)," ",(SQUEEZE USR_LAST)
+    REPLACE ",;" IN NAME
+    REPLACE MAKEUPPER IN NAME
+
+    PACK UPD_REC WITH "USR",COMMA:              .1 User Role Type
+                      (CHOP EMAIL),COMMA:       .2 User ID
+                      (CHOP USR_LAST),COMMA:    .3 Last Name
+                      (CHOP USR_FIRST),COMMA:   .4 First Name
+                      (CHOP EMAIL),COMMA:       .5 Email
+                      (CHOP USR_ID1),COMMA:     .6 Record ID
+                      (CHOP NAME),COMMA:        .7 Description
+                      "UID",COMMA:              .8 Reference Qual
+                      (CHOP USR_ID1),COMMA:     .9 Reference ID
+                      "SUPR",COMMA:             .10 Web Filter (TODO: SUPR correct??)
+                      USR_DEPT,COMMA:           .11 User Department
+                      USR_SECURE,COMMA:         .12 Security
+                      USR_MENU,COMMA:           .13 User Menu
+                      (CHOP USR_USER):          .14 Default password
+                      "" .TODO: more fields?
+
+    CALL WRITE_OGBREC_SEQ USING UPD_FD,UPD_FILE,UPD_LIST
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING UPD_FILE,UPD_FILE
+
+    CALL EMAIL_NEOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_NEOJ LROUTINE
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "UTIL: USER File -> FEED_PAS Load File"
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Attached is an update file for the PAS file using FEED_PAS. ":
+        "Emails are assumed to be {first}.{last}@la.gov - review these manually."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                UPD_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+    INC UTIL_USER.SR
+    INC UTIL_PAS.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
