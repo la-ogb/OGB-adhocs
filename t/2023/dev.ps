@@ -59,6 +59,9 @@ IN_FILE             INIT    "/w/tmp/a2309061.in"
 UPD_FD              FILE    VAR=1000,TEXT
 UPD_FILE            INIT    "/w/tmp/feed_pas.csv"
 
+ERR_FD              FILE    VAR=1000,TEXT
+ERR_FILE            INIT    "/w/tmp/a2309061_error.csv"
+
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
@@ -71,6 +74,10 @@ UPD_LIST            LIST
 UPD_REC             CHAR    1000
                     LISTEND
 
+ERR_LIST            LIST
+ERR_REC             CHAR    1000
+                    LISTEND
+
 .# =================================================================== #
 .# Program Variables
 .# =================================================================== #
@@ -78,6 +85,8 @@ UPD_REC             CHAR    1000
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
+
+ERROR_FOUND         NUM     "0"
 
 .# =================================================================== #
 .# Begin Program
@@ -188,6 +197,7 @@ CLEAN_RATES LROUTINE
 
     CALL OPEN_OGBFILE USING IN_FD,IN_FILE
     CALL PREP_OGBFILE USING UPD_FD,UPD_FILE
+    CALL PREP_OGBFILE USING ERR_FD,ERR_FILE
 
     CALL UTIL_XMESSAGE USING "Processing users...",MSG_HEIGHT
 
@@ -232,6 +242,7 @@ CLEAN_RATES LROUTINE
 
     CALL CLOSE_OGBFILE USING IN_FD,IN_FILE
     CALL CLOSE_OGBFILE USING UPD_FD,UPD_FILE
+    CALL CLOSE_OGBFILE USING ERR_FD,ERR_FILE
 
     RETURN
     ENDROUTINE
@@ -253,6 +264,23 @@ MSG@        CHAR    @
 ...
     debug .TODO:
     CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    IF NOT (ERROR_FOUND)
+        SET ERROR_FOUND
+        PACK ERR_REC WITH "Error,USER Id,Username,First,Last,Menu,Dept,Role"
+        CALL WRITE_OGBREC_SEQ USING ERR_FD,ERR_FILE,ERR_LIST
+    ENDIF
+
+    PACK ERR_REC WITH MSG@,COMMA:
+                      USR_ID1,COMMA:
+                      (SQUEEZE USR_USER),COMMA:
+                      (CHOP USR_FIRST),COMMA:
+                      (CHOP USR_LAST),COMMA:
+                      (CHOP USR_MENU),COMMA:
+                      (CHOP USR_DEPT),COMMA:
+                      (CHOP USR_SECURE)
+
+    CALL WRITE_OGBREC_SEQ USING ERR_FD,ERR_FILE,ERR_LIST
 
     RETURN
     ENDROUTINE
@@ -335,8 +363,14 @@ CLEAN_UP LROUTINE
     CLOCK CALENDAR INTO END_DATETIME
 
     CALL UTIL_TRIM_TRAILING_SPACE USING UPD_FILE,UPD_FILE
+    CALL UTIL_TRIM_TRAILING_SPACE USING ERR_FILE,ERR_FILE
 
     CALL EMAIL_NEOJ
+    IF (ERROR_FOUND)
+        CALL EMAIL_ERROR
+    ENDIF
+
+    CALL UTIL_DELETE_FILE USING ERR_FILE
 
     RETURN
     ENDROUTINE
@@ -368,6 +402,35 @@ BODY_BASE       CHAR    1000
                                 START_DATETIME:
                                 END_DATETIME:
                                 UPD_FILE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_ERROR LROUTINE
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "UTIL: USER File -> FEED_PAS Error File "
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Attached is an error file for the PAS file using FEED_PAS."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                ERR_FILE
     RETURN
     ENDROUTINE
 
