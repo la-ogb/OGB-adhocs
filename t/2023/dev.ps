@@ -87,6 +87,7 @@ START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 
 ERROR_FOUND         NUM     "0"
+IS_DAEMON           NUM     1
 
 .# =================================================================== #
 .# Begin Program
@@ -208,14 +209,21 @@ CLEAN_RATES LROUTINE
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
 
-        CLEAR PAS_AIM,PAS_LIST
+        CLEAR PAS_AIM,PAS_LIST,IS_DAEMON
+
+        MOVE (CHOP USR_USER) INTO SCRATCH
+        SWITCH SCRATCH
+            CASE "BATCH" | "COMLNK"
+                SET IS_DAEMON
+            DEFAULT
+        ENDSWITCH
 
 .Some validations
         IF (CHOP USR_DEPT = "")
             CALL LOG_ERROR USING "No department"
             CONTINUE
         ENDIF
-        IF (CHOP USR_MENU = "")
+        IF (CHOP USR_MENU = "" & NOT IS_DAEMON)
             CALL LOG_ERROR USING "No menu"
             CONTINUE
         ENDIF
@@ -291,6 +299,7 @@ BUILD_FEED_PAS LROUTINE
 EMAIL       CHAR    60
 NAME        CHAR    50
 FIRSTNAME   CHAR    30
+USERNAME    CHAR    100
 ...
     IF (X_CNT2 = 0)
         PACK UPD_REC WITH "PAS_RECTYP",COMMA:   .1 User Role Type
@@ -313,27 +322,50 @@ FIRSTNAME   CHAR    30
         CALL WRITE_OGBREC_SEQ USING UPD_FD,UPD_FILE,UPD_LIST
     ENDIF
 
+    IF (IS_DAEMON)
+        PACK USERNAME WITH (CHOP USR_USER)
+        PACK NAME WITH USERNAME
+        CLEAR EMAIL
+
+.TODO: daemon-specific settings?
+.   Default menu
+.   different web filter
+
+
+
+    ELSE
+
 .Remove middle initial from first name
-    MOVE (CHOP USR_FIRST) TO FIRSTNAME
-    SCAN " " IN FIRSTNAME
-    IF EQUAL
-        debug
-        BUMP FIRSTNAME BY -1
-        LENSET FIRSTNAME
-        RESET FIRSTNAME
+        MOVE (CHOP USR_FIRST) TO FIRSTNAME
+        SCAN " " IN FIRSTNAME
+        IF EQUAL
+            debug
+            BUMP FIRSTNAME BY -1
+            LENSET FIRSTNAME
+            RESET FIRSTNAME
+        ENDIF
+
+        PACK SCRATCH WITH (SQUEEZE FIRSTNAME),".",(SQUEEZE USR_LAST),"@la.gov"
+        REPLACE ", " IN SCRATCH
+        SQUEEZE SCRATCH INTO EMAIL
+        REPLACE MAKELOWER IN EMAIL
+
+        PACK NAME WITH (SQUEEZE USR_FIRST)," ",(SQUEEZE USR_LAST)
+        REPLACE ",;" IN NAME
+        REPLACE MAKEUPPER IN NAME
+
+.Some overrides
+        MOVE (SQUEEZE USR_USER) TO SCRATCH
+        SWITCH SCRATCH
+            CASE "CRPSS"
+                PACK EMAIL WITH "PSS.ConsoleOperators@la.gov"
+        ENDSWITCH
+
+        PACK USERNAME WITH EMAIL
     ENDIF
 
-    PACK SCRATCH WITH (SQUEEZE FIRSTNAME),".",(SQUEEZE USR_LAST),"@la.gov"
-    REPLACE ", " IN SCRATCH
-    SQUEEZE SCRATCH INTO EMAIL
-    REPLACE MAKELOWER IN EMAIL
-
-    PACK NAME WITH (SQUEEZE USR_FIRST)," ",(SQUEEZE USR_LAST)
-    REPLACE ",;" IN NAME
-    REPLACE MAKEUPPER IN NAME
-
     PACK UPD_REC WITH "USR",COMMA:              .1 User Role Type
-                      (CHOP EMAIL),COMMA:       .2 User ID
+                      (CHOP USERNAME),COMMA:     .2 User ID
                       (CHOP USR_LAST),COMMA:    .3 Last Name
                       (CHOP USR_FIRST),COMMA:   .4 First Name
                       (CHOP EMAIL),COMMA:       .5 Email
