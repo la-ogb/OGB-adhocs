@@ -174,7 +174,7 @@ INITIALIZE LROUTINE
                                   "FEED_PAS Recs":
                                   "Skipped - Exists":
                                   "Errors":
-                                  "":
+                                  "Skipped - Disabled":
                                   ""
 
     CALL SET_RUN_CONFIG
@@ -210,6 +210,12 @@ CLEAN_RATES LROUTINE
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
 
         CLEAR PAS_AIM,PAS_LIST,IS_DAEMON
+
+        IF (USR_PREF10 = "Y")
+            debug
+            CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
+            CONTINUE
+        ENDIF
 
         MOVE (CHOP USR_USER) INTO SCRATCH
         SWITCH SCRATCH
@@ -270,7 +276,7 @@ FIND_USERS LROUTINE
 LOG_ERROR LROUTINE MSG@
 MSG@        CHAR    @
 ...
-    debug .TODO:
+    debug
     CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
 
     IF NOT (ERROR_FOUND)
