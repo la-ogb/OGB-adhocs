@@ -78,6 +78,8 @@ WORK_ID             CHAR    8
 REPORT_HEADER       VARLIST "MEM_ID,":
                             "FIRST NAME,":
                             "LAST NAME,":
+                            "NON-PAYMENT BEFORE UPDATE,":
+                            "UPDATE DESCRIPTION,":
                             "UPDATE STATUS"
 
 .# =================================================================== #
@@ -259,6 +261,7 @@ UPDATE_STATUS@  CHAR    @
     PACK REPORT_REC WITH (CHOP MEM_ID1),COMMA:
                         (CHOP MEM_FNAME),COMMA:
                         (CHOP MEM_LNAME),COMMA:
+                        (CHOP MEM_INFO),COMMA:
                         (CHOP MSG@),COMMA:
                         (CHOP UPDATE_STATUS@)
 
