@@ -39,6 +39,7 @@ REFRESH_RATE        EQU     10
 .# =================================================================== #
 
 EMAIL_TO            INIT    "$ITAPPS"
+MAKE_AS_SWE         NUM     "0" .Set to 1 to use SWE email for user names
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -351,9 +352,15 @@ USERNAME    CHAR    100
             RESET FIRSTNAME
         ENDIF
 
-        PACK SCRATCH WITH (SQUEEZE FIRSTNAME),".",(SQUEEZE USR_LAST),"@la.gov"
-        REPLACE ", " IN SCRATCH
-        SQUEEZE SCRATCH INTO EMAIL
+.SWE
+        IF (MAKE_AS_SWE)
+            PACK SCRATCH WITH (SQUEEZE FIRSTNAME),".",(SQUEEZE USR_LAST),"@la.gov"
+            REPLACE ", " IN SCRATCH
+            SQUEEZE SCRATCH INTO EMAIL
+.SEGBPNT
+        ELSE
+            PACK EMAIL WITH (SQUEEZE USR_USER),"@segbpnt.ogb"
+        ENDIF
         REPLACE MAKELOWER IN EMAIL
 
         PACK NAME WITH (TRIM (CHOP USR_FIRST))," ",(TRIM (CHOP USR_LAST))
@@ -421,14 +428,21 @@ RECIPIENTS      CHAR    200
 SUBJECT         CHAR    100
 BODY            CHAR    1000
 BODY_BASE       CHAR    1000
+USER_DESC       CHAR    1000
 ...
     PACK SCRATCH WITH "UTIL: USER File -> FEED_PAS Load File"
 
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
+    IF (MAKE_AS_SWE)
+        PACK USER_DESC WITH "{first}.{last}@la.gov"
+    ELSE
+        PACK USER_DESC WITH "{username}@segbpnt.ogb"
+    ENDIF
+
     PACK BODY_BASE WITH "":
         "Attached is an update file for the PAS file using FEED_PAS. ":
-        "Emails are assumed to be {first}.{last}@la.gov - review these manually."
+        "Emails are assumed to be ",USER_DESC," - review these manually."
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
