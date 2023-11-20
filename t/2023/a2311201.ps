@@ -1,0 +1,452 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2311201.ps
++
++ DESCRIPTION:
++   Remove term dates from Vantage health plans termed by the Vantage
++   TRR with TRR code 014
++
++ CREATED BY:
++   aphas - 2023-09-05
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+    INC CLI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_ID             INIT    "FXVTRR"
+EMAIL_TO_NOERROR    INIT    "$ITAPPS"
+EMAIL_TO_ERROR      INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+REPORT_FD           FILE    VAR=200,TEXT
+REPORT_FILE         INIT    "/w/a2311201.csv"
+
+INPUT_FD            FILE    FIXED=X_INM_SIZE,TEXT
+INPUT_FILE          INIT    "/w/tmp/vantrr_in.txt"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2311201.upd"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+REPORT_LIST         LIST
+REPORT_REC          CHAR    200
+                    LISTEND
+
+REPORT_HEADER       VARLIST "Action,Message,ID,Network,Product,Plan,Eff,Term"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+FOUND_DATA          NUM     1
+FOUND_ERROR         NUM     1
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a230905" TO C_PROG        ...Program name
+    MOVE "FIX VANTRR TERMS" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIX_RECORDS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Input Recs":
+                                  "Updates Logged":
+                                  "Errors":
+                                  "Skipped":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_RECORDS LROUTINE
+    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
+    CALL OPEN_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING INPUT_FD,INPUT_FILE,INM_LIST
+        BREAK IF (RESULT !=1)
+
+        CALL UTIL_MEM_FIND_REAL USING INM_ID1
+        IF NOT EQUAL
+            debug
+            CALL WRITE_ERROR USING "MEM record not found"
+            CONTINUE
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        debug
+.See if the Vantage plan is still termed for 12/31/23 - if not, move on
+        CALL UTIL_MEME_FIND USING INME_ID1,INME_ID2
+        IF NOT EQUAL
+            debug
+            CALL WRITE_ERROR USING "MEME record not found"
+            CONTINUE .how?
+        ENDIF
+
+        IF (CHOP MEME_TRM = "")
+            debug
+            CALL WRITE_SKIP USING "Term date already removed"
+            CONTINUE .how
+
+        ELSE IF (CHOP MEME_TRM != "20231231")
+            debug
+            CALL WRITE_ERROR USING "Term date is not 12/31/23"
+            CONTINUE .how
+        ENDIF
+
+        IF (MEME_US01 != "014")
+            debug
+            CALL WRITE_ERROR USING "TRR reason code is not 014"
+            CONTINUE
+        ENDIF
+
+        IF (MEME_CHGBY != "VANTRR")
+            debug
+            CALL WRITE_ERROR USING "Record modified by another entity"
+            CONTINUE
+        ENDIF
+
+.See if the member has a health plan eff 1/1/24 - if so, move on
+        CALL CHECK_NEXT_COV
+        IF EQUAL
+            debug
+            CALL WRITE_SKIP USING "Member has 2024 coverage - no change needed"
+            CONTINUE
+        ENDIF
+
+.Change update record to remove term/tlet/trun/MEME_US01 if = 014
+        CALL WRITE_UPDATE
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL CLOSE_OGBFILE USING INPUT_FD,INPUT_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_NEXT_COV LROUTINE
+FOUND_NEW_COV   NUM     1
+MEME_CACHE      CHAR    X_MEME_SIZE
+...
+    PACK MEME_CACHE WITH MEME_LIST
+
+    CLEAR MEME_LIST,FOUND_NEW_COV
+    LOOP
+        CALL UTIL_READ_THRU_MEME USING MEM_ID1
+        WHILE EQUAL
+
+        CONTINUE IF (MEME_EFF != "20240101")
+        CONTINUE IF (CHOP MEME_TRM > "" & MEME_TRM < MEME_EFF)
+
+        CALL IS_HEALTH_CLIP_MEME
+        CONTINUE IF OVER
+
+        debug
+        SET FOUND_NEW_COV
+        BREAK
+    REPEAT
+
+    UNPACK MEME_CACHE INTO MEME_LIST
+
+    IF (FOUND_NEW_COV)
+        SETFLAG EQUAL
+    ELSE
+        SETFLAG NOT EQUAL
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_UPDATE LROUTINE
+    SET FOUND_DATA
+
+    CALL WRITE_LOG USING "UPDATE","Term removed"
+
+    FILL "~" IN INME_TRM:
+                INME_TLET:
+                INME_TRUN:
+                INME_US01
+
+    CALL UTIL_FORMAT_INME USING PROG_ID
+
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_SKIP LROUTINE MSG@
+MSG@        CHAR    @
+...
+    SET FOUND_ERROR
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+    CALL WRITE_LOG USING "SKIPPED",MSG@
+    CLEARADR MSG@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_ERROR LROUTINE MSG@
+MSG@        CHAR    @
+...
+    SET FOUND_ERROR
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    CALL WRITE_LOG USING "ERROR",MSG@
+    CLEARADR MSG@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE ACTION@,MSG@
+ACTION@     CHAR    @
+MSG@        CHAR    @
+...
+    PACK REPORT_REC WITH ACTION@,COMMA:
+                         MSG@,COMMA:
+                         MEM_ID1,COMMA:
+                         MEME_NET,COMMA:
+                         MEME_PRD,COMMA:
+                         MEME_PLAN,COMMA:
+                         MEME_EFF,COMMA:
+                         MEME_TRM
+
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    CLEARADR MSG@,ACTION@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+
+    CALL UTIL_PENDING_BACKUP USING "/w/",REPORT_FILE,""
+    CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp",INPUT_FILE,""
+
+    CALL SEND_EMAIL
+
+    CALL UTIL_DELETE_FILE USING REPORT_FILE
+    IF NOT (ENABLE_TEST)
+        CALL UTIL_DELETE_FILE USING INPUT_FILE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "Reactivate Vantage Coverage Termed By TRR"
+    IF (FOUND_DATA)
+        PACK SCRATCH WITH SCRATCH," *MEMBERS UPDATED*"
+    ELSE
+        PACK SCRATCH WITH SCRATCH," *NO MEMBERS TO UPDATE*"
+    ENDIF
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Finding members termed by the Vantage TRR due to the end of the ":
+        "contract."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    IF (FOUND_DATA | FOUND_ERROR)
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME:
+                                    REPORT_FILE
+    ELSE
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_NOERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+    INC UTIL_FORMAT_UPDATES.SR
+    INC FILTER_NON_HEALTH.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
