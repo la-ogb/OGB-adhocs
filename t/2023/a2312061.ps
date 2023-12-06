@@ -39,6 +39,7 @@ REFRESH_RATE        EQU     1000
 .# =================================================================== #
 
 PROG_ID             INIT    "FXLB24"
+CFG_EMAILTO         INIT    "$ITAPPS"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -290,6 +291,8 @@ BODY_BASE       CHAR    1000
 ...
     PACK SCRATCH WITH "Void Bad 2023 LBLA Records (from AE misrun)"
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK RECIPIENTS WITH CFG_EMAILTO
 
     PACK BODY_BASE WITH "":
         "Voiding bad 2023 LBLA records created by mistakenly running ":
