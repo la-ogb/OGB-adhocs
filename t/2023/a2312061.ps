@@ -1,0 +1,330 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2312061.ps
++
++ DESCRIPTION:
++   Void improperly created LBLA records
++
++ CREATED BY:
++   apjwh - 2023-12-06
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC CLI.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_ID             INIT    "FXLB24"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+.TODO: add test settings
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+IN_FD               FILE    FIXED=X_INM_SIZE,TEXT
+IN_FILE             INIT    "/w/a2312061.in"
+
+LOG_FD              FILE    VAR=1000,TEXT
+LOG_FILE            INIT    "/w/tmp/a2312061_log.csv"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2312061.upd"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_REC             CHAR    1000
+LOG_LIST            VARLIST LOG_REC
+LOG_HEADER          VARLIST "member id, rec id2"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2312061" TO C_PROG        ...Program name
+    MOVE "FIX BAD LBLA 2024" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL VOID_UPDATES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "In":
+                                  "Out":
+                                  "":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
+
+.TODO: delete if not needed
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VOID_UPDATES LROUTINE
+    CALL OPEN_OGBFILE USING IN_FD,IN_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    LOOP
+        CALL READ_OGBFILE USING IN_FD,IN_FILE,INM_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL VOID_REC
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING IN_FD,IN_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VOID_REC LROUTINE
+
+    IF (CHOP INME_ID2 = "")
+        debug
+        CALL GET_ID2
+    ENDIF
+
+    IF (CHOP INME_ID2 = "")
+        PACK LOG_REC WITH INME_ID1,COMMA,"Unable to find"
+        RETURN
+    ENDIF
+
+    CALL UTIL_CALC_DAY_BEFORE USING INME_EFF,INME_TRM
+    PACK INME_TLET WITH "V"
+
+    CALL UTIL_FORMAT_INME USING PROG_ID
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    PACK LOG_REC WITH INME_ID1,COMMA,INME_ID2
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_ID2 LROUTINE
+    debug
+    CLEAR MEME_LIST
+    LOOP
+        CALL UTIL_READ_THRU_MEME USING INM_ID1
+        WHILE EQUAL
+
+        CONTINUE IF (MEME_NET != INME_NET)
+        CONTINUE IF (MEME_PRD != INME_PRD)
+        CONTINUE IF (MEME_PLAN != INME_PLAN)
+        CONTINUE IF (MEME_EFF != INME_EFF)
+        CONTINUE IF (MEME_TRM != INME_TRM)
+        CONTINUE IF (MEME_NEWBY != INME_NEWBY)
+        CONTINUE IF (MEME_NEWDT != "20231206")
+
+        PACK INME_ID2 WITH MEME_ID2
+        BREAK
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+
+    CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
+    CALL UTIL_PENDING_BACKUP USING "/w/",IN_FILE,""
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp",LOG_FILE,""
+
+    CALL SEND_EMAIL
+
+    CALL UTIL_DELETE_FILE USING IN_FILE
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "Void Bad 2023 LBLA Records (from AE misrun)"
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Voiding bad 2023 LBLA records created by mistakenly running ":
+        "the 2024 update process in 2023 override mode."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_POP.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_DATES.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+    INC UTIL_MEMMEM.SR
+    INC UTIL_FORMAT_UPDATES.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
