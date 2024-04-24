@@ -38,7 +38,10 @@ REFRESH_RATE        EQU     10
 .# =================================================================== #
 
 EMAIL_TO            INIT    "$ITAPPS"
+NEW_SPEC_RULE       INIT    "OGBENB"
+NEW_DEFAULT_VOLUME  NUM     "     15000"
 NEW_EFF             INIT    "20250101"
+RATE_TO_COPY_EFF    INIT    "20240101"
 NEW_PLAN            INIT    "ENBA"
 PROG_ID             INIT    "NEWLEB"
 
@@ -90,6 +93,8 @@ LOG_HEADER          VARLIST "BASE_RATE_ID,":
                             "COVLVL,":
                             "AGE_FROM,":
                             "AGE_TO,":
+                            "SPECIAL_RATE_RULE,":
+                            "DEFAULT_VOLUME,":
                             "RD1-AMT,RD1-TYPE,RD1-WHO,":
                             "RD2-AMT,RD2-TYPE,RD2-WHO,":
                             "RD3-AMT,RD3-TYPE,RD3-WHO,":
@@ -118,6 +123,8 @@ LOG_HEADER          VARLIST "BASE_RATE_ID,":
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
+
+RATE_TO_COPY_EOY    CHAR    8
 
 .# =================================================================== #
 .# Begin Program
@@ -222,6 +229,9 @@ SET_RUN_CONFIG LROUTINE
         ENDIF
     ENDIF
 
+    UNPACK RATE_TO_COPY_EFF INTO DATE_CCYY
+    PACK RATE_TO_COPY_EOY WITH DATE_CCYY,"1231"
+
     RETURN
     ENDROUTINE
 
@@ -250,9 +260,13 @@ CREATE_RATES LROUTINE
             CONTINUE
         ENDIF
 
-        CONTINUE IF (CHOP ART_TRM > "" & ART_TRM <= NEW_EFF)
-        CONTINUE IF (CHOP ART_PLAN != "BASI")
-        CONTINUE IF (CHOP ART_EFF != NEW_EFF)
+        CONTINUE IF (CHOP ART_TRM > "" & ART_TRM <= ART_EFF) .voids
+        CONTINUE IF (CHOP ART_PLAN != "BASI") .non-basic
+        CONTINUE IF (CHOP ART_EFF != RATE_TO_COPY_EFF) .not eff at the start of 2024
+        IF (CHOP ART_TRM > "" & ART_TRM < RATE_TO_COPY_EOY) .terms prior to end of year
+            debug .shouldn't happen
+            CONTINUE
+        ENDIF
 
         CALL CREATE_RATE
     REPEAT
@@ -274,9 +288,9 @@ FIND_ACTIVE_ART LROUTINE
     CALL UTIL_XMESSAGE USING "Searching for active rates...",MSG_HEIGHT
 
     PACK SCRATCH WITH "art.dbf ",IN_FILE," 1-8 -t ":
-        " -p9-13eq#"LIFE #" -p23-26eq#"BASI#" -p38-45eq",NEW_EFF," -p46-53eq#"        #" ":
+        " -p9-13eq#"LIFE #" -p23-26eq#"BASI#" -p38-45eq",RATE_TO_COPY_EFF," -p46-53eq#"        #" ":
         " or ":
-        " -p9-13eq#"LIFE #" -p23-26eq#"BASI#" -p38-45eq",NEW_EFF," -p46-53ge",NEW_EFF
+        " -p9-13eq#"LIFE #" -p23-26eq#"BASI#" -p38-45eq",RATE_TO_COPY_EFF," -p46-53ge",RATE_TO_COPY_EFF
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Searching for active rates"
 
@@ -288,16 +302,16 @@ FIND_ACTIVE_ART LROUTINE
 
 .#######################################################################
 CREATE_RATE LROUTINE
-HOLD_ART        CHAR    X_ART_SIZE
+HOLD_ART            CHAR    X_ART_SIZE
+VOLUME_NUM_FIELD    NUM     10
 ...
     PACK ART_PLAN WITH NEW_PLAN,BLANKS
     PACK ART_EFF WITH NEW_EFF
-    FILL " " IN ART_ID1
+    FILL " " IN ART_ID1:
+                ART_TRM
 
-    IF (CHOP ART_TRM > "" & ART_EFF > ART_TRM)
-        debug
-        CALL UTIL_ERRORMSG USING "Trying to create a voided ART - how?"
-    ENDIF
+    PACK ART_RULE WITH NEW_SPEC_RULE,BLANKS
+    MOVE NEW_DEFAULT_VOLUME TO ART_DEFVOL
 
     PACK HOLD_ART WITH ART_LIST
 
@@ -445,6 +459,8 @@ LOGMSG@         CHAR    @
                         (CHOP ART_DEPC),COMMA:
                         (SQUEEZE ART_LAGE),COMMA:
                         (SQUEEZE ART_HAGE),COMMA:
+                        (SQUEEZE ART_RULE),COMMA:
+                        (SQUEEZE ART_DEFVOL),COMMA:
                         (SQUEEZE ART_AMT1),COMMA,(SQUEEZE ART_TYP1),COMMA,(SQUEEZE ART_WHO1),COMMA:
                         (SQUEEZE ART_AMT2),COMMA,(SQUEEZE ART_TYP2),COMMA,(SQUEEZE ART_WHO2),COMMA:
                         (SQUEEZE ART_AMT3),COMMA,(SQUEEZE ART_TYP3),COMMA,(SQUEEZE ART_WHO3),COMMA:

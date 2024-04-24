@@ -45,7 +45,7 @@ EMAIL_TO_ERROR      INIT    "$ITAPPS"
 NEW_CLIP_EFF        INIT    "20250101"
 NEW_PLAN            INIT    "ENBA"
 
-CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
+CFG_DO_CLIP_WRITE   NUM     "0" 0.skip, 1.write
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -81,6 +81,8 @@ REPORT_REC          CHAR    200
 REPORT_HEADER       VARLIST "LOG TYPE,":
                             "LOG MESSAGE,":
                             "CLI ID,":
+                            "CLI LEV1,":
+                            "CLI LEV2,":
                             "CLIP ID2,":
                             "NETWORK,":
                             "PRODUCT,":
@@ -367,6 +369,8 @@ MSG@        CHAR    @
     PACK REPORT_REC WITH    (CHOP TYPE@),COMMA:
                             (CHOP MSG@),COMMA:
                             (CHOP CLIP_ID1),COMMA:
+                            (CHOP CLI_LEV1),COMMA:
+                            (CHOP CLI_LEV2),COMMA:
                             (CHOP CLIP_ID2),COMMA:
                             (CHOP CLIP_NET),COMMA:
                             (CHOP CLIP_PRD),COMMA:
