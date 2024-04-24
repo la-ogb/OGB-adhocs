@@ -1,6 +1,6 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   a2308161.ps
++   a2404241.ps
 +
 + DESCRIPTION:
 +   Create new ENBA CLIPs based on BASI Life clips
@@ -42,7 +42,7 @@ PROG_ID             INIT    "NEWLEB"
 EMAIL_TO_NOERROR    INIT    "$ITAPPS"
 EMAIL_TO_ERROR      INIT    "$ITAPPS"
 
-NEW_CLIP_EFF        INIT    "20240101"
+NEW_CLIP_EFF        INIT    "20250101"
 NEW_PLAN            INIT    "ENBA"
 
 CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
@@ -61,10 +61,10 @@ TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
 .# =================================================================== #
 
 WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
-WORK_FILE           INIT    "/w/tmp/a2308161.id.wrk"
+WORK_FILE           INIT    "/w/tmp/a2404241.id.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
-REPORT_FILE         INIT    "/w/tmp/a2308161.csv"
+REPORT_FILE         INIT    "/w/tmp/a2404241.csv"
 
 .# =================================================================== #
 .# File lists
@@ -118,14 +118,12 @@ RUN_NOW ROUTINE
     RETCOUNT ORIG_RETURN
 
 .Set applicable traps
-    TRAPSAVE TRAP_DATA
-    TRAPCLR ALL
-    TRAP QUIT NORESET IF F9
+    CALL UTIL_SET_NORMAL_TRAPS
 
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "a2308161" TO C_PROG        ...Program name
+    MOVE "a2404241" TO C_PROG        ...Program name
     MOVE "NEW ENBA CLIP" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
@@ -143,8 +141,6 @@ RUN_NOW ROUTINE
     CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
                                  ENABLE_TEST:  ...test toggle
                                  TEST_CONFIG  ...test settings list
-
-
 
 .Set up run mode or build SCH record
     CALL SCHED_PICK
@@ -168,7 +164,6 @@ MAIN_PROCESS LROUTINE
     CALL INITIALIZE
     CALL CLIP_REFORMAT
     CALL BUILD_NEW_CLIPS
-
     CALL CLEAN_UP
 
     RETURN
@@ -195,6 +190,7 @@ INITIALIZE LROUTINE
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 CLIP_REFORMAT LROUTINE
@@ -240,7 +236,6 @@ BUILD_NEW_CLIPS LROUTINE
     CALL PREP_OGBFILE USING REPORT_FD, REPORT_FILE
     CALL WRITE_OGBREC_SEQ USING REPORT_FD, REPORT_FILE, REPORT_HEADER
 
-    debug
     LOOP
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIP_LIST
         WHILE (RESULT = 1)
@@ -346,8 +341,6 @@ CREATE_CLIP LROUTINE
         CALL WRITE_LOG USING "SAMPLE CREATE","New ENBA CLIP would be created"
         RETURN
     ENDIF
-
-    debug
 
     CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
                             CLIP_FN:        ...File name list

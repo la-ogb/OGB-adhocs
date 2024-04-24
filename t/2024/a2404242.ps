@@ -1,6 +1,6 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   a2308162.ps
++   a2404242.ps
 +
 + DESCRIPTION:
 +   Create new ENBA Life rates from BASI rates
@@ -38,7 +38,7 @@ REFRESH_RATE        EQU     10
 .# =================================================================== #
 
 EMAIL_TO            INIT    "$ITAPPS"
-NEW_EFF             INIT    "20240101"
+NEW_EFF             INIT    "20250101"
 NEW_PLAN            INIT    "ENBA"
 PROG_ID             INIT    "NEWLEB"
 
@@ -60,10 +60,10 @@ TEST_SKIP_UPDATE    NUM     "0"
 .# =================================================================== #
 
 IN_FD               FILE    FIXED=8,TEXT
-IN_FILE             INIT    "/w/tmp/a2308162.in"
+IN_FILE             INIT    "/w/tmp/a2404242.in"
 
 LOG_FD              FILE    VAR=1000,TEXT
-LOG_FILE            INIT    "/w/tmp/a2308162.csv"
+LOG_FILE            INIT    "/w/tmp/a2404242.csv"
 
 .# =================================================================== #
 .# File lists
@@ -138,14 +138,12 @@ RUN_NOW ROUTINE
     RETCOUNT ORIG_RETURN
 
 .Set applicable traps
-    TRAPSAVE TRAP_DATA
-    TRAPCLR ALL
-    TRAP QUIT NORESET IF F9
+    CALL UTIL_SET_NORMAL_TRAPS
 
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "a2308162" TO C_PROG        ...Program name
+    MOVE "a2404242" TO C_PROG        ...Program name
     MOVE "CREATE ENBA ART" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
@@ -240,7 +238,6 @@ CREATE_RATES LROUTINE
 
     CALL UTIL_XMESSAGE USING "Processing rates...",MSG_HEIGHT
 
-    debug
     LOOP
         CALL READ_OGBFILE_SEQ USING IN_FD,IN_FILE,IN_LIST
         WHILE (RESULT = 1)
