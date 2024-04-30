@@ -17,4 +17,5 @@ These processes are named:
 - a2212211.ps - change the EGWP eff date for some CVS people (from file) to 2/1/23 - removing it for Jan
 - a2308151.ps - Clean up rate records of LIFE by removing unnecessary riders for 1/1/24
 - a2311201.ps - Remove term dates from Vantage health plans termed by the Vantage TRR with TRR code 014
-- a2404301.ps - Adhoc to restore bad edits from HSAACC from 4/29 back to prior state in history
+- a2404301.ps - Adhoc to restore bad MEME edits from HSAACC from 4/29 back to prior state in history
+- a2404302.ps - Adhoc to restore bad MEMB edits from HSAACC from 4/29 back to prior state in history
