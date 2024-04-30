@@ -19,3 +19,4 @@ These processes are named:
 - a2311201.ps - Remove term dates from Vantage health plans termed by the Vantage TRR with TRR code 014
 - a2404301.ps - Adhoc to restore bad MEME edits from HSAACC from 4/29 back to prior state in history
 - a2404302.ps - Adhoc to restore bad MEMB edits from HSAACC from 4/29 back to prior state in history
+- a2405011.ps - term all DHH CLIPs for 6/30/24
