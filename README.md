@@ -20,3 +20,4 @@ These processes are named:
 - a2404301.ps - Adhoc to restore bad MEME edits from HSAACC from 4/29 back to prior state in history
 - a2404302.ps - Adhoc to restore bad MEMB edits from HSAACC from 4/29 back to prior state in history
 - a2405011.ps - term all DHH CLIPs for 6/30/24
+- a2405012.ps - term all DHH MEMEs for 6/30/24
