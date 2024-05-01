@@ -1,0 +1,405 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2405013.ps
++
++ DESCRIPTION:
++   Term DHH rates due to end of contract
++
++ CREATED BY:
++   apjwh - 2024-05-01
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC ART.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "$ITAPPS"
+CONTRACT_END        INIT    "20240630"
+PROG_ID             INIT    "TRMDHH"
+
+CFG_ALLOW_UPDATE    NUM     "1"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_UPDATE    NUM     "0"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+LOG_FD              FILE    VAR=1000,TEXT
+LOG_FILE            INIT    "/w/tmp/a2405013.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+IN_LIST             LIST
+IN_ID               CHAR    8
+                    LISTEND
+
+LOG_LIST            LIST
+LOG_REC             CHAR    1000
+                    LISTEND
+
+LOG_HEADER          VARLIST "LOG_TYPE,":
+                            "LOG_MESSAGE,":
+                            "RATE_ID,":
+                            "EFF,":
+                            "TRM,":
+                            "NET,":
+                            "PRD,":
+                            "PLAN,":
+                            "RATE,":
+                            "COVLVL"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "A2405013" TO C_PROG
+    MOVE "TERM DHH RATES" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL TERM_RATES
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Rates Matched":
+                                  "Updates":
+                                  "Skipped":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+TERM_RATES LROUTINE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    CALL UTIL_XMESSAGE USING "Processing rates...",MSG_HEIGHT
+
+    debug
+    CLEAR ART_LIST
+    PACK ART_AIM1 WITH "01XDHH",BLANKS
+    LOOP
+        IF (CHOP ART_ID1 = "")
+            CALL UTIL_RATE_AIMFIND
+        ELSE
+            CALL UTIL_RATE_AIMNEXT
+        ENDIF
+        WHILE EQUAL
+
+.filters
+        CONTINUE IF (CHOP ART_NET != "DHH")
+        IF (CHOP ART_TRM > "")
+            CONTINUE IF (ART_TRM < CONTRACT_END)
+            CONTINUE IF (ART_TRM < ART_EFF)
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        IF (CHOP ART_TRM = CONTRACT_END)
+            debug
+            CALL WRITE_LOG USING "SKIP",("Rate already termed for "+CONTRACT_END)
+            CONTINUE
+        ENDIF
+
+        CALL TERM_RATE
+    REPEAT
+
+    MESSAGEERASE
+
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+TERM_RATE LROUTINE
+
+    PACK ART_TRM WITH CONTRACT_END
+    CALL WRITE_TO_ART USING "UPDATE",("Termed current rate for "+CONTRACT_END)
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_TO_ART LROUTINE LOGTYPE@,LOGMSG@
+LOGTYPE@        CHAR    @
+LOGMSG@         CHAR    @
+...
+    PACK ART_CHGBY WITH PROG_ID,BLANKS
+    PACK ART_CHGDT WITH CURRDATE
+
+    CALL FORMAT_RATE_AMOUNTS
+
+    CALL WRITE_LOG USING LOGTYPE@,LOGMSG@
+
+    RETURN IF NOT (CFG_ALLOW_UPDATE)
+    RETURN IF (TEST_SKIP_UPDATE)
+
+    debug .last stop before write
+
+    CALL FILE_WRITE USING   ART_FD:     ...File declaration list
+                            ART_FN:     ...File name list
+                            ART_FC:     ...(I)ndex or (A)imdex
+                            ART_FV:     ...File key varlists
+                            ART_FK:     ...File key sizes
+                            ART_LIST:   ...File record (field list)
+                            ART_REC:    ...File record (packed)
+                            ART_OLD:    ...File saved when read
+                            ART_QTY:    ...Number of files
+                            1           ...File number for this read
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FORMAT_RATE_AMOUNTS LROUTINE
+    CALL FORMAT_AMT USING ART_AMT1
+    CALL FORMAT_AMT USING ART_AMT2
+    CALL FORMAT_AMT USING ART_AMT3
+    CALL FORMAT_AMT USING ART_AMT4
+    CALL FORMAT_AMT USING ART_AMT5
+    CALL FORMAT_AMT USING ART_AMT6
+    CALL FORMAT_AMT USING ART_AMT7
+    CALL FORMAT_AMT USING ART_AMT8
+    CALL FORMAT_AMT USING ART_AMT9
+    CALL FORMAT_AMT USING ART_AMT10
+    CALL FORMAT_AMT USING ART_AMT11
+    CALL FORMAT_AMT USING ART_AMT12
+    CALL FORMAT_AMT USING ART_AMT13
+    CALL FORMAT_AMT USING ART_AMT14
+    CALL FORMAT_AMT USING ART_AMT15
+    CALL FORMAT_AMT USING ART_AMT16
+    CALL FORMAT_AMT USING ART_AMT17
+    CALL FORMAT_AMT USING ART_AMT18
+    CALL FORMAT_AMT USING ART_AMT19
+    CALL FORMAT_AMT USING ART_AMT20
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FORMAT_AMT LROUTINE AMT@
+AMT@        CHAR    @
+FORM7.2     NUM     7.2
+...
+    CLEAR FORM7.2
+    MOVE (SQUEEZE AMT@) TO FORM7.2
+    MOVE FORM7.2 TO AMT@
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE LOGTYPE@,LOGMSG@
+LOGTYPE@        CHAR    @
+LOGMSG@         CHAR    @
+...
+    SWITCH LOGTYPE@
+        CASE "UPDATE"
+            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+        CASE "SKIP"
+            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    ENDSWITCH
+
+    PACK LOG_REC WITH   LOGTYPE@,COMMA:
+                        LOGMSG@,COMMA:
+                        (CHOP ART_ID1),COMMA:
+                        (CHOP ART_EFF),COMMA:
+                        (CHOP ART_TRM),COMMA:
+                        (CHOP ART_NET),COMMA:
+                        (CHOP ART_PRD),COMMA:
+                        (CHOP ART_PLAN),COMMA:
+                        (CHOP ART_RT),COMMA:
+                        (CHOP ART_DEPC)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+
+    CALL EMAIL_NEOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_NEOJ LROUTINE
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "LDH/DHH Rates Termed Due To Contract End"
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Attached is a report of rates termed for ",CONTRACT_END,"."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+    INC UTIL_ART.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
