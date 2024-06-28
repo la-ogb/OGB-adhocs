@@ -1,0 +1,354 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2406281.ps
++
++ DESCRIPTION:
++   Delete all COBRA bills from TASC (for all time or vrom inv date A
++   to inv date B (inclusive))
++
++ CREATED BY:
++   apjwh - 2024-06-28
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+PARAM_FROM          CHAR    6
+PARAM_THRU          CHAR    6
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+CFG_ALLOW_DELETE    NUM     "0"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST WITH NAMES
+TEST_KEEP_WORK      NUM     "1"
+TEST_SKIP_RF        NUM     "1"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=8,TEXT
+WORK_FILE           CHAR    100,INITIAL "/w/tmp/a2406281_bil_ids.txt"
+
+LOG_FD              FILE    VAR=100,TEXT
+LOG_FILE            CHAR    100,INITIAL "/w/tmp/a2406281.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+WORK_LIST           LIST
+WORK_BILID          CHAR    8
+                    LISTEND
+
+LOG_HEADER          VARLIST "ACTION,DETAIL,ID"
+
+LOG_LIST            LIST
+LOG_REC             CHAR    100
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    CALL UTIL_SET_METADATA USING "A2406281:":   Program name
+                                 "DEL TASC BIL":   Program description
+                                 "MENU"     Chain next
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_TASC_BILLS
+    CALL DELETE_TASC_BILLS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "BIL Processed":
+                                  "BIL Deleted":
+                                  "COL Deleted":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
+
+    IF (CHOP PARAM_FROM > "")
+        CALL UTIL_IS_VALID_DATE USING (PARAM_FROM+"01")
+        IF NOT EQUAL
+            debug
+            CALL UTIL_ERRORMSG USING ("PARAM_FROM ("+PARAM_FROM+") is not a valid month")
+        ENDIF
+    ELSE
+        PACK PARAM_FROM WITH "202401"
+    ENDIF
+
+    IF (PARAM_FROM < "202401")
+        debug
+        CALL UTIL_ERRORMSG USING ("PARAM_FROM should be on/after Jan 2024 - is "+PARAM_FROM)
+    ENDIF
+
+    IF (CHOP PARAM_THRU > "")
+        CALL UTIL_IS_VALID_DATE USING (PARAM_THRU+"01")
+        IF NOT EQUAL
+            debug
+            CALL UTIL_ERRORMSG USING ("PARAM_THRU ("+PARAM_THRU+") is not a valid month")
+        ENDIF
+    ENDIF
+
+    IF (CFG_ALLOW_DELETE)
+        CLEAR TEST_KEEP_WORK
+        CLEAR TEST_SKIP_RF
+    ENDIF
+
+    IF (TEST_SKIP_RF)
+        CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+        IF NOT EQUAL
+            debug
+            CLEAR TEST_SKIP_RF
+        ENDIF
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_TASC_BILLS LROUTINE
+
+    IF (TEST_SKIP_RF)
+        debug
+        RETURN
+    ENDIF
+
+    CALL UTIL_XMESSAGE USING "Looking for BILs to process",MSG_HEIGHT
+
+    PACK SCRATCH WITH BIL_FNS," ",WORK_FILE," -t -j ":
+        " -p17-21eq#""5000 "#" ":
+        " -p217-224ge#"",PARAM_FROM,"01#" "
+
+    IF (CHOP PARAM_THRU > "")
+        PACK SCRATCH WITH SCRATCH:
+            " -p217-224le#"",PARAM_THRU,"01#""
+    ENDIF
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"BIL LOOKUP"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_TASC_BILLS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Deleting billing & collections...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,WORK_LIST
+        WHILE (RESULT = 1)
+
+        CALL VALIDATE_COLD
+        IF NOT EQUAL
+            debug
+            CALL WRITE_LOG USING "Found collections pointing to another BIL - delete manually"
+            CONTINUE
+        ENDIF
+
+        CALL DELETE_COL
+.work through the bill file
+.delete collections first
+.   validate that all COLD records point to the current BIL -> error file
+.   delete COLD
+.   delete COL
+        CALL DELETE_BIL
+.delete BIL
+.   delete BILS
+.   delete BILD
+.   delete BIL
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VALIDATE_COLD LROUTINE
++ Run through all BILS and check each linked COLD - the COLD recs for
++ that COLD must all point back to our base BIL
+
+.Get all COL ids from all BILS. If more than one, error
+.Read through COLD for COL - if more than one BIL, error
+    debug .todo
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_COL LROUTINE
++ Get COL -> delete each COLD then delete the COL
+    debug .todo
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_BIL LROUTINE
++ For the BIL_ID1, delete all BILS, BILE, BILD, then the BIL
+    debug .todo
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+
+    CALL EMAIL_LOG
+
+    IF NOT (TEST_KEEP_WORK)
+        CALL UTIL_DELETE_FILE USING WORK_FILE
+    ENDIF
+
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_POP.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
