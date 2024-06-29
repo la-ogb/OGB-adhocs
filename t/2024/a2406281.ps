@@ -46,6 +46,7 @@ REFRESH_RATE        EQU     1000
 .# =================================================================== #
 
 CFG_ALLOW_DELETE    NUM     "0"
+EMAIL_TO            INIT    "$ITAPPS"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -55,6 +56,7 @@ ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST WITH NAMES
 TEST_KEEP_WORK      NUM     "1"
 TEST_SKIP_RF        NUM     "1"
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
                     LISTEND
 
 .# =================================================================== #
@@ -75,7 +77,7 @@ WORK_LIST           LIST
 WORK_BILID          CHAR    8
                     LISTEND
 
-LOG_HEADER          VARLIST "ACTION,DETAIL,ID"
+LOG_HEADER          VARLIST "LOG_TYPE,BIL_ID,DETAIL,MORE_DETAIL"
 
 LOG_LIST            LIST
 LOG_REC             CHAR    100
@@ -355,7 +357,6 @@ FIND_MAIN_COLLECTION LROUTINE
 + Get all COL ids from all BILS. If more than one, error
     CLEAR BILS_LIST,MAIN_COL_ID
 
-    debug untested
     LOOP
         IF (CHOP BILS_ID1 = "")
             CALL UTIL_BILS_FIND USING WORK_BILID
@@ -643,8 +644,7 @@ LOG_ACTION LROUTINE ACTION@,CONTEXT@
 ACTION@     CHAR    @
 CONTEXT@    CHAR    @
 ...
-    debug TODO:
-
+    CALL WRITE_LOG USING "DELETE",ACTION@,CONTEXT@
     RETURN
     ENDROUTINE
 
@@ -658,7 +658,24 @@ CONTEXT@    CHAR    @
 
     CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
 
-    debug TODO:
+    CALL WRITE_LOG USING "ERROR",ERROR@,CONTEXT@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE LOGTYPE@,MSG@,DETAILS@
+LOGTYPE@        CHAR    @
+MSG@            CHAR    @
+DETAILS@        CHAR    @
+
+    PACK LOG_REC WITH LOGTYPE@,COMMA:
+                      WORK_BILID,COMMA:
+                      MSG@,COMMA:
+                      DETAILS@
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
 
     RETURN
     ENDROUTINE
@@ -685,8 +702,34 @@ CLEAN_UP LROUTINE
 
 .#######################################################################
 EMAIL_LOG LROUTINE
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "TASC BIL/COL Delete Tool"
 
-    debug .TODO:
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Attached is a report of BIL* and COL* data deleted. Checks ":
+        "invoice dates on/after ",PARAM_FROM,"01"
+    IF (CHOP PARAM_THRU > "")
+        PACK SCRATCH WITH SCRATCH," through ",PARAM_THRU,"01."
+    ELSE
+        PACK SCRATCH WITH SCRATCH,"."
+    ENDIF
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                LOG_FILE
 
     RETURN
     ENDROUTINE
