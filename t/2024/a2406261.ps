@@ -38,11 +38,10 @@ REFRESH_RATE        EQU     1000
 .# Configuration
 .# =================================================================== #
 
-PROG_ID             INIT    "HRFEE"
+PROG_ID             INIT    "FXCLPY"
 EMAIL_TO_NOERROR    INIT    "$ITAPPS"
 EMAIL_TO_ERROR      INIT    "$ITAPPS"
-BILLRT              INIT    "Y"
-CFG_DO_CLIP_WRITE   NUM     "0" 0.skip, 1.write
+CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -59,7 +58,7 @@ TEST_CLIPS          NUM     1
 .# =================================================================== #
 
 WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
-WORK_FILE           INIT    "/w/tmp/a2406261.id.wrk"
+WORK_FILE           INIT    "/w/tmp/a2406261.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
 REPORT_FILE         INIT    "/w/tmp/a2406261.csv"
@@ -269,7 +268,9 @@ CURRENT_CLI     CHAR    8
 UPDATE_CLIP LROUTINE
 + Prepare for update
 ...
-    PACK CLIP_BILPL WITH BILLRT,BLANKS
+    PACK CLIP_BILPL WITH "Y",BLANKS
+    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
+    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
     debug
     RETURN IF NOT (TEST_CLIPS)
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
