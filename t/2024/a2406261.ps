@@ -41,7 +41,7 @@ REFRESH_RATE        EQU     1000
 PROG_ID             INIT    "FXCLPY"
 EMAIL_TO_NOERROR    INIT    "$ITAPPS"
 EMAIL_TO_ERROR      INIT    "$ITAPPS"
-CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
+
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -50,7 +50,7 @@ CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
 TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
-TEST_CLIPS          NUM     1
+TEST_SKIP_WRITE     NUM     "1" 1.skip, 0.write
                     LISTEND
 
 .# =================================================================== #
@@ -175,7 +175,6 @@ INITIALIZE LROUTINE
 
     CALL UTIL_INIT_COUNTERS USING "CLIPs Processed":
                                   "CLIPs Logged":
-                                  "CLIPs Tested":
                                   "CLIPs Updated"
 
 
@@ -244,14 +243,6 @@ CURRENT_CLI     CHAR    8
             CONTINUE
         ENDIF
 
-        CLEAR TEST_CLIPS
-
-        IF (CHOP CLIP_ID1 = "00000003")
-            IF (CHOP CLIP_ID2 = "0483")
-                SET TEST_CLIPS
-            ENDIF
-        ENDIF
-
         CALL LOG_CLIP USING "BILPL has been updated"
         CALL UPDATE_CLIP
 
@@ -271,11 +262,8 @@ UPDATE_CLIP LROUTINE
     PACK CLIP_BILPL WITH "Y",BLANKS
     PACK CLIP_CHGBY WITH PROG_ID,BLANKS
     PACK CLIP_CHGDT WITH CURRDATE,BLANKS
-    debug
-    RETURN IF NOT (TEST_CLIPS)
-    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
 
-    RETURN IF NOT (CFG_DO_CLIP_WRITE)
+    RETURN IF (TEST_SKIP_WRITE)
 
     CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
                             CLIP_FN:        ...File name list
@@ -288,7 +276,7 @@ UPDATE_CLIP LROUTINE
                             CLIP_QTY:       ...Number of files
                             1               ...File number for this read
 
-    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
 
     RETURN
     ENDROUTINE
