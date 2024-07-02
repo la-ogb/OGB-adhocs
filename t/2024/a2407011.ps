@@ -53,14 +53,12 @@ CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
 TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_WRITE     NUM     "1"
                     LISTEND
 
 .# =================================================================== #
 .# File Declarations
 .# =================================================================== #
-
-WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
-WORK_FILE           INIT    "/w/tmp/a2405011.id.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
 REPORT_FILE         INIT    "/w/tmp/a2405011.csv"
@@ -123,7 +121,7 @@ RUN_NOW ROUTINE
     CLOCK TIMESTAMP INTO CURRDATE
 
     MOVE "a2405011" TO C_PROG        ...Program name
-    MOVE "TERM DHH CLIPS" TO C_OPER  ...Program description
+    MOVE "CLEAN DHH CLIPS" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -161,8 +159,7 @@ MAIN_PROCESS LROUTINE
 + Core logic
     debug
     CALL INITIALIZE
-    CALL CLIP_REFORMAT
-    CALL PROCESS_WORK_FILE
+    CALL FIX_LDH_CLIPS
     CALL CLEAN_UP
 
     RETURN
@@ -192,64 +189,56 @@ INITIALIZE LROUTINE
 
 
 .#######################################################################
-CLIP_REFORMAT LROUTINE
-+ Sort CLIP records for DHH CLIPs
+FIX_LDH_CLIPS LROUTINE
 
-    CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
+    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
 
-.Find current vantage clips with term
-    PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," 1-8 -t":
-                        " -p0013-0017eq#"DHH  #"":
-                        " -p0041-0048gt#"",CONTRACT_END,"#""
-
-    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
-
-.Find open-ended vantage clips
-    PACK DATE_CCYYMMDD WITH BLANKS
-    PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," 1-8 -t -a":
-                        " -p0013-0017eq#"DHH  #"":
-                        " -p0041-0048eq#"",DATE_CCYYMMDD,"#""
-
-    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
-
-.Sort file
-    PACK SCRATCH WITH WORK_FILE, " ", WORK_FILE," 1-8 -t -u"
-    CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
-
-    MESSAGEERASE
+    CALL FIX_CLI_CLIPS_BY_LEV1 USING "5005"
+    CALL FIX_CLI_CLIPS_BY_LEV1 USING "5006"
+    CALL FIX_CLI_CLIPS_BY_LEV1 USING "5007"
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-PROCESS_WORK_FILE LROUTINE
-CURRENT_CLI     CHAR    8
+FIX_CLI_CLIPS_BY_LEV1 LROUTINE LEV1@
+LEV1@       CHAR    @
 ...
-    CLEAR CURRENT_CLI
 
-    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
-
-    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
-    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
+    CLEAR CLI_AIM
+    PACK CLI_AIM1 WITH "01L",LEV1@,BLANKS
 
     LOOP
-        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIP_LIST
-        WHILE (RESULT = 1)
-
-        CLEAR CLI_LIST
-        PACK CLIP_REC WITH CLIP_LIST
-
-        IF (CHOP CURRENT_CLI = "" | CHOP CLIP_ID1 != CURRENT_CLI)
-            PACK CURRENT_CLI WITH CLIP_ID1
-
-            CALL UTIL_CLI_FIND USING CLIP_ID1
-            CONTINUE IF (NOT EQUAL)
-
-            PACK CLI_REC WITH CLI_LIST,BLANKS
+        IF (CHOP CLI_ID1 = "")
+            CALL UTIL_CLI_AIMFIND
         ELSE
-            UNPACK CLI_REC INTO CLI_LIST
+            CALL UTIL_CLI_AIMNEXT
         ENDIF
+        WHILE EQUAL
+
+        CALL FIX_CLI_CLIPS
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_CLI_CLIPS LROUTINE
+CURR_NET        CHAR    10
+...
+    debug .untested
+
+    CLEAR CLIP_LIST
+    LOOP
+        IF (CHOP CLIP_ID2 = "")
+            CALL UTIL_CLIP_FIND USING CLI_ID1,""
+        ELSE
+            CALL UTIL_CLIP_NEXT
+        ENDIF
+        WHILE EQUAL
 
 .skip voids
         IF (CHOP CLIP_TRM > "")
@@ -259,30 +248,55 @@ CURRENT_CLI     CHAR    8
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
 
-.Future CLIP? Void
-        IF (CHOP CLIP_EFF > CONTRACT_END)
-            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-            CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
-
-            CALL TERM_CLIP USING CLIP_TRM
-            CALL LOG_TERM USING "Voided CLIP"
-        ELSE
-            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
-            CALL TERM_CLIP USING CONTRACT_END
-
-            CALL LOG_TERM USING "CLIP Termed"
-        ENDIF
+        SQUEEZE CLIP_NET INTO CURR_NET
+        SWITCH CURR_NET
+            CASE "BLUE"
+                CALL VOID_CLIP
+            CASE "NOCOV"
+                CALL TERM_CLIP
+            CASE "DHH"
+                CALL TERM_CLIP
+            DEFAULT
+                debug
+                CALL VOID_CLIP
+        ENDSWITCH
     REPEAT
-
-    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
-    CALL UTIL_DELETE_FILE USING WORK_FILE
 
     RETURN
     ENDROUTINE
 
 
 .#######################################################################
-TERM_CLIP LROUTINE TRM@
+VOID_CLIP LROUTINE
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
+
+    CALL WRITE_CLIP USING CLIP_TRM
+    CALL LOG_TERM USING "Voided CLIP"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+TERM_CLIP LROUTINE
+
+.Future CLIP? Void
+    IF (CHOP CLIP_EFF > CONTRACT_END)
+        CALL VOID_CLIP
+    ELSE
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+        CALL WRITE_CLIP USING CONTRACT_END
+        CALL LOG_TERM USING "CLIP Termed"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_CLIP LROUTINE TRM@
 + Prepare for update
 TRM@        CHAR    @
 ...
@@ -341,6 +355,11 @@ SET_RUN_CONFIG LROUTINE
         CASE "N"
             CLEAR CFG_DO_CLIP_WRITE
         DEFAULT
+    ENDSWITCH
+
+    IF (TEST_SKIP_WRITE)
+        CLEAR CFG_DO_CLIP_WRITE
+    ENDIF
 
     RETURN
     ENDROUTINE
@@ -370,7 +389,7 @@ BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
 
-    PACK SCRATCH WITH "LDH/DHH CLIPs Termed"
+    PACK SCRATCH WITH "LDH/DHH CLIPs Cleaned Up"
     IF (FOUND_INSTANCE)
         PACK SCRATCH WITH SCRATCH," *UPDATED*"
     ELSE
