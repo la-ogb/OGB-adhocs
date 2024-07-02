@@ -1,0 +1,756 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2406281.ps
++
++ DESCRIPTION:
++   Delete all COBRA bills from TASC (for all time or vrom inv date A
++   to inv date B (inclusive))
++
++ CREATED BY:
++   apjwh - 2024-06-28
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC BIL.RL
+    INC BILE.RL
+    INC BILS.RL
+    INC BILD.RL
+    INC COL.RL
+    INC COLD.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+PARAM_FROM          CHAR    6
+PARAM_THRU          CHAR    6
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+CFG_ALLOW_DELETE    NUM     "1"
+EMAIL_TO            INIT    "$ITAPPS"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST WITH NAMES
+TEST_KEEP_WORK      NUM     "1"
+TEST_SKIP_RF        NUM     "1"
+TEST_EMAIL          INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=8,TEXT
+WORK_FILE           CHAR    100,INITIAL "/w/tmp/a2406281_bil_ids.txt"
+
+LOG_FD              FILE    VAR=100,TEXT
+LOG_FILE            CHAR    100,INITIAL "/w/tmp/a2406281.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+WORK_LIST           LIST
+WORK_BILID          CHAR    8
+                    LISTEND
+
+LOG_HEADER          VARLIST "LOG_TYPE,BIL_ID,DETAIL,MORE_DETAIL"
+
+LOG_LIST            LIST
+LOG_REC             CHAR    100
+                    LISTEND
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+IS_ERROR            NUM     1
+MAIN_COL_ID         CHAR    8
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    CALL UTIL_SET_METADATA USING "A2406281:":   Program name
+                                 "DEL TASC BIL":   Program description
+                                 "MENU"     Chain next
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIND_TASC_BILLS
+    CALL DELETE_TASC_BILLS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "BIL Processed":
+                                  "BIL Deleted":
+                                  "COL Deleted":
+                                  "Errors":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
+
+    IF (CHOP PARAM_FROM > "")
+        CALL UTIL_IS_VALID_DATE USING (PARAM_FROM+"01")
+        IF NOT EQUAL
+            debug
+            CALL UTIL_ERRORMSG USING ("PARAM_FROM ("+PARAM_FROM+") is not a valid month")
+        ENDIF
+    ELSE
+        PACK PARAM_FROM WITH "202401"
+    ENDIF
+
+    IF (PARAM_FROM < "202401")
+        debug
+        CALL UTIL_ERRORMSG USING ("PARAM_FROM should be on/after Jan 2024 - is "+PARAM_FROM)
+    ENDIF
+
+    IF (CHOP PARAM_THRU > "")
+        CALL UTIL_IS_VALID_DATE USING (PARAM_THRU+"01")
+        IF NOT EQUAL
+            debug
+            CALL UTIL_ERRORMSG USING ("PARAM_THRU ("+PARAM_THRU+") is not a valid month")
+        ENDIF
+    ENDIF
+
+    IF (CFG_ALLOW_DELETE)
+        CLEAR TEST_KEEP_WORK
+        CLEAR TEST_SKIP_RF
+    ENDIF
+
+    IF (TEST_SKIP_RF)
+        CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+        IF NOT EQUAL
+            debug
+            CLEAR TEST_SKIP_RF
+        ENDIF
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_TASC_BILLS LROUTINE
+
+    IF (TEST_SKIP_RF)
+        debug
+        RETURN
+    ENDIF
+
+    CALL UTIL_XMESSAGE USING "Looking for BILs to process",MSG_HEIGHT
+
+    PACK SCRATCH WITH BIL_FNS," ",WORK_FILE," 1-8 -t -j ":
+        " -p17-21eq#"5000 #" ":
+        " -p217-224ge#"",PARAM_FROM,"01#" "
+
+    IF (CHOP PARAM_THRU > "")
+        PACK SCRATCH WITH SCRATCH:
+            " -p217-224le#"",PARAM_THRU,"01#""
+    ENDIF
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"BIL LOOKUP"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_TASC_BILLS LROUTINE
+
+    CALL UTIL_XMESSAGE USING "Deleting billing & collections...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    LOOP
+        CLEAR IS_ERROR
+
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,WORK_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_BIL_FIND USING WORK_BILID
+        IF NOT EQUAL
+            debug
+            CALL LOG_ERROR USING "BIL NOT FOUND",""
+            CONTINUE
+        ENDIF
+
+        SWITCH BIL_STAT
+            CASE "POST" | "PAID"
+            CASE "ADJU"
+                CONTINUE
+            DEFAULT
+        ENDSWITCH
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        IF (BIL_INVDT < (PARAM_FROM+"01"))
+            debug .reformat should not allow this
+            CONTINUE
+        ENDIF
+
+        IF (CHOP PARAM_THRU > "")
+            IF (BIL_INVDT > (PARAM_THRU+"01"))
+                debug .reformat should not allow this
+                CONTINUE
+            ENDIF
+        ENDIF
+
+        IF (CHOP BIL_MEM <= "00000000")
+            CALL LOG_ERROR USING "BIL NOT IND BIL",""
+            CONTINUE
+        ENDIF
+
+        IF (CHOP BIL_LEV1 != "5000")
+            CALL LOG_ERROR USING "BIL NOT 5000",""
+            CONTINUE
+        ENDIF
+
+.TODO: other validations?
+        CALL VALIDATE_COLD
+
+        CONTINUE IF (IS_ERROR)
+
+        CALL DELETE_COL
+        CALL DELETE_BIL
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VALIDATE_COLD LROUTINE
++ Run through all BILS and check each linked COLD - the COLD recs for
++ that COLD must all point back to our base BIL
+
+    CLEAR MAIN_COL_ID
+
+    CALL FIND_MAIN_COLLECTION
+
+    IF (CHOP MAIN_COL_ID = "")
+        debug
+        CALL LOG_ERROR USING "NO COL FOUND",""
+        RETURN
+    ENDIF
+
+    CALL UTIL_COL_FIND USING MAIN_COL_ID
+
+.TODO: make sure this was made by our app
+
+    CALL ENSURE_ALL_COLD_LINK_TO_BIL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIND_MAIN_COLLECTION LROUTINE
++ Get all COL ids from all BILS. If more than one, error
+    CLEAR BILS_LIST,MAIN_COL_ID
+
+    LOOP
+        IF (CHOP BILS_ID1 = "")
+            CALL UTIL_BILS_FIND USING WORK_BILID
+        ELSE
+            CALL UTIL_BILS_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        CALL UTIL_COLD_FIND_BY_BILS USING BILS_ID1,BILS_ID2
+        CONTINUE IF NOT EQUAL
+
+        IF (CHOP MAIN_COL_ID = "")
+            PACK MAIN_COL_ID WITH COLD_ID1
+        ELSE
+            IF (COLD_ID1 != MAIN_COL_ID)
+                debug
+                CALL LOG_ERROR USING ("FOUND MULTIPLE COL USED TO PAY BILL"),(MAIN_COL_ID+"-"+COLD_ID1)
+                BREAK
+            ENDIF
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ENSURE_ALL_COLD_LINK_TO_BIL LROUTINE
+
+    CLEAR COLD_LIST
+    PACK COLD_FK11 WITH MAIN_COL_ID,BLANKS
+
+    CALL FILE_READ USING COLD_FD:    ...File declaration list
+                         COLD_FN:          ...File name list
+                         COLD_FC:          ...(I)ndex or (A)imdex
+                         COLD_FV:          ...File key varlists
+                         COLD_FK:          ...File key sizes
+                         COLD_LIST:        ...File record (field list)
+                         COLD_REC:         ...File record (packed)
+                         COLD_OLD:         ...File saved when read
+                         COLD_QTY:         ...Number of files
+                         1                 ...File number for this read
+
+    LOOP
+        CALL FILE_NEXT
+        WHILE (RESULT = 1 & COLD_ID1 = MAIN_COL_ID)
+
+        CONTINUE IF (COLD_BIL = WORK_BILID)
+
+        debug
+        CALL LOG_ERROR USING "FOUND A COLD RECORD POINTS TO OTHER BIL",(COLD_ID1+"-"+COLD_ID2)
+        BREAK
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_COL LROUTINE
++ Get COL -> delete each COLD then delete the COL
+
+    PACK COLD_FK11 WITH MAIN_COL_ID,BLANKS
+
+    debug .untested
+
+    CALL FILE_READ USING COLD_FD:    ...File declaration list
+                         COLD_FN:          ...File name list
+                         COLD_FC:          ...(I)ndex or (A)imdex
+                         COLD_FV:          ...File key varlists
+                         COLD_FK:          ...File key sizes
+                         COLD_LIST:        ...File record (field list)
+                         COLD_REC:         ...File record (packed)
+                         COLD_OLD:         ...File saved when read
+                         COLD_QTY:         ...Number of files
+                         1                 ...File number for this read
+
+    LOOP
+        CALL FILE_NEXT
+        WHILE (RESULT = 1 & COLD_ID1 = MAIN_COL_ID)
+
+        IF (CFG_ALLOW_DELETE)
+            CALL LOG_ACTION USING "DELETE COLD",(COLD_ID1+"-"+COLD_ID2)
+            debug .untested
+            CALL FILE_DELETE USING  COLD_FD:   ...File declaration list
+                                    COLD_FN:         ...File name list
+                                    COLD_FC:         ...(I)ndex or (A)imdex
+                                    COLD_FV:         ...File key varlists
+                                    COLD_FK:         ...File key sizes
+                                    COLD_LIST:       ...File record (field list)
+                                    COLD_REC:        ...File record (packed)
+                                    COLD_OLD:        ...File saved when read
+                                    COLD_QTY:        ...Number of files
+                                    1                ...File number for this read
+        ELSE
+            CALL LOG_ACTION USING "DELETE COLD (TEST NO DELETE)",(COLD_ID1+"-"+COLD_ID2)
+        ENDIF
+    REPEAT
+
+    CALL UTIL_COL_FIND USING MAIN_COL_ID
+    IF (EQUAL)
+        IF (CFG_ALLOW_DELETE)
+            debug .untested
+            CALL LOG_ACTION USING "DELETE COL",COL_ID1
+            CALL FILE_DELETE USING  COL_FD:    ...File declaration list
+                                    COL_FN:          ...File name list
+                                    COL_FC:          ...(I)ndex or (A)imdex
+                                    COL_FV:          ...File key varlists
+                                    COL_FK:          ...File key sizes
+                                    COL_LIST:        ...File record (field list)
+                                    COL_REC:         ...File record (packed)
+                                    COL_OLD:         ...File saved when read
+                                    COL_QTY:         ...Number of files
+                                    1                ...File number for this read
+        ELSE
+            CALL LOG_ACTION USING "DELETE COL (TEST NO DELETE)",COL_ID1
+        ENDIF
+    ENDIF
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_BIL LROUTINE
++ For the BIL_ID1, delete all BILS, BILE, BILD, then the BIL
+    debug .todo
+
+    CALL DELETE_BILS
+    CALL DELETE_BILE
+    CALL DELETE_BILD
+
+    CALL UTIL_BIL_FIND USING WORK_BILID
+    IF (CFG_ALLOW_DELETE)
+        debug .untested
+        CALL LOG_ACTION USING "DELETE BIL",""
+        CALL FILE_DELETE USING  BIL_FD:    ...File declaration list
+                                BIL_FN:          ...File name list
+                                BIL_FC:          ...(I)ndex or (A)imdex
+                                BIL_FV:          ...File key varlists
+                                BIL_FK:          ...File key sizes
+                                BIL_LIST:        ...File record (field list)
+                                BIL_REC:         ...File record (packed)
+                                BIL_OLD:         ...File saved when read
+                                BIL_QTY:         ...Number of files
+                                1                ...File number for this read
+    ELSE
+        CALL LOG_ACTION USING "DELETE BIL (TEST NO DELETE)",""
+    ENDIF
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_BILS LROUTINE
+
+    CLEAR BILS_LIST
+
+    debug .untested
+    LOOP
+        IF (CHOP BILS_ID1 = "")
+            CALL UTIL_BILS_FIND USING WORK_BILID
+        ELSE
+            CALL UTIL_BILS_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        IF (CFG_ALLOW_DELETE)
+            debug .untested
+            CALL LOG_ACTION USING "DELETE BILS",BILS_ID2
+            CALL FILE_DELETE USING BILS_FD:   ...File declaration list
+                                   BILS_FN:         ...File name list
+                                   BILS_FC:         ...(I)ndex or (A)imdex
+                                   BILS_FV:         ...File key varlists
+                                   BILS_FK:         ...File key sizes
+                                   BILS_LIST:       ...File record (field list)
+                                   BILS_REC:        ...File record (packed)
+                                   BILS_OLD:        ...File saved when read
+                                   BILS_QTY:        ...Number of files
+                                   1                ...File number for this read
+        ELSE
+            CALL LOG_ACTION USING "DELETE BILS (TEST NO DELETE)",BILS_ID2
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_BILE LROUTINE
+
+    CLEAR BILE_LIST
+
+    debug .untested
+    PACK BILE_FK11 WITH WORK_BILID,BLANKS
+    CALL FILE_READ USING    BILE_FD:    ...File declaration list
+                            BILE_FN:          ...File name list
+                            BILE_FC:          ...(I)ndex or (A)imdex
+                            BILE_FV:          ...File key varlists
+                            BILE_FK:          ...File key sizes
+                            BILE_LIST:        ...File record (field list)
+                            BILE_REC:         ...File record (packed)
+                            BILE_OLD:         ...File saved when read
+                            BILE_QTY:         ...Number of files
+                            1                 ...File number for this read
+    LOOP
+         CALL FILE_NEXT USING   BILE_FD:    ...File declaration list
+                                BILE_FN:          ...File name list
+                                BILE_FC:          ...(I)ndex or (A)imdex
+                                BILE_FV:          ...File key varlists
+                                BILE_FK:          ...File key sizes
+                                BILE_LIST:        ...File record (field list)
+                                BILE_REC:         ...File record (packed)
+                                BILE_OLD:         ...File saved when read
+                                BILE_QTY:         ...Number of files
+                                1                 ...File number for this read
+
+        WHILE (RESULT = 1 & BILE_ID1 = WORK_BILID)
+
+        IF (CFG_ALLOW_DELETE)
+            debug .untested
+            CALL LOG_ACTION USING "DELETE BILE",BILE_ID2
+            CALL FILE_DELETE USING BILE_FD:   ...File declaration list
+                                   BILE_FN:         ...File name list
+                                   BILE_FC:         ...(I)ndex or (A)imdex
+                                   BILE_FV:         ...File key varlists
+                                   BILE_FK:         ...File key sizes
+                                   BILE_LIST:       ...File record (field list)
+                                   BILE_REC:        ...File record (packed)
+                                   BILE_OLD:        ...File saved when read
+                                   BILE_QTY:        ...Number of files
+                                   1                ...File number for this read
+        ELSE
+            CALL LOG_ACTION USING "DELETE BILE (TEST NO DELETE)",BILE_ID2
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DELETE_BILD LROUTINE
+
+    CLEAR BILD_LIST
+
+    debug .untested
+    LOOP
+        IF (CHOP BILD_ID1 = "")
+            CALL UTIL_BILD_FIND USING WORK_BILID
+        ELSE
+            CALL UTIL_BILD_NEXT
+        ENDIF
+        WHILE EQUAL
+
+        IF (CFG_ALLOW_DELETE)
+            debug .untested
+            CALL LOG_ACTION USING "DELETE BILD",BILD_ID2
+            CALL FILE_DELETE USING BILD_FD:   ...File declaration list
+                                   BILD_FN:         ...File name list
+                                   BILD_FC:         ...(I)ndex or (A)imdex
+                                   BILD_FV:         ...File key varlists
+                                   BILD_FK:         ...File key sizes
+                                   BILD_LIST:       ...File record (field list)
+                                   BILD_REC:        ...File record (packed)
+                                   BILD_OLD:        ...File saved when read
+                                   BILD_QTY:        ...Number of files
+                                   1                ...File number for this read
+        ELSE
+            CALL LOG_ACTION USING "DELETE BILD (TEST NO DELETE)",BILD_ID2
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_ACTION LROUTINE ACTION@,CONTEXT@
+ACTION@     CHAR    @
+CONTEXT@    CHAR    @
+...
+    CALL WRITE_LOG USING "DELETE",ACTION@,CONTEXT@
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_ERROR LROUTINE ERROR@,CONTEXT@
+ERROR@      CHAR    @
+CONTEXT@    CHAR    @
+...
+    SET IS_ERROR
+
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    CALL WRITE_LOG USING "ERROR",ERROR@,CONTEXT@
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE LOGTYPE@,MSG@,DETAILS@
+LOGTYPE@        CHAR    @
+MSG@            CHAR    @
+DETAILS@        CHAR    @
+
+    PACK LOG_REC WITH LOGTYPE@,COMMA:
+                      WORK_BILID,COMMA:
+                      MSG@,COMMA:
+                      DETAILS@
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+
+    CALL EMAIL_LOG
+
+    IF NOT (TEST_KEEP_WORK)
+        CALL UTIL_DELETE_FILE USING WORK_FILE
+    ENDIF
+
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_LOG LROUTINE
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "TASC BIL/COL Delete Tool"
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Attached is a report of BIL* and COL* data deleted. Checks ":
+        "invoice dates on/after ",PARAM_FROM,"01"
+    IF (CHOP PARAM_THRU > "")
+        PACK SCRATCH WITH SCRATCH," through ",PARAM_THRU,"01."
+    ELSE
+        PACK SCRATCH WITH SCRATCH,"."
+    ENDIF
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_POP.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_DATES.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_COLLECTIONS.SR
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
