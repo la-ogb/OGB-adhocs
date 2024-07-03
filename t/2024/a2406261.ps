@@ -1,0 +1,396 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2406261.ps
++
++ DESCRIPTION: Change all HRFEE CLIP_BILPL from "N" to "Y"
++
++
++ CREATED BY:
++   aphas - 2024-06-26
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC CLIP.RL
+    INC CLI.RL
+    INC UTIL_COMMON.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_ID             INIT    "FXCLPY"
+EMAIL_TO_NOERROR    INIT    "$ITAPPS"
+EMAIL_TO_ERROR      INIT    "$ITAPPS"
+
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_WRITE     NUM     "1" 1.skip, 0.write
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
+WORK_FILE           INIT    "/w/tmp/a2406261.wrk"
+
+REPORT_FD           FILE    VAR=200,TEXT
+REPORT_FILE         INIT    "/w/tmp/a2406261.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+WORK_LIST           LIST
+WORK_ID             CHAR    8
+                    LISTEND
+
+REPORT_LIST         LIST
+REPORT_REC          CHAR    200
+                    LISTEND
+
+REPORT_HEADER       VARLIST "CLI ID,":
+                            "CLI LEV1,":
+                            "CLI LEV2,":
+                            "CLIP ID2,":
+                            "LOG MESSAGE,":
+                            "NETWORK,":
+                            "PRODUCT,":
+                            "PLAN,":
+                            "EFFECTIVE,":
+                            "USE PLAN IN BILL RATES"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+FOUND_INSTANCE      NUM     1
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    CALL UTIL_SET_METADATA USING "a2406261":   Program name
+                                 "FIX HRFEE CLIP_BILPL":   Program description
+                                 "MENU"     Chain next
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL CLIP_REFORMAT
+    CALL PROCESS_WORK_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "CLIPs Processed":
+                                  "CLIPs Logged":
+                                  "CLIPs Updated"
+
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLIP_REFORMAT LROUTINE
++ Sort CLIP
+
+    CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
+
+.Find CLIPs with product HRFEE
+    PACK DATE_CCYYMMDD WITH BLANKS
+    PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
+                        " -p0018-0022eq#"HRFEE#""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
+
+.Sort file
+    PACK SCRATCH WITH WORK_FILE, " ", WORK_FILE," 1-12 -t"
+    CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_WORK_FILE LROUTINE
+CURRENT_CLI     CHAR    8
+...
+    CLEAR CURRENT_CLI
+
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+
+    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIP_LIST
+        WHILE (RESULT = 1)
+
+        CLEAR CLI_LIST
+        PACK CLIP_REC WITH CLIP_LIST
+
+        IF (CHOP CURRENT_CLI = "" | CHOP CLIP_ID1 != CURRENT_CLI)
+            PACK CURRENT_CLI WITH CLIP_ID1
+
+            CALL UTIL_CLI_FIND USING CLIP_ID1
+            CONTINUE IF (NOT EQUAL)
+
+            PACK CLI_REC WITH CLI_LIST,BLANKS
+        ELSE
+            UNPACK CLI_REC INTO CLI_LIST
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        IF (CHOP CLIP_BILPL = "Y")
+            CALL LOG_CLIP USING "BILPL already Y no update"
+            CONTINUE
+        ENDIF
+
+        CALL LOG_CLIP USING "BILPL has been updated"
+        CALL UPDATE_CLIP
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL UTIL_DELETE_FILE USING WORK_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_CLIP LROUTINE
++ Prepare for update
+...
+    PACK CLIP_BILPL WITH "Y",BLANKS
+    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
+    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+
+    RETURN IF (TEST_SKIP_WRITE)
+
+    CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
+                            CLIP_FN:        ...File name list
+                            CLIP_FC:        ...(I)ndex or (A)imdex
+                            CLIP_FV:        ...File key varlists
+                            CLIP_FK:        ...File key sizes
+                            CLIP_LIST:      ...File record (field list)
+                            CLIP_REC:       ...File record (packed)
+                            CLIP_OLD:       ...File saved when read
+                            CLIP_QTY:       ...Number of files
+                            1               ...File number for this read
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_CLIP LROUTINE MSG@
+MSG@        DIM     @
+...
+    SET FOUND_INSTANCE
+    PACK REPORT_REC WITH    (CHOP CLIP_ID1),COMMA:
+                            (CHOP CLI_LEV1),COMMA:
+                            (CHOP CLI_LEV2),COMMA:
+                            (CHOP CLIP_ID2),COMMA:
+                            (CHOP MSG@),COMMA:
+                            (CHOP CLIP_NET),COMMA:
+                            (CHOP CLIP_PRD),COMMA:
+                            (CHOP CLIP_PLAN),COMMA:
+                            (CHOP CLIP_EFF),COMMA:
+                            (CHOP CLIP_BILPL)
+
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
+
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",REPORT_FILE,""
+    CALL SEND_EMAIL
+    CALL UTIL_DELETE_FILE USING REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+
+    PACK SCRATCH WITH "HRFEE CLIPs Updated"
+    IF (FOUND_INSTANCE)
+        PACK SCRATCH WITH SCRATCH," *UPDATED*"
+    ELSE
+        PACK SCRATCH WITH SCRATCH," *NO UPDATE REQUIRED*"
+    ENDIF
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Updating HRFEE flag to indicate use plan in Bill Rates."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    IF (FOUND_INSTANCE)
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME:
+                                    REPORT_FILE
+    ELSE
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_NOERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_POP.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
