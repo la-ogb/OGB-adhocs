@@ -1,9 +1,9 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   a240710.ps
++   a2407101.ps
 +
 + DESCRIPTION:
-+   Void clips for people without Medicare Primary and rehired retirees
++   Void clips without Medicare Primary and rehired retirees
 +
 + CREATED BY:
 +   apjzs - 2024-07-10
@@ -58,10 +58,10 @@ TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
 .# =================================================================== #
 
 WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
-WORK_FILE           INIT    "/w/tmp/a240710.id.wrk"
+WORK_FILE           INIT    "/w/tmp/a2407101.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
-REPORT_FILE         INIT    "/w/tmp/a240710.csv"
+REPORT_FILE         INIT    "/w/tmp/a2407101.csv"
 
 .# =================================================================== #
 .# File lists
@@ -120,8 +120,8 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "a240710" TO C_PROG        ...Program name
-    MOVE "VOID EXTND CLIPS" TO C_OPER  ...Program description
+    MOVE "a2407101" TO C_PROG        ...Program name
+    MOVE "VOID EXTND" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -183,8 +183,6 @@ INITIALIZE LROUTINE
                                   "":
                                   ""
 
-    CALL SET_RUN_CONFIG
-
     RETURN
     ENDROUTINE
 
@@ -195,15 +193,20 @@ CLIP_REFORMAT LROUTINE
 
     CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
 
+
 .Find current clips for people without medicare
+	debug
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
-                        " -p0031-0032eq#"DHH  #""
+                        " -p0013-0017eq#"ONEXC,EXTND#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
+	debug
 .Sort file
-    PACK SCRATCH WITH WORK_FILE, " ", WORK_FILE," 1-12 -t"
-    CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
+
+	PACK SCRATCH WITH WORK_FILE, " ", WORK_FILE," 1-12 -t"
+    debug
+	CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
 
     MESSAGEERASE
 
@@ -229,8 +232,8 @@ CURRENT_CLI     CHAR    8
         CLEAR CLI_LIST
         PACK CLIP_REC WITH CLIP_LIST
 
-		IF (CLIP_RT == "EN" OR CLIP_RT == "RN")
-			CALL VOID_CLIP
+		IF (CLIP_RT = "EN" OR CLIP_RT = "RN")
+			CALL VOID_CLIP USING CLIP_ID1
 		ENDIF
 
 
@@ -247,50 +250,22 @@ CURRENT_CLI     CHAR    8
 
 
 .#######################################################################
-VOID_CLIP LROUTINE VOID@
+VOID_CLIP LROUTINE CURRENT_ID@
+CURRENT_ID@ CHAR @
 + Prepare for update
 
-    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
-    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+. get clip record
 
-    RETURN IF NOT (CFG_DO_CLIP_WRITE)
+. get effective date value
 
-    CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
-                            CLIP_FN:        ...File name list
-                            CLIP_FC:        ...(I)ndex or (A)imdex
-                            CLIP_FV:        ...File key varlists
-                            CLIP_FK:        ...File key sizes
-                            CLIP_LIST:      ...File record (field list)
-                            CLIP_REC:       ...File record (packed)
-                            CLIP_OLD:       ...File saved when read
-                            CLIP_QTY:       ...Number of files
-                            1               ...File number for this read
+. get term date value
+. set term date to be less tha effective date
 
     RETURN
     ENDROUTINE
 
 
-.#######################################################################
-LOG_TERM LROUTINE MSG@
-MSG@        DIM     @
-...
-    SET FOUND_INSTANCE
-    PACK REPORT_REC WITH    (CHOP CLIP_ID1),COMMA:
-                            (CHOP CLI_LEV1),COMMA:
-                            (CHOP CLI_LEV2),COMMA:
-                            (CHOP CLIP_ID2),COMMA:
-                            (CHOP MSG@),COMMA:
-                            (CHOP CLIP_NET),COMMA:
-                            (CHOP CLIP_PRD),COMMA:
-                            (CHOP CLIP_PLAN),COMMA:
-                            (CHOP CLIP_EFF),COMMA:
-                            (CHOP CLIP_TRM),COMMA:
-                            (CHOP CLIP_RT)
 
-    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-
-    RETURN
-    ENDROUTINE
 
 
 
