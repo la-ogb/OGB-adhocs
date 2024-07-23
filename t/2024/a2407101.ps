@@ -101,8 +101,6 @@ CURR_CLI_ID         CHAR    8
 CURR_LEV1           CHAR    5
 CURR_LEV2           CHAR    5
 
-
-
 .# =================================================================== #
 .# Begin Program
 .# =================================================================== #
@@ -204,8 +202,7 @@ CLIP_REFORMAT LROUTINE
 .Find current clips for people without medicare
 	debug
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
-                        " -p0013-0017eq#"ONEXC#"":
-						"or":
+                        " -p0013-0017eq#"ONEXC#" or":
 						" -p0013-0017eq#"EXTND#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
