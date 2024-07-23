@@ -58,17 +58,19 @@ TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
 .# =================================================================== #
 
 WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
-WORK_FILE           INIT    "/w/tmp/a2407101.wrk"
+WORK_FILE           INIT    "/w/a2407101.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
-REPORT_FILE         INIT    "/w/tmp/a2407101.csv"
+REPORT_FILE         INIT    "/w/a2407101.csv"
 
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
-WORK_LIST           LIST
+CLIP_LIST           LIST
 WORK_ID             CHAR    8
+INPUT_ID1           CHAR    8
+INPUT_ID2           CHAR    4
                     LISTEND
 
 REPORT_LIST         LIST
@@ -95,6 +97,9 @@ CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 FOUND_INSTANCE      NUM     1
+CURR_CLI_ID         CHAR    8
+CURR_LEV1           CHAR    5
+
 
 .# =================================================================== #
 .# Begin Program
@@ -197,7 +202,9 @@ CLIP_REFORMAT LROUTINE
 .Find current clips for people without medicare
 	debug
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
-                        " -p0013-0017eq#"ONEXC,EXTND#""
+                        " -p0013-0017eq#"ONEXC#"":
+						"or":
+						" -p0013-0017eq#"EXTND#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
@@ -216,9 +223,7 @@ CLIP_REFORMAT LROUTINE
 
 .#######################################################################
 PROCESS_WORK_FILE LROUTINE
-CURRENT_CLI     CHAR    8
 ...
-    CLEAR CURRENT_CLI
 
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
 
@@ -229,11 +234,32 @@ CURRENT_CLI     CHAR    8
         CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIP_LIST
         WHILE (RESULT = 1)
 
+		CALL UTIL_CLIP_FIND USING INPUT_ID1,INPUT_ID2
+        IF NOT EQUAL
+            debug .how?
+            CONTINUE
+        ENDIF
+
         CLEAR CLI_LIST
         PACK CLIP_REC WITH CLIP_LIST
 
+		IF (CLIP_ID1 != CURR_CLI_ID)
+            CALL UTIL_CLI_FIND USING CLIP_ID1
+            IF NOT EQUAL
+                debug
+                CONTINUE
+            ENDIF
+
+            PACK CURR_CLI_ID WITH CLI_ID1
+            PACK CURR_LEV2 WITH CLI_LEV2
+        ENDIF
+
 		IF (CLIP_RT = "EN" OR CLIP_RT = "RN")
 			CALL VOID_CLIP USING CLIP_ID1
+		ENDIF
+
+		IF (CLI_LEV2 == "92")
+.			rehired retirees, cannot have medicare
 		ENDIF
 
 
