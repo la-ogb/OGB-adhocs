@@ -1,0 +1,415 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2407251.ps
++
++ DESCRIPTION:
++   Update all Medicare Members with a Medicare reason
++
++ CREATED BY:
++   aphas - 2024-07-25
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+    INC CMS_QUERY_RSP.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_ID             INIT    "CMSRES"
+INPUT_DIR_ROOT      INIT    "/CMS/inbound/"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "${CURRENT_USER_EMAIL}"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+RSP_FD              FILE    FIXED=QRSP_SIZE,TEXT
+RSP_FILE            INIT    "/w/elg1561.txt"
+
+LOG_FILE_SIZE       EQU     1000
+LOG_FD              FILE    VAR=LOG_FILE_SIZE,TEXT
+LOG_FILE            CHAR    "/w/a2407251_log.csv"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2407251.upd"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_HEADER          VARLIST "MEM Id":
+                            COMMA,"Description":
+                            COMMA,"CMS Qualification Reason":
+                            COMMA,"CMS A Entitlement Eff":
+                            COMMA,"CMS A Entitlement Trm":
+                            COMMA,"OGB A Primary Eff":
+                            COMMA,"OGB A Primary Trm":
+                            COMMA,"OGB A Primary Reason"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+
+
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+.    INC SCHED_WP.SR  ...for jobs requiring the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    CALL UTIL_SET_METADATA USING "a2407251":   Program name
+                                 "UPDATE Medicare Reason ":   Program description
+                                 "MENU"     Chain next
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL PROCESS_REPORT
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Members Reviewed":
+                                  "Members Validated":
+                                  "Log Entries":
+                                  "Updates":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    CALL IMPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+IMPORT_FILE LROUTINE
++ Import the query response file
+
+.Set the input file path
+    IF (ENABLE_TEST)
+        PACK INPUT_DIR WITH INPUT_DIR_ROOT,"/test/"
+    ELSE
+        PACK INPUT_DIR WITH INPUT_DIR_ROOT,"/prod/query-response/"
+    ENDIF
+
+    CALL UTIL_XMESSAGE USING "Preparing response file for processing...",MSG_HEIGHT
+
+    CALL UTIL_EXISTS USING RSP_FILE,"FILE"
+    IF EQUAL
+        CALL UTIL_DELETE_FILE USING RSP_FILE
+    ENDIF
+
+    CALL UTIL_FTP_GET_FILE USING "/w/",INPUT_DIR,RSP_FILE,"ascii"
+
+    CALL UTIL_EXISTS USING RSP_FILE,"FILE"
+    IF NOT EQUAL
+        debug
+        CALL UTIL_ERRORMSG USING "No response file found after FTP","IMPORT_FILE"
+    ENDIF
+
+.Sort by OGB id
+    CALL SORT_OGBFILE USING RSP_FILE,RSP_FILE,"117-124 -t"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+PROCESS_REPORT LROUTINE
++ Load the CMS query response file
+
+    CALL UTIL_XMESSAGE USING "Processing file...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING RSP_FD,RSP_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    LOOP
+        CLEAR CURRENT_MEDA
+
+        CALL READ_OGBFILE_SEQ USING RSP_FD,RSP_FILE,QRSP_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEM_FIND_REAL USING QRSP_DCN1_MEM_ID
+        IF NOT EQUAL
+            debug
+            CALL LOG_ERROR USING "Unable to find valid member in IMPACT"
+            CONTINUE
+        ENDIF
+        PACK CURRENT_MEMBER WITH MEM_LIST
+        CALL IS_DEBUG_ID USING MEM_ID1
+
+        CALL LOAD_MEDICARE_DATA
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING RSP_FD,RSP_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+LOAD_MEDICARE_DATA LROUTINE
++ Popululate Medicare A
+FIRST_MEMO      NUM     V_FLAG
+...
+    CLEAR CURRENT_MEDA
+
+    SET FIRST_MEMO
+    LOOP
+        IF (FIRST_MEMO)
+            CLEAR FIRST_MEMO
+            CALL UTIL_MEMO_FIND USING MEM_ID1,""
+        ELSE
+            CALL UTIL_MEMO_NEXT
+        ENDIF
+        WHILE EQUAL
+
+.Format the primary term date
+        IF (CHOP MEMO_EFF > "")
+            IF (CHOP MEMO_TRM = "")
+                PACK MEMO_TRM WITH LAST_DATE,BLANKS
+            ENDIF
+        ELSE
+            FILL " " IN MEMO_TRM
+        ENDIF
+
+        SQUEEZE MEMO_TYPE INTO SCRATCH
+        SWITCH SCRATCH
+            CASE "MEDA"
+                CALL CHECK_FOR_UPDATE
+                CALL WRITE_LOG
+            CASE "MEDB"
+                CONTINUE
+            DEFAULT
+                CONTINUE
+        ENDSWITCH
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_FOR_UPDATE LROUTINE
++ Take out MEMO records we don't care about
+
+    IF (CHOP MEMO_VER != "Y")
+        CONTINUE
+    ENDIF
+
+    SWITCH QRSP_QUAL_REASON
+        CASE "A"
+            debug
+            PACK MEMO_REAS WITH "A"
+        CASE "B"
+            PACK MEMO_REAS WITH "R"
+        CASE "G"
+            PACK MEMO_REAS WITH "D"
+        DEFAULT
+            FILL " " IN MEMO_REAS
+    ENDSWITCH
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+WRITE_LOG LROUTINE MSG@
++ Write to the log
+MSG@        CHAR    @
+
+    PACK LOG_WRITE_REC WITH "":
+        (CHOP MEM_ID1),COMMA:
+        (CHOP MSG@),COMMA:
+        (CHOP QRSP_QUAL_REASON)
+
+.CMS Part A
+    PACK LOG_WRITE_REC WITH LOG_WRITE_REC,COMMA:
+        (CHOP QRSP_MEDA_EFF),COMMA:
+        (CHOP QRSP_MEDA_TRM)
+
+.OGB Part A
+    UNPACK CURRENT_MEDA INTO MEMO_LIST
+    PACK LOG_WRITE_REC WITH LOG_WRITE_REC,COMMA:
+        (CHOP MEMO_EFF),COMMA:
+        (CHOP MEMO_TRM),COMMA:
+        (CHOP MEMO_REAS)
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_WRITE_LIST
+
+    UNPACK HOLD_MEMO INTO MEMO_LIST
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    CALL WRITE_UPDATE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+WRITE_UPDATE LROUTINE
++ Update MEMO reason
+
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    FILL " " IN INM_LIST,INM_REC,MEME_LIST
+    PACKLEN INM_REC WITH MEM_LIST,MEME_LIST,MEMO_LIST
+    UNPACK INM_REC INTO INM_LIST
+
+    CALL UTIL_FORMAT_INME USING PROG_ID
+
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_POP.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
