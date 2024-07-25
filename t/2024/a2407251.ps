@@ -13,7 +13,7 @@
 .# Variable Includes
 .# =================================================================== #
     INC VALID.RL
-        INC CLIP.RL
+    INC CLIP.RL
     INC CLI.RL
     INC UTIL_COMMON.CB
 
@@ -38,7 +38,6 @@ REFRESH_RATE        EQU     1000
 .# Configuration
 .# =================================================================== #
 
-.TODO: add configuration settings here
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -53,13 +52,17 @@ TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
 .# File Declarations
 .# =================================================================== #
 
-.TODO: add files
+CLIP_REFORMAT_FD    FILE    FIXED=X_CLIP_SIZE,TEXT
+CLIP_REFORMAT_FILE  INIT    "/w/a2407251.wrk"
+
+CLIP_CSV_FD         FILE    VAR=200,TEXT
+CLIP_CSV_FILE       INIT    "/w/a2407101.csv"
 
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
-.TODO: add file lists
+
 
 .# =================================================================== #
 .# Program Variables
@@ -83,7 +86,6 @@ END_DATETIME        CHAR    24
 
 .#######################################################################
 RUN_NOW ROUTINE
-+ Configure runtime settings
 
 .Save stack size at program start
     RETCOUNT ORIG_RETURN
@@ -94,9 +96,12 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    CALL UTIL_SET_METADATA USING "TODO:":   Program name
-                                 "TODO:":   Program description
-                                 "MENU"     Chain next
+    MOVE "a2407251" TO C_PROG
+    MOVE "VOID EXTND" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
 
 .Check if the program was called from the command line
     IF (C_CMDPAR)
@@ -109,10 +114,6 @@ RUN_NOW ROUTINE
     CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
                                  ENABLE_TEST:  ...test toggle
                                  TEST_CONFIG  ...test settings list
-
-.TODO: make sure any parameter that can be called from the CMD line are
-. filled with spaces or value and space before the SCHED_PICK for them
-. to be populated in an automatically generated Impact Scheduler record
 
 .Set up run mode or build SCH record
     CALL SCHED_PICK
@@ -134,12 +135,13 @@ MAIN_PROCESS LROUTINE
 + Core logic
     debug
     CALL INITIALIZE
+    CALL CLIP_REFORMAT
+    CALL PROCESS_CLIP_FILE
+    CALL CLEAN_UP
 
 .    CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
 .    CALL UTIL_XMESSAGE USING "Add Code Here",MSG_HEIGHT
 .    CALL UTIL_ERRORMSG USING "Not implemented","MAIN_PROCESS"
-
-    CALL CLEAN_UP
 
     RETURN
     ENDROUTINE
@@ -156,17 +158,36 @@ INITIALIZE LROUTINE
 
 .TODO: set counter desc
     CALL UTIL_INIT_COUNTERS USING "Counter 1 - Not Used":
-                                  "Counter 2 - Not Used":
-                                  "Counter 3 - Not Used":
-                                  "Counter 4 - Not Used":
-                                  "Counter 5 - Not Used":
-                                  "Counter 6 - Not Used"
+                                  "Counter 2 - Not Used"
 
     CALL SET_RUN_CONFIG
 
     RETURN
     ENDROUTINE
 
+.#######################################################################
+CLIP_REFORMAT LROUTINE
++ Sort CLIP records for Extnd and rehired retirees
+
+    CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
+
+    PACK SCRATCH USING CLIP_FNS," ",CLIP_REFORMAT_FILE," -t":
+                        " -p0013-0017eq#"ONEXC#"
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding ONEXC CLIPS"
+
+    PACK SCRATCH USING CLIP_FNS," ",CLIP_REFORMAT_FILE," -t -a":
+						" -p0013-0017eq#"EXTND#""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding EXTND CLIPS"
+
+
+	PACK SCRATCH WITH CLIP_REFORMAT_FILE, " ", CLIP_REFORMAT_FILE," 1-12 -t"
+	CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
+
+    DEBUG
+    RETURN
+    ENDROUTINE
 
 .#######################################################################
 SET_RUN_CONFIG LROUTINE
