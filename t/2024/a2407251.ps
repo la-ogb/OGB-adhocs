@@ -3,7 +3,7 @@
 +   a2407251.ps
 +
 + DESCRIPTION:
-+   Standard DBC program scaffold
++
 +
 + CREATED BY:
 +   apdrh - 2024-07-25
@@ -56,13 +56,24 @@ CLIP_REFORMAT_FD    FILE    FIXED=X_CLIP_SIZE,TEXT
 CLIP_REFORMAT_FILE  INIT    "/w/a2407251.wrk"
 
 CLIP_CSV_FD         FILE    VAR=200,TEXT
-CLIP_CSV_FILE       INIT    "/w/a2407101.csv"
+CLIP_CSV_FILE       INIT    "/w/a2407251.csv"
 
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
+CSV_LIST            LIST
+CSV_REC             CHAR    200
 
+                    LISTEND
+
+CLIP_CSV_HEADER     VARLIST "CLIP ID1,":
+                            "CLIP ID2,":
+                            "CLI LEV2,":
+                            "CLIP NETWORK,":
+                            "CLIP RATE,":
+                            "CLIP EFF":
+                            "CLIP TRM"
 
 .# =================================================================== #
 .# Program Variables
@@ -71,6 +82,14 @@ CLIP_CSV_FILE       INIT    "/w/a2407101.csv"
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
+CSV_ID1             CHAR    8
+CSV_ID2             CHAR    4
+CSV_NET             CHAR    4
+CSV_RT              CHAR    2
+CSV_EFF             CHAR    8
+CSV_TRM             CHAR    8
+CSV_LEV2            CHAR    4
+
 
 .# =================================================================== #
 .# Begin Program
@@ -97,7 +116,7 @@ RUN_NOW ROUTINE
     CLOCK TIMESTAMP INTO CURRDATE
 
     MOVE "a2407251" TO C_PROG
-    MOVE "VOID EXTND" TO C_OPER
+    MOVE "VOID EXTND & ONEXC" TO C_OPER
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -167,12 +186,12 @@ INITIALIZE LROUTINE
 
 .#######################################################################
 CLIP_REFORMAT LROUTINE
-+ Sort CLIP records for Extnd and rehired retirees
++ Sort CLIP records for Extnd, Onexc, and rehired retirees
 
     CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
 
     PACK SCRATCH USING CLIP_FNS," ",CLIP_REFORMAT_FILE," -t":
-                        " -p0013-0017eq#"ONEXC#"
+                        " -p0013-0017eq#"ONEXC#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding ONEXC CLIPS"
 
@@ -212,6 +231,77 @@ CLEAN_UP LROUTINE
     ENDROUTINE
 
 .#######################################################################
+PROCESS_CLIP_FILE LROUTINE
+
+    CALL OPEN_OGBFILE USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE
+
+    CALL PREP_OGBFILE USING CLIP_CSV_FD,CLIP_CSV_FILE
+    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CLIP_CSV_HEADER
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE,CLIP_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_CLI_FIND USING CLIP_ID1
+        CONTINUE IF (NOT EQUAL)
+
+        PACK CLI_REC WITH CLI_LIST,BLANKS
+
+        IF (CLI_LEV2 = "92" | CLIP_TRM = "")
+        debug
+            PACK CSV_LEV2 WITH CLI_LEV2
+            PACK CSV_ID1 WITH CLIP_ID1
+            PACK CSV_ID2 WITH CLIP_ID2
+            PACK CSV_NET WITH CLIP_NET
+            PACK CSV_RT WITH CLIP_RT
+            PACK CSV_EFF WITH CLIP_EFF
+            PACK CSV_TRM WITH CLIP_TRM
+            CALL CREATE_CLIP_CSV
+        ENDIF
+
+        IF (CLIP_RT = "EN" | CLIP_RT = "RN")
+        debug
+            PACK CSV_LEV2 WITH CLI_LEV2
+            PACK CSV_ID1 WITH CLIP_ID1
+            PACK CSV_ID2 WITH CLIP_ID2
+            PACK CSV_NET WITH CLIP_NET
+            PACK CSV_RT WITH CLIP_RT
+            PACK CSV_EFF WITH CLIP_EFF
+            PACK CSV_TRM WITH CLIP_TRM
+            CALL CREATE_CLIP_CSV
+       ENDIF
+
+
+
+
+
+
+        debug
+
+    REPEAT
+        debug
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+CREATE_CLIP_CSV LROUTINE
+
+    PACK CSV_REC WITH   (CSV_ID1),COMMA:
+                        (CSV_ID2),COMMA:
+                        (CSV_LEV2),COMMA:
+                        (CSV_NET),COMMA:
+                        (CSV_RT),COMMA:
+                        (CSV_EFF),COMMA:
+                        (CSV_TRM),COMMA
+
+    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CSV_LIST
+    debug
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
 SEND_EMAIL LROUTINE
 + Email the report
 REPORT@         CHAR    @
@@ -224,19 +314,20 @@ BODY_BASE       CHAR    1000
 
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
-    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+.    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
 
-        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_NOERROR,TEST_EMAIL_TO
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,TEST_EMAIL_TO
         CALL UTIL_EMAIL_NEOJ USING  C_PROG:
                                     RECIPIENTS:
                                     SUBJECT:
                                     BODY:
                                     START_DATETIME:
                                     END_DATETIME
-    ENDIF
+.    ENDIF
 
     RETURN
     ENDROUTINE
+
 .# =================================================================== #
 .# Subroutines Includes
 .# =================================================================== #
@@ -247,8 +338,6 @@ BODY_BASE       CHAR    1000
     INC UTIL_SYSTEM.SR
     INC UTIL_DATA.SR
     INC UTIL_EMAIL.SR
-    INC UTIL_MEMBERS.SR     .MEM* io routines
-    INC UTIL_BILLING.SR     .BIL* io routines
     INC UTIL_CLIENTS.SR     .CLI* io routines
 
 .# =================================================================== #
