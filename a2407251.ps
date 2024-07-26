@@ -39,7 +39,9 @@ REFRESH_RATE        EQU     1000
 .# =================================================================== #
 
 PROG_ID             INIT    "CMSRES"
-INPUT_DIR_ROOT      INIT    "/CMS/inbound/"
+INPUT_DIR_ROOT      INIT    "/i/groups/it/apps/dev/aphas"
+EMAIL_TO_NOERROR    INIT    "$ITAPPS"
+EMAIL_TO_ERROR      INIT    "$ITAPPS"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -57,9 +59,9 @@ TEST_EMAIL_TO       INIT    "${CURRENT_USER_EMAIL}"
 RSP_FD              FILE    FIXED=QRSP_SIZE,TEXT
 RSP_FILE            INIT    "/w/elg1561.txt"
 
-LOG_FILE_SIZE       EQU     1000
-LOG_FD              FILE    VAR=LOG_FILE_SIZE,TEXT
-LOG_FILE            CHAR    "/w/a2407251_log.csv"
+LOG_SIZE            EQU     1000
+LOG_FD              FILE    VAR=LOG_SIZE,TEXT
+LOG_FILE            INIT    "/w/a2407251_log.csv"
 
 UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
 UPDATE_FILE         INIT    "a2407251.upd"
@@ -67,6 +69,10 @@ UPDATE_FILE         INIT    "a2407251.upd"
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
+
+LOG_LIST            LIST
+LOG_REC             CHAR    500
+                    LISTEND
 
 LOG_HEADER          VARLIST "MEM Id":
                             COMMA,"Description":
@@ -85,6 +91,7 @@ CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 
+INPUT_DIR           CHAR    200
 
 
 
@@ -114,7 +121,7 @@ RUN_NOW ROUTINE
     CLOCK TIMESTAMP INTO CURRDATE
 
     CALL UTIL_SET_METADATA USING "a2407251":   Program name
-                                 "UPDATE Medicare Reason ":   Program description
+                                 "UPDATE MEMO_REAS":   Program description
                                  "MENU"     Chain next
 
 .Check if the program was called from the command line
@@ -194,12 +201,12 @@ SET_RUN_CONFIG LROUTINE
 .#######################################################################
 IMPORT_FILE LROUTINE
 + Import the query response file
-
+    debug
 .Set the input file path
     IF (ENABLE_TEST)
         PACK INPUT_DIR WITH INPUT_DIR_ROOT,"/test/"
     ELSE
-        PACK INPUT_DIR WITH INPUT_DIR_ROOT,"/prod/query-response/"
+        PACK INPUT_DIR WITH INPUT_DIR_ROOT
     ENDIF
 
     CALL UTIL_XMESSAGE USING "Preparing response file for processing...",MSG_HEIGHT
@@ -236,7 +243,6 @@ PROCESS_REPORT LROUTINE
     CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
 
     LOOP
-        CLEAR CURRENT_MEDA
 
         CALL READ_OGBFILE_SEQ USING RSP_FD,RSP_FILE,QRSP_LIST
         WHILE (RESULT = 1)
@@ -246,11 +252,9 @@ PROCESS_REPORT LROUTINE
         CALL UTIL_MEM_FIND_REAL USING QRSP_DCN1_MEM_ID
         IF NOT EQUAL
             debug
-            CALL LOG_ERROR USING "Unable to find valid member in IMPACT"
+            CALL WRITE_LOG USING "Unable to find valid member in IMPACT"
             CONTINUE
         ENDIF
-        PACK CURRENT_MEMBER WITH MEM_LIST
-        CALL IS_DEBUG_ID USING MEM_ID1
 
         CALL LOAD_MEDICARE_DATA
 
@@ -270,7 +274,6 @@ LOAD_MEDICARE_DATA LROUTINE
 + Popululate Medicare A
 FIRST_MEMO      NUM     V_FLAG
 ...
-    CLEAR CURRENT_MEDA
 
     SET FIRST_MEMO
     LOOP
@@ -295,7 +298,7 @@ FIRST_MEMO      NUM     V_FLAG
         SWITCH SCRATCH
             CASE "MEDA"
                 CALL CHECK_FOR_UPDATE
-                CALL WRITE_LOG
+                CALL WRITE_LOG USING "Update MEMO_REAS"
             CASE "MEDB"
                 CONTINUE
             DEFAULT
@@ -312,7 +315,7 @@ CHECK_FOR_UPDATE LROUTINE
 + Take out MEMO records we don't care about
 
     IF (CHOP MEMO_VER != "Y")
-        CONTINUE
+        RETURN
     ENDIF
 
     SWITCH QRSP_QUAL_REASON
@@ -339,27 +342,20 @@ WRITE_LOG LROUTINE MSG@
 + Write to the log
 MSG@        CHAR    @
 
-    PACK LOG_WRITE_REC WITH "":
+    PACK LOG_REC WITH "":
         (CHOP MEM_ID1),COMMA:
         (CHOP MSG@),COMMA:
-        (CHOP QRSP_QUAL_REASON)
-
+        (CHOP QRSP_QUAL_REASON),COMMA:
 .CMS Part A
-    PACK LOG_WRITE_REC WITH LOG_WRITE_REC,COMMA:
         (CHOP QRSP_MEDA_EFF),COMMA:
-        (CHOP QRSP_MEDA_TRM)
-
+        (CHOP QRSP_MEDA_TRM),COMMA:
 .OGB Part A
-    UNPACK CURRENT_MEDA INTO MEMO_LIST
-    PACK LOG_WRITE_REC WITH LOG_WRITE_REC,COMMA:
         (CHOP MEMO_EFF),COMMA:
         (CHOP MEMO_TRM),COMMA:
         (CHOP MEMO_REAS)
 
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_WRITE_LIST
-
-    UNPACK HOLD_MEMO INTO MEMO_LIST
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
 
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
 
@@ -378,7 +374,8 @@ WRITE_UPDATE LROUTINE
     PACKLEN INM_REC WITH MEM_LIST,MEME_LIST,MEMO_LIST
     UNPACK INM_REC INTO INM_LIST
 
-    CALL UTIL_FORMAT_INME USING PROG_ID
+    PACK INMO_CHGBY WITH PROG_ID,BLANKS
+    FILL " " IN INMO_CHGDT
 
     CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
 
@@ -390,6 +387,39 @@ WRITE_UPDATE LROUTINE
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
+
+    CALL SEND_EMAIL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "UPDATE MEDICARE REASON"
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Updating MEMO_REAS with current Medicare reason "
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME:
+                                    LOG_FILE
 
 
     RETURN
@@ -405,6 +435,7 @@ CLEAN_UP LROUTINE
     INC UTIL_TEST.SR
     INC UTIL_SYSTEM.SR
     INC UTIL_DATA.SR
+    INC UTIL_FTP.SR
     INC UTIL_EMAIL.SR
     INC UTIL_MEMBERS.SR     .MEM* io routines
     INC UTIL_BILLING.SR     .BIL* io routines
