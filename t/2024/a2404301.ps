@@ -1,0 +1,497 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2404301.ps
++
++ DESCRIPTION:
++   Restore HSA-STAT records edited by HSAACC on 4/29/24 back to their
++   prior state
++
++ CREATED BY:
++   apjwh - 2024-04-30
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+    INC HISTORY.RL
+    INC CLI.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+BAD_USER            INIT    "HSAACC"
+BAD_DATE            INIT    "20240429"
+EMAIL_GROUP         INIT    "$ITAPPS"
+PROG_ID             INIT    "FXHSACC"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_DBG_IDS        CHAR    100,INITIAL ""
+TEST_SKIP_CHG_BUILD NUM     "1"
+TEST_SKIP_DEL       NUM     "0"
+TEST_SKIP_BACKUP    NUM     "0"
+TEST_SKIP_EMAIL     NUM     "0"
+TEST_EMAIL_GROUP    INIT    "${CURRENT_USER_EMAIL}"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FILE           INIT    "/w/a2404301.wrk"
+
+LOG_SIZE            EQU     200
+LOG_FD              FILE    VAR=LOG_SIZE,TEXT
+LOG_FILE            INIT    "/w/a2404301.log.csv"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2404301.upd"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+LOG_LIST            LIST
+LOG_REC             CHAR    LOG_SIZE
+                    LISTEND
+
+LOG_HEADER          VARLIST "Log_Type",COMMA:
+                            "Log_Message",COMMA:
+                            "MEME_ID1",COMMA:
+                            "MEME_ID2"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+MEME_HIST_SIZE       EQU     2000
+MEME_HIST_MAX        EQU     999
+MEME_HIST_COUNT      NUM     7
+MEME_HIST_RECS       CHAR    MEME_HIST_SIZE[MEME_HIST_MAX]
+
+MEME_HIST_LIST       VARLIST HIST_DATE:
+                             HIST_TIME:
+                             MEME_LIST
+
+PRIOR_HIST          CHAR    MEME_HIST_SIZE
+CURR_HIST           CHAR    MEME_HIST_SIZE
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2404301" TO C_PROG        ...Program name
+    MOVE "FIX HSAACC 4/29" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL GET_CHANGED_MEMBERS
+    CALL FIX_RECORDS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Recs Proc'd":
+                                  "Recs Updated":
+                                  "Errors":
+                                  "":
+                                  "":
+                                  ""
+
+    IF (TEST_SKIP_CHG_BUILD)
+        CALL UTIL_EXISTS USING WORK_FILE,"FILE"
+        IF NOT EQUAL
+            CLEAR TEST_SKIP_CHG_BUILD
+        ENDIF
+    ENDIF
+
+    LOADMOD "UTIL_ASORT"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_CHANGED_MEMBERS LROUTINE
++ Build a list of MEM Ids that have been changed since the last run date
+
+    RETURN IF (TEST_SKIP_CHG_BUILD)
+
+    CALL UTIL_XMESSAGE USING "Building list of modified MEME records...",MSG_HEIGHT
+
+.Find all modified MEME records
+    PACK SCRATCH WITH MEME_FNS," ",WORK_FILE," -t -j":
+        " -p0234-0239eq",BAD_USER," ":
+        " -p0226-0233eq",BAD_DATE," ":
+        " -P0126-0129eqSTAT"
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Searching for changed MEME records"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_RECORDS LROUTINE
++ Process the changed members to find people where the retirement date
++ field has been modified
+
+    CALL UTIL_XMESSAGE USING "Fixing bad updates...",MSG_HEIGHT
+
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        CLEAR MEME_HIST_RECS,MEME_HIST_COUNT
+
+        CALL READ_OGBFILE_SEQ USING WORK_FD,WORK_FILE,MEME_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        CALL UTIL_MEM_FIND_REAL USING MEME_ID1
+        IF NOT EQUAL
+            CALL LOG_ERROR USING "MEM record not found"
+            CONTINUE
+        ENDIF
+
+        IF (CHOP TEST_DBG_IDS > "")
+            SCAN MEM_ID1 IN TEST_DBG_IDS
+            IF EQUAL
+                RESET TEST_DBG_IDS
+                debug
+            ENDIF
+        ENDIF
+
+        CALL GET_MEME_CHANGE_HISTORY
+        CALL RESTORE_TO_PRIOR_STATE
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL CLOSE_OGBFILE USING LOG_FD,LOG_FILE
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+GET_MEME_CHANGE_HISTORY LROUTINE
++ Pull history of this record into memory
+
+    FILL " " IN MEME_HIST_RECS
+    CLEAR MEME_HIST_RECS,MEME_HIST_COUNT
+
+.Set a baseline as our current
+.    CLOCK TIMESTAMP INTO SCRATCH
+.    UNPACK SCRATCH INTO HIST_DATE,HIST_TIME
+.    CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_HIST_LIST:
+.                                            MEME_HIST_RECS:
+.                                            MEME_HIST_COUNT:
+.                                            MEME_HIST_MAX
+
+.Get all MEM history records from the current history file
+    PACK HIST_NAME WITH "meme.ix1",BLANKS
+    PACK HIST_RECID WITH MEME_ID1,MEME_ID2,BLANKS
+    PACK HIST_FK12 WITH HIST_NAME,HIST_RECID,BLANKS
+
+    CALL FILE_READ USING HIST_FD:    ...File declaration list
+                         HIST_FN:          ...File name list
+                         HIST_FC:          ...(I)ndex or (A)imdex
+                         HIST_FV:          ...File key varlists
+                         HIST_FK:          ...File key sizes
+                         HIST_LIST:        ...File record (field list)
+                         HIST_REC:         ...File record (packed)
+                         HIST_OLD:         ...File saved when read
+                         HIST_QTY:         ...Number of files
+                         2                 ...File idx used (*custom*)
+    LOOP
+        CALL FILE_NEXT
+        WHILE (RESULT = 1)
+        PACK SCRATCH WITH HIST_NAME,HIST_RECID
+        WHILE (SQUEEZE SCRATCH = SQUEEZE HIST_FK12)
+
+        UNPACK HIST_REC1 INTO MEME_LIST
+        CALL UTIL_SAFE_PACK_ARRAY_LIST USING MEME_HIST_LIST:
+                                             MEME_HIST_RECS:
+                                             MEME_HIST_COUNT:
+                                             MEME_HIST_MAX
+    REPEAT
+
+    IF (MEME_HIST_COUNT > 1)
+        ASORT ATYPE="REC":
+              ARRAY=MEME_HIST_RECS:
+              AMAX=MEME_HIST_COUNT:
+              SRTFLD1="1-16",SRTORD1="D"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+RESTORE_TO_PRIOR_STATE LROUTINE
++ Find the history record prior to the bad update, and fix
+REC                 NUM     7
+FOUND_BAD_STATE     NUM     1
+...
+    CLEAR FOUND_BAD_STATE
+
+    FOR REC FROM 1 TO MEME_HIST_COUNT
+        UNPACK MEME_HIST_RECS[REC] INTO MEME_HIST_LIST
+        CONTINUE IF (HIST_DATE > BAD_DATE)
+
+        IF (HIST_DATE = BAD_DATE & MEME_CHGBY = BAD_USER)
+            SET FOUND_BAD_STATE
+            CONTINUE
+        ENDIF
+
+        IF NOT (FOUND_BAD_STATE)
+            CALL LOG_ERROR USING "Unable to find bad state as reference point - skipping"
+            RETURN
+        ENDIF
+
+        CALL UPDATE_FROM_HISTORY
+        RETURN
+    REPEAT
+
+    IF (FOUND_BAD_STATE)
+        CALL LOG_ERROR USING "Unable to find prior history to restore"
+    ELSE
+        CALL LOG_ERROR USING "Unable to find bad state as reference point"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_FROM_HISTORY LROUTINE
+    PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+    UNPACK INM_REC INTO INM_LIST
+
+    CALL UTIL_FORMAT_INME USING PROG_ID
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+
+    CALL LOG_UPDATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_UPDATE LROUTINE ...
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    CALL WRITE_LOG USING "UPDATE",("Term date updated to "+INME_TRM)
+    RETURN
+    ENDROUTINE
+
+
+
+.#######################################################################
+LOG_ERROR LROUTINE MSG@
++ Log an error
+MSG@        CHAR    @
+...
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    CALL WRITE_LOG USING "ERROR",MSG@
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_LOG LROUTINE TYPE@,MSG@
++ Log an error
+TYPE@               CHAR    @
+MSG@                CHAR    @
+...
+    SWITCH TYPE@
+        CASE "UPDATE" | "ERROR"
+        DEFAULT
+            debug
+            CALL UTIL_ERRORMSG USING "Invalid log type","WRITE_LOG"
+    ENDSWITCH
+
+    PACK LOG_REC WITH TYPE@,COMMA:
+                      MSG@,COMMA:
+                      (CHOP MEME_ID1),COMMA:
+                      (CHOP MEME_ID2)
+
+    CALL WRITE_OGBREC USING LOG_FD,LOG_FILE,LOG_LIST
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    debug
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+
+    CALL EMAIL_REPORT USING LOG_FILE
+
+    IF NOT (TEST_SKIP_BACKUP)
+        CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
+        CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
+    ENDIF
+
+    IF NOT (TEST_SKIP_DEL)
+        CALL UTIL_DELETE_FILE USING LOG_FILE
+        CALL UTIL_DELETE_FILE USING WORK_FILE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+EMAIL_REPORT LROUTINE REPORT@
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+...
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_GROUP,TEST_EMAIL_GROUP
+
+    PACK SCRATCH WITH C_PROG,": Bad 4/29/24 HSAACC Edit Restoration"
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK SCRATCH WITH "Job to restore MEME records edited by ",BAD_USER:
+        " on ",BAD_DATE," to prior state from history."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,SCRATCH
+
+    RETURN IF (TEST_SKIP_EMAIL)
+
+    CALL UTIL_EMAIL_NEOJ USING C_PROG:
+                               RECIPIENTS:
+                               SUBJECT:
+                               BODY:
+                               START_DATETIME:
+                               END_DATETIME:
+                               REPORT@
+    RETURN
+    ENDROUTINE
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC VALID.IO
+    INC UTIL_COMMON.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_VALID.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_MEMMEM.SR
+    INC UTIL_CLI.SR
+    INC UTIL_FORMAT_UPDATES.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #

@@ -1,0 +1,445 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2407011.ps
++
++ DESCRIPTION:
++   Term all DHH CLIP records for end of contract - 6/30/24
++
++ CREATED BY:
++   apjwh - 2024-05-01
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC CLIP.RL
+    INC CLI.RL
+    INC UTIL_COMMON.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+PARAM_ALLOWUPDATE   CHAR    1
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_ID             INIT    "TRMDHH"
+EMAIL_TO_NOERROR    INIT    "$ITAPPS"
+EMAIL_TO_ERROR      INIT    "$ITAPPS"
+CONTRACT_END        INIT    "20240630"
+
+CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_WRITE     NUM     "1"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+REPORT_FD           FILE    VAR=200,TEXT
+REPORT_FILE         INIT    "/w/tmp/a2407011.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+WORK_LIST           LIST
+WORK_ID             CHAR    8
+                    LISTEND
+
+REPORT_LIST         LIST
+REPORT_REC          CHAR    200
+                    LISTEND
+
+REPORT_HEADER       VARLIST "CLI ID,":
+                            "CLI LEV1,":
+                            "CLI LEV2,":
+                            "CLIP ID2,":
+                            "LOG MESSAGE,":
+                            "NETWORK,":
+                            "PRODUCT,":
+                            "PLAN,":
+                            "EFFECTIVE,":
+                            "UPDATED TERM,":
+                            "RATE"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+FOUND_INSTANCE      NUM     1
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2407011" TO C_PROG        ...Program name
+    MOVE "CLEAN DHH CLIPS (FULL)" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+    debug
+    CALL INITIALIZE
+    CALL FIX_LDH_CLIPS
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "CLIPs Proc'd":
+                                  "Termed":
+                                  "Voided":
+                                  "":
+                                  "":
+                                  ""
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_LDH_CLIPS LROUTINE
+
+    CALL PREP_OGBFILE USING REPORT_FD,REPORT_FILE
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
+
+    CALL FIX_CLI_CLIPS_BY_LEV1 USING "5005"
+    CALL FIX_CLI_CLIPS_BY_LEV1 USING "5006"
+    CALL FIX_CLI_CLIPS_BY_LEV1 USING "5007"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_CLI_CLIPS_BY_LEV1 LROUTINE LEV1@
+LEV1@       CHAR    @
+...
+
+    CLEAR CLI_AIM
+    PACK CLI_AIM1 WITH "01L",LEV1@,BLANKS
+
+    LOOP
+        IF (CHOP CLI_ID1 = "")
+            CALL UTIL_CLI_AIMFIND
+        ELSE
+            CALL UTIL_CLI_AIMNEXT
+        ENDIF
+        WHILE EQUAL
+
+        CALL FIX_CLI_CLIPS
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+FIX_CLI_CLIPS LROUTINE
+CURR_NET        CHAR    10
+...
+    debug .untested
+
+    CLEAR CLIP_LIST
+    LOOP
+        IF (CHOP CLIP_ID2 = "")
+            CALL UTIL_CLIP_FIND USING CLI_ID1,""
+        ELSE
+            CALL UTIL_CLIP_NEXT
+        ENDIF
+        WHILE EQUAL
+
+.skip voids
+        IF (CHOP CLIP_TRM > "")
+            CONTINUE IF (CLIP_TRM < CLIP_EFF)
+            CONTINUE IF (CLIP_TRM <= CONTRACT_END)  .just in case
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        SQUEEZE CLIP_NET INTO CURR_NET
+        SWITCH CURR_NET
+            CASE "BLUE"
+                CALL VOID_CLIP
+            CASE "NOCOV"
+                CALL TERM_CLIP
+            CASE "DHH"
+                CALL TERM_CLIP
+            DEFAULT
+                debug
+                CALL VOID_CLIP
+        ENDSWITCH
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VOID_CLIP LROUTINE
+
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+    CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
+
+    CALL WRITE_CLIP USING CLIP_TRM
+    CALL LOG_TERM USING "Voided CLIP"
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+TERM_CLIP LROUTINE
+
+.Future CLIP? Void
+    IF (CHOP CLIP_EFF > CONTRACT_END)
+        CALL VOID_CLIP
+    ELSE
+        CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+        CALL WRITE_CLIP USING CONTRACT_END
+        CALL LOG_TERM USING "CLIP Termed"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_CLIP LROUTINE TRM@
++ Prepare for update
+TRM@        CHAR    @
+...
+    PACK CLIP_TRM WITH TRM@,BLANKS
+    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
+    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+
+    RETURN IF NOT (CFG_DO_CLIP_WRITE)
+
+    CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
+                            CLIP_FN:        ...File name list
+                            CLIP_FC:        ...(I)ndex or (A)imdex
+                            CLIP_FV:        ...File key varlists
+                            CLIP_FK:        ...File key sizes
+                            CLIP_LIST:      ...File record (field list)
+                            CLIP_REC:       ...File record (packed)
+                            CLIP_OLD:       ...File saved when read
+                            CLIP_QTY:       ...Number of files
+                            1               ...File number for this read
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_TERM LROUTINE MSG@
+MSG@        DIM     @
+...
+    SET FOUND_INSTANCE
+    PACK REPORT_REC WITH    (CHOP CLIP_ID1),COMMA:
+                            (CHOP CLI_LEV1),COMMA:
+                            (CHOP CLI_LEV2),COMMA:
+                            (CHOP CLIP_ID2),COMMA:
+                            (CHOP MSG@),COMMA:
+                            (CHOP CLIP_NET),COMMA:
+                            (CHOP CLIP_PRD),COMMA:
+                            (CHOP CLIP_PLAN),COMMA:
+                            (CHOP CLIP_EFF),COMMA:
+                            (CHOP CLIP_TRM),COMMA:
+                            (CHOP CLIP_RT)
+
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    REPLACE MAKEUPPER IN PARAM_ALLOWUPDATE
+    SWITCH PARAM_ALLOWUPDATE
+        CASE "Y"
+            SET CFG_DO_CLIP_WRITE
+        CASE "N"
+            CLEAR CFG_DO_CLIP_WRITE
+        DEFAULT
+    ENDSWITCH
+
+    IF (TEST_SKIP_WRITE)
+        CLEAR CFG_DO_CLIP_WRITE
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",REPORT_FILE,""
+    CALL SEND_EMAIL
+    CALL UTIL_DELETE_FILE USING REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+
+    PACK SCRATCH WITH "LDH/DHH CLIPs Cleaned Up"
+    IF (FOUND_INSTANCE)
+        PACK SCRATCH WITH SCRATCH," *UPDATED*"
+    ELSE
+        PACK SCRATCH WITH SCRATCH," *NO UPDATE REQUIRED*"
+    ENDIF
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Checking for LDH/DHH CLIPs to term due to end of contract."
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    IF (FOUND_INSTANCE)
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME:
+                                    REPORT_FILE
+    ELSE
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_NOERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_DATES.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #

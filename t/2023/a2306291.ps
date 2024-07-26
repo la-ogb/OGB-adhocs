@@ -1,0 +1,639 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2306291.ps
++
++ DESCRIPTION:
++   Vantage Medicare Advantage plans - default to region-based
++   BCBS HMO65 plan effective 1/1/24
++
++ CREATED BY:
++   aphas - 2023-06-29
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_MEMMEM.CB
+    INC MEMU.RL
+    INC CLI.RL
+    INC XALID.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     50
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+PROG_ID             INIT    "TRMVAN"
+EMAIL_TO_NOERROR    INIT    "$ITAPPS"
+EMAIL_TO_ERROR      INIT    "$ITAPPS"
+NEW_TERM_DATE       INIT    "20231231"
+NEW_EFF_DATE        INIT    "20240101"
+NEW_NETWORK         INIT    "BLU65"
+NEW_PRODUCT         INIT    "HMO65"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+WORK_FD             FILE    FIXED=X_MEME_SIZE,TEXT
+WORK_FILE           INIT    "/w/tmp/a2306291.id.wrk"
+
+UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
+UPDATE_FILE         INIT    "a2306291.upd"
+
+REPORT_FD           FILE    VAR=200,TEXT
+REPORT_FILE         INIT    "/w/tmp/a2306291.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+WORK_LIST           LIST
+WORK_ID             CHAR    8
+                    LISTEND
+
+REPORT_LIST         LIST
+REPORT_REC          CHAR    200
+                    LISTEND
+
+REPORT_HEADER       VARLIST "MEMBER ID,":
+                            "LOG MESSAGE,":
+                            "FIRST NAME,":
+                            "LAST NAME,":
+                            "RELATION,":
+                            "LEV1,":
+                            "LEV2,":
+                            "INDIVIDUALLY BILLED,":
+                            "MEME EFF,":
+                            "MEME TRM,":
+                            "NETWORK,":
+                            "PRODUCT,":
+                            "PLAN,":
+                            "ZIP TYPE,":
+                            "ZIP CODE,":
+                            "STATE"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+SOMETHING_IN_LOG    NUM     1
+ORIG_EFF            CHAR    8
+ORIG_TRM            CHAR    8
+ORIG_TLET           CHAR    1
+ORIG_TRUN           CHAR    8
+ZIP_FAIL            NUM     1
+ZIP_TYPE            CHAR    20
+ZIPCODE             CHAR    5
+ZIPSTATE            CHAR    2
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+
+.#######################################################################
+RUN_NOW ROUTINE
++ Configure runtime settings
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    TRAPSAVE TRAP_DATA
+    TRAPCLR ALL
+    TRAP QUIT NORESET IF F9
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2306291" TO C_PROG        ...Program name
+    MOVE "VANTA TO HMO" TO C_OPER  ...Program description
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
+    debug
+    CALL INITIALIZE
+    CALL MEME_REFORMAT
+    CALL CONVERT_PLAN
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "Enrollments Proc'd":
+                                  "Errors":
+                                  "Updates":
+                                  "":
+                                  "":
+                                  ""
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MEME_REFORMAT LROUTINE
++ Sort MEME records for VANTA plans other then MHHP
+
+    CALL UTIL_XMESSAGE USING "Building work files...",MSG_HEIGHT
+
+.Find future termed coverage
+    PACK SCRATCH USING MEME_FNS," ",WORK_FILE," -t":
+                        " -p0112-0116eq#"VANTA#"":
+                        " -p0117-0121ne#"MHHP#"":
+                        " -p0104-0111gt#"20231231#""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding MEME Data"
+
+.Find open coverage
+    PACK DATE_CCYYMMDD WITH BLANKS
+    PACK SCRATCH USING MEME_FNS," ",WORK_FILE," -t -a":
+                        " -p0112-0116eq#"VANTA#"":
+                        " -p0117-0121ne#"MHHP#"":
+                        " -p0104-0111eq#"",DATE_CCYYMMDD,"#""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding MEME Data"
+
+.Sort file
+    PACK SCRATCH WITH WORK_FILE, " ", WORK_FILE," 1-12 -t"
+    CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
+
+    MESSAGEERASE
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+CONVERT_PLAN LROUTINE
+    CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
+    CALL PREP_OGBFILE USING UPDATE_FD,UPDATE_FILE
+
+    CALL PREP_OGBFILE USING REPORT_FD, REPORT_FILE
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD, REPORT_FILE, REPORT_HEADER
+
+    debug
+    LOOP
+        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, MEME_LIST
+        WHILE (RESULT = 1)
+
+        CALL UTIL_MEM_FIND USING MEME_ID1
+        CONTINUE IF NOT EQUAL
+
+.skip voids
+        IF (CHOP MEME_TRM > "")
+            CONTINUE IF (CHOP MEME_TRM < MEME_EFF)
+        ENDIF
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+.Find Region using Physical address or Mailing address
+        FILL " " IN ZIP_TYPE,ZIPCODE
+
+        CALL UTIL_GET_ACTIVE_MEMU USING MEME_ID1,NEW_EFF_DATE
+        IF EQUAL
+            IF (MEM_ID1 <> MEMU_ID1)
+                debug .is this possible?
+                CONTINUE
+            ENDIF
+
+            CALL DEFAULT_PLAN USING MEMU_P,MEMU_O,"Physical"
+        ELSE
+            CALL DEFAULT_PLAN USING MEM_ZIP,MEM_STATE,"MEM"
+        ENDIF
+
+    REPEAT
+
+    CALL CLOSE_OGBFILE USING UPDATE_FD,UPDATE_FILE
+    CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
+    CALL UTIL_DELETE_FILE USING WORK_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+DEFAULT_PLAN LROUTINE ZIP@,STATE@,ZIPTYPE@
++Find what Reigon member's zip is in
+ZIP@        CHAR    @
+STATE@      CHAR    @
+ZIPTYPE@    CHAR    @
+...
+    PACK ZIPCODE WITH ZIP@
+    PACK ZIP_TYPE WITH ZIPTYPE@
+    PACK ZIPSTATE WITH STATE@
+
+    IF (CHOP ZIPCODE = "")
+        debug
+        CALL LOG_ERROR USING "No zipcode found"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG1"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN1"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG2"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN2"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG3"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN3"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG4"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN4"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG5"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN5"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG6"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN6"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG7"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN7"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG8"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN8"
+        RETURN
+    ENDIF
+
+    CALL CHECK_IS_IN_REGION USING "RG9"
+    IF NOT (ZIP_FAIL)
+        CALL UPDATE_PLAN USING "RGN9"
+        RETURN
+    ENDIF
+
+.If ZIP is not found in any regions
+    IF (ZIPSTATE = "LA")
+        CALL LOG_ERROR USING "ERROR: ZIP is not in region"
+    ELSE
+        CALL LOG_ERROR USING "ERROR: ZIP is out of state"
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_IS_IN_REGION LROUTINE RGNXAL@
++find zip code in table
+RGNXAL@     CHAR    @
+...
+    SET ZIP_FAIL
+
+    RETURN IF (SQUEEZE ZIPCODE = "")
+    PACK XAL_KEY1 WITH RGNXAL@,ZIPCODE,BLANKS
+    CALL XAL_READ1
+
+    IF (RESULT = 1)
+        CLEAR  ZIP_FAIL
+        RETURN
+    ENDIF
+
+    LOOP
+        CALL XAL_NEXT1
+        BREAK IF (RESULT <> 1)
+        BREAK IF (XAL_TYPE <> RGNXAL@)
+
+        MATCH ZIPCODE WITH XAL_CODE
+        BREAK IF NOT EQUAL
+
+        CONTINUE IF (NEW_EFF_DATE < XAL_EFF)
+        CONTINUE IF (NEW_EFF_DATE > XAL_TRM AND SQUEEZE XAL_TRM > "")
+
+        CLEAR ZIP_FAIL
+
+        BREAK
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_UPDATES LROUTINE MSG@,NEWPLAN@
+MSG@        CHAR    @
+NEWPLAN@    CHAR    @
+...
++ Log coverage update
+
+    SET SOMETHING_IN_LOG
+    PACK REPORT_REC WITH    (CHOP MEME_ID1),PIPE:
+                            (CHOP MSG@),PIPE:
+                            (CHOP MEM_FNAME),PIPE:
+                            (CHOP MEM_LNAME),PIPE:
+                            (CHOP MEM_REL),PIPE:
+                            (CHOP MEME_LEV1),PIPE:
+                            (CHOP MEME_LEV2),PIPE:
+                            (CHOP MEME_MODE),PIPE:
+                            (CHOP MEME_EFF),PIPE:
+                            (CHOP MEME_TRM),PIPE:
+                            (CHOP MEME_NET),PIPE:
+                            (CHOP MEME_PRD),PIPE:
+                            (CHOP MEME_PLAN),PIPE:
+                            (CHOP ZIP_TYPE),PIPE:
+                            (CHOP ZIPCODE),PIPE:
+                            (CHOP ZIPSTATE)
+
+    REPLACE ",;" IN REPORT_REC
+    REPLACE "|," IN REPORT_REC
+
+    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_ERROR LROUTINE MSG@
+MSG@        CHAR    @
+...
+    CALL LOG_UPDATES USING MSG@,""
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_PLAN LROUTINE PLAN@
++ Term Vantage and create new Blue Local Plus
+PLAN@       CHAR    @
+...
+    FILL " " IN ORIG_TRM:
+                ORIG_TLET:
+                ORIG_TRUN
+
+    IF (CHOP MEME_TLET > "")
+        PACK ORIG_TLET WITH MEME_TLET
+    ENDIF
+
+    IF (CHOP MEME_TRUN > "")
+        PACK ORIG_TRUN WITH MEME_TRUN
+    ENDIF
+
+.For future plans, void & replace
+    IF (MEME_EFF > NEW_TERM_DATE)
+
+        PACK ORIG_EFF WITH MEME_EFF
+        PACK ORIG_TRM WITH MEME_TRM
+
+        CALL UTIL_CALC_DAY_BEFORE USING MEME_EFF,MEME_TRM
+        PACK MEME_TLET WITH "V"
+        CALL WRITE_UPDATE
+
+        CALL LOG_UPDATES USING "FUTURE PLAN VOIDED & REPLACED",PLAN@
+
+        CALL CREATE_NEW USING ORIG_EFF,PLAN@
+
+.For active plans, default to replacement for 1/1
+    ELSE
+
+        PACK ORIG_TRM WITH MEME_TRM
+
+        PACK MEME_TRM WITH NEW_TERM_DATE
+        FILL "~" IN MEME_TLET:
+                    MEME_TRUN
+        CALL WRITE_UPDATE
+
+        CALL LOG_UPDATES USING "OLD PLAN",PLAN@
+
+        CALL CREATE_NEW USING NEW_EFF_DATE,PLAN@
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CREATE_NEW LROUTINE EFF@,PLAN@
++ Create new Blue Cross record
+EFF@        CHAR    @
+PLAN@       CHAR    @
+...
+    FILL " " IN MEME_ID2
+    PACK MEME_EFF WITH EFF@,BLANKS
+    PACK MEME_TRM WITH ORIG_TRM,BLANKS
+    PACK MEME_TLET WITH ORIG_TLET,BLANKS
+    PACK MEME_TRUN WITH ORIG_TRUN,BLANKS
+
+    IF (CHOP MEME_TRM > "" & MEME_TRM < MEME_EFF)
+        debug .how?
+    ENDIF
+
+    PACK MEME_NET WITH NEW_NETWORK,BLANKS
+    PACK MEME_PRD WITH NEW_PRODUCT,BLANKS
+    PACK MEME_PLAN WITH PLAN@,BLANKS
+
+    CALL LOG_UPDATES USING "NEW PLAN",PLAN@
+
+    CALL WRITE_UPDATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_UPDATE LROUTINE
++ Write update record
+HOLD_MEM    CHAR    X_MEM_SIZE
+...
+    PACK HOLD_MEM WITH MEM_LIST
+    FILL " " IN MEM_LIST
+    PACK MEM_ID1 WITH MEME_ID1,BLANKS
+
+    FILL " " IN INM_LIST
+    PACKLEN INM_REC WITH MEM_LIST,MEME_LIST
+    UNPACK INM_REC INTO INM_LIST
+
+    CALL UTIL_FORMAT_INME USING PROG_ID
+
+    CALL WRITE_OGBREC_SEQ USING UPDATE_FD,UPDATE_FILE,INM_LIST
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    UNPACK HOLD_MEM INTO MEM_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+
+    debug
+
+    CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",REPORT_FILE,""
+    CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
+    CALL SEND_EMAIL
+    CALL UTIL_DELETE_FILE USING REPORT_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+
+    PACK SCRATCH WITH "Vantage Medicare Advantage Default to BLU65 HMO65 for 2024"
+    IF (SOMETHING_IN_LOG)
+        PACK SCRATCH WITH SCRATCH," *UPDATED*"
+    ELSE
+        PACK SCRATCH WITH SCRATCH," *NO UPDATE REQUIRED*"
+    ENDIF
+
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "":
+        "Checking for members with Vantage to term and update. "
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    IF (SOMETHING_IN_LOG)
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME:
+                                    REPORT_FILE
+    ELSE
+        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_NOERROR,TEST_EMAIL_TO
+        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                    RECIPIENTS:
+                                    SUBJECT:
+                                    BODY:
+                                    START_DATETIME:
+                                    END_DATETIME
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_FORMAT_UPDATES.SR
+    INC UTIL_DATES.SR
+    INC UTIL_MEMBERS.SR     .MEM* io routines
+    INC UTIL_BILLING.SR     .BIL* io routines
+    INC UTIL_CLIENTS.SR     .CLI* io routines
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
