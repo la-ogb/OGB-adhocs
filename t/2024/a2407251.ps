@@ -70,9 +70,12 @@ CSV_REC             CHAR    200
 CLIP_CSV_HEADER     VARLIST "CLIP ID1,":
                             "CLIP ID2,":
                             "CLI LEV2,":
+                            "CLI LEV2,":
+                            "CLIP PRODUCT,"
+                            "CLIP PLAN,"
                             "CLIP NETWORK,":
                             "CLIP RATE,":
-                            "CLIP EFF":
+                            "CLIP EFF,":
                             "CLIP TRM"
 
 .# =================================================================== #
@@ -84,11 +87,15 @@ START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 CSV_ID1             CHAR    8
 CSV_ID2             CHAR    4
-CSV_NET             CHAR    4
+CSV_NET             CHAR    5
 CSV_RT              CHAR    2
 CSV_EFF             CHAR    8
 CSV_TRM             CHAR    8
+CSV_LEV1            CHAR    4
 CSV_LEV2            CHAR    4
+CSV_PRD             CHAR    2
+CSV_PLN             CHAR    4
+CSV_NET             CHAR    4
 
 
 .# =================================================================== #
@@ -242,11 +249,22 @@ PROCESS_CLIP_FILE LROUTINE
         CALL READ_OGBFILE_SEQ USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE,CLIP_LIST
         WHILE (RESULT = 1)
 
-        CALL UTIL_CLI_FIND USING CLIP_ID1
-        CONTINUE IF (NOT EQUAL)
-
+        CLEAR CLI_LIST
         PACK CLI_REC WITH CLI_LIST,BLANKS
 
+        CALL UTIL_CLI_FIND USING CLIP_ID1
+        CONTINUE IF (NOT EQUAL)
+                IF (CLIP_RT = "EN" | CLIP_RT = "RN")
+        debug
+            PACK CSV_LEV2 WITH CLI_LEV2
+            PACK CSV_ID1 WITH CLIP_ID1
+            PACK CSV_ID2 WITH CLIP_ID2
+            PACK CSV_NET WITH CLIP_NET
+            PACK CSV_RT WITH CLIP_RT
+            PACK CSV_EFF WITH CLIP_EFF
+            PACK CSV_TRM WITH CLIP_TRM
+            CALL CREATE_CLIP_CSV
+       ENDIF
         IF (CLI_LEV2 = "92" | CLIP_TRM = "")
         debug
             PACK CSV_LEV2 WITH CLI_LEV2
@@ -258,20 +276,6 @@ PROCESS_CLIP_FILE LROUTINE
             PACK CSV_TRM WITH CLIP_TRM
             CALL CREATE_CLIP_CSV
         ENDIF
-
-        IF (CLIP_RT = "EN" | CLIP_RT = "RN")
-        debug
-            PACK CSV_LEV2 WITH CLI_LEV2
-            PACK CSV_ID1 WITH CLIP_ID1
-            PACK CSV_ID2 WITH CLIP_ID2
-            PACK CSV_NET WITH CLIP_NET
-            PACK CSV_RT WITH CLIP_RT
-            PACK CSV_EFF WITH CLIP_EFF
-            PACK CSV_TRM WITH CLIP_TRM
-            CALL CREATE_CLIP_CSV
-       ENDIF
-
-
 
 
 
@@ -288,7 +292,9 @@ CREATE_CLIP_CSV LROUTINE
 
     PACK CSV_REC WITH   (CSV_ID1),COMMA:
                         (CSV_ID2),COMMA:
+                        (CSV_LEV1),COMMA:
                         (CSV_LEV2),COMMA:
+.. ADD NEW VARIABLES
                         (CSV_NET),COMMA:
                         (CSV_RT),COMMA:
                         (CSV_EFF),COMMA:
