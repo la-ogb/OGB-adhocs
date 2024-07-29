@@ -38,6 +38,7 @@ REFRESH_RATE        EQU     1000
 .# Configuration
 .# =================================================================== #
 
+EMAIL_TO            INIT    "$CURRENT_USER_EMAIL" ...."$ITAPPS"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -46,6 +47,7 @@ REFRESH_RATE        EQU     1000
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
 TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_WRITE     NUM     "1" 1.skip, 0.write
                     LISTEND
 
 .# =================================================================== #
@@ -69,10 +71,10 @@ CSV_REC             CHAR    200
 
 CLIP_CSV_HEADER     VARLIST "CLIP ID1,":
                             "CLIP ID2,":
+                            "CLI LEV1,":
                             "CLI LEV2,":
-                            "CLI LEV2,":
-                            "CLIP PRODUCT,"
-                            "CLIP PLAN,"
+                            "CLIP PRODUCT,":
+                            "CLIP PLAN,":
                             "CLIP NETWORK,":
                             "CLIP RATE,":
                             "CLIP EFF,":
@@ -93,9 +95,8 @@ CSV_EFF             CHAR    8
 CSV_TRM             CHAR    8
 CSV_LEV1            CHAR    4
 CSV_LEV2            CHAR    4
-CSV_PRD             CHAR    2
+CSV_PRD             CHAR    5
 CSV_PLN             CHAR    4
-CSV_NET             CHAR    4
 
 
 .# =================================================================== #
@@ -183,7 +184,7 @@ INITIALIZE LROUTINE
     CALL UTIL_GET_SYS_DIRS_COMMON
 
 .TODO: set counter desc
-    CALL UTIL_INIT_COUNTERS USING "Counter 1 - Not Used":
+    CALL UTIL_INIT_COUNTERS USING "CLIP Records found":
                                   "Counter 2 - Not Used"
 
     CALL SET_RUN_CONFIG
@@ -211,7 +212,100 @@ CLIP_REFORMAT LROUTINE
 	PACK SCRATCH WITH CLIP_REFORMAT_FILE, " ", CLIP_REFORMAT_FILE," 1-12 -t"
 	CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
 
-    DEBUG
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+PROCESS_CLIP_FILE LROUTINE
+
+    CALL OPEN_OGBFILE USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE
+
+    CALL PREP_OGBFILE USING CLIP_CSV_FD,CLIP_CSV_FILE
+    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CLIP_CSV_HEADER
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+    LOOP
+        CALL READ_OGBFILE_SEQ USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE,CLIP_LIST
+        WHILE (RESULT = 1)
+
+        CLEAR CLI_LIST
+        PACK CLI_REC WITH CLI_LIST,BLANKS
+
+        CALL UTIL_CLI_FIND USING CLIP_ID1
+        CONTINUE IF (NOT EQUAL)
+
+....CHANGE TO CASE FOR 3 DIFFERNT RATES
+        IF (CLIP_RT = "EN" | CLIP_RT = "RN" | CLIP_RT = "01")
+            CALL CREATE_CLIP_CSV
+            CONTINUE
+        ENDIF
+
+        IF (CLI_LEV2 = "92   ")
+            CONTINUE IF (CLIP_TRM != "")
+            CALL CREATE_CLIP_CSV
+            CONTINUE
+        ENDIF
+
+        CALL VOID_CLIP
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+VOID_CLIP LROUTINE
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    IF (TEST_SKIP_WRITE)
+
+    ELSE
+
+    ENDIF
+
+    CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
+                            CLIP_FN:        ...File name list
+                            CLIP_FC:        ...(I)ndex or (A)imdex
+                            CLIP_FV:        ...File key varlists
+                            CLIP_FK:        ...File key sizes
+                            CLIP_LIST:      ...File record (field list)
+                            CLIP_REC:       ...File record (packed)
+                            CLIP_OLD:       ...File saved when read
+                            CLIP_QTY:       ...Number of files
+                            1               ...File number for this read
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+CREATE_CLIP_CSV LROUTINE
+
+    PACK CSV_ID1 WITH CLIP_ID1
+    PACK CSV_ID2 WITH CLIP_ID2
+    PACK CSV_LEV1 WITH CLI_LEV1
+    PACK CSV_LEV2 WITH CLI_LEV2
+    PACK CSV_PRD WITH CLIP_PRD
+    PACK CSV_PLN WITH CLIP_PLAN
+    PACK CSV_NET WITH CLIP_NET
+    PACK CSV_RT WITH CLIP_RT
+    PACK CSV_EFF WITH CLIP_EFF
+    PACK CSV_TRM WITH CLIP_TRM
+
+    PACK CSV_REC WITH   (CHOP CSV_ID1),COMMA:
+                        (CHOP CSV_ID2),COMMA:
+                        (CHOP CSV_LEV1),COMMA:
+                        (CHOP CSV_LEV2),COMMA:
+                        (CHOP CSV_PRD),COMMA:
+                        (CHOP CSV_PLN),COMMA:
+                        (CHOP CSV_NET),COMMA:
+                        (CHOP CSV_RT),COMMA:
+                        (CHOP CSV_EFF),COMMA:
+                        (CHOP CSV_TRM),COMMA
+
+    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CSV_LIST
+    debug
+    CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
     RETURN
     ENDROUTINE
 
@@ -232,77 +326,9 @@ CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
 
+    CALL UTIL_TRIM_TRAILING_SPACE USING CLIP_CSV_FILE,CLIP_CSV_FILE
 .TODO: final clean up
-
-    RETURN
-    ENDROUTINE
-
-.#######################################################################
-PROCESS_CLIP_FILE LROUTINE
-
-    CALL OPEN_OGBFILE USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE
-
-    CALL PREP_OGBFILE USING CLIP_CSV_FD,CLIP_CSV_FILE
-    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CLIP_CSV_HEADER
-
-    LOOP
-        CALL READ_OGBFILE_SEQ USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE,CLIP_LIST
-        WHILE (RESULT = 1)
-
-        CLEAR CLI_LIST
-        PACK CLI_REC WITH CLI_LIST,BLANKS
-
-        CALL UTIL_CLI_FIND USING CLIP_ID1
-        CONTINUE IF (NOT EQUAL)
-                IF (CLIP_RT = "EN" | CLIP_RT = "RN")
-        debug
-            PACK CSV_LEV2 WITH CLI_LEV2
-            PACK CSV_ID1 WITH CLIP_ID1
-            PACK CSV_ID2 WITH CLIP_ID2
-            PACK CSV_NET WITH CLIP_NET
-            PACK CSV_RT WITH CLIP_RT
-            PACK CSV_EFF WITH CLIP_EFF
-            PACK CSV_TRM WITH CLIP_TRM
-            CALL CREATE_CLIP_CSV
-       ENDIF
-        IF (CLI_LEV2 = "92" | CLIP_TRM = "")
-        debug
-            PACK CSV_LEV2 WITH CLI_LEV2
-            PACK CSV_ID1 WITH CLIP_ID1
-            PACK CSV_ID2 WITH CLIP_ID2
-            PACK CSV_NET WITH CLIP_NET
-            PACK CSV_RT WITH CLIP_RT
-            PACK CSV_EFF WITH CLIP_EFF
-            PACK CSV_TRM WITH CLIP_TRM
-            CALL CREATE_CLIP_CSV
-        ENDIF
-
-
-
-
-        debug
-
-    REPEAT
-        debug
-    RETURN
-    ENDROUTINE
-
-.#######################################################################
-CREATE_CLIP_CSV LROUTINE
-
-    PACK CSV_REC WITH   (CSV_ID1),COMMA:
-                        (CSV_ID2),COMMA:
-                        (CSV_LEV1),COMMA:
-                        (CSV_LEV2),COMMA:
-.. ADD NEW VARIABLES
-                        (CSV_NET),COMMA:
-                        (CSV_RT),COMMA:
-                        (CSV_EFF),COMMA:
-                        (CSV_TRM),COMMA
-
-    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CSV_LIST
-    debug
-    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    CALL SEND_EMAIL
 
     RETURN
     ENDROUTINE
@@ -316,20 +342,18 @@ SUBJECT         CHAR    100
 BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
-
-
+    PACK SCRATCH WITH "Void ONEXC and EXTND Rec's"
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
-.    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
-
-        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,TEST_EMAIL_TO
-        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
-                                    RECIPIENTS:
-                                    SUBJECT:
-                                    BODY:
-                                    START_DATETIME:
-                                    END_DATETIME
-.    ENDIF
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL_TO
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                CLIP_CSV_FILE
 
     RETURN
     ENDROUTINE
