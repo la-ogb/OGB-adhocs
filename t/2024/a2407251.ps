@@ -3,7 +3,7 @@
 +   a2407251.ps
 +
 + DESCRIPTION:
-+
++   Term all ONEXC and EXTND CLIP records
 +
 + CREATED BY:
 +   apdrh - 2024-07-25
@@ -39,6 +39,7 @@ REFRESH_RATE        EQU     1000
 .# =================================================================== #
 
 EMAIL_TO            INIT    "$CURRENT_USER_EMAIL" ...."$ITAPPS"
+PROG_ID             INIT    "VCLPR"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -87,17 +88,6 @@ CLIP_CSV_HEADER     VARLIST "CLIP ID1,":
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
-CSV_ID1             CHAR    8
-CSV_ID2             CHAR    4
-CSV_NET             CHAR    5
-CSV_RT              CHAR    2
-CSV_EFF             CHAR    8
-CSV_TRM             CHAR    8
-CSV_LEV1            CHAR    4
-CSV_LEV2            CHAR    4
-CSV_PRD             CHAR    5
-CSV_PLN             CHAR    4
-
 
 .# =================================================================== #
 .# Begin Program
@@ -166,10 +156,6 @@ MAIN_PROCESS LROUTINE
     CALL PROCESS_CLIP_FILE
     CALL CLEAN_UP
 
-.    CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
-.    CALL UTIL_XMESSAGE USING "Add Code Here",MSG_HEIGHT
-.    CALL UTIL_ERRORMSG USING "Not implemented","MAIN_PROCESS"
-
     RETURN
     ENDROUTINE
 
@@ -185,7 +171,7 @@ INITIALIZE LROUTINE
 
 .TODO: set counter desc
     CALL UTIL_INIT_COUNTERS USING "CLIP Records found":
-                                  "Counter 2 - Not Used"
+                                  "CLIP Record's Voided"
 
     CALL SET_RUN_CONFIG
 
@@ -230,38 +216,56 @@ PROCESS_CLIP_FILE LROUTINE
 
         CLEAR CLI_LIST
         PACK CLI_REC WITH CLI_LIST,BLANKS
+        PACK CLIP_REC WITH CLIP_LIST,BLANKS
 
         CALL UTIL_CLI_FIND USING CLIP_ID1
         CONTINUE IF (NOT EQUAL)
 
-....CHANGE TO CASE FOR 3 DIFFERNT RATES
         IF (CLIP_RT = "EN" | CLIP_RT = "RN" | CLIP_RT = "01")
-            CALL CREATE_CLIP_CSV
+.            CALL CLIP_LOG
+        debug
+            CALL TERM_CLIP
             CONTINUE
         ENDIF
 
         IF (CLI_LEV2 = "92   ")
             CONTINUE IF (CLIP_TRM != "")
-            CALL CREATE_CLIP_CSV
+.            CALL CLIP_LOG
+        debug
+            CALL TERM_CLIP
             CONTINUE
         ENDIF
 
-        CALL VOID_CLIP
     REPEAT
 
     RETURN
     ENDROUTINE
 
 .#######################################################################
-VOID_CLIP LROUTINE
+TERM_CLIP LROUTINE
 
-    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
-    IF (TEST_SKIP_WRITE)
+    debug
+    CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
+    CALL VOID_CLIP USING CLIP_TRM
+    debug
+    CALL CLIP_LOG
 
-    ELSE
+    RETURN
+    ENDROUTINE
 
-    ENDIF
+.#######################################################################
+VOID_CLIP LROUTINE TRM@
+TRM@        CHAR    @
+
+    DEBUG
+
+    RETURN IF (TEST_SKIP_WRITE)
+    DEBUG
+    PACK CLIP_TRM WITH TRM@,BLANKS
+    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
+    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+    DEBUG
 
     CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
                             CLIP_FN:        ...File name list
@@ -274,36 +278,26 @@ VOID_CLIP LROUTINE
                             CLIP_QTY:       ...Number of files
                             1               ...File number for this read
 
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
     RETURN
     ENDROUTINE
 
 .#######################################################################
-CREATE_CLIP_CSV LROUTINE
+CLIP_LOG LROUTINE
 
-    PACK CSV_ID1 WITH CLIP_ID1
-    PACK CSV_ID2 WITH CLIP_ID2
-    PACK CSV_LEV1 WITH CLI_LEV1
-    PACK CSV_LEV2 WITH CLI_LEV2
-    PACK CSV_PRD WITH CLIP_PRD
-    PACK CSV_PLN WITH CLIP_PLAN
-    PACK CSV_NET WITH CLIP_NET
-    PACK CSV_RT WITH CLIP_RT
-    PACK CSV_EFF WITH CLIP_EFF
-    PACK CSV_TRM WITH CLIP_TRM
-
-    PACK CSV_REC WITH   (CHOP CSV_ID1),COMMA:
-                        (CHOP CSV_ID2),COMMA:
-                        (CHOP CSV_LEV1),COMMA:
-                        (CHOP CSV_LEV2),COMMA:
-                        (CHOP CSV_PRD),COMMA:
-                        (CHOP CSV_PLN),COMMA:
-                        (CHOP CSV_NET),COMMA:
-                        (CHOP CSV_RT),COMMA:
-                        (CHOP CSV_EFF),COMMA:
-                        (CHOP CSV_TRM),COMMA
+    PACK CSV_REC WITH   (CHOP CLIP_ID1),COMMA:
+                        (CHOP CLIP_ID2),COMMA:
+                        (CHOP CLI_LEV1),COMMA:
+                        (CHOP CLI_LEV2),COMMA:
+                        (CHOP CLIP_PRD),COMMA:
+                        (CHOP CLIP_PLAN),COMMA:
+                        (CHOP CLIP_NET),COMMA:
+                        (CHOP CLIP_RT),COMMA:
+                        (CHOP CLIP_EFF),COMMA:
+                        (CHOP CLIP_TRM),COMMA
 
     CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CSV_LIST
-    debug
     CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
 
     RETURN
@@ -315,8 +309,6 @@ SET_RUN_CONFIG LROUTINE
 
     MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
 
-.TODO: delete if not needed
-
     RETURN
     ENDROUTINE
 
@@ -327,8 +319,9 @@ CLEAN_UP LROUTINE
     CLOCK CALENDAR INTO END_DATETIME
 
     CALL UTIL_TRIM_TRAILING_SPACE USING CLIP_CSV_FILE,CLIP_CSV_FILE
-.TODO: final clean up
+.    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",CLIP_CSV_FILE,""
     CALL SEND_EMAIL
+    CALL UTIL_DELETE_FILE USING CLIP_CSV_FILE
 
     RETURN
     ENDROUTINE
@@ -368,7 +361,8 @@ BODY_BASE       CHAR    1000
     INC UTIL_SYSTEM.SR
     INC UTIL_DATA.SR
     INC UTIL_EMAIL.SR
-    INC UTIL_CLIENTS.SR     .CLI* io routines
+    INC UTIL_CLIENTS.SR
+    INC UTIL_DATES.SR
 
 .# =================================================================== #
 .# End of Program
