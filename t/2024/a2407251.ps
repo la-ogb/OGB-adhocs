@@ -39,7 +39,7 @@ REFRESH_RATE        EQU     1000
 .# =================================================================== #
 
 EMAIL_TO            INIT    "$CURRENT_USER_EMAIL" ...."$ITAPPS"
-PROG_ID             INIT    "VCLPR"
+PROG_ID             INIT    "VDCLPR"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -98,8 +98,6 @@ END_DATETIME        CHAR    24
 
 .Impact Scheduler Hook
     INC SCHED_NP.SR     ...for jobs that don't use the print system
-.    INC SCHED_WP.SR  ...for jobs requiring the print system
-
 
 .#######################################################################
 RUN_NOW ROUTINE
@@ -169,7 +167,6 @@ INITIALIZE LROUTINE
 .Get the files and EDI locations from valid 101
     CALL UTIL_GET_SYS_DIRS_COMMON
 
-.TODO: set counter desc
     CALL UTIL_INIT_COUNTERS USING "CLIP Records found":
                                   "CLIP Record's Voided"
 
@@ -222,17 +219,15 @@ PROCESS_CLIP_FILE LROUTINE
         CONTINUE IF (NOT EQUAL)
 
         IF (CLIP_RT = "EN" | CLIP_RT = "RN" | CLIP_RT = "01")
-.            CALL CLIP_LOG
         debug
-            CALL TERM_CLIP
+            CALL VOID_CLIP
             CONTINUE
         ENDIF
 
-        IF (CLI_LEV2 = "92   ")
-            CONTINUE IF (CLIP_TRM != "")
-.            CALL CLIP_LOG
+        IF (SQUEEZE CLI_LEV2 = "92")
+            CONTINUE IF (SQUEEZE CLIP_TRM != "")
         debug
-            CALL TERM_CLIP
+            CALL VOID_CLIP
             CONTINUE
         ENDIF
 
@@ -242,27 +237,17 @@ PROCESS_CLIP_FILE LROUTINE
     ENDROUTINE
 
 .#######################################################################
-TERM_CLIP LROUTINE
+VOID_CLIP LROUTINE 
 
-
-    debug
+    DEBUG
     CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
-    CALL VOID_CLIP USING CLIP_TRM
-    debug
-    CALL CLIP_LOG
 
-    RETURN
-    ENDROUTINE
-
-.#######################################################################
-VOID_CLIP LROUTINE TRM@
-TRM@        CHAR    @
+    IF (TEST_SKIP_WRITE)
+        CALL CLIP_LOG
+        RETURN
+    ENDIF
 
     DEBUG
-
-    RETURN IF (TEST_SKIP_WRITE)
-    DEBUG
-    PACK CLIP_TRM WITH TRM@,BLANKS
     PACK CLIP_CHGBY WITH PROG_ID,BLANKS
     PACK CLIP_CHGDT WITH CURRDATE,BLANKS
     DEBUG
@@ -279,6 +264,7 @@ TRM@        CHAR    @
                             1               ...File number for this read
 
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+    CALL CLIP_LOG
 
     RETURN
     ENDROUTINE
@@ -335,7 +321,7 @@ SUBJECT         CHAR    100
 BODY            CHAR    1000
 BODY_BASE       CHAR    1000
 ...
-    PACK SCRATCH WITH "Void ONEXC and EXTND Rec's"
+    PACK SCRATCH WITH "Void ONEXC and EXTND Recs"
     CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
 
     CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
