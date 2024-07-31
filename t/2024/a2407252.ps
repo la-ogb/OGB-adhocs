@@ -1,6 +1,6 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   a2407251.ps
++   a2407252.ps
 +
 + DESCRIPTION:
 +   Update all Medicare Members with a Medicare reason
@@ -61,10 +61,10 @@ RSP_FILE            INIT    "/w/elg1561.txt"
 
 LOG_SIZE            EQU     1000
 LOG_FD              FILE    VAR=LOG_SIZE,TEXT
-LOG_FILE            INIT    "/w/a2407251_log.csv"
+LOG_FILE            INIT    "/w/a2407252_log.csv"
 
 UPDATE_FD           FILE    FIXED=X_INM_SIZE,TEXT
-UPDATE_FILE         INIT    "a2407251.upd"
+UPDATE_FILE         INIT    "a2407252.upd"
 
 .# =================================================================== #
 .# File lists
@@ -81,8 +81,16 @@ LOG_HEADER          VARLIST "MEM Id":
                             COMMA,"CMS A Entitlement Trm":
                             COMMA,"OGB A Primary Eff":
                             COMMA,"OGB A Primary Trm":
-                            COMMA,"OGB A Primary Reason"
-
+                            COMMA,"OGB A Elig Eff":
+                            COMMA,"OGB A Elig Trm":
+                            COMMA,"OGB A Primary Reason":
+                            COMMA,"CMS B Enrollment Eff":
+                            COMMA,"CMS B Enrollment Trm":
+                            COMMA,"OGB B Elig Eff":
+                            COMMA,"OGB B Elig Trm":
+                            COMMA,"OGB B Primary Eff":
+                            COMMA,"OGB B Primary Trm":
+                            COMMA,"OGB B Primary Reason"
 .# =================================================================== #
 .# Program Variables
 .# =================================================================== #
@@ -120,7 +128,7 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    CALL UTIL_SET_METADATA USING "a2407251":   Program name
+    CALL UTIL_SET_METADATA USING "a2407252":   Program name
                                  "UPDATE MEMO_REAS":   Program description
                                  "MENU"     Chain next
 
@@ -176,9 +184,7 @@ INITIALIZE LROUTINE
     CALL UTIL_INIT_COUNTERS USING "Members Reviewed":
                                   "Members Validated":
                                   "Log Entries":
-                                  "Updates":
-                                  "":
-                                  ""
+                                  "Updates"
 
     CALL SET_RUN_CONFIG
 
@@ -300,7 +306,7 @@ FIRST_MEMO      NUM     V_FLAG
                 CALL CHECK_FOR_UPDATE
                 CALL WRITE_LOG USING "Update MEMO_REAS"
             CASE "MEDB"
-                CONTINUE
+                CALL CHECK_FOR_UPDATE
             DEFAULT
                 CONTINUE
         ENDSWITCH
@@ -333,6 +339,8 @@ CHECK_FOR_UPDATE LROUTINE
 
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
+    CALL WRITE_UPDATE
+
     RETURN
     ENDROUTINE
 
@@ -353,14 +361,23 @@ MSG@        CHAR    @
 .OGB Part A
         (CHOP MEMO_EFF),COMMA:
         (CHOP MEMO_TRM),COMMA:
+        (CHOP MEMO_EFF1),COMMA:
+        (CHOP MEMO_TRM1),COMMA:
+        (CHOP MEMO_REAS),COMMA:
+.CMS Part B
+        (CHOP QRSP_MEDB_EFF),COMMA:
+        (CHOP QRSP_MEDB_TRM),COMMA:
+.OGB Part B
+        (CHOP MEMO_EFF1),COMMA:
+        (CHOP MEMO_TRM1),COMMA:
+        (CHOP MEMO_EFF),COMMA:
+        (CHOP MEMO_TRM),COMMA:
         (CHOP MEMO_REAS)
 
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
     CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
 
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-
-    CALL WRITE_UPDATE
 
     RETURN
     ENDROUTINE
@@ -389,6 +406,7 @@ CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
     debug
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
     CALL SEND_EMAIL
 
     RETURN
