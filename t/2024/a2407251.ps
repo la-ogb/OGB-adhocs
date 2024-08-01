@@ -38,7 +38,7 @@ REFRESH_RATE        EQU     1000
 .# Configuration
 .# =================================================================== #
 
-EMAIL_TO            INIT    "$CURRENT_USER_EMAIL" ...."$ITAPPS"
+EMAIL_TO            INIT    "$ITAPPS"
 PROG_ID             INIT    "VDCLPR"
 
 .# =================================================================== #
@@ -219,14 +219,12 @@ PROCESS_CLIP_FILE LROUTINE
         CONTINUE IF (NOT EQUAL)
 
         IF (CLIP_RT = "EN" | CLIP_RT = "RN" | CLIP_RT = "01")
-        debug
             CALL VOID_CLIP
             CONTINUE
         ENDIF
 
         IF (SQUEEZE CLI_LEV2 = "92")
             CONTINUE IF (SQUEEZE CLIP_TRM != "")
-        debug
             CALL VOID_CLIP
             CONTINUE
         ENDIF
@@ -237,9 +235,9 @@ PROCESS_CLIP_FILE LROUTINE
     ENDROUTINE
 
 .#######################################################################
-VOID_CLIP LROUTINE 
+VOID_CLIP LROUTINE
 
-    DEBUG
+
     CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
 
     IF (TEST_SKIP_WRITE)
@@ -250,7 +248,7 @@ VOID_CLIP LROUTINE
     DEBUG
     PACK CLIP_CHGBY WITH PROG_ID,BLANKS
     PACK CLIP_CHGDT WITH CURRDATE,BLANKS
-    DEBUG
+
 
     CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
                             CLIP_FN:        ...File name list
@@ -305,7 +303,7 @@ CLEAN_UP LROUTINE
     CLOCK CALENDAR INTO END_DATETIME
 
     CALL UTIL_TRIM_TRAILING_SPACE USING CLIP_CSV_FILE,CLIP_CSV_FILE
-.    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",CLIP_CSV_FILE,""
+    CALL UTIL_PENDING_BACKUP USING "/w/",CLIP_CSV_FILE,""
     CALL SEND_EMAIL
     CALL UTIL_DELETE_FILE USING CLIP_CSV_FILE
 
