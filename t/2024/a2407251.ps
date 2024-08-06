@@ -218,10 +218,10 @@ PROCESS_CLIP_FILE LROUTINE
         CALL UTIL_CLI_FIND USING CLIP_ID1
         CONTINUE IF (NOT EQUAL)
 
+        IF (CHOP CLIP_TRM > "")
+            CONTINUE IF (CHOP CLIP_TRM < CLIP_EFF)
+        ENDIF
         IF (CLIP_RT = "EN" | CLIP_RT = "RN")
-            IF (CHOP CLIP_TRM > "")
-                CONTINUE IF (CHOP CLIP_TRM < CLIP_EFF)
-            ENDIF
 
             CALL VOID_CLIP
             CONTINUE
@@ -230,9 +230,9 @@ PROCESS_CLIP_FILE LROUTINE
         IF (CLIP_PRD = "HRFEE")
             IF (SQUEEZE CLI_LEV2 = "92")
                 IF (CLIP_RT = "01")
-                    IF (CHOP CLIP_TRM > "")
-                        CONTINUE IF (CHOP CLIP_TRM < CLIP_EFF)
-                    ENDIF
+.                    IF (CHOP CLIP_TRM > "")
+.                        CONTINUE IF (CHOP CLIP_TRM < CLIP_EFF)
+.                    ENDIF
                     CALL VOID_CLIP
                     CONTINUE
                 ENDIF
