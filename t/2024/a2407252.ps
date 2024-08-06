@@ -300,16 +300,9 @@ FIRST_MEMO      NUM     V_FLAG
             FILL " " IN MEMO_TRM1
         ENDIF
 
-        SWITCH MEMO_TYPE
-            CASE "MEDA"
-                debug
-                CALL CHECK_FOR_UPDATE USING QRSP_MEDA_EFF,QRSP_MEDA_TRM
-                CALL WRITE_UPDATE
-            CASE "MEDB"
-                CALL WRITE_UPDATE
-            DEFAULT
-                FILL " " IN MEMO_REAS
-        ENDSWITCH
+        CALL CHECK_FOR_UPDATE USING QRSP_MEDA_EFF,QRSP_MEDA_TRM
+        CALL WRITE_UPDATE
+
 
     REPEAT
 
@@ -328,13 +321,19 @@ TRM@        CHAR        @
         RETURN
     ENDIF
 
+    IF (CHOP EFF@ != " " & TRM@ = " ")
+
+    ELSE
+        RETURN
+    ENDIF
+
     IF (CHOP TRM@ < MEMO_EFF1)
         debug
         CALL WRITE_LOG USING "CMS TRM before MEMO EFF"
         RETURN
     ENDIF
 
-    IF (CHOP EFF@ > MEMO_EFF1 & )
+    IF (CHOP EFF@ > MEMO_EFF1 & EFF@ > CURRDATE)
         debug
         CALL WRITE_LOG USING "CMS Effective greater than MEMO EFF "
         RETURN
