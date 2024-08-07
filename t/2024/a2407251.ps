@@ -74,9 +74,9 @@ CLIP_CSV_HEADER     VARLIST "CLIP ID1,":
                             "CLIP ID2,":
                             "CLI LEV1,":
                             "CLI LEV2,":
+                            "CLIP NETWORK,":
                             "CLIP PRODUCT,":
                             "CLIP PLAN,":
-                            "CLIP NETWORK,":
                             "CLIP RATE,":
                             "CLIP EFF,":
                             "CLIP TRM"
@@ -188,12 +188,12 @@ CLIP_REFORMAT LROUTINE
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding ONEXC CLIPS"
 
     PACK SCRATCH USING CLIP_FNS," ",CLIP_REFORMAT_FILE," -t -a":
-						" -p0013-0017eq#"EXTND#""
+                        " -p0013-0017eq#"EXTND#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding EXTND CLIPS"
 
-	PACK SCRATCH WITH CLIP_REFORMAT_FILE, " ", CLIP_REFORMAT_FILE," 1-12 -t"
-	CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
+    PACK SCRATCH WITH CLIP_REFORMAT_FILE, " ", CLIP_REFORMAT_FILE," 1-12 -t"
+    CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
 
     RETURN
     ENDROUTINE
@@ -234,7 +234,6 @@ PROCESS_CLIP_FILE LROUTINE
             CALL VOID_CLIP
             CONTINUE
         ENDIF
-
     REPEAT
 
     RETURN
@@ -246,13 +245,16 @@ VOID_CLIP LROUTINE
 
     CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
 
-    IF (TEST_SKIP_WRITE)
-        CALL CLIP_LOG
-        RETURN
-    ENDIF
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
     PACK CLIP_CHGBY WITH PROG_ID,BLANKS
     PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+
+    CALL CLIP_LOG
+
+    IF (TEST_SKIP_WRITE)
+        RETURN
+    ENDIF
 
     CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
                             CLIP_FN:        ...File name list
@@ -264,10 +266,6 @@ VOID_CLIP LROUTINE
                             CLIP_OLD:       ...File saved when read
                             CLIP_QTY:       ...Number of files
                             1               ...File number for this read
-
-    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
-    CALL CLIP_LOG
-
     RETURN
     ENDROUTINE
 
@@ -279,9 +277,9 @@ CLIP_LOG LROUTINE
                         (CHOP CLIP_ID2),COMMA:
                         (CHOP CLI_LEV1),COMMA:
                         (CHOP CLI_LEV2),COMMA:
+                        (CHOP CLIP_NET),COMMA:
                         (CHOP CLIP_PRD),COMMA:
                         (CHOP CLIP_PLAN),COMMA:
-                        (CHOP CLIP_NET),COMMA:
                         (CHOP CLIP_RT),COMMA:
                         (CHOP CLIP_EFF),COMMA:
                         (CHOP CLIP_TRM),COMMA
@@ -291,6 +289,7 @@ CLIP_LOG LROUTINE
 
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 SET_RUN_CONFIG LROUTINE
@@ -306,7 +305,7 @@ SET_RUN_CONFIG LROUTINE
 CLEAN_UP LROUTINE
 + Cleanup work files and handle output files
     CLOCK CALENDAR INTO END_DATETIME
-
+    debug
     CALL UTIL_TRIM_TRAILING_SPACE USING CLIP_CSV_FILE,CLIP_CSV_FILE
     CALL UTIL_PENDING_BACKUP USING "/w/tmp/",CLIP_CSV_FILE,""
     CALL SEND_EMAIL
