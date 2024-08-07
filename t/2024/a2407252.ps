@@ -301,7 +301,6 @@ FIRST_MEMO      NUM     V_FLAG
         ENDIF
 
         CALL CHECK_FOR_UPDATE USING QRSP_MEDA_EFF,QRSP_MEDA_TRM
-        CALL WRITE_UPDATE
 
 
     REPEAT
@@ -321,29 +320,33 @@ TRM@        CHAR        @
         RETURN
     ENDIF
 
-    IF (CHOP EFF@ != " " & TRM@ = " ")
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    IF (CHOP EFF@ != " " & EFF@ < TRM@)
 
     ELSE
         RETURN
     ENDIF
 
-    IF (CHOP TRM@ < MEMO_EFF1)
-        debug
-        CALL WRITE_LOG USING "CMS TRM before MEMO EFF"
-        RETURN
-    ENDIF
+.for these errors should we do OGB eff and trm as a group? or individually
 
-    IF (CHOP EFF@ > MEMO_EFF1 & EFF@ > CURRDATE)
-        debug
-        CALL WRITE_LOG USING "CMS Effective greater than MEMO EFF "
-        RETURN
-    ENDIF
+.    IF (CHOP TRM@ < MEMO_EFF1)
+.        debug
+.        CALL WRITE_LOG USING "CMS TRM before MEMO EFF"
+.        RETURN
+.    ENDIF
 
-    IF (CHOP EFF@ > MEMO_TRM1)
-        debug
-        CALL WRITE_LOG USING "CMS effective after MEMO TRM"
-        RETURN
-    ENDIF
+.    IF (CHOP EFF@ > MEMO_EFF1)
+.        debug
+.        CALL WRITE_LOG USING "CMS Effective greater than MEMO EFF "
+.        RETURN
+.    ENDIF
+
+.    IF (CHOP EFF@ > MEMO_TRM1)
+.        debug
+.        CALL WRITE_LOG USING "CMS effective after MEMO TRM"
+.        RETURN
+.    ENDIF
 
 .Translate qualification reason to impact reason
     SWITCH QRSP_QUAL_REASON
@@ -358,9 +361,8 @@ TRM@        CHAR        @
             FILL " " IN MEMO_REAS
     ENDSWITCH
 
-    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
-
     CALL WRITE_LOG USING ("Update MEMO_REAS")
+    CALL WRITE_UPDATE
 
     RETURN
     ENDROUTINE
@@ -398,7 +400,6 @@ MSG@        CHAR    @
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
     CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
 
-    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
 
     RETURN
     ENDROUTINE
