@@ -77,20 +77,13 @@ LOG_REC             CHAR    500
 LOG_HEADER          VARLIST "MEM Id":
                             COMMA,"Description":
                             COMMA,"CMS Qualification Reason":
+                            COMMA,"COB Type":
                             COMMA,"CMS A Entitlement Eff":
                             COMMA,"CMS A Entitlement Trm":
-                            COMMA,"OGB A Primary Eff":
-                            COMMA,"OGB A Primary Trm":
                             COMMA,"OGB A Elig Eff":
                             COMMA,"OGB A Elig Trm":
-                            COMMA,"OGB A Primary Reason":
-                            COMMA,"CMS B Enrollment Eff":
-                            COMMA,"CMS B Enrollment Trm":
-                            COMMA,"OGB B Elig Eff":
-                            COMMA,"OGB B Elig Trm":
-                            COMMA,"OGB B Primary Eff":
-                            COMMA,"OGB B Primary Trm":
-                            COMMA,"OGB B Primary Reason"
+                            COMMA,"OGB A Primary Reason"
+
 .# =================================================================== #
 .# Program Variables
 .# =================================================================== #
@@ -301,7 +294,8 @@ FIRST_MEMO      NUM     V_FLAG
 
 .Format the Medicare term date
         IF (CHOP MEMO_EFF1 = "")
-            debug .TODO: add errror if no eff date
+            debug
+            CALL WRITE_LOG USING "No Med-Effect"
             CONTINUE
         ENDIF
 
@@ -378,24 +372,15 @@ MSG@        CHAR    @
         (CHOP MEM_ID1),COMMA:
         (CHOP MSG@),COMMA:
         (CHOP QRSP_QUAL_REASON),COMMA:
+        (CHOP MEMO_TYPE),COMMA:
 .CMS Part A
         (CHOP QRSP_MEDA_EFF),COMMA:
         (CHOP QRSP_MEDA_TRM),COMMA:
 .OGB Part A
-        (CHOP MEMO_EFF),COMMA:
-        (CHOP MEMO_TRM),COMMA:
         (CHOP MEMO_EFF1),COMMA:
         (CHOP MEMO_TRM1),COMMA:
-        (CHOP MEMO_REAS),COMMA:
-.CMS Part B
-        (CHOP QRSP_MEDB_EFF),COMMA:
-        (CHOP QRSP_MEDB_TRM),COMMA:
-.OGB Part B
-        (CHOP MEMO_EFF1),COMMA:
-        (CHOP MEMO_TRM1),COMMA:
-        (CHOP MEMO_EFF),COMMA:
-        (CHOP MEMO_TRM),COMMA:
         (CHOP MEMO_REAS)
+
 
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
     CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
