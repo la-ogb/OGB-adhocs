@@ -254,6 +254,10 @@ PROCESS_REPORT LROUTINE
             CONTINUE
         ENDIF
 
+        IF (CHOP QRSP_MEDA_TRM = "00000000")
+            PACK QRSP_MEDA_TRM WITH LAST_DATE,BLANKS
+            debug
+        ENDIF
 .Only update if Member has CMS coverage
         CONTINUE IF (CHOP QRSP_MEDA_EFF = "")
 
@@ -318,6 +322,9 @@ TRM@        CHAR        @
 
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
+    IF (MEM_ID1 = "00000036")
+        debug
+    ENDIF
 
     IF (CHOP EFF@ > MEMO_TRM1)
         debug
@@ -331,11 +338,17 @@ TRM@        CHAR        @
         RETURN
     ENDIF
 
-.        IF (CHOP TRM@ < MEMO_EFF1)
-.            debug
-.            CALL WRITE_LOG USING "CMS TRM before MEMO EFF"
-.            RETURN
-.        ENDIF
+    IF (CHOP EFF@ < MEMO_EFF1)
+        debug
+        CALL WRITE_LOG USING "CMS effective before Med-Effect"
+        RETURN
+    ENDIF
+
+    IF (CHOP TRM@ < MEMO_EFF1)
+        debug
+        CALL WRITE_LOG USING "CMS term before Med-Effect"
+        RETURN
+    ENDIF
 
 .        IF (CHOP EFF@ > MEMO_EFF1)
 .            debug
