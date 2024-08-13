@@ -207,7 +207,6 @@ SET_RUN_CONFIG LROUTINE
 .#######################################################################
 IMPORT_FILE LROUTINE
 + Import the query response file
-    debug
 .Set the input file path
     IF (ENABLE_TEST)
         PACK INPUT_DIR WITH INPUT_DIR_ROOT,"/test/"
@@ -262,6 +261,9 @@ PROCESS_REPORT LROUTINE
             CONTINUE
         ENDIF
 
+.Only update if Member has CMS coverage
+        CONTINUE IF (CHOP QRSP_MEDA_EFF = "")
+
         CALL LOAD_MEDICARE_DATA
 
     REPEAT
@@ -291,18 +293,23 @@ FIRST_MEMO      NUM     V_FLAG
         ENDIF
         WHILE EQUAL
 
+.Only get MEDA and MEDB
+        CONTINUE IF NOT (CHOP MEMO_TYPE = "MEDA" | CHOP MEMO_TYPE = "MEDB")
+
+.Only update if verified
+        CONTINUE IF (CHOP MEMO_VER != "Y")
+
 .Format the Medicare term date
-        IF (CHOP MEMO_EFF1 > "")
-            IF (CHOP MEMO_TRM1 = "")
-                PACK MEMO_TRM1 WITH LAST_DATE,BLANKS
-            ENDIF
-        ELSE
-            FILL " " IN MEMO_TRM1
+        IF (CHOP MEMO_EFF1 = "")
+            debug .TODO: add errror if no eff date
+            CONTINUE
         ENDIF
 
-    CALL CHECK_FOR_UPDATE USING QRSP_MEDA_EFF,QRSP_MEDA_TRM
+        IF (CHOP MEMO_TRM1 = "")
+            PACK MEMO_TRM1 WITH LAST_DATE,BLANKS
+        ENDIF
 
-
+        CALL CHECK_FOR_UPDATE USING QRSP_MEDA_EFF,QRSP_MEDA_TRM
     REPEAT
 
     RETURN
@@ -315,31 +322,20 @@ CHECK_FOR_UPDATE LROUTINE EFF@,TRM@
 EFF@        CHAR        @
 TRM@        CHAR        @
 
-.Only get MEDA and MEDB
-    RETURN IF NOT (CHOP MEMO_TYPE = "MEDA" | CHOP MEMO_TYPE = "MEDB")
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
-.Only update if verified
-    IF (CHOP MEMO_VER != "Y")
+
+    IF (CHOP EFF@ > MEMO_TRM1)
+        debug
+        CALL WRITE_LOG USING "CMS effective after Med-Termed"
         RETURN
     ENDIF
 
-    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
-.Only update if Member has CMS coverage
-    RETURN IF (CHOP EFF@ = "")
-
-.Only look at MEDA for errors
-
-    IF (CHOP MEMO_TYPE = "MEDA")
-
-        IF (CHOP EFF@ > MEMO_TRM1 & CHOP MEMO_TRM1 != "")
+    IF (CHOP EFF@ > MEMO_EFF1)
         debug
-        CALL WRITE_LOG USING "CMS effective after MEMO TRM"
-            IF (CHOP EFF@ > MEMO_EFF1)
-                CALL WRITE_LOG USING "CMS effective after MEMO EFF"
-            ENDIF
+        CALL WRITE_LOG USING "CMS effective after Med-Effect"
         RETURN
-        ENDIF
-
+    ENDIF
 
 .        IF (CHOP TRM@ < MEMO_EFF1)
 .            debug
@@ -351,8 +347,6 @@ TRM@        CHAR        @
 .            debug
 .            CALL WRITE_LOG USING "CMS Effective greater than MEMO EFF "
 .            RETURN
-.        ENDIF
-    ENDIF
 
 .Translate qualification reason to impact reason
     SWITCH QRSP_QUAL_REASON
