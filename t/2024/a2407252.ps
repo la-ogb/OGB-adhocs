@@ -326,29 +326,46 @@ TRM@        CHAR        @
         debug
     ENDIF
 
-    IF (CHOP EFF@ > MEMO_TRM1)
-        debug
-        CALL WRITE_LOG USING "CMS effective after Med-Termed"
-        RETURN
-    ENDIF
 
-    IF (CHOP EFF@ > MEMO_EFF1)
-        debug
-        CALL WRITE_LOG USING "CMS effective after Med-Effect"
-        RETURN
-    ENDIF
+        IF (CHOP EFF@ > MEMO_TRM1)
+            debug
+            IF (CHOP MEMO_TYPE = "MEDA")
+                CALL WRITE_LOG USING "CMS effective after Med-Termed"
+                RETURN
+            ELSE
+                RETURN
+            ENDIF
+        ENDIF
 
-    IF (CHOP EFF@ < MEMO_EFF1)
-        debug
-        CALL WRITE_LOG USING "CMS effective before Med-Effect"
-        RETURN
-    ENDIF
+        IF (CHOP EFF@ > MEMO_EFF1)
+            debug
+            IF (CHOP MEMO_TYPE = "MEDA")
+                CALL WRITE_LOG USING "CMS effective after Med-Effect"
+                RETURN
+            ELSE
+                RETURN
+            ENDIF
+        ENDIF
 
-    IF (CHOP TRM@ < MEMO_EFF1)
-        debug
-        CALL WRITE_LOG USING "CMS term before Med-Effect"
-        RETURN
-    ENDIF
+        IF (CHOP EFF@ < MEMO_EFF1)
+            debug
+            IF (CHOP MEMO_TYPE = "MEDA")
+                CALL WRITE_LOG USING "CMS effective before Med-Effect"
+                RETURN
+            ELSE
+                RETURN
+            ENDIF
+        ENDIF
+
+        IF (CHOP TRM@ < MEMO_EFF1)
+            debug
+            IF (CHOP MEMO_TYPE = "MEDA")
+                CALL WRITE_LOG USING "CMS term before Med-Effect"
+                RETURN
+            ELSE
+                RETURN
+            ENDIF
+        ENDIF
 
 .        IF (CHOP EFF@ > MEMO_EFF1)
 .            debug
