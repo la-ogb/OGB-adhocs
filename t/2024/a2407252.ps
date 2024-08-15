@@ -78,11 +78,11 @@ LOG_HEADER          VARLIST "MEM Id":
                             COMMA,"Description":
                             COMMA,"CMS Qualification Reason":
                             COMMA,"COB Type":
-                            COMMA,"CMS A Entitlement Eff":
-                            COMMA,"CMS A Entitlement Trm":
-                            COMMA,"OGB A Elig Eff":
-                            COMMA,"OGB A Elig Trm":
-                            COMMA,"OGB A Primary Reason"
+                            COMMA,"CMS Eff":
+                            COMMA,"CMS Trm":
+                            COMMA,"OGB Eff":
+                            COMMA,"OGB Trm":
+                            COMMA,"OGB Reason"
 
 .# =================================================================== #
 .# Program Variables
@@ -177,6 +177,7 @@ INITIALIZE LROUTINE
     CALL UTIL_INIT_COUNTERS USING "Members Reviewed":
                                   "Members Validated":
                                   "Log Entries":
+                                  "Errors":
                                   "Updates"
 
     CALL SET_RUN_CONFIG
@@ -322,56 +323,33 @@ TRM@        CHAR        @
 
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
-    IF (MEM_ID1 = "00000036")
+
+    IF (CHOP EFF@ > MEMO_TRM1)
         debug
+        CALL LOG_REVIEW USING "Old MEMO record - No Update"
+        RETURN
     ENDIF
 
+    IF (CHOP EFF@ > MEMO_EFF1)
+        debug
+        CALL LOG_REVIEW USING "CMS effective splitting MEMO - Skip Now Update?"
+        RETURN
+    ENDIF
 
-        IF (CHOP EFF@ > MEMO_TRM1)
-            debug
-            IF (CHOP MEMO_TYPE = "MEDA")
-                CALL WRITE_LOG USING "CMS effective after Med-Termed"
-                RETURN
-            ELSE
-                RETURN
-            ENDIF
-        ENDIF
+    IF (CHOP TRM@ < MEMO_EFF1)
+        debug
+        CALL LOG_REVIEW USING "Future MEMO after CMS term - No Update"
+        RETURN
+    ENDIF
 
-        IF (CHOP EFF@ > MEMO_EFF1)
-            debug
-            IF (CHOP MEMO_TYPE = "MEDA")
-                CALL WRITE_LOG USING "CMS effective after Med-Effect"
-                RETURN
-            ELSE
-                RETURN
-            ENDIF
-        ENDIF
+    IF (CHOP EFF@ < MEMO_EFF1)
+        debug
+        CALL LOG_REVIEW USING "MEMO splitting CMS Medicare span - Update"
+    ENDIF
 
-        IF (CHOP EFF@ < MEMO_EFF1)
-            debug
-            IF (CHOP MEMO_TYPE = "MEDA")
-                CALL WRITE_LOG USING "CMS effective before Med-Effect"
-                RETURN
-            ELSE
-                RETURN
-            ENDIF
-        ENDIF
-
-        IF (CHOP TRM@ < MEMO_EFF1)
-            debug
-            IF (CHOP MEMO_TYPE = "MEDA")
-                CALL WRITE_LOG USING "CMS term before Med-Effect"
-                RETURN
-            ELSE
-                RETURN
-            ENDIF
-        ENDIF
-
-.        IF (CHOP EFF@ > MEMO_EFF1)
-.            debug
-.            CALL WRITE_LOG USING "CMS Effective greater than MEMO EFF "
-.            RETURN
-
+    IF (MEMO_TRM1 = LAST_DATE)
+        PACK MEMO_TRM1 WITH BLANKS
+    ENDIF
 .Translate qualification reason to impact reason
     SWITCH QRSP_QUAL_REASON
         CASE "A"
@@ -385,12 +363,23 @@ TRM@        CHAR        @
             FILL " " IN MEMO_REAS
     ENDSWITCH
 
-    CALL WRITE_LOG USING ("Update MEMO_REAS")
+    CALL WRITE_LOG USING "Update MEMO_REAS"
     CALL WRITE_UPDATE
 
     RETURN
     ENDROUTINE
 
+
+
+.#######################################################################
+LOG_REVIEW LROUTINE MSG@
+MSG@        CHAR    @
+...
+    CALL WRITE_LOG USING MSG@
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
 
 
 .#######################################################################
@@ -423,7 +412,7 @@ MSG@        CHAR    @
 WRITE_UPDATE LROUTINE
 + Update MEMO reason
 
-    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+    CALL UTIL_XCOUNTER USING X_CNT5,REFRESH_RATE
 
     FILL " " IN INM_LIST,INM_REC,MEME_LIST
     PACKLEN INM_REC WITH MEM_LIST,MEME_LIST,MEMO_LIST
