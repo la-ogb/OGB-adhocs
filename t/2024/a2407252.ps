@@ -257,7 +257,6 @@ PROCESS_REPORT LROUTINE
 
         IF (CHOP QRSP_MEDA_TRM = "00000000")
             PACK QRSP_MEDA_TRM WITH LAST_DATE,BLANKS
-            debug
         ENDIF
 .Only update if Member has CMS coverage
         CONTINUE IF (CHOP QRSP_MEDA_EFF = "")
@@ -299,7 +298,6 @@ FIRST_MEMO      NUM     V_FLAG
 
 .Format the Medicare term date
         IF (CHOP MEMO_EFF1 = "")
-            debug
             CALL WRITE_LOG USING "No Med-Effect"
             CONTINUE
         ENDIF
@@ -325,27 +323,57 @@ TRM@        CHAR        @
 
 
     IF (CHOP EFF@ > MEMO_TRM1)
-        debug
         CALL LOG_REVIEW USING "Old MEMO record - No Update"
         RETURN
     ENDIF
 
     IF (CHOP EFF@ > MEMO_EFF1)
-        debug
         CALL LOG_REVIEW USING "CMS effective splitting MEMO - Skip Now Update?"
         RETURN
     ENDIF
 
     IF (CHOP TRM@ < MEMO_EFF1)
-        debug
         CALL LOG_REVIEW USING "Future MEMO after CMS term - No Update"
         RETURN
     ENDIF
 
     IF (CHOP EFF@ < MEMO_EFF1)
-        debug
         CALL LOG_REVIEW USING "MEMO splitting CMS Medicare span - Update"
     ENDIF
+
+    IF (CHOP MEMO_REAS != "")
+        IF (CHOP QRSP_QUAL_REASON = "A")
+            IF (CHOP MEMO_REAS = "A")
+                CALL LOG_REVIEW USING "Already has Medicare Reason"
+                RETURN
+            ELSE
+                CALL LOG_REVIEW USING "Medicare Reason changed"
+                RETURN
+            ENDIF
+        ENDIF
+
+        IF (CHOP QRSP_QUAL_REASON = "B")
+            IF (CHOP MEMO_REAS = "R")
+                CALL LOG_REVIEW USING "Already has Medicare Reason"
+                RETURN
+            ELSE
+                CALL LOG_REVIEW USING "Medicare Reason changed"
+                RETURN
+            ENDIF
+        ENDIF
+
+        IF (CHOP QRSP_QUAL_REASON = "G")
+            IF (CHOP MEMO_REAS = "D")
+                CALL LOG_REVIEW USING "Already has Medicare Reason"
+                RETURN
+            ELSE
+                CALL LOG_REVIEW USING "Medicare Reason changed"
+                RETURN
+            ENDIF
+        ENDIF
+    ENDIF
+
+
 
     IF (MEMO_TRM1 = LAST_DATE)
         PACK MEMO_TRM1 WITH BLANKS
@@ -353,7 +381,6 @@ TRM@        CHAR        @
 .Translate qualification reason to impact reason
     SWITCH QRSP_QUAL_REASON
         CASE "A"
-            debug
             PACK MEMO_REAS WITH "A"
         CASE "B"
             PACK MEMO_REAS WITH "R"
