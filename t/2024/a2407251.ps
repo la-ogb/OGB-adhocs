@@ -1,0 +1,359 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2407251.ps
++
++ DESCRIPTION:
++   Term all ONEXC and EXTND CLIP records
++
++ CREATED BY:
++   apdrh - 2024-07-25
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC CLIP.RL
+    INC CLI.RL
+    INC UTIL_COMMON.CB
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     1000
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "$ITAPPS"
+PROG_ID             INIT    "VDCLPR"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_WRITE     NUM     "1" 1.skip, 0.write
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+CLIP_REFORMAT_FD    FILE    FIXED=X_CLIP_SIZE,TEXT
+CLIP_REFORMAT_FILE  INIT    "/w/a2407251.wrk"
+
+CLIP_CSV_FD         FILE    VAR=200,TEXT
+CLIP_CSV_FILE       INIT    "/w/tmp/a2407251.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+CSV_LIST            LIST
+CSV_REC             CHAR    200
+
+                    LISTEND
+
+CLIP_CSV_HEADER     VARLIST "CLIP ID1,":
+                            "CLIP ID2,":
+                            "CLI LEV1,":
+                            "CLI LEV2,":
+                            "CLIP NETWORK,":
+                            "CLIP PRODUCT,":
+                            "CLIP PLAN,":
+                            "CLIP RATE,":
+                            "CLIP EFF,":
+                            "CLIP TRM"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2407251" TO C_PROG
+    MOVE "VOID EXTND & ONEXC" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+
+    CALL INITIALIZE
+    CALL CLIP_REFORMAT
+    CALL PROCESS_CLIP_FILE
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING "CLIP Records found":
+                                  "CLIP Record's Voided"
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLIP_REFORMAT LROUTINE
++ Sort CLIP records for Extnd, Onexc, and rehired retirees
+
+    CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
+
+    PACK SCRATCH USING CLIP_FNS," ",CLIP_REFORMAT_FILE," -t":
+                        " -p0013-0017eq#"ONEXC#""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding ONEXC CLIPS"
+
+    PACK SCRATCH USING CLIP_FNS," ",CLIP_REFORMAT_FILE," -t -a":
+                        " -p0013-0017eq#"EXTND#""
+
+    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding EXTND CLIPS"
+
+    PACK SCRATCH WITH CLIP_REFORMAT_FILE, " ", CLIP_REFORMAT_FILE," 1-12 -t"
+    CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
+
+    RETURN
+    ENDROUTINE
+
+.#######################################################################
+PROCESS_CLIP_FILE LROUTINE
+
+    CALL OPEN_OGBFILE USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE
+
+    CALL PREP_OGBFILE USING CLIP_CSV_FD,CLIP_CSV_FILE
+    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CLIP_CSV_HEADER
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+
+    LOOP
+        CALL READ_OGBFILE_SEQ USING CLIP_REFORMAT_FD,CLIP_REFORMAT_FILE,CLIP_LIST
+        WHILE (RESULT = 1)
+
+        CLEAR CLI_LIST
+        PACK CLI_REC WITH CLI_LIST,BLANKS
+        PACK CLIP_REC WITH CLIP_LIST,BLANKS
+
+        CALL UTIL_CLI_FIND USING CLIP_ID1
+        CONTINUE IF (NOT EQUAL)
+
+        IF (CLIP_RT = "EN" | CLIP_RT = "RN")
+            IF (CHOP CLIP_TRM > "")
+                CONTINUE IF (CHOP CLIP_TRM < CLIP_EFF)
+            ENDIF
+            CALL VOID_CLIP
+            CONTINUE
+        ENDIF
+
+        IF (SQUEEZE CLI_LEV2 = "92")
+            IF (CHOP CLIP_TRM > "")
+                CONTINUE IF (CHOP CLIP_TRM < CLIP_EFF)
+            ENDIF
+            CALL VOID_CLIP
+            CONTINUE
+        ENDIF
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+VOID_CLIP LROUTINE
+
+    CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
+
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
+    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
+
+    CALL CLIP_LOG
+
+    IF (TEST_SKIP_WRITE)
+        RETURN
+    ENDIF
+
+    CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
+                            CLIP_FN:        ...File name list
+                            CLIP_FC:        ...(I)ndex or (A)imdex
+                            CLIP_FV:        ...File key varlists
+                            CLIP_FK:        ...File key sizes
+                            CLIP_LIST:      ...File record (field list)
+                            CLIP_REC:       ...File record (packed)
+                            CLIP_OLD:       ...File saved when read
+                            CLIP_QTY:       ...Number of files
+                            1               ...File number for this read
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLIP_LOG LROUTINE
+
+    PACK CSV_REC WITH   (CHOP CLIP_ID1),COMMA:
+                        (CHOP CLIP_ID2),COMMA:
+                        (CHOP CLI_LEV1),COMMA:
+                        (CHOP CLI_LEV2),COMMA:
+                        (CHOP CLIP_NET),COMMA:
+                        (CHOP CLIP_PRD),COMMA:
+                        (CHOP CLIP_PLAN),COMMA:
+                        (CHOP CLIP_RT),COMMA:
+                        (CHOP CLIP_EFF),COMMA:
+                        (CHOP CLIP_TRM),COMMA
+
+    CALL WRITE_OGBREC_SEQ USING CLIP_CSV_FD,CLIP_CSV_FILE,CSV_LIST
+    CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+    debug
+    CALL UTIL_TRIM_TRAILING_SPACE USING CLIP_CSV_FILE,CLIP_CSV_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",CLIP_CSV_FILE,""
+    CALL SEND_EMAIL
+    CALL UTIL_DELETE_FILE USING CLIP_CSV_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "Void ONEXC and EXTND Recs"
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL_TO
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                CLIP_CSV_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_POP.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_CLIENTS.SR
+    INC UTIL_DATES.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
