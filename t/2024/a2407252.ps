@@ -105,7 +105,6 @@ INPUT_DIR           CHAR    200
 
 .Impact Scheduler Hook
     INC SCHED_NP.SR     ...for jobs that don't use the print system
-.    INC SCHED_WP.SR  ...for jobs requiring the print system
 
 
 .#######################################################################
@@ -321,7 +320,7 @@ TRM@        CHAR        @
 
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
-
+.check if MEMO does not match CMS dates
     IF (CHOP EFF@ > MEMO_TRM1)
         CALL LOG_REVIEW USING "Old MEMO record - No Update"
         RETURN
@@ -337,17 +336,14 @@ TRM@        CHAR        @
         RETURN
     ENDIF
 
-    IF (CHOP EFF@ < MEMO_EFF1)
-        CALL LOG_REVIEW USING "MEMO splitting CMS Medicare span - Update"
-    ENDIF
-
+.Check if Reason has changed since last time
     IF (CHOP MEMO_REAS != "")
         IF (CHOP QRSP_QUAL_REASON = "A")
             IF (CHOP MEMO_REAS = "A")
                 CALL LOG_REVIEW USING "Already has Medicare Reason"
                 RETURN
             ELSE
-                CALL LOG_REVIEW USING "Medicare Reason changed"
+                CALL LOG_REVIEW USING "Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)
                 RETURN
             ENDIF
         ENDIF
@@ -357,7 +353,7 @@ TRM@        CHAR        @
                 CALL LOG_REVIEW USING "Already has Medicare Reason"
                 RETURN
             ELSE
-                CALL LOG_REVIEW USING "Medicare Reason changed"
+                CALL LOG_REVIEW USING "Medicare Reason changed "
                 RETURN
             ENDIF
         ENDIF
@@ -469,7 +465,6 @@ CLEAN_UP LROUTINE
 .#######################################################################
 SEND_EMAIL LROUTINE
 + Email the report
-REPORT@         CHAR    @
 RECIPIENTS      CHAR    200
 SUBJECT         CHAR    100
 BODY            CHAR    1000
