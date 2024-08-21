@@ -327,7 +327,7 @@ TRM@        CHAR        @
     ENDIF
 
     IF (CHOP EFF@ > MEMO_EFF1)
-        CALL LOG_REVIEW USING "CMS effective splitting MEMO - Skip Now Update?"
+        CALL LOG_REVIEW USING "CMS effective splitting MEMO - No Update"
         RETURN
     ENDIF
 
@@ -343,7 +343,7 @@ TRM@        CHAR        @
                 CALL LOG_REVIEW USING "Already has Medicare Reason"
                 RETURN
             ELSE
-                CALL LOG_REVIEW USING "Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)
+                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON))
                 RETURN
             ENDIF
         ENDIF
