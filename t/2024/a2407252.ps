@@ -327,7 +327,7 @@ TRM@        CHAR        @
     ENDIF
 
     IF (CHOP EFF@ > MEMO_EFF1)
-        CALL LOG_REVIEW USING "CMS effective splitting MEMO - No Update"
+        CALL LOG_REVIEW USING "OGB effective date prior to CMS date - No Update"
         RETURN
     ENDIF
 
@@ -341,32 +341,30 @@ TRM@        CHAR        @
         IF (CHOP QRSP_QUAL_REASON = "A")
             IF (CHOP MEMO_REAS = "A")
                 CALL LOG_REVIEW USING "Already has Medicare Reason"
-                RETURN
             ELSE
-                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON))
-                RETURN
+                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)+" - Review")
             ENDIF
+
         ENDIF
 
         IF (CHOP QRSP_QUAL_REASON = "B")
             IF (CHOP MEMO_REAS = "R")
                 CALL LOG_REVIEW USING "Already has Medicare Reason"
-                RETURN
             ELSE
-                CALL LOG_REVIEW USING "Medicare Reason changed "
-                RETURN
+                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)+" - Review")
             ENDIF
+
         ENDIF
 
         IF (CHOP QRSP_QUAL_REASON = "G")
             IF (CHOP MEMO_REAS = "D")
                 CALL LOG_REVIEW USING "Already has Medicare Reason"
-                RETURN
             ELSE
-                CALL LOG_REVIEW USING "Medicare Reason changed"
-                RETURN
+                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)+" - Review")
             ENDIF
+
         ENDIF
+    RETURN
     ENDIF
 
 
@@ -457,6 +455,11 @@ CLEAN_UP LROUTINE
     debug
     CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
     CALL SEND_EMAIL
+
+    CALL UTIL_PENDING_BACKUP USING "/w/",LOG_FILE,""
+    CALL UTIL_PENDING_BACKUP USING UTIL_FILES_DIR,UPDATE_FILE,""
+
+    CALL UTIL_DELETE_FILE USING LOG_FILE
 
     RETURN
     ENDROUTINE
