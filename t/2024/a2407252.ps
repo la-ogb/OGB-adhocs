@@ -76,6 +76,7 @@ LOG_REC             CHAR    500
 
 LOG_HEADER          VARLIST "MEM Id":
                             COMMA,"Description":
+                            COMMA,"Update Status":
                             COMMA,"CMS Qualification Reason":
                             COMMA,"COB Type":
                             COMMA,"CMS Eff":
@@ -250,7 +251,7 @@ PROCESS_REPORT LROUTINE
         CALL UTIL_MEM_FIND_REAL USING QRSP_DCN1_MEM_ID
         IF NOT EQUAL
             debug
-            CALL WRITE_LOG USING "Unable to find valid member in IMPACT"
+            CALL LOG_REVIEW USING "Unable to find valid member in IMPACT","Review"
             CONTINUE
         ENDIF
 
@@ -297,7 +298,7 @@ FIRST_MEMO      NUM     V_FLAG
 
 .Format the Medicare term date
         IF (CHOP MEMO_EFF1 = "")
-            CALL WRITE_LOG USING "No Med-Effect"
+            CALL LOG_REVIEW USING "No Med-Effect","Review"
             CONTINUE
         ENDIF
 
@@ -322,17 +323,17 @@ TRM@        CHAR        @
 
 .check if MEMO does not match CMS dates
     IF (CHOP EFF@ > MEMO_TRM1)
-        CALL LOG_REVIEW USING "Old MEMO record - No Update"
+        CALL LOG_REVIEW USING "Old MEMO record","No Update"
         RETURN
     ENDIF
 
     IF (CHOP EFF@ > MEMO_EFF1)
-        CALL LOG_REVIEW USING "OGB effective date prior to CMS date - No Update"
+        CALL LOG_REVIEW USING "OGB effective date prior to CMS date","No Update"
         RETURN
     ENDIF
 
     IF (CHOP TRM@ < MEMO_EFF1)
-        CALL LOG_REVIEW USING "Future MEMO after CMS term - No Update"
+        CALL LOG_REVIEW USING "Future MEMO after CMS term","No Update"
         RETURN
     ENDIF
 
@@ -340,27 +341,27 @@ TRM@        CHAR        @
     IF (CHOP MEMO_REAS != "")
         IF (CHOP QRSP_QUAL_REASON = "A")
             IF (CHOP MEMO_REAS = "A")
-                CALL LOG_REVIEW USING "Already has Medicare Reason"
+                CALL LOG_REVIEW USING "Already has Medicare Reason","No Update"
             ELSE
-                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)+" - Review")
+                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)), "Review"
             ENDIF
 
         ENDIF
 
         IF (CHOP QRSP_QUAL_REASON = "B")
             IF (CHOP MEMO_REAS = "R")
-                CALL LOG_REVIEW USING "Already has Medicare Reason"
+                CALL LOG_REVIEW USING "Already has Medicare Reason","No Update"
             ELSE
-                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)+" - Review")
+                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)), "Review"
             ENDIF
 
         ENDIF
 
         IF (CHOP QRSP_QUAL_REASON = "G")
             IF (CHOP MEMO_REAS = "D")
-                CALL LOG_REVIEW USING "Already has Medicare Reason"
+                CALL LOG_REVIEW USING "Already has Medicare Reason","No Update"
             ELSE
-                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)+" - Review")
+                CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)), "Review"
             ENDIF
 
         ENDIF
@@ -384,7 +385,7 @@ TRM@        CHAR        @
             FILL " " IN MEMO_REAS
     ENDSWITCH
 
-    CALL WRITE_LOG USING "Update MEMO_REAS"
+    CALL WRITE_LOG USING "Populate MEMO_REAS","Update"
     CALL WRITE_UPDATE
 
     RETURN
@@ -393,10 +394,11 @@ TRM@        CHAR        @
 
 
 .#######################################################################
-LOG_REVIEW LROUTINE MSG@
+LOG_REVIEW LROUTINE MSG@,STATUS@
 MSG@        CHAR    @
+STATUS@     CHAR    @
 ...
-    CALL WRITE_LOG USING MSG@
+    CALL WRITE_LOG USING MSG@,STATUS@
     CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
 
     RETURN
@@ -404,13 +406,15 @@ MSG@        CHAR    @
 
 
 .#######################################################################
-WRITE_LOG LROUTINE MSG@
+WRITE_LOG LROUTINE MSG@,STATUS@
 + Write to the log
 MSG@        CHAR    @
+STATUS@     CHAR    @
 
     PACK LOG_REC WITH "":
         (CHOP MEM_ID1),COMMA:
         (CHOP MSG@),COMMA:
+        (CHOP STATUS@),COMMA:
         (CHOP QRSP_QUAL_REASON),COMMA:
         (CHOP MEMO_TYPE),COMMA:
 .CMS Part A
