@@ -75,8 +75,8 @@ LOG_REC             CHAR    500
                     LISTEND
 
 LOG_HEADER          VARLIST "MEM Id":
+                            COMMA,"Log Status":
                             COMMA,"Description":
-                            COMMA,"Update Status":
                             COMMA,"CMS Qualification Reason":
                             COMMA,"COB Type":
                             COMMA,"CMS Eff":
@@ -94,8 +94,6 @@ START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 
 INPUT_DIR           CHAR    200
-
-
 
 .# =================================================================== #
 .# Begin Program
@@ -136,7 +134,6 @@ RUN_NOW ROUTINE
     CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
                                  ENABLE_TEST:  ...test toggle
                                  TEST_CONFIG  ...test settings list
-
 
 .Set up run mode or build SCH record
     CALL SCHED_PICK
@@ -363,16 +360,16 @@ TRM@        CHAR        @
             ELSE
                 CALL LOG_REVIEW USING ("Medicare Reason changed from "+(CHOP MEMO_REAS)+" to "+(CHOP QRSP_QUAL_REASON)), "Review"
             ENDIF
-
         ENDIF
-    RETURN
-    ENDIF
 
+        RETURN
+    ENDIF
 
 
     IF (MEMO_TRM1 = LAST_DATE)
         PACK MEMO_TRM1 WITH BLANKS
     ENDIF
+
 .Translate qualification reason to impact reason
     SWITCH QRSP_QUAL_REASON
         CASE "A"
@@ -413,8 +410,8 @@ STATUS@     CHAR    @
 
     PACK LOG_REC WITH "":
         (CHOP MEM_ID1),COMMA:
-        (CHOP MSG@),COMMA:
         (CHOP STATUS@),COMMA:
+        (CHOP MSG@),COMMA:
         (CHOP QRSP_QUAL_REASON),COMMA:
         (CHOP MEMO_TYPE),COMMA:
 .CMS Part A
@@ -425,13 +422,12 @@ STATUS@     CHAR    @
         (CHOP MEMO_TRM1),COMMA:
         (CHOP MEMO_REAS)
 
-
     CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
     CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_LIST
 
-
     RETURN
     ENDROUTINE
+
 
 .#######################################################################
 WRITE_UPDATE LROUTINE
@@ -494,7 +490,6 @@ BODY_BASE       CHAR    1000
                                 START_DATETIME:
                                 END_DATETIME:
                                 LOG_FILE
-
 
     RETURN
     ENDROUTINE
