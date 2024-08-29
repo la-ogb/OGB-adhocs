@@ -14,6 +14,7 @@
 .# =================================================================== #
     INC VALID.RL
     INC UTIL_COMMON.CB
+    INC UTIL_POP.CB
     INC SCH.RL
     INC SCHN.RL
 
@@ -40,6 +41,7 @@ REFRESH_RATE        EQU     10
 
 EMAIL_TO            INIT    "$ITAPPS"
 PROG_ID             INIT    "ADDSCN"
+DEFAULT_EMAIL       INIT    "it-applications@la.gov"
 
 .# =================================================================== #
 .# Debugging Configuration
@@ -48,7 +50,7 @@ PROG_ID             INIT    "ADDSCN"
 ENABLE_TEST         NUM     V_FLAG
 TEST_CONFIG         LIST
 TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
-TEST_SKIP_WRITE     NUM     "1" 1.skip, 0.write
+TEST_SKIP_WRITE     NUM     "0" 1.skip, 0.write
                     LISTEND
 
 .# =================================================================== #
@@ -79,6 +81,8 @@ LOG_HEADER          VARLIST "Action,":
 CURRDATE            CHAR    V_DATE
 START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
+
+MAX_SCHN_ID         NUM     3
 
 .# =================================================================== #
 .# Begin Program
@@ -176,14 +180,14 @@ UPDATE_SCHN LROUTINE
 
     MOVE OGB_SEQ1 TO OGB_SEQ
 
+    debug
+
     CALL UTIL_SCH_FIND USING ""
     LOOP
         CALL UTIL_SCH_NEXT
         WHILE EQUAL
 
         CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
-
-        debug
 
         IF (SCH_CSTAT = "R")
             CALL LOG_ERROR USING "Job Is Running"
@@ -207,7 +211,24 @@ UPDATE_SCHN LROUTINE
 .#######################################################################
 CHECK_IF_DONE LROUTINE
 + Set EQUAL if the expected failure notice already exists
-    debug .TODO: write me
+    CLEAR SCHN_REC,MAX_SCHN_ID
+    LOOP
+        CALL UTIL_READ_THRU_SCHN USING SCH_ID1
+        WHILE EQUAL
+
+        IF (SCHN_WHEN = "F" & SCHN_HOW = "E" & CHOP SCHN_WHERE = CHOP DEFAULT_EMAIL)
+            SETFLAG EQUAL
+            RETURN
+        ENDIF
+
+        IF (FORM (SQUEEZE SCHN_LINE) > MAX_SCHN_ID)
+            debug
+            MOVE (SQUEEZE SCHN_LINE) TO MAX_SCHN_ID
+        ENDIF
+    REPEAT
+
+    SETFLAG NOT EQUAL
+
     RETURN
     ENDROUTINE
 
@@ -215,7 +236,34 @@ CHECK_IF_DONE LROUTINE
 .#######################################################################
 ADD_SCHN LROUTINE
 + Create new SCHN
-    debug .TODO: write me
+    CALL UTIL_SET_POP_TO_SCHN
+    CALL LOG_UPDATE
+
+    ADD 1 TO MAX_SCHN_ID
+    MOVE MAX_SCHN_ID TO SCHN_LINE
+
+    PACK SCHN_ID WITH SCH_ID1,BLANKS
+    PACK SCHN_WHEN WITH "F",BLANKS   Failure
+    PACK SCHN_HOW WITH "E",BLANKS    Email
+    PACK SCHN_WHERE WITH DEFAULT_EMAIL,BLANKS
+
+    IF NOT (TEST_SKIP_WRITE)
+        debug
+        CALL WRITE_NEW_SCHN
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_NEW_SCHN
+
+.NOTE: schn.dbf seems to be deleting all records each time, then re-writeing
+.the ones it wants to keep
+    PACK SCHN_BASE WITH SCHN_ID,BLANKS
+    CALL POP_WRITE
+
     RETURN
     ENDROUTINE
 
@@ -232,10 +280,8 @@ MSG@        CHAR    @
 
 
 .#######################################################################
-LOG_UPDATE LROUTINE MSG@
-MSG@        CHAR    @
-...
-    CALL WRITE_TO_LOG USING "UPDATE",MSG@
+LOG_UPDATE LROUTINE
+    CALL WRITE_TO_LOG USING "UPDATE","SCHN Created"
     CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
 
     RETURN
@@ -335,6 +381,7 @@ BODY_BASE       CHAR    1000
     INC UTIL_EMAIL.SR
     INC UTIL_DATES.SR
     INC UTIL_SCH.SR
+    INC UTIL_SCHN.SR
 
 .# =================================================================== #
 .# End of Program
