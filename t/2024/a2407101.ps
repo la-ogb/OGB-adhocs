@@ -1,12 +1,12 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + NAME:
-+   a2405011.ps
++   a2407101.ps
 +
 + DESCRIPTION:
-+   Term all DHH CLIP records for end of contract - 6/30/24
++   Void clips without Medicare Primary and rehired retirees
 +
 + CREATED BY:
-+   apjwh - 2024-05-01
++   apjzs - 2024-07-10
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 .# =================================================================== #
@@ -38,10 +38,9 @@ REFRESH_RATE        EQU     1000
 .# Configuration
 .# =================================================================== #
 
-PROG_ID             INIT    "TRMDHH"
+PROG_ID             INIT    "VNONMED"
 EMAIL_TO_NOERROR    INIT    "$ITAPPS"
 EMAIL_TO_ERROR      INIT    "$ITAPPS"
-CONTRACT_END        INIT    "20240630"
 
 CFG_DO_CLIP_WRITE   NUM     "1" 0.skip, 1.write
 
@@ -59,17 +58,19 @@ TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
 .# =================================================================== #
 
 WORK_FD             FILE    FIXED=X_CLIP_SIZE,TEXT
-WORK_FILE           INIT    "/w/tmp/a2405011.id.wrk"
+WORK_FILE           INIT    "/w/a2407101.wrk"
 
 REPORT_FD           FILE    VAR=200,TEXT
-REPORT_FILE         INIT    "/w/tmp/a2405011.csv"
+REPORT_FILE         INIT    "/w/a2407101.csv"
 
 .# =================================================================== #
 .# File lists
 .# =================================================================== #
 
-WORK_LIST           LIST
+CLIPS_LIST           LIST
 WORK_ID             CHAR    8
+INPUT_ID1           CHAR    8
+INPUT_ID2           CHAR    4
                     LISTEND
 
 REPORT_LIST         LIST
@@ -97,6 +98,7 @@ START_DATETIME      CHAR    24
 END_DATETIME        CHAR    24
 FOUND_INSTANCE      NUM     1
 CURR_CLI_ID         CHAR    8
+CURR_LEV1           CHAR    5
 CURR_LEV2           CHAR    5
 
 .# =================================================================== #
@@ -123,8 +125,8 @@ RUN_NOW ROUTINE
 .Get run date
     CLOCK TIMESTAMP INTO CURRDATE
 
-    MOVE "a2405011" TO C_PROG        ...Program name
-    MOVE "TERM DHH CLIPS" TO C_OPER  ...Program description
+    MOVE "a2407101" TO C_PROG        ...Program name
+    MOVE "VOID EXTND" TO C_OPER  ...Program description
     MOVE "MENU" TO C_NEXT
     MOVE "RUN_NOW" TO C_LABEL
     MOVE BLANKS TO C_FILE
@@ -180,13 +182,11 @@ INITIALIZE LROUTINE
     CALL UTIL_GET_SYS_DIRS_COMMON
 
     CALL UTIL_INIT_COUNTERS USING "CLIPs Proc'd":
-                                  "Termed":
                                   "Voided":
                                   "":
                                   "":
+                                  "":
                                   ""
-
-    CALL SET_RUN_CONFIG
 
     RETURN
     ENDROUTINE
@@ -194,28 +194,25 @@ INITIALIZE LROUTINE
 
 .#######################################################################
 CLIP_REFORMAT LROUTINE
-+ Sort CLIP records for VANTA
++ Sort CLIP records for Extnd and rehired retirees
 
     CALL UTIL_XMESSAGE USING "Building work file...",MSG_HEIGHT
 
-.Find current vantage clips with term
+
+.Find current clips for people without medicare
+	debug
     PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t":
-                        " -p0013-0017eq#"DHH  #"":
-                        " -p0041-0048gt#"",CONTRACT_END,"#""
+                        " -p0013-0017eq#"ONEXC#" or":
+						" -p0013-0017eq#"EXTND#""
 
     CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
 
-.Find open-ended vantage clips
-    PACK DATE_CCYYMMDD WITH BLANKS
-    PACK SCRATCH USING CLIP_FNS," ",WORK_FILE," -t -a":
-                        " -p0013-0017eq#"DHH  #"":
-                        " -p0041-0048eq#"",DATE_CCYYMMDD,"#""
-
-    CALL UTIL_DO_REFORMAT USING SCRATCH,"Finding CLIP's"
-
+	debug
 .Sort file
-    PACK SCRATCH WITH WORK_FILE, " ", WORK_FILE," 1-12 -t"
-    CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
+
+	PACK SCRATCH WITH WORK_FILE, " ", WORK_FILE," 1-12 -t"
+    debug
+	CALL UTIL_DO_SORT USING SCRATCH, "Sorting work file"
 
     MESSAGEERASE
 
@@ -225,9 +222,7 @@ CLIP_REFORMAT LROUTINE
 
 .#######################################################################
 PROCESS_WORK_FILE LROUTINE
-CURRENT_CLI     CHAR    8
 ...
-    CLEAR CURRENT_CLI
 
     CALL OPEN_OGBFILE USING WORK_FD,WORK_FILE
 
@@ -235,44 +230,41 @@ CURRENT_CLI     CHAR    8
     CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_HEADER
 
     LOOP
-        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIP_LIST
+        CALL READ_OGBFILE_SEQ USING WORK_FD, WORK_FILE, CLIPS_LIST
         WHILE (RESULT = 1)
 
+		CALL UTIL_CLIP_FIND USING INPUT_ID1,INPUT_ID2
+        IF NOT EQUAL
+            debug .how?
+            CONTINUE
+        ENDIF
+
         CLEAR CLI_LIST
-        PACK CLIP_REC WITH CLIP_LIST
+        PACK CLIP_REC WITH CLIPS_LIST
 
-        IF (CHOP CURRENT_CLI = "" | CHOP CLIP_ID1 != CURRENT_CLI)
-            PACK CURRENT_CLI WITH CLIP_ID1
-
+		IF (CLIP_ID1 != CURR_CLI_ID)
             CALL UTIL_CLI_FIND USING CLIP_ID1
-            CONTINUE IF (NOT EQUAL)
+            IF NOT EQUAL
+                debug
+                CONTINUE
+            ENDIF
 
-            PACK CLI_REC WITH CLI_LIST,BLANKS
-        ELSE
-            UNPACK CLI_REC INTO CLI_LIST
+            PACK CURR_CLI_ID WITH CLI_ID1
+            PACK CURR_LEV2 WITH CLI_LEV2
         ENDIF
 
-.skip voids
-        IF (CHOP CLIP_TRM > "")
-            CONTINUE IF (CLIP_TRM < CLIP_EFF)
-            CONTINUE IF (CLIP_TRM <= CONTRACT_END)  .just in case
-        ENDIF
+		IF (CLIP_RT = "EN" OR CLIP_RT = "RN")
+			CALL VOID_CLIP USING CLIP_ID1
+		ENDIF
 
-        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+		IF (CLI_LEV2 = "92")
+.			rehired retirees, cannot have medicare
+		ENDIF
 
-.Future CLIP? Void
-        IF (CHOP CLIP_EFF > CONTRACT_END)
-            CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
-            CALL UTIL_CALC_DAY_BEFORE USING CLIP_EFF,CLIP_TRM
 
-            CALL TERM_CLIP USING CLIP_TRM
-            CALL LOG_TERM USING "Voided CLIP"
-        ELSE
-            CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
-            CALL TERM_CLIP USING CONTRACT_END
 
-            CALL LOG_TERM USING "CLIP Termed"
-        ENDIF
+.Check non primary medicare
+
     REPEAT
 
     CALL CLOSE_OGBFILE USING WORK_FD,WORK_FILE
@@ -283,62 +275,24 @@ CURRENT_CLI     CHAR    8
 
 
 .#######################################################################
-TERM_CLIP LROUTINE TRM@
+VOID_CLIP LROUTINE CURRENT_ID@
+CURRENT_ID@ CHAR @
 + Prepare for update
-TRM@        CHAR    @
-...
-    PACK CLIP_TRM WITH TRM@,BLANKS
-    PACK CLIP_CHGBY WITH PROG_ID,BLANKS
-    PACK CLIP_CHGDT WITH CURRDATE,BLANKS
 
-    RETURN IF NOT (CFG_DO_CLIP_WRITE)
+. get clip record
 
-    CALL FILE_WRITE USING   CLIP_FD:        ...File declaration
-                            CLIP_FN:        ...File name list
-                            CLIP_FC:        ...(I)ndex or (A)imdex
-                            CLIP_FV:        ...File key varlists
-                            CLIP_FK:        ...File key sizes
-                            CLIP_LIST:      ...File record (field list)
-                            CLIP_REC:       ...File record (packed)
-                            CLIP_OLD:       ...File saved when read
-                            CLIP_QTY:       ...Number of files
-                            1               ...File number for this read
+. get effective date value
+
+. get term date value
+. set term date to be less tha effective date
 
     RETURN
     ENDROUTINE
 
 
-.#######################################################################
-LOG_TERM LROUTINE MSG@
-MSG@        DIM     @
-...
-    SET FOUND_INSTANCE
-    PACK REPORT_REC WITH    (CHOP CLIP_ID1),COMMA:
-                            (CHOP CLI_LEV1),COMMA:
-                            (CHOP CLI_LEV2),COMMA:
-                            (CHOP CLIP_ID2),COMMA:
-                            (CHOP MSG@),COMMA:
-                            (CHOP CLIP_NET),COMMA:
-                            (CHOP CLIP_PRD),COMMA:
-                            (CHOP CLIP_PLAN),COMMA:
-                            (CHOP CLIP_EFF),COMMA:
-                            (CHOP CLIP_TRM),COMMA:
-                            (CHOP CLIP_RT)
-
-    CALL WRITE_OGBREC_SEQ USING REPORT_FD,REPORT_FILE,REPORT_LIST
-
-    RETURN
-    ENDROUTINE
 
 
-.#######################################################################
-SET_RUN_CONFIG LROUTINE
-+ Configure any runtime settings here
 
-.TODO: delete if not needed
-
-    RETURN
-    ENDROUTINE
 
 
 .#######################################################################
@@ -347,59 +301,12 @@ CLEAN_UP LROUTINE
     CLOCK CALENDAR INTO END_DATETIME
 
     CALL UTIL_TRIM_TRAILING_SPACE USING REPORT_FILE,REPORT_FILE
-    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",REPORT_FILE,""
-    CALL SEND_EMAIL
+    CALL UTIL_PENDING_BACKUP USING "/w/",REPORT_FILE,""
     CALL UTIL_DELETE_FILE USING REPORT_FILE
 
     RETURN
     ENDROUTINE
 
-
-.#######################################################################
-SEND_EMAIL LROUTINE
-+ Email the report
-REPORT@         CHAR    @
-RECIPIENTS      CHAR    200
-SUBJECT         CHAR    100
-BODY            CHAR    1000
-BODY_BASE       CHAR    1000
-...
-
-    PACK SCRATCH WITH "LDH/DHH CLIPs Termed"
-    IF (FOUND_INSTANCE)
-        PACK SCRATCH WITH SCRATCH," *UPDATED*"
-    ELSE
-        PACK SCRATCH WITH SCRATCH," *NO UPDATE REQUIRED*"
-    ENDIF
-
-    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
-
-    PACK BODY_BASE WITH "":
-        "Checking for LDH/DHH CLIPs to term due to end of contract."
-
-    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
-
-    IF (FOUND_INSTANCE)
-        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_ERROR,TEST_EMAIL_TO
-        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
-                                    RECIPIENTS:
-                                    SUBJECT:
-                                    BODY:
-                                    START_DATETIME:
-                                    END_DATETIME:
-                                    REPORT_FILE
-    ELSE
-        CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO_NOERROR,TEST_EMAIL_TO
-        CALL UTIL_EMAIL_NEOJ USING  C_PROG:
-                                    RECIPIENTS:
-                                    SUBJECT:
-                                    BODY:
-                                    START_DATETIME:
-                                    END_DATETIME
-    ENDIF
-
-    RETURN
-    ENDROUTINE
 
 
 .# =================================================================== #
