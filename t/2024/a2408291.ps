@@ -1,0 +1,388 @@
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ NAME:
++   a2408291.ps
++
++ DESCRIPTION:
++   Add failure notification to all SCH jobs
++
++ CREATED BY:
++   apjwh - 2024-08-29
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.# =================================================================== #
+.# Variable Includes
+.# =================================================================== #
+    INC VALID.RL
+    INC UTIL_COMMON.CB
+    INC UTIL_POP.CB
+    INC SCH.RL
+    INC SCHN.RL
+
+.# =================================================================== #
+.# Scheduler Parameters
+.# =================================================================== #
+
+PARAM_LIST          LIST WITH NAMES
+PARAM_TEST          CHAR    4
+                    LISTEND
+
+.# =================================================================== #
+.# Equates for code clarity
+.# =================================================================== #
+
+V_FLAG              EQU     1   ...0 or 1
+V_DATE              EQU     8   ...YYYYMMDD
+MSG_HEIGHT          EQU     24
+REFRESH_RATE        EQU     10
+
+.# =================================================================== #
+.# Configuration
+.# =================================================================== #
+
+EMAIL_TO            INIT    "$ITAPPS"
+PROG_ID             INIT    "ADDSCN"
+DEFAULT_EMAIL       INIT    "it-applications@la.gov"
+
+.# =================================================================== #
+.# Debugging Configuration
+.# =================================================================== #
+
+ENABLE_TEST         NUM     V_FLAG
+TEST_CONFIG         LIST
+TEST_EMAIL_TO       INIT    "$CURRENT_USER_EMAIL"
+TEST_SKIP_WRITE     NUM     "0" 1.skip, 0.write
+                    LISTEND
+
+.# =================================================================== #
+.# File Declarations
+.# =================================================================== #
+
+LOG_FD              FILE    VAR=200,TEXT
+LOG_FILE            INIT    "/w/tmp/a2408291.csv"
+
+.# =================================================================== #
+.# File lists
+.# =================================================================== #
+
+CSV_LIST            LIST
+CSV_REC             CHAR    200
+                    LISTEND
+
+LOG_HEADER          VARLIST "Action,":
+                            "Log Message,":
+                            "SCH ID,":
+                            "SCH Program,":
+                            "SCH Current Status"
+
+.# =================================================================== #
+.# Program Variables
+.# =================================================================== #
+
+CURRDATE            CHAR    V_DATE
+START_DATETIME      CHAR    24
+END_DATETIME        CHAR    24
+
+MAX_SCHN_ID         NUM     3
+
+.# =================================================================== #
+.# Begin Program
+.# =================================================================== #
+.Manual and Autosys
+    CALL RUN_NOW
+    CHAIN C_NEXT    ...go to next program (usually the Menu)
+
+.Impact Scheduler Hook
+    INC SCHED_NP.SR     ...for jobs that don't use the print system
+
+.#######################################################################
+RUN_NOW ROUTINE
+
+.Save stack size at program start
+    RETCOUNT ORIG_RETURN
+
+.Set applicable traps
+    CALL UTIL_SET_NORMAL_TRAPS
+
+.Get run date
+    CLOCK TIMESTAMP INTO CURRDATE
+
+    MOVE "a2408291" TO C_PROG
+    MOVE "ADD SCHN FAIL" TO C_OPER
+    MOVE "MENU" TO C_NEXT
+    MOVE "RUN_NOW" TO C_LABEL
+    MOVE BLANKS TO C_FILE
+    MOVE BLANKS TO C_KEYS
+
+.Check if the program was called from the command line
+    IF (C_CMDPAR)
+        CALL CMD_START USING C_PROG
+    ELSE
+        CALL X_BLANK_SCREEN
+    ENDIF
+
+.Configure test options based on file mode. Default is Production
+    CALL UTIL_SET_TESTMODE USING PARAM_TEST:  ...scheduler param
+                                 ENABLE_TEST:  ...test toggle
+                                 TEST_CONFIG  ...test settings list
+
+.Set up run mode or build SCH record
+    CALL SCHED_PICK
+
+    SWITCH RUN_MODE
+        CASE "N" | "B"
+            CALL MAIN_PROCESS
+        DEFAULT
+    ENDSWITCH
+
+    CALL NORMAL_EOJ
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+MAIN_PROCESS LROUTINE
++ Core logic
+
+    CALL INITIALIZE
+    CALL UPDATE_SCHN
+    CALL CLEAN_UP
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+INITIALIZE LROUTINE
++ Setup runtime variables
+    CLOCK TIMESTAMP TO CURRDATE
+    CLOCK CALENDAR TO START_DATETIME
+
+.Get the files and EDI locations from valid 101
+    CALL UTIL_GET_SYS_DIRS_COMMON
+
+    CALL UTIL_INIT_COUNTERS USING   "SCH Recs Read":
+                                    "Updates":
+                                    "Errors":
+                                    "Skipped"
+
+    CALL SET_RUN_CONFIG
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+UPDATE_SCHN LROUTINE
+
+    CALL PREP_OGBFILE USING LOG_FD,LOG_FILE
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,LOG_HEADER
+
+    MOVE OGB_SEQ1 TO OGB_SEQ
+
+    debug
+
+    CALL UTIL_SCH_FIND USING ""
+    LOOP
+        CALL UTIL_SCH_NEXT
+        WHILE EQUAL
+
+        CALL UTIL_XCOUNTER USING X_CNT1,REFRESH_RATE
+
+        IF (SCH_CSTAT = "R")
+            CALL LOG_ERROR USING "Job Is Running"
+            CONTINUE
+        ENDIF
+
+.Check if it has SCHN when:F how:E to:it-applications@la.gov
+        CALL CHECK_IF_DONE
+        IF EQUAL
+            CALL LOG_SKIPPED USING "Default Failure Already Set Up"
+            CONTINUE
+        ENDIF
+
+        CALL ADD_SCHN
+    REPEAT
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CHECK_IF_DONE LROUTINE
++ Set EQUAL if the expected failure notice already exists
+    CLEAR SCHN_REC,MAX_SCHN_ID
+    LOOP
+        CALL UTIL_READ_THRU_SCHN USING SCH_ID1
+        WHILE EQUAL
+
+        IF (SCHN_WHEN = "F" & SCHN_HOW = "E" & CHOP SCHN_WHERE = CHOP DEFAULT_EMAIL)
+            SETFLAG EQUAL
+            RETURN
+        ENDIF
+
+        IF (FORM (SQUEEZE SCHN_LINE) > MAX_SCHN_ID)
+            debug
+            MOVE (SQUEEZE SCHN_LINE) TO MAX_SCHN_ID
+        ENDIF
+    REPEAT
+
+    SETFLAG NOT EQUAL
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+ADD_SCHN LROUTINE
++ Create new SCHN
+    CALL UTIL_SET_POP_TO_SCHN
+    CALL LOG_UPDATE
+
+    ADD 1 TO MAX_SCHN_ID
+    MOVE MAX_SCHN_ID TO SCHN_LINE
+
+    PACK SCHN_ID WITH SCH_ID1,BLANKS
+    PACK SCHN_WHEN WITH "F",BLANKS   Failure
+    PACK SCHN_HOW WITH "E",BLANKS    Email
+    PACK SCHN_WHERE WITH DEFAULT_EMAIL,BLANKS
+
+    IF NOT (TEST_SKIP_WRITE)
+        debug
+        CALL WRITE_NEW_SCHN
+    ENDIF
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_NEW_SCHN
+
+.NOTE: schn.dbf seems to be deleting all records each time, then re-writeing
+.the ones it wants to keep
+    PACK SCHN_BASE WITH SCHN_ID,BLANKS
+    CALL POP_WRITE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_ERROR LROUTINE MSG@
+MSG@        CHAR    @
+...
+    CALL WRITE_TO_LOG USING "ERROR",MSG@
+    CALL UTIL_XCOUNTER USING X_CNT3,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_UPDATE LROUTINE
+    CALL WRITE_TO_LOG USING "UPDATE","SCHN Created"
+    CALL UTIL_XCOUNTER USING X_CNT2,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+LOG_SKIPPED LROUTINE MSG@
+MSG@        CHAR    @
+...
+    CALL WRITE_TO_LOG USING "SKIPPED",MSG@
+    CALL UTIL_XCOUNTER USING X_CNT4,REFRESH_RATE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+WRITE_TO_LOG LROUTINE ACTION@,MSG@
+ACTION@     CHAR    @
+MSG@        CHAR    @
+...
+    PACK CSV_REC WITH   (CHOP ACTION@),COMMA:
+                        (CHOP MSG@),COMMA:
+                        (CHOP SCH_ID1),COMMA:
+                        (CHOP SCH_PROG),COMMA:
+                        (CHOP SCH_CSTAT)
+
+    CALL WRITE_OGBREC_SEQ USING LOG_FD,LOG_FILE,CSV_LIST
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SET_RUN_CONFIG LROUTINE
++ Configure any runtime settings here
+
+    MOVE OGB_SEQ1 TO OGB_SEQ .default to sequential read
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+CLEAN_UP LROUTINE
++ Cleanup work files and handle output files
+    CLOCK CALENDAR INTO END_DATETIME
+    debug
+    CALL UTIL_TRIM_TRAILING_SPACE USING LOG_FILE,LOG_FILE
+    CALL UTIL_PENDING_BACKUP USING "/w/tmp/",LOG_FILE,""
+    CALL SEND_EMAIL
+    CALL UTIL_DELETE_FILE USING LOG_FILE
+
+    RETURN
+    ENDROUTINE
+
+
+.#######################################################################
+SEND_EMAIL LROUTINE
++ Email the report
+REPORT@         CHAR    @
+RECIPIENTS      CHAR    200
+SUBJECT         CHAR    100
+BODY            CHAR    1000
+BODY_BASE       CHAR    1000
+...
+    PACK SCRATCH WITH "SCH Notification - Default Failure Update"
+    CALL UTIL_SET_SUBJECT USING SCRATCH,ENABLE_TEST,SUBJECT
+
+    PACK BODY_BASE WITH "Job to set a default failure notification for ":
+        "all SCH jobs."
+    CALL UTIL_PACK_BODY_AND_COUNTERS USING BODY,BODY_BASE
+
+    CALL UTIL_SET_RECIPIENTS USING RECIPIENTS,EMAIL_TO,TEST_EMAIL_TO
+
+    CALL UTIL_EMAIL_NEOJ USING  C_PROG:
+                                RECIPIENTS:
+                                SUBJECT:
+                                BODY:
+                                START_DATETIME:
+                                END_DATETIME:
+                                LOG_FILE
+    RETURN
+    ENDROUTINE
+
+
+.# =================================================================== #
+.# Subroutines Includes
+.# =================================================================== #
+    INC UTIL_COMMON.SR
+    INC UTIL_TABLE_IO.SR
+    INC UTIL_POP.SR
+    INC UTIL_TEST.SR
+    INC UTIL_SYSTEM.SR
+    INC UTIL_DATA.SR
+    INC UTIL_EMAIL.SR
+    INC UTIL_DATES.SR
+    INC UTIL_SCH.SR
+    INC UTIL_SCHN.SR
+
+.# =================================================================== #
+.# End of Program
+.# =================================================================== #
